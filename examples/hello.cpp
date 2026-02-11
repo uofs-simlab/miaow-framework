@@ -1,8 +1,10 @@
-#include <stdio.h>
+#include <iostream>
 
 #include "miaow.hpp"
 
-int main(void) {
-    puts(miaow_hello());
+int main() {
+    // Call into MIAOW, which uses CAF internally.
+    miaow_init();
+    std::cout << miaow_actor_hello() << "\n";
     return 0;
 }
