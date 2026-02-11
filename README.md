@@ -19,7 +19,7 @@ A list of project-specific CMake flags are provided below:
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-DBUILD_EXAMPLES` | `ON` | Build the `miaow_hello` example |
-| `-DMIAOW_USE_SYSTEM_CAF` | `ON` | Prefer a system-installed CAF via `find_package` |
+| <span style="white-space:nowrap">`-DMIAOW_USE_SYSTEM_CAF`</span> | `ON` | Prefer a system-installed CAF via `find_package` |
 | `-DMIAOW_FETCH_CAF` | `ON` | Fall back to fetching CAF with CMake `FetchContent` if not found by `find_package` |
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version for system `find_package` |
 | `-DMIAOW_CAF_GIT_TAG` | `1.1.0` | CAF git tag or commit for CMake `FetchContent` |

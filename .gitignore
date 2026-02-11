@@ -49,3 +49,6 @@ Makefile
 
 # MacOS specific files
 .DS_Store
+
+# Visual Studio Code settings
+.vscode/
