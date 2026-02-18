@@ -13,7 +13,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-For convenience, we have also provided a build script `scripts/build.sh`. In either case, the library will be built in the `build_directory`. Additionally, if the `BUILD_EXAMPLES` flag is set to `ON` (the default), the example programs will be placed directly in their respective subdirectories within the top-level `examples/` directory (e.g., `examples/00_hello/miaow_hello`). A complete list of project-specific CMake flags is provided below:
+For convenience, we have also provided a build script `scripts/build.sh`. In either case, the library will be built in the `build` directory. Additionally, if the `BUILD_EXAMPLES` flag is set to `ON` (the default), the example programs will be placed directly in their respective subdirectories within the top-level `examples/` directory (e.g., `examples/00_hello/miaow_hello`). A complete list of project-specific CMake flags is provided below:
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -29,8 +29,7 @@ We describe below how to run the example programs, noting that in all cases, it 
 
 1. `examples/00_hello`: A basic hello world example using CAF, which can be run as `./miaow_hello`.
 
-2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the Community Surface Dynamics Modeling System (CSDMS). It can be run as `./miaow_heat config.txt` with the provided configuration file, and will produce the output file `bmiheatcxx.out`.
-
+2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat config.txt` with the provided configuration file, and will produce the output file `bmiheatcxx.out`.
 
 ## License 
-This code is released under the [MIT license](https://opensource.org/license/mit).
+This code ~~is~~ **will probably be** released under the [MIT license](https://opensource.org/license/mit).
