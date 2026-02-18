@@ -36,6 +36,11 @@
 *.exe
 *.out
 *.app
+examples/00_hello/miaow_hello
+examples/01_heat/miaow_heat
+examples/01_heat/bmiheatcxx.out
+examples/00_hello/build/
+examples/01_heat/build/
 
 # debug information files
 *.dwo

@@ -53,8 +53,6 @@ target_link_libraries(miaow
 option(BUILD_EXAMPLES "Build example programs" ON)
 
 if(BUILD_EXAMPLES)
-    add_executable(miaow_hello
-        examples/hello.cpp
-    )
-    target_link_libraries(miaow_hello PRIVATE miaow)
+    add_subdirectory(examples/00_hello)
+    add_subdirectory(examples/01_heat)
 endif()
