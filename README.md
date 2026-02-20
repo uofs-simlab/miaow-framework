@@ -27,7 +27,7 @@ For convenience, we have also provided a build script `scripts/build.sh`. In eit
 
 We describe below how to run the example programs, noting that in all cases, it is assumed that we begin within the respective `examples/<xx_example_name>` subdirectory. 
 
-1. `examples/00_hello`: A basic hello world example using CAF, which can be run as `./miaow_hello`.
+1. `examples/00_hello`: A basic orchestration example using CAF, which can be run as `./miaow_hello` (or `./miaow_hello config.txt`).
 
 2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat config.txt` with the provided configuration file, and will produce the output file `bmiheatcxx.out`.
 
