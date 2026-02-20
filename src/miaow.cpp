@@ -1,4 +1,5 @@
 #include <chrono>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -29,14 +30,22 @@ static void initialize_caf_once() {
     std::call_once(caf_init_flag, ensure_caf_initialized);
 }
 
+class DefaultSimulationUnit final : public SimulationUnit {
+public:
+    std::string run(const std::string& config_file) override {
+        // This config path is what a BMI-backed simulation unit would pass to Initialize().
+        return std::string("Hello from miaow! (config: ") + config_file + ")";
+    }
+};
+
 // Leaf worker actor in the orchestrator -> job -> simulation unit hierarchy.
 static caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
-                                           std::string config_file) {
+                                           std::string config_file,
+                                           std::shared_ptr<SimulationUnit> simulation_unit_object) {
     return {
         // `caf::get_atom` is the message type this actor handles.
-        [config_file](caf::get_atom) -> std::string {
-            // This config path is what a BMI-backed simulation unit would pass to Initialize().
-            return std::string("Hello from miaow! (config: ") + config_file + ")";
+        [config_file, simulation_unit_object](caf::get_atom) -> std::string {
+            return simulation_unit_object->run(config_file);
         }
     };
 }
@@ -44,8 +53,11 @@ static caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
 // Per-job supervisor that owns simulation unit actors.
 static caf::behavior job_actor(caf::event_based_actor* self,
                                std::string config_file,
-                               std::chrono::milliseconds request_timeout) {
-    caf::actor simulation_unit = self->spawn(simulation_unit_actor, std::move(config_file));
+                               std::chrono::milliseconds request_timeout,
+                               std::shared_ptr<SimulationUnit> simulation_unit_object) {
+    caf::actor simulation_unit = self->spawn(simulation_unit_actor,
+                                             std::move(config_file),
+                                             std::move(simulation_unit_object));
     return {
         /* When the job_actor receives a message of type get_atom, forward to the
         simulation unit and return the result (in this case a string) back to the caller
@@ -79,8 +91,12 @@ static caf::behavior job_actor(caf::event_based_actor* self,
 // Top-level coordinator that owns job actors.
 static caf::behavior orchestrator_actor(caf::event_based_actor* self,
                                         std::string config_file,
-                                        std::chrono::milliseconds request_timeout) {
-    caf::actor job = self->spawn(job_actor, std::move(config_file), request_timeout);
+                                        std::chrono::milliseconds request_timeout,
+                                        std::shared_ptr<SimulationUnit> simulation_unit_object) {
+    caf::actor job = self->spawn(job_actor,
+                                 std::move(config_file),
+                                 request_timeout,
+                                 std::move(simulation_unit_object));
     return {
         [=](caf::get_atom) -> caf::result<std::string> {
             /* Similarly to the job actor, the orchestrator uses the promise pattern to
@@ -106,18 +122,27 @@ static caf::behavior orchestrator_actor(caf::event_based_actor* self,
     };
 }
 
-runtime::runtime(runtime_options options)
-    : runtime_options_(std::move(options)) {
-    initialize_caf_once();
+Runtime::Runtime(RuntimeOptions options)
+    : Runtime(std::make_shared<DefaultSimulationUnit>(), std::move(options)) {
 }
 
-std::string runtime::run(const std::string& config_file) const {
+Runtime::Runtime(std::shared_ptr<SimulationUnit> simulation_unit, RuntimeOptions options)
+    : simulation_unit_(std::move(simulation_unit)),
+      runtime_options_(std::move(options)) {
+    initialize_caf_once();
+    if (!simulation_unit_) {
+        simulation_unit_ = std::make_shared<DefaultSimulationUnit>();
+    }
+}
+
+std::string Runtime::run_workflow(const std::string& config_file) const {
     caf::actor_system_config actor_system_config;
     // actor_system owns schedulers, mailboxes, and all local actors for this call.
     caf::actor_system system{actor_system_config};
     caf::actor orchestrator = system.spawn(orchestrator_actor,
                                            config_file,
-                                           runtime_options_.request_timeout);
+                                           runtime_options_.request_timeout,
+                                           simulation_unit_);
     caf::scoped_actor caller{system};
 
     std::string result;
@@ -134,11 +159,6 @@ std::string runtime::run(const std::string& config_file) const {
             });
 
     return result;
-}
-
-std::string miaow_run(const std::string& config_file) {
-    runtime default_runtime;
-    return default_runtime.run(config_file);
 }
 
 } // namespace miaow

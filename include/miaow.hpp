@@ -1,15 +1,27 @@
 #pragma once
 
 #include <chrono>
+#include <memory>
 #include <string>
 
 namespace miaow {
 
 /**
- * Runtime options for model-independent orchestration behaviour. Solver-specific options
- *  should be passed in the config file and not included here.
+ * Base class for model-specific simulation units.
+ * Runtime dispatch occurs through subclasses overriding run().
+ * This will eventually be extended to support more of BMI.
  */
-struct runtime_options {
+class SimulationUnit {
+public:
+    virtual ~SimulationUnit() = default;
+    virtual std::string run(const std::string& config_file) = 0;
+};
+
+/**
+ * Runtime options for model-independent orchestration behaviour. Solver-specific options
+ * should be passed in the config file and not included here.
+ */
+struct RuntimeOptions {
     std::chrono::milliseconds request_timeout{std::chrono::seconds(1)};
 };
 
@@ -19,26 +31,21 @@ struct runtime_options {
  * unit actor. The runtime is also designed to be thread-safe and can be used in 
  * multi-threaded applications.
  */
-class runtime {
+class Runtime {
 public:
-    explicit runtime(runtime_options options = {});
+    Runtime(std::shared_ptr<SimulationUnit> simulation_unit, RuntimeOptions options = {});
+    explicit Runtime(RuntimeOptions options = {});
 
     /**
      * Run orchestrator -> job -> simulation unit with a model config path.
      * The config path is intended to be passed (for example) to the simulation unit's 
      * initialization function, which may be BMI Initialize or similar.
      */
-    std::string run(const std::string& config_file) const;
+    std::string run_workflow(const std::string& config_file) const;
 
 private:
-    runtime_options runtime_options_;
+    std::shared_ptr<SimulationUnit> simulation_unit_;
+    RuntimeOptions runtime_options_;
 };
-
-/**
- * Convenience API that constructs a default runtime and runs once, passing the config file 
- * path to the orchestrator. The config file is intended to be passed (for example) to the 
- * simulation unit's initialization function, which may be BMI Initialize or similar.
- */
-std::string miaow_run(const std::string& config_file);
 
 } // namespace miaow
