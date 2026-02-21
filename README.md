@@ -6,6 +6,22 @@ Managing concurrent numerical simulation tasks with dynamic workloads and hetero
 
 MIAOW uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) and interfaces with the [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
 
+## Orchestration Structure
+
+MIAOW executes one workflow through the actor chain:
+
+```mermaid
+flowchart TD
+    A["Runtime::run_workflow(config_file)"] --> B["orchestrator_actor"]
+    B --> C["job_actor"]
+    C --> D["simulation_unit_actor"]
+    D --> E["SimulationUnit::execute(config_file)"]
+```
+
+`SimulationUnit` is a model-agnostic abstract type. Each model/solver implements `execute(config_file)` in a **derived class**.
+
+For BMI-based models, MIAOW provides a shared `BmiSimulationUnit` derived class. `BmiSimulationUnit` stores a pointer to an object whose concrete type is derived from `bmi::Bmi` and implements the BMI C++ interface ([BMI C++ specification](https://github.com/csdms/bmi-cxx)). This allows multiple BMI-wrapped models to reuse the same orchestration-facing simulation unit class while differing only in the underlying `bmi::Bmi` implementation.
+
 ## Build instructions
 
 The following commands can be used to build `libmiaow.a` with [CMake](https://cmake.org/):
