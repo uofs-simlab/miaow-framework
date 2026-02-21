@@ -1,6 +1,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -16,7 +17,6 @@
 #include <caf/json_value.hpp>
 
 #include "miaow.hpp"
-#include "third_party/bmi.hxx"
 
 namespace miaow {
 
@@ -30,14 +30,6 @@ static void initialize_caf_once() {
     std::call_once(caf_init_flag, ensure_caf_initialized);
 }
 
-class DefaultSimulationUnit final : public SimulationUnit {
-public:
-    std::string run(const std::string& config_file) override {
-        // This config path is what a BMI-backed simulation unit would pass to Initialize().
-        return std::string("Hello from miaow! (config: ") + config_file + ")";
-    }
-};
-
 // Leaf worker actor in the orchestrator -> job -> simulation unit hierarchy.
 static caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
                                            std::string config_file,
@@ -45,7 +37,7 @@ static caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
     return {
         // `caf::get_atom` is the message type this actor handles.
         [config_file, simulation_unit_object](caf::get_atom) -> std::string {
-            return simulation_unit_object->run(config_file);
+            return simulation_unit_object->execute(config_file);
         }
     };
 }
@@ -71,8 +63,7 @@ static caf::behavior job_actor(caf::event_based_actor* self,
             /* Forward a request to the simulation unit and deliver the response back to
             the caller (i.e. the orchestrator) when it arrives. Timeout after 1 second if
             the simulation unit doesn't reply in time. */
-            // `_v` is the singleton value of the atom type `caf::get_atom`.
-            self->mail(caf::get_atom_v)
+            self->mail(caf::get_atom_v) // `_v` is the singleton value of `caf::get_atom`.
                 .request(simulation_unit, request_timeout)
                 .then(
                     // Forward the successful reply from simulation_unit back to the caller.
@@ -122,16 +113,12 @@ static caf::behavior orchestrator_actor(caf::event_based_actor* self,
     };
 }
 
-Runtime::Runtime(RuntimeOptions options)
-    : Runtime(std::make_shared<DefaultSimulationUnit>(), std::move(options)) {
-}
-
 Runtime::Runtime(std::shared_ptr<SimulationUnit> simulation_unit, RuntimeOptions options)
     : simulation_unit_(std::move(simulation_unit)),
       runtime_options_(std::move(options)) {
     initialize_caf_once();
     if (!simulation_unit_) {
-        simulation_unit_ = std::make_shared<DefaultSimulationUnit>();
+        throw std::invalid_argument("Runtime requires a non-null SimulationUnit");
     }
 }
 

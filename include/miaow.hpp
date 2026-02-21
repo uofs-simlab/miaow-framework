@@ -8,13 +8,12 @@ namespace miaow {
 
 /**
  * Base class for model-specific simulation units.
- * Runtime dispatch occurs through subclasses overriding run().
- * This will eventually be extended to support more of BMI.
+ * Runtime dispatch occurs through subclasses overriding execute().
  */
 class SimulationUnit {
 public:
     virtual ~SimulationUnit() = default;
-    virtual std::string run(const std::string& config_file) = 0;
+    virtual std::string execute(const std::string& config_file) = 0;
 };
 
 /**
@@ -34,7 +33,6 @@ struct RuntimeOptions {
 class Runtime {
 public:
     Runtime(std::shared_ptr<SimulationUnit> simulation_unit, RuntimeOptions options = {});
-    explicit Runtime(RuntimeOptions options = {});
 
     /**
      * Run orchestrator -> job -> simulation unit with a model config path.

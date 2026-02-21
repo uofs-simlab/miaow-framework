@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+include(CTest)
+
 option(MIAOW_USE_SYSTEM_CAF "Prefer a system-installed CAF" ON)
 option(MIAOW_FETCH_CAF "Fetch CAF if not found" ON)
 set(MIAOW_CAF_VERSION "1.1.0" CACHE STRING "Minimum CAF version for system find_package")
@@ -33,6 +35,7 @@ endif()
 
 add_library(miaow STATIC
     src/miaow.cpp
+    src/miaow_bmi.cpp
 )
 
 target_include_directories(miaow

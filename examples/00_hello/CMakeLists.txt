@@ -12,7 +12,7 @@ if(NOT TARGET miaow)
 endif()
 
 add_executable(miaow_hello
-    hello.cpp
+    main.cpp
 )
 
 target_link_libraries(miaow_hello PRIVATE miaow)
@@ -25,3 +25,14 @@ set_target_properties(miaow_hello PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${miaow_hello_output_dir}"
     RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${miaow_hello_output_dir}"
 )
+
+if(BUILD_TESTING)
+    add_test(
+        NAME miaow_example_00_hello
+        COMMAND $<TARGET_FILE:miaow_hello> "${CMAKE_CURRENT_LIST_DIR}/config.txt"
+    )
+    set_tests_properties(miaow_example_00_hello PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        PASS_REGULAR_EXPRESSION "Hello from 00_hello"
+    )
+endif()

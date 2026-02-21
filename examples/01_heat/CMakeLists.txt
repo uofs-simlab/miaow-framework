@@ -12,7 +12,7 @@ if(NOT TARGET miaow)
 endif()
 
 add_executable(miaow_heat
-    bmi_main.cxx
+    main.cpp
     heat.cxx
     bmi_heat.cxx
 )
@@ -32,3 +32,14 @@ set_target_properties(miaow_heat PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${miaow_heat_output_dir}"
     RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${miaow_heat_output_dir}"
 )
+
+if(BUILD_TESTING)
+    add_test(
+        NAME miaow_example_01_heat
+        COMMAND $<TARGET_FILE:miaow_heat> "${CMAKE_CURRENT_LIST_DIR}/config.txt"
+    )
+    set_tests_properties(miaow_example_01_heat PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        PASS_REGULAR_EXPRESSION "BMI workflow complete"
+    )
+endif()
