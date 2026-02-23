@@ -12,8 +12,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Conan
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: ${{ runner.os }}-conan-${{ hashFiles('conanfile.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-conan-
+
+      - name: Install Conan
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "conan>=2,<3"
+
+      - name: Configure Conan Profile
+        run: conan profile detect --force
+
+      - name: Install Dependencies
+        run: conan install . --output-folder=build/conan --build=missing -s build_type=Release
+
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=ON
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_EXAMPLES=ON
+          -DCMAKE_TOOLCHAIN_FILE=build/conan/conan_toolchain.cmake
+          -DMIAOW_USE_SYSTEM_CAF=ON
+          -DMIAOW_FETCH_CAF=OFF
 
       - name: Build
         run: cmake --build build --parallel
