@@ -19,6 +19,9 @@ CAF_END_TYPE_ID_BLOCK(miaow_module)
 
 namespace miaow::internal {
 
+// Internal scheduler state for one job_actor instance
+// job_actor is the only owner/writer of this state
+// Worker actors never write to this directly and only communicate by message replies
 struct JobState {
     // Runtime options for this job, copied from the runtime config
     RuntimeOptions runtime_options_;
@@ -32,6 +35,7 @@ struct JobState {
     std::vector<std::string> task_results_;
 
     // Array of worker actors currently running, indexed by worker ID
+    // Handles may refer to local or remote actors
     std::vector<caf::actor> workers_;
 
     // Queue of worker IDs that are available to run a task
@@ -66,15 +70,14 @@ struct JobDiagnostics {
 
 void print_job_diagnostics(std::size_t job_id, const JobDiagnostics& diagnostics);
 
+// Internal actor entry points used across translation units
 caf::behavior simulation_unit_actor(caf::event_based_actor* self,
                                     SimulationUnitExecutor simulation_unit_executor);
-
 caf::behavior job_actor(caf::event_based_actor* self,
                         std::vector<std::string> config_files,
                         RuntimeOptions runtime_options,
                         SimulationUnitExecutor simulation_unit_executor,
                         std::shared_ptr<JobDiagnostics> diagnostics);
-
 caf::behavior orchestrator_actor(caf::event_based_actor* self,
                                  std::vector<std::string> config_files,
                                  RuntimeOptions runtime_options,

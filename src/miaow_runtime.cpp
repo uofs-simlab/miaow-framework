@@ -24,8 +24,7 @@ namespace miaow {
 
 static std::once_flag caf_init_flag;
 
-/* Initializes CAF global meta objects exactly once in a thread-safe way, so that
-multiple Runtime instances can be created across threads without race conditions */
+// Initializes CAF global meta objects exactly once in a thread-safe way
 static void initialize_caf_once() {
     std::call_once(caf_init_flag, [] {
         caf::init_global_meta_objects<caf::id_block::core_module>();
@@ -53,6 +52,8 @@ std::string Runtime::run_workflow(const std::string& config_file) const {
     return results.front();
 }
 
+// Top-level workflow execution method 
+// Spawns an orchestrator actor to run a single-job workflow and waits for the results
 std::vector<std::string> Runtime::run_workflow(const std::vector<std::string>& config_files) const {
     if (config_files.empty()) {
         return {};

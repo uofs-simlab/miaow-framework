@@ -63,7 +63,7 @@ We describe below how to run the example programs, noting that in all cases, it 
 
 1. `examples/00_hello`: A basic orchestration example using CAF, which can be run as `./miaow_hello` (or `./miaow_hello config.txt`).
 
-2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat config.txt` with the provided configuration file, and will produce the output file `bmiheatcxx.out`.
+2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat config.txt` (or with multiple config files) and prints per-task workflow results to stdout.
 
 ## License 
 This code ~~is~~ **will probably be** released under the [MIT license](https://opensource.org/license/mit).
