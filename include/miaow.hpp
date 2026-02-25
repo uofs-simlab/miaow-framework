@@ -19,7 +19,7 @@ namespace miaow {
  */
 class SimulationUnit {
 public:
-    /// @brief Virtual destructor for polymorphic cleanup.
+    /// @brief Virtual destructor for polymorphic cleanup
     virtual ~SimulationUnit() = default;
 
     /**
@@ -43,10 +43,10 @@ using SimulationUnitExecutor = std::function<std::string(const std::string& conf
  * Solver-specific options should be passed in the config file and not included here.
  */
 struct RuntimeOptions {
-    /// Timeout for any single request from orchestrator to a worker actor.
+    /// Timeout for any single request from orchestrator to a worker actor
     std::chrono::milliseconds request_timeout_;
 
-    /// Maximum number of worker actors that may run concurrently.
+    /// Maximum number of worker actors that may run concurrently
     std::size_t max_workers_;
 
     /**

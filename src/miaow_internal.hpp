@@ -1,0 +1,83 @@
+#pragma once
+
+#include <chrono>
+#include <cstddef>
+#include <memory>
+#include <optional>
+#include <queue>
+#include <string>
+#include <vector>
+
+#include <caf/all.hpp>
+
+#include "miaow.hpp"
+
+// Register MIAOW CAF type IDs for actor message serialization
+CAF_BEGIN_TYPE_ID_BLOCK(miaow_module, caf::first_custom_type_id)
+CAF_ADD_TYPE_ID(miaow_module, (std::vector<std::string>))
+CAF_END_TYPE_ID_BLOCK(miaow_module)
+
+namespace miaow::internal {
+
+struct JobState {
+    // Runtime options for this job, copied from the runtime config
+    RuntimeOptions runtime_options_;
+
+    // Config files for each task, passed in the initial message to job_actor
+    // Task IDs are the index of the config file in this vector
+    std::vector<std::string> task_config_files_;
+
+    // Results from each task, indexed by task ID
+    // Initially empty strings, filled in (not necessarily in order) as results arrive
+    std::vector<std::string> task_results_;
+
+    // Array of worker actors currently running, indexed by worker ID
+    std::vector<caf::actor> workers_;
+
+    // Queue of worker IDs that are available to run a task
+    std::queue<std::size_t> available_workers_;
+
+    // Task ID of the next task to dispatch into an available worker slot
+    std::size_t next_task_to_dispatch_{0};
+
+    // Number of tasks currently executing
+    std::size_t active_task_count_{0};
+
+    // Response promise for the job actor used to deliver the final results to orchestrator
+    std::optional<caf::typed_response_promise<std::vector<std::string>>> response_promise_;
+
+    // Wall-clock start time for the full job
+    std::chrono::steady_clock::time_point job_start_time_;
+
+    // Start times for each task, indexed by task ID
+    std::vector<std::chrono::steady_clock::time_point> task_start_times_;
+
+    // Durations for each task, indexed by task ID
+    std::vector<std::chrono::duration<double>> task_durations_s_;
+};
+
+struct JobDiagnostics {
+    // Total wall-clock runtime for the full job in seconds
+    std::chrono::duration<double> total_duration_s_{0.0};
+
+    // Wall-clock duration for each task, indexed by task ID
+    std::vector<std::chrono::duration<double>> task_durations_s_;
+};
+
+void print_job_diagnostics(std::size_t job_id, const JobDiagnostics& diagnostics);
+
+caf::behavior simulation_unit_actor(caf::event_based_actor* self,
+                                    SimulationUnitExecutor simulation_unit_executor);
+
+caf::behavior job_actor(caf::event_based_actor* self,
+                        std::vector<std::string> config_files,
+                        RuntimeOptions runtime_options,
+                        SimulationUnitExecutor simulation_unit_executor,
+                        std::shared_ptr<JobDiagnostics> diagnostics);
+
+caf::behavior orchestrator_actor(caf::event_based_actor* self,
+                                 std::vector<std::string> config_files,
+                                 RuntimeOptions runtime_options,
+                                 SimulationUnitExecutor simulation_unit_executor);
+
+} // namespace miaow::internal

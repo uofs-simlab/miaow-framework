@@ -8,6 +8,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 #include <chrono>
 
@@ -26,13 +27,15 @@ public:
      * @return A greeting message that includes the config file path.
      */
     std::string execute(const std::string& config_file) override {
+        // Simulate one second of work for each simulation unit task
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         return std::string("Hello from 00_hello (config: ") + config_file + ")";
     }
 };
 
 int main(int argc, char* argv[]) {
-    // If nothing else is provided, default to one local config.
-    // Otherwise, treat all command line arguments as independent config files.
+    // If nothing else is provided, default to one local config
+    // Otherwise, treat all command line arguments as independent config files
     std::vector<std::string> config_files;
     if (argc <= 1) {
         config_files.push_back("config.txt");
@@ -43,17 +46,17 @@ int main(int argc, char* argv[]) {
     }
 
     // Configure the runtime options for this example
-    miaow::RuntimeOptions runtime_options{std::chrono::seconds(1), // request timeout
+    miaow::RuntimeOptions runtime_options{std::chrono::seconds(5), // request timeout
                                           config_files.size()};    // max workers
 
     // Construct a runtime for a simulation unit of type HelloSimulationUnit
     miaow::Runtime runtime =
         miaow::make_runtime<HelloSimulationUnit>(runtime_options);
 
-    // Run one job that may contain one or many independent simulation units.
+    // Run one job that may contain one or many independent simulation units
     const std::vector<std::string> results = runtime.run_workflow(config_files);
 
-    // Print the results from each simulation unit. 
+    // Print the results from each simulation unit
     for (std::size_t index = 0; index < results.size(); ++index) {
         std::cout << "[" << index << "] " << results[index] << "\n";
     }

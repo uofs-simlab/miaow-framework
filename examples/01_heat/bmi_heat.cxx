@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "heat.hxx"
-#include <third_party/bmi.hxx>
+#include "third_party/bmi.hxx"
 #include "bmi_heat.hxx"
 
 

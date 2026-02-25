@@ -65,7 +65,9 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
 endif()
 
 add_library(miaow STATIC
-    src/miaow.cpp
+    src/miaow_actors.cpp
+    src/miaow_diagnostics.cpp
+    src/miaow_runtime.cpp
 )
 
 target_include_directories(miaow

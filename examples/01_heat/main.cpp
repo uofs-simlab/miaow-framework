@@ -6,21 +6,35 @@
  */
 
 #include <iostream>
+#include <chrono>
 #include <string>
+#include <vector>
 
 #include "bmi_heat.hxx"     // defines the BmiHeat class that implements the BMI interface
 #include "miaow.hpp"        // Core MIAOW runtime API
 #include "miaow_bmi.hpp"    // MIAOW API for running BMI models as simulation units
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cout << "Usage: miaow_heat config.txt\n";
-        return 1;
+    // If nothing else is provided, default to one local config
+    // Otherwise, treat all command line arguments as independent config files
+    std::vector<std::string> config_files;
+    if (argc <= 1) {
+        config_files.emplace_back("config.txt");
+    } else {
+        for (int index = 1; index < argc; ++index) {
+            config_files.emplace_back(argv[index]);
+        }
     }
 
-    miaow::RuntimeOptions runtime_options;
+    // Use a larger timeout to avoid false timeouts on heavier grids
+    miaow::RuntimeOptions runtime_options{std::chrono::seconds(30), config_files.size()};
     miaow::Runtime runtime =
         miaow::make_runtime<miaow::BmiSimulationUnit<BmiHeat>>(runtime_options);
-    std::cout << runtime.run_workflow(argv[1]) << "\n";
+
+    const std::vector<std::string> results = runtime.run_workflow(config_files);
+    for (std::size_t index = 0; index < results.size(); ++index) {
+        std::cout << "[" << index << "] " << results[index] << "\n";
+    }
+
     return 0;
 }

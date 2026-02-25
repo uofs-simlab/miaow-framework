@@ -29,7 +29,10 @@ set_target_properties(miaow_hello PROPERTIES
 if(BUILD_TESTING)
     add_test(
         NAME miaow_example_00_hello
-        COMMAND $<TARGET_FILE:miaow_hello> "${CMAKE_CURRENT_LIST_DIR}/config.txt"
+        COMMAND
+            $<TARGET_FILE:miaow_hello>
+            "${CMAKE_CURRENT_LIST_DIR}/config.txt"
+            "${CMAKE_CURRENT_LIST_DIR}/config.txt"
     )
     set_tests_properties(miaow_example_00_hello PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
