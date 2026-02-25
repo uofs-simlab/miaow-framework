@@ -8,15 +8,22 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
+#include <chrono>
 
 #include "miaow.hpp"
 
+/**
+ * @brief A simple simulation unit that returns a greeting message.
+ */
 class HelloSimulationUnit : public miaow::SimulationUnit {
 public:
     /**
-     * Override the execute method to return a greeting message. In a real simulation unit,
-     * this is where you would implement the logic to initialize and run your model, using
-     * the config file path as needed.
+     * @brief Override the execute method to return a greeting message. 
+     * In a real simulation unit, this is where you would implement the logic to initialize
+     * and run your model.
+     * @param config_file A string representing the path to the model configuration file. 
+     * @return A greeting message that includes the config file path.
      */
     std::string execute(const std::string& config_file) override {
         return std::string("Hello from 00_hello (config: ") + config_file + ")";
@@ -24,24 +31,31 @@ public:
 };
 
 int main(int argc, char* argv[]) {
-    // If nothing else provided, default to "config.txt" in the current directory.
-    // Otherwise, use the first command line argument as the config file path.
-    std::string config_file = "config.txt";
-    if (argc > 1) {
-        config_file = argv[1];
+    // If nothing else is provided, default to one local config.
+    // Otherwise, treat all command line arguments as independent config files.
+    std::vector<std::string> config_files;
+    if (argc <= 1) {
+        config_files.push_back("config.txt");
+    } else {
+        for (int index = 1; index < argc; ++index) {
+            config_files.emplace_back(argv[index]);
+        }
     }
 
-    // Example-specific simulation unit subtype dispatched through the Runtime API.
-    std::shared_ptr<miaow::SimulationUnit> simulation_unit =
-        std::make_shared<HelloSimulationUnit>();
+    // Configure the runtime options for this example
+    miaow::RuntimeOptions runtime_options{std::chrono::seconds(1), // request timeout
+                                          config_files.size()};    // max workers
 
-    // Set up runtime options if desired, or just use the defaults.
-    miaow::RuntimeOptions runtime_options;
+    // Construct a runtime for a simulation unit of type HelloSimulationUnit
+    miaow::Runtime runtime =
+        miaow::make_runtime<HelloSimulationUnit>(runtime_options);
 
-    // Construct a runtime using the desired simulation unit and runtime options
-    miaow::Runtime runtime(simulation_unit, runtime_options);
+    // Run one job that may contain one or many independent simulation units.
+    const std::vector<std::string> results = runtime.run_workflow(config_files);
 
-    // Run the workflow with the config file path, and print the result.
-    std::cout << runtime.run_workflow(config_file) << "\n";
+    // Print the results from each simulation unit. 
+    for (std::size_t index = 0; index < results.size(); ++index) {
+        std::cout << "[" << index << "] " << results[index] << "\n";
+    }
     return 0;
 }

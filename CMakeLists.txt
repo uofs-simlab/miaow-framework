@@ -66,7 +66,6 @@ endif()
 
 add_library(miaow STATIC
     src/miaow.cpp
-    src/miaow_bmi.cpp
 )
 
 target_include_directories(miaow

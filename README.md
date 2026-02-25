@@ -6,7 +6,7 @@ Managing concurrent numerical simulation tasks with dynamic workloads and hetero
 
 MIAOW uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) and interfaces with the [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
 
-## Orchestration Structure
+## Orchestration structure
 
 MIAOW executes one workflow through the actor chain:
 ```text
@@ -17,7 +17,16 @@ Runtime::run_workflow(config_file)
            -> SimulationUnit::execute(config_file)
 ```
 
-`SimulationUnit` is a model-agnostic abstract type. Each model/solver implements `execute(config_file)` in a derived class. For BMI-based models, MIAOW provides a shared `BmiSimulationUnit` derived class, which stores a pointer to an object whose concrete type is derived from `bmi::Bmi` and implements the interface defined by [BMI C++ specification](https://github.com/csdms/bmi-cxx). This allows multiple BMI-wrapped models to reuse the same orchestration-facing simulation unit class while differing only in the underlying `bmi::Bmi` implementation.
+`SimulationUnit` is a model-agnostic abstract type. Each model/solver implements `execute(config_file)` in a derived class. For BMI-based models, MIAOW provides a templated `BmiSimulationUnit<BmiModelType>` class, where `BmiModelType` derives from `bmi::Bmi` and implements the interface defined by [BMI C++ specification](https://github.com/csdms/bmi-cxx). This keeps orchestration-facing behavior shared while allowing different concrete BMI model types.
+
+## Task scheduling
+
+Within each `job_actor`, MIAOW uses a simple greedy scheduler to dispatch tasks to simulation units:
+
+- Create `simulation_unit_actor` workers (up to `max_workers` specified in runtime options)
+- Keep a queue of pending task config files.
+- Dispatch the next task as soon as any worker becomes available.
+- Continue until all tasks complete, then return results in input order.
 
 ## Build instructions
 

@@ -57,3 +57,7 @@ Makefile
 
 # Visual Studio Code settings
 .vscode/
+
+# Any directory starting with underscore
+_*/
+**/_*/
