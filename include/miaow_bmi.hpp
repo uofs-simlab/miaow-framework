@@ -7,7 +7,7 @@
 #include <type_traits>
 
 #include "miaow.hpp"
-#include "third_party/bmi.hxx"
+#include "third_party/bmi/bmi.hxx"
 
 namespace miaow {
 

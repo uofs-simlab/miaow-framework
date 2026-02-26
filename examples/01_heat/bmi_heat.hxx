@@ -5,7 +5,7 @@
 #include <iostream>
 #include <vector>
 
-#include <third_party/bmi.hxx>
+#include <third_party/bmi/bmi.hxx>
 #include "heat.hxx"
 
 

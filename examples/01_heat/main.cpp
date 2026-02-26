@@ -6,35 +6,30 @@
  */
 
 #include <iostream>
-#include <chrono>
 #include <string>
 #include <vector>
 
 #include "bmi_heat.hxx"     // defines the BmiHeat class that implements the BMI interface
 #include "miaow.hpp"        // Core MIAOW runtime API
 #include "miaow_bmi.hpp"    // MIAOW API for running BMI models as simulation units
+#include "miaow_interface.hpp" // CLI parser for example programs
 
 int main(int argc, char* argv[]) {
-    // Fill a vector with config file paths from command line arguments
+    // Initialize runtime options and config file list to be populated by CLI parser
+    miaow::RuntimeOptions runtime_options;
     std::vector<std::string> config_files;
-    for (int index = 1; index < argc; ++index) {
-        config_files.emplace_back(argv[index]);
-    }
 
-    // Validate config paths and fail on missing/invalid input
-    const std::string validation_error = miaow::validate_config_paths(config_files);
-    if (!validation_error.empty()) {
-        std::cerr << validation_error << "\n";
-        std::cerr << "Usage: miaow_heat <config_file_1> [<config_file_2> ...]\n";
+    // Parse and validate command-line arguments
+    const std::string input_error = miaow::parse_and_validate_workflow_cli_options(
+        argc, argv, runtime_options, config_files);
+    
+    // Print any error in input arguments and output usage instructions if failed
+    if (!input_error.empty()) {
+        std::cerr << input_error << "\n" << miaow::workflow_cli_usage("miaow_heat") << "\n";
         return 1;
     }
 
     // Create a MIAOW runtime with a BMI simulation unit that uses the BmiHeat model
-    miaow::RuntimeOptions runtime_options{
-        config_files.size(),          // max number of workers
-        std::chrono::seconds(30),     // task timeout limit
-        std::chrono::minutes(5)       // job timeout limit
-    };
     miaow::Runtime runtime =
         miaow::make_runtime<miaow::BmiSimulationUnit<BmiHeat>>(runtime_options);
 

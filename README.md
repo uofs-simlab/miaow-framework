@@ -77,9 +77,9 @@ ctest --test-dir build --output-on-failure
 
 We describe below how to run the example programs, noting that in all cases, it is assumed that we begin within the respective `examples/<xx_example_name>` subdirectory. 
 
-1. `examples/00_hello`: A basic orchestration example using CAF, which can be run as `./miaow_hello config.txt` (or with multiple config files).
+1. `examples/00_hello`: A basic orchestration example using CAF, which can be run as `./miaow_hello --config config.txt` (or with explicit runtime options, e.g. `./miaow_hello --config config.txt config.txt --max_workers 2 --task_request_timeout 5 --job_request_timeout 20`).
 
-2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat config_400x400.txt` (or with multiple config files such as `config_400x400.txt config_800x800.txt`) and prints per-task workflow results to `stdout`.
+2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat --config config_400x400.txt` (or with multiple config files such as `./miaow_heat --config config_400x400.txt config_800x800.txt --max_workers 2`) and prints per-task workflow results to `stdout`.
 
 ## License 
 This code ~~is~~ **will probably be** released under the [MIT license](https://opensource.org/license/mit).

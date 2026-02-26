@@ -13,6 +13,7 @@
 #include <chrono>
 
 #include "miaow.hpp" // Core MIAOW runtime API
+#include "miaow_interface.hpp" // CLI parser for example programs
 
 /**
  * @brief A simple simulation unit that returns a greeting message.
@@ -27,33 +28,29 @@ public:
      * @return A greeting message that includes the config file path.
      */
     std::string execute(const std::string& config_file) override {
-        // Simulate one second of work for each simulation unit task
+        // Do nothing; just wait one second and return a greeting message with file path
         std::this_thread::sleep_for(std::chrono::seconds(1));
         return std::string("Hello from 00_hello (config: ") + config_file + ")";
     }
 };
 
 int main(int argc, char* argv[]) {
-    // Fill a vector with config file paths from command line arguments
+   // Initialize runtime options and config file list to be populated by CLI parser
+    miaow::RuntimeOptions runtime_options;
     std::vector<std::string> config_files;
-    for (int index = 1; index < argc; ++index) {
-        config_files.emplace_back(argv[index]);
-    }
 
-    // Validate config paths and fail on missing/invalid input
-    const std::string validation_error = miaow::validate_config_paths(config_files);
-    if (!validation_error.empty()) {
-        std::cerr << validation_error << "\n";
-        std::cerr << "Usage: miaow_hello <config_file_1> [<config_file_2> ...]\n";
+    // Parse and validate command-line arguments
+    const std::string input_error = miaow::parse_and_validate_workflow_cli_options(
+        argc, argv, runtime_options, config_files);
+    
+    // Print any error in input arguments and output usage instructions if failed
+    if (!input_error.empty()) {
+        std::cerr << input_error << "\n" << miaow::workflow_cli_usage("miaow_hello") 
+                  << "\n";
         return 1;
     }
 
     // Construct a runtime for a simulation unit of type HelloSimulationUnit
-    miaow::RuntimeOptions runtime_options{
-        config_files.size(),       // max number of workers
-        std::chrono::seconds(5),   // task timeout limit
-        std::chrono::seconds(20)   // job timeout limit
-    };
     miaow::Runtime runtime = miaow::make_runtime<HelloSimulationUnit>(runtime_options);
 
     // Run one job that may contain one or many independent simulation units

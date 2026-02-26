@@ -31,8 +31,15 @@ if(BUILD_TESTING)
         NAME miaow_example_00_hello
         COMMAND
             $<TARGET_FILE:miaow_hello>
+            --config
             "${CMAKE_CURRENT_LIST_DIR}/config.txt"
             "${CMAKE_CURRENT_LIST_DIR}/config.txt"
+            --max_workers
+            2
+            --task_request_timeout
+            5
+            --job_request_timeout
+            20
     )
     set_tests_properties(miaow_example_00_hello PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"

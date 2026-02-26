@@ -60,7 +60,7 @@ struct RuntimeOptions {
      * @param job_timeout Timeout used for whole-job requests.
      */
     RuntimeOptions(std::size_t workers = 1,
-                   std::chrono::milliseconds task_timeout = std::chrono::seconds(1),
+                   std::chrono::milliseconds task_timeout = std::chrono::seconds(5),
                    std::chrono::milliseconds job_timeout = std::chrono::minutes(5))
         : max_workers_(workers == 0 ? 1 : workers),
           task_request_timeout_(task_timeout),
@@ -92,12 +92,14 @@ struct WorkflowResult {
 
 template <class Inspector>
 bool inspect(Inspector& inspector, JobDiagnostics& diagnostics) {
+    // Defines how CAF serializes/deserializes JobDiagnostics for actor messaging
     return inspector.apply(diagnostics.total_time_s) &&
            inspector.apply(diagnostics.task_times_s);
 }
 
 template <class Inspector>
 bool inspect(Inspector& inspector, WorkflowResult& workflow_result) {
+    // Defines how CAF serializes/deserializes WorkflowResult for actor messaging
     return inspector.apply(workflow_result.task_results) &&
            inspector.apply(workflow_result.diagnostics);
 }
@@ -105,14 +107,12 @@ bool inspect(Inspector& inspector, WorkflowResult& workflow_result) {
 /**
  * @brief Format diagnostics as a human-readable block
  */
-std::string format_diagnostics(const JobDiagnostics& diagnostics,
-                               std::size_t job_id = 0);
+std::string format_diagnostics(const JobDiagnostics& diagnostics, std::size_t job_id = 0);
 
 /**
  * @brief Print diagnostics to stdout
  */
-void print_diagnostics(const JobDiagnostics& diagnostics,
-                       std::size_t job_id = 0);
+void print_diagnostics(const JobDiagnostics& diagnostics, std::size_t job_id = 0);
 
 /**
  * @brief Actor runtime for orchestrating simulation tasks.
