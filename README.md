@@ -26,7 +26,7 @@ MIAOW employs a simple greedy algorithm for task scheduling. Each `job_actor` co
 - A task queue: represented by `next_task_to_dispatch_` which is incremented as tasks are dispatched to workers
 - A worker queue: `available_workers_`, which stores idle worker IDs that index the `workers_` vector of `simulation_unit_actor` handles
 
-Each dispatch step pops one idle worker ID from `available_workers_`, uses it to select a `simulation_unit_actor` from `workers_`, and assigns the next pending task from `next_task_to_dispatch_`. When that worker finishes, the worker ID is returned to `available_workers_`, and `job_actor` immediately dispatches the next pending task from `next_task_to_dispatch_` if one exists. A job finishes when all tasks have been dispatched and no tasks are still running.
+Each dispatch step pops one idle worker ID from `available_workers_`, uses it to select a `simulation_unit_actor` from `workers_`, and assigns the current pending task from `next_task_to_dispatch_`. When that worker finishes, the worker ID is returned to `available_workers_`, and `job_actor` immediately dispatches the next pending task from `next_task_to_dispatch_` if one exists. A job finishes when all tasks have been dispatched and no tasks are still running.
 
 ## Build instructions
 
