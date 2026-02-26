@@ -30,11 +30,12 @@ Each dispatch step pops one idle worker ID from `available_workers_`, uses it to
 
 ## Diagnostics
 
-`Runtime::run_workflow(...)` returns a `WorkflowResult` containing the simulation results (currently a placeholder vector of `std::string`) as well as diagnostics. They can be accessed as follows:
+`Runtime::run_workflow(...)` returns a `WorkflowResult` containing the simulation results (currently a placeholder vector of `std::string`) as well as timing diagnostics. Such diagnostics can be accessed as follows:
 
 ```cpp
 // Run the workflow
 miaow::WorkflowResult workflow_result = runtime.run_workflow(config_files);
+
 // Print the diagnostics
 miaow::print_diagnostics(workflow_result.diagnostics);
 ```
