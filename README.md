@@ -33,10 +33,10 @@ Each dispatch step pops one idle worker ID from `available_workers_`, uses it to
 After each workflow, MIAOW prints a diagnostics block to `stdout`:
 
 - `job_id`
-- `total_time` in seconds
+- `total_time` (in seconds)
 - `speedup`, computed as `sum(task_times) / total_time`
-- `task_times`, listed by task ID in seconds
-
+- `task_times` listed by task ID (in seconds)
+ 
 ## Build instructions
 
 The following commands can be used to build `libmiaow.a` with [CMake](https://cmake.org/):
