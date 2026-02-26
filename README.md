@@ -28,6 +28,15 @@ MIAOW employs a simple greedy algorithm for task scheduling. Each `job_actor` co
 
 Each dispatch step pops one idle worker ID from `available_workers_`, uses it to select a `simulation_unit_actor` from `workers_`, and assigns the current pending task from `next_task_to_dispatch_`. When that worker finishes, the worker ID is returned to `available_workers_`, and `job_actor` immediately dispatches the next pending task from `next_task_to_dispatch_` if one exists. A job finishes when all tasks have been dispatched and no tasks are still running.
 
+## Diagnostics
+
+After each workflow, MIAOW prints a diagnostics block to `stdout`:
+
+- `job_id`
+- `total_time` in seconds
+- `speedup`, computed as `sum(task_times) / total_time`
+- `task_times`, listed by task ID in seconds
+
 ## Build instructions
 
 The following commands can be used to build `libmiaow.a` with [CMake](https://cmake.org/):
