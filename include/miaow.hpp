@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <chrono>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <string>
@@ -43,23 +44,75 @@ using SimulationUnitExecutor = std::function<std::string(const std::string& conf
  * Solver-specific options should be passed in the config file and not included here.
  */
 struct RuntimeOptions {
-    /// Timeout for any single request from orchestrator to a worker actor
-    std::chrono::milliseconds request_timeout_;
-
     /// Maximum number of worker actors that may run concurrently
     std::size_t max_workers_;
 
+    /// Timeout for a single task request from job_actor to simulation_unit_actor
+    std::chrono::milliseconds task_request_timeout_;
+
+    /// Timeout for whole-job requests between runtime/orchestrator/job actors
+    std::chrono::milliseconds job_request_timeout_;
+
     /**
      * @brief Construct runtime options with safe defaults.
-     * @param timeout Request timeout used between actors.
      * @param workers Desired worker count. Values of zero are clamped to one.
+     * @param task_timeout Timeout used for one simulation task request.
+     * @param job_timeout Timeout used for whole-job requests.
      */
-    RuntimeOptions(std::chrono::milliseconds timeout = std::chrono::seconds(1),
-                   std::size_t workers = 1)
-        : request_timeout_(timeout),
-          max_workers_(workers == 0 ? 1 : workers) {
+    RuntimeOptions(std::size_t workers = 1,
+                   std::chrono::milliseconds task_timeout = std::chrono::seconds(1),
+                   std::chrono::milliseconds job_timeout = std::chrono::minutes(5))
+        : max_workers_(workers == 0 ? 1 : workers),
+          task_request_timeout_(task_timeout),
+          job_request_timeout_(job_timeout) {
     }
 };
+
+/**
+ * @brief Workflow timing diagnostics
+ */
+struct JobDiagnostics {
+    /// Total wall-clock runtime for the full job in seconds
+    double total_time_s{0.0};
+
+    /// Wall-clock duration for each task by task ID in seconds
+    std::vector<double> task_times_s;
+};
+
+/**
+ * @brief Result payload returned by Runtime::run_workflow
+ */
+struct WorkflowResult {
+    /// Result message for each task in input order
+    std::vector<std::string> task_results;
+
+    /// Timing diagnostics for this workflow run
+    JobDiagnostics diagnostics;
+};
+
+template <class Inspector>
+bool inspect(Inspector& inspector, JobDiagnostics& diagnostics) {
+    return inspector.apply(diagnostics.total_time_s) &&
+           inspector.apply(diagnostics.task_times_s);
+}
+
+template <class Inspector>
+bool inspect(Inspector& inspector, WorkflowResult& workflow_result) {
+    return inspector.apply(workflow_result.task_results) &&
+           inspector.apply(workflow_result.diagnostics);
+}
+
+/**
+ * @brief Format diagnostics as a human-readable block
+ */
+std::string format_diagnostics(const JobDiagnostics& diagnostics,
+                               std::size_t job_id = 0);
+
+/**
+ * @brief Print diagnostics to stdout
+ */
+void print_diagnostics(const JobDiagnostics& diagnostics,
+                       std::size_t job_id = 0);
 
 /**
  * @brief Actor runtime for orchestrating simulation tasks.
@@ -78,21 +131,39 @@ public:
     /**
      * @brief Run a single-task workflow.
      * @param config_file Task configuration path.
-     * @return Result message from the task execution.
+     * @return Workflow result with task messages and diagnostics.
      */
-    std::string run_workflow(const std::string& config_file) const;
+    WorkflowResult run_workflow(const std::string& config_file) const;
 
     /**
      * @brief Run a multi-task workflow.
      * @param config_files Task configuration paths.
-     * @return Per-task result messages in input order.
+     * @return Workflow result with task messages and diagnostics.
      */
-    std::vector<std::string> run_workflow(const std::vector<std::string>& config_files) const;
+    WorkflowResult run_workflow(const std::vector<std::string>& config_files) const;
 
 private:
     SimulationUnitExecutor simulation_unit_executor_;
     RuntimeOptions runtime_options_;
 };
+
+/**
+ * @brief Validate config file inputs before dispatching tasks
+ *
+ * Returns an empty string on success, or an error message on failure
+ */
+inline std::string validate_config_paths(const std::vector<std::string>& config_files) {
+    if (config_files.empty()) {
+        return "Error: at least one config file must be provided";
+    }
+    for (const std::string& config_file : config_files) {
+        std::ifstream input(config_file);
+        if (!input.good()) {
+            return std::string("Error: could not open config file: ") + config_file;
+        }
+    }
+    return "";
+}
 
 /**
  * @brief Create a runtime from a concrete SimulationUnit type.

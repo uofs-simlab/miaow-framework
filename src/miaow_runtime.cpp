@@ -43,20 +43,16 @@ Runtime::Runtime(SimulationUnitExecutor simulation_unit_executor, RuntimeOptions
 }
 
 // Running a single-task workflow is just a wrapper around the multi-task version
-std::string Runtime::run_workflow(const std::string& config_file) const {
-    const std::vector<std::string> results =
-        run_workflow(std::vector<std::string>{config_file});
-    if (results.empty()) {
-        return "No workflow results";
-    }
-    return results.front();
+WorkflowResult Runtime::run_workflow(const std::string& config_file) const {
+    return run_workflow(std::vector<std::string>{config_file});
 }
 
 // Top-level workflow execution method 
 // Spawns an orchestrator actor to run a single-job workflow and waits for the results
-std::vector<std::string> Runtime::run_workflow(const std::vector<std::string>& config_files) const {
+WorkflowResult Runtime::run_workflow(const std::vector<std::string>& config_files) const {
+    WorkflowResult workflow_result;
     if (config_files.empty()) {
-        return {};
+        return workflow_result;
     }
 
     // actor_system owns schedulers, mailboxes, and all local actors for this call
@@ -74,22 +70,24 @@ std::vector<std::string> Runtime::run_workflow(const std::vector<std::string>& c
                                            simulation_unit_executor_);
     caf::scoped_actor caller{system};
 
-    std::vector<std::string> task_results(config_files.size());
+    workflow_result.task_results.assign(config_files.size(), "");
+    workflow_result.diagnostics.task_times_s.assign(config_files.size(), 0.0);
+
     // Request the top-level actor and block in this scope until a reply or timeout
     caller->mail(caf::get_atom_v)
-        .request(orchestrator, runtime_options_.request_timeout_)
+        .request(orchestrator, runtime_options_.job_request_timeout_)
         .receive(
-            [&](const std::vector<std::string>& messages) {
-                task_results = messages;
+            [&](const WorkflowResult& result) {
+                workflow_result = result;
             },
             [&](const caf::error& err) {
                 // Handles an error from orchestrator, job, or simulation unit actor
-                std::fill(task_results.begin(),
-                          task_results.end(),
+                std::fill(workflow_result.task_results.begin(),
+                          workflow_result.task_results.end(),
                           std::string("CAF error: ") + caf::to_string(err));
             });
 
-    return task_results;
+    return workflow_result;
 }
 
 } // namespace miaow

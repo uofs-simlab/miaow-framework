@@ -8,7 +8,7 @@ MIAOW uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) and
 
 ## Orchestration structure
 
-MIAOW executes one workflow through the actor chain:
+MIAOW executes a workflow through the following actor chain, based on the architecture proposed by [Klenk and Spiteri (2024)](https://doi.org/10.1007/s10586-024-04318-5):
 ```text
 Runtime::run_workflow(config_file)
   -> orchestrator_actor
@@ -30,11 +30,18 @@ Each dispatch step pops one idle worker ID from `available_workers_`, uses it to
 
 ## Diagnostics
 
-After each workflow, MIAOW prints a diagnostics block to `stdout`:
+`Runtime::run_workflow(...)` returns a `WorkflowResult` that includes diagnostics. Print them with:
+
+```cpp
+miaow::WorkflowResult workflow_result = runtime.run_workflow(config_files);
+miaow::print_diagnostics(workflow_result.diagnostics);
+```
+
+The diagnostics block includes:
 
 - `job_id`
 - `total_time` (in seconds)
-- `speedup`, computed as `sum(task_times) / total_time`
+- `concurrency`, computed as `sum(task_times) / total_time`
 - `task_times` listed by task ID (in seconds)
  
 ## Build instructions
@@ -70,9 +77,9 @@ ctest --test-dir build --output-on-failure
 
 We describe below how to run the example programs, noting that in all cases, it is assumed that we begin within the respective `examples/<xx_example_name>` subdirectory. 
 
-1. `examples/00_hello`: A basic orchestration example using CAF, which can be run as `./miaow_hello` (or `./miaow_hello config.txt`).
+1. `examples/00_hello`: A basic orchestration example using CAF, which can be run as `./miaow_hello config.txt` (or with multiple config files).
 
-2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat config.txt` (or with multiple config files) and prints per-task workflow results to stdout.
+2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat config_400x400.txt` (or with multiple config files such as `config_400x400.txt config_800x800.txt`) and prints per-task workflow results to `stdout`.
 
 ## License 
 This code ~~is~~ **will probably be** released under the [MIT license](https://opensource.org/license/mit).

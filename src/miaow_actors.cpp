@@ -17,15 +17,13 @@ static std::string failure_message(std::size_t task_id, const std::string& reaso
 }
 
 static void dispatch_tasks(caf::event_based_actor* self,
-                           const std::shared_ptr<JobState>& state,
-                           const std::shared_ptr<JobDiagnostics>& diagnostics);
+                           const std::shared_ptr<JobState>& state);
 
 // Complete the job only when every task has been dispatched and every in-progress task has
 // reported back. Otherwise, return immediately and let dispatch/completion continue
 static void complete_job_if_all_tasks_finished(
     caf::event_based_actor* self,
-    const std::shared_ptr<JobState>& state,
-    const std::shared_ptr<JobDiagnostics>& diagnostics) {
+    const std::shared_ptr<JobState>& state) {
     // No caller is waiting for a final response yet
     if (!state->response_promise_.has_value()) {
         return;
@@ -38,18 +36,17 @@ static void complete_job_if_all_tasks_finished(
     }
 
     // All tasks are complete: deliver final results, clear the promise, and stop actor
-    diagnostics->task_durations_s_ = state->task_durations_s_;
-    diagnostics->total_duration_s_ = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - state->job_start_time_);
-
-    state->response_promise_->deliver(state->task_results_);
+    state->diagnostics_.task_times_s = state->task_times_s_;
+    state->diagnostics_.total_time_s = std::chrono::duration<double>(
+                                         std::chrono::steady_clock::now() - state->job_start_time_)
+                                         .count();
+    state->response_promise_->deliver(WorkflowResult{state->task_results_, state->diagnostics_});
     state->response_promise_.reset();
     self->quit();
 }
 
 static void complete_task(caf::event_based_actor* self,
                           const std::shared_ptr<JobState>& state,
-                          const std::shared_ptr<JobDiagnostics>& diagnostics,
                           std::size_t worker_id,
                           std::size_t task_id,
                           bool success,
@@ -63,8 +60,10 @@ static void complete_task(caf::event_based_actor* self,
     state->available_workers_.push(worker_id);
 
     // Record the wall-clock duration and success/failure message for this task ID
-    state->task_durations_s_.at(task_id) = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - state->task_start_times_.at(task_id));
+    state->task_times_s_.at(task_id) = std::chrono::duration<double>(
+                                          std::chrono::steady_clock::now() -
+                                          state->task_start_times_.at(task_id))
+                                          .count();
 
     // Record the success or failure message for this task ID in the task_results vector
     if (success) {
@@ -74,12 +73,11 @@ static void complete_task(caf::event_based_actor* self,
     }
 
     // Dispatch more tasks if there are any left, now that a worker slot is free
-    dispatch_tasks(self, state, diagnostics);
+    dispatch_tasks(self, state);
 }
 
 static void dispatch_tasks(caf::event_based_actor* self,
-                           const std::shared_ptr<JobState>& state,
-                           const std::shared_ptr<JobDiagnostics>& diagnostics) {
+                           const std::shared_ptr<JobState>& state) {
     // Dispatch tasks to available simulation_unit actors until we run out of either
     while (state->next_task_to_dispatch_ < state->task_config_files_.size() &&
            !state->available_workers_.empty()) {
@@ -101,17 +99,16 @@ static void dispatch_tasks(caf::event_based_actor* self,
         // The actor handles `caf::get_atom` and returns one result string
         // Makes call to caf::behavior simulation_unit_actor (see below)
         self->mail(caf::get_atom_v, state->task_config_files_.at(task_id))
-            .request(state->workers_.at(worker_id), state->runtime_options_.request_timeout_)
+            .request(state->workers_.at(worker_id), state->runtime_options_.task_request_timeout_)
             .then(
-                [self, state, diagnostics, worker_id, task_id](const std::string& message) {
+                [self, state, worker_id, task_id](const std::string& message) {
                     // If worker replies with message (not error), mark task as finished
-                    complete_task(self, state, diagnostics, worker_id, task_id, true, message);
+                    complete_task(self, state, worker_id, task_id, true, message);
                 },
-                [self, state, diagnostics, worker_id, task_id](const caf::error& err) {
+                [self, state, worker_id, task_id](const caf::error& err) {
                     // If worker replies with error or times out, mark task as failed
                     complete_task(self,
                                   state,
-                                  diagnostics,
                                   worker_id,
                                   task_id,
                                   false,
@@ -120,7 +117,7 @@ static void dispatch_tasks(caf::event_based_actor* self,
     }
 
     // Are all jobs finished? if so, deliver final results and stop the job actor
-    complete_job_if_all_tasks_finished(self, state, diagnostics);
+    complete_job_if_all_tasks_finished(self, state);
 }
 
 // Leaf simulation_unit actor in the orchestrator -> job -> simulation unit hierarchy
@@ -153,8 +150,7 @@ caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
 caf::behavior job_actor(caf::event_based_actor* self,
                         std::vector<std::string> config_files,
                         RuntimeOptions runtime_options,
-                        SimulationUnitExecutor simulation_unit_executor,
-                        std::shared_ptr<JobDiagnostics> diagnostics) {
+                        SimulationUnitExecutor simulation_unit_executor) {
     // JobState holds all mutable state variables for the job actor
     auto state = std::make_shared<JobState>();
     state->runtime_options_ = std::move(runtime_options);
@@ -164,8 +160,7 @@ caf::behavior job_actor(caf::event_based_actor* self,
     // Initialize results vector with empty strings for each task
     state->task_results_.assign(state->task_config_files_.size(), "");
     state->task_start_times_.assign(state->task_config_files_.size(), state->job_start_time_);
-    state->task_durations_s_.assign(state->task_config_files_.size(),
-                                    std::chrono::duration<double>::zero());
+    state->task_times_s_.assign(state->task_config_files_.size(), 0.0);
 
     // If max_workers > number of tasks, set worker_count to the number of tasks
     const std::size_t worker_count =
@@ -186,7 +181,7 @@ caf::behavior job_actor(caf::event_based_actor* self,
         /* When the job_actor receives a message of type get_atom, it starts dispatching
         pending tasks to available worker actors and returns all results back
         to the caller (i.e. the orchestrator) */
-        [=](caf::get_atom) -> caf::result<std::vector<std::string>> {
+        [=](caf::get_atom) -> caf::result<WorkflowResult> {
             if (state->response_promise_.has_value()) {
                 return caf::make_error(caf::sec::runtime_error,
                                        "job_actor only accepts one get_atom request");
@@ -194,11 +189,10 @@ caf::behavior job_actor(caf::event_based_actor* self,
 
             /* The promise lets the handler return immediately while the replies are
             delivered later, keeping job_actor responsive as workers run */
-            state->response_promise_ =
-                self->make_response_promise<std::vector<std::string>>();
+            state->response_promise_ = self->make_response_promise<WorkflowResult>();
 
             // Start dispatching tasks to available simulation_unit actors
-            dispatch_tasks(self, state, diagnostics);
+            dispatch_tasks(self, state);
 
             // Return to orchestrator when all tasks are complete (or errored)
             return *state->response_promise_;
@@ -210,31 +204,26 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
                                  std::vector<std::string> config_files,
                                  RuntimeOptions runtime_options,
                                  SimulationUnitExecutor simulation_unit_executor) {
-    constexpr std::size_t job_id = 0;
-    auto diagnostics = std::make_shared<JobDiagnostics>();
-
     // Spawn a job actor to run the workflow (only one job per workflow in this version)
     caf::actor job = self->spawn(job_actor,
                                  std::move(config_files),
                                  runtime_options,
-                                 std::move(simulation_unit_executor),
-                                 diagnostics);
+                                 std::move(simulation_unit_executor));
 
     return {
-        [=](caf::get_atom) -> caf::result<std::vector<std::string>> {
+        [=](caf::get_atom) -> caf::result<WorkflowResult> {
             /* Similarly to the job actor, the orchestrator uses the promise pattern to
             forward replies from job_actor */
-            caf::typed_response_promise<std::vector<std::string>> response_promise =
-                self->make_response_promise<std::vector<std::string>>();
+            caf::typed_response_promise<WorkflowResult> response_promise =
+                self->make_response_promise<WorkflowResult>();
 
             /* Forward a request to the job_actor and deliver the response back to the
             caller when it arrives. Note that get_atom is the message type; _v gets the
             singleton value of that type */
-            self->mail(caf::get_atom_v).request(job, runtime_options.request_timeout_)
+            self->mail(caf::get_atom_v).request(job, runtime_options.job_request_timeout_)
                 .then(
-                    [response_promise, diagnostics](const std::vector<std::string>& messages) mutable {
-                        response_promise.deliver(messages);
-                        print_job_diagnostics(job_id, *diagnostics);
+                    [response_promise](const WorkflowResult& workflow_result) mutable {
+                        response_promise.deliver(workflow_result);
                     },
                     [response_promise](const caf::error& err) mutable {
                         response_promise.deliver(err);

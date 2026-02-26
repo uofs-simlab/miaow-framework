@@ -15,26 +15,39 @@
 #include "miaow_bmi.hpp"    // MIAOW API for running BMI models as simulation units
 
 int main(int argc, char* argv[]) {
-    // If nothing else is provided, default to one local config
-    // Otherwise, treat all command line arguments as independent config files
+    // Fill a vector with config file paths from command line arguments
     std::vector<std::string> config_files;
-    if (argc <= 1) {
-        config_files.emplace_back("config.txt");
-    } else {
-        for (int index = 1; index < argc; ++index) {
-            config_files.emplace_back(argv[index]);
-        }
+    for (int index = 1; index < argc; ++index) {
+        config_files.emplace_back(argv[index]);
     }
 
-    // Use a larger timeout to avoid false timeouts on heavier grids
-    miaow::RuntimeOptions runtime_options{std::chrono::seconds(30), config_files.size()};
+    // Validate config paths and fail on missing/invalid input
+    const std::string validation_error = miaow::validate_config_paths(config_files);
+    if (!validation_error.empty()) {
+        std::cerr << validation_error << "\n";
+        std::cerr << "Usage: miaow_heat <config_file_1> [<config_file_2> ...]\n";
+        return 1;
+    }
+
+    // Create a MIAOW runtime with a BMI simulation unit that uses the BmiHeat model
+    miaow::RuntimeOptions runtime_options{
+        config_files.size(),          // max number of workers
+        std::chrono::seconds(30),     // task timeout limit
+        std::chrono::minutes(5)       // job timeout limit
+    };
     miaow::Runtime runtime =
         miaow::make_runtime<miaow::BmiSimulationUnit<BmiHeat>>(runtime_options);
 
-    const std::vector<std::string> results = runtime.run_workflow(config_files);
-    for (std::size_t index = 0; index < results.size(); ++index) {
-        std::cout << "[" << index << "] " << results[index] << "\n";
+    // Run one job that may contain one or many independent simulation units
+    const miaow::WorkflowResult workflow_result = runtime.run_workflow(config_files);
+    
+    // Print the results for each config file in order
+    for (std::size_t index = 0; index < workflow_result.task_results.size(); ++index) {
+        std::cout << "[" << index << "] " << workflow_result.task_results[index] << "\n";
     }
+
+    // Print timing diagnostics for this workflow run
+    miaow::print_diagnostics(workflow_result.diagnostics);
 
     return 0;
 }

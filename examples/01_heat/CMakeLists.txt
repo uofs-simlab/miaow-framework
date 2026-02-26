@@ -38,8 +38,8 @@ if(BUILD_TESTING)
         NAME miaow_example_01_heat
         COMMAND
             $<TARGET_FILE:miaow_heat>
-            "${CMAKE_CURRENT_LIST_DIR}/config.txt"
-            "${CMAKE_CURRENT_LIST_DIR}/config.txt"
+            "${CMAKE_CURRENT_LIST_DIR}/config_400x400.txt"
+            "${CMAKE_CURRENT_LIST_DIR}/config_800x800.txt"
     )
     set_tests_properties(miaow_example_01_heat PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"

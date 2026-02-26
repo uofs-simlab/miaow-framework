@@ -15,6 +15,8 @@
 // Register MIAOW CAF type IDs for actor message serialization
 CAF_BEGIN_TYPE_ID_BLOCK(miaow_module, caf::first_custom_type_id)
 CAF_ADD_TYPE_ID(miaow_module, (std::vector<std::string>))
+CAF_ADD_TYPE_ID(miaow_module, (miaow::JobDiagnostics))
+CAF_ADD_TYPE_ID(miaow_module, (miaow::WorkflowResult))
 CAF_END_TYPE_ID_BLOCK(miaow_module)
 
 namespace miaow::internal {
@@ -48,7 +50,7 @@ struct JobState {
     std::size_t active_task_count_{0};
 
     // Response promise for the job actor used to deliver the final results to orchestrator
-    std::optional<caf::typed_response_promise<std::vector<std::string>>> response_promise_;
+    std::optional<caf::typed_response_promise<WorkflowResult>> response_promise_;
 
     // Wall-clock start time for the full job
     std::chrono::steady_clock::time_point job_start_time_;
@@ -56,19 +58,12 @@ struct JobState {
     // Start times for each task, indexed by task ID
     std::vector<std::chrono::steady_clock::time_point> task_start_times_;
 
-    // Durations for each task, indexed by task ID
-    std::vector<std::chrono::duration<double>> task_durations_s_;
+    // Durations for each task, indexed by task ID in seconds
+    std::vector<double> task_times_s_;
+
+    // Diagnostics for this workflow run
+    JobDiagnostics diagnostics_;
 };
-
-struct JobDiagnostics {
-    // Total wall-clock runtime for the full job in seconds
-    std::chrono::duration<double> total_duration_s_{0.0};
-
-    // Wall-clock duration for each task, indexed by task ID
-    std::vector<std::chrono::duration<double>> task_durations_s_;
-};
-
-void print_job_diagnostics(std::size_t job_id, const JobDiagnostics& diagnostics);
 
 // Internal actor entry points used across translation units
 caf::behavior simulation_unit_actor(caf::event_based_actor* self,
@@ -76,8 +71,7 @@ caf::behavior simulation_unit_actor(caf::event_based_actor* self,
 caf::behavior job_actor(caf::event_based_actor* self,
                         std::vector<std::string> config_files,
                         RuntimeOptions runtime_options,
-                        SimulationUnitExecutor simulation_unit_executor,
-                        std::shared_ptr<JobDiagnostics> diagnostics);
+                        SimulationUnitExecutor simulation_unit_executor);
 caf::behavior orchestrator_actor(caf::event_based_actor* self,
                                  std::vector<std::string> config_files,
                                  RuntimeOptions runtime_options,

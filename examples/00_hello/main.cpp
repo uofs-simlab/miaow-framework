@@ -12,7 +12,7 @@
 #include <vector>
 #include <chrono>
 
-#include "miaow.hpp"
+#include "miaow.hpp" // Core MIAOW runtime API
 
 /**
  * @brief A simple simulation unit that returns a greeting message.
@@ -34,31 +34,38 @@ public:
 };
 
 int main(int argc, char* argv[]) {
-    // If nothing else is provided, default to one local config
-    // Otherwise, treat all command line arguments as independent config files
+    // Fill a vector with config file paths from command line arguments
     std::vector<std::string> config_files;
-    if (argc <= 1) {
-        config_files.push_back("config.txt");
-    } else {
-        for (int index = 1; index < argc; ++index) {
-            config_files.emplace_back(argv[index]);
-        }
+    for (int index = 1; index < argc; ++index) {
+        config_files.emplace_back(argv[index]);
     }
 
-    // Configure the runtime options for this example
-    miaow::RuntimeOptions runtime_options{std::chrono::seconds(5), // request timeout
-                                          config_files.size()};    // max workers
+    // Validate config paths and fail on missing/invalid input
+    const std::string validation_error = miaow::validate_config_paths(config_files);
+    if (!validation_error.empty()) {
+        std::cerr << validation_error << "\n";
+        std::cerr << "Usage: miaow_hello <config_file_1> [<config_file_2> ...]\n";
+        return 1;
+    }
 
     // Construct a runtime for a simulation unit of type HelloSimulationUnit
-    miaow::Runtime runtime =
-        miaow::make_runtime<HelloSimulationUnit>(runtime_options);
+    miaow::RuntimeOptions runtime_options{
+        config_files.size(),       // max number of workers
+        std::chrono::seconds(5),   // task timeout limit
+        std::chrono::seconds(20)   // job timeout limit
+    };
+    miaow::Runtime runtime = miaow::make_runtime<HelloSimulationUnit>(runtime_options);
 
     // Run one job that may contain one or many independent simulation units
-    const std::vector<std::string> results = runtime.run_workflow(config_files);
+    const miaow::WorkflowResult workflow_result = runtime.run_workflow(config_files);
 
-    // Print the results from each simulation unit
-    for (std::size_t index = 0; index < results.size(); ++index) {
-        std::cout << "[" << index << "] " << results[index] << "\n";
+    // Print the results from each config file in order
+    for (std::size_t index = 0; index < workflow_result.task_results.size(); ++index) {
+        std::cout << "[" << index << "] " << workflow_result.task_results[index] << "\n";
     }
+
+    // Print timing diagnostics for this workflow run
+    miaow::print_diagnostics(workflow_result.diagnostics);
+
     return 0;
 }
