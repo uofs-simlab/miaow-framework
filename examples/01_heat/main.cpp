@@ -33,8 +33,15 @@ int main(int argc, char* argv[]) {
     miaow::Runtime runtime =
         miaow::make_runtime<miaow::BmiSimulationUnit<BmiHeat>>(runtime_options);
 
+    // Create one task per config file
+    std::vector<miaow::Task> tasks;
+    tasks.reserve(config_files.size());
+    for (const std::string& config_file : config_files) {
+        tasks.emplace_back(config_file);
+    }
+
     // Run one job that may contain one or many independent simulation units
-    const miaow::WorkflowResult workflow_result = runtime.run_workflow(config_files);
+    const miaow::WorkflowResult workflow_result = runtime.run_workflow(tasks);
     
     // Print the results for each config file in order
     for (std::size_t index = 0; index < workflow_result.task_results.size(); ++index) {

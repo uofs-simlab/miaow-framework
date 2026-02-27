@@ -30,7 +30,7 @@ static void complete_job_if_all_tasks_finished(
     }
 
     // There is still undispatched work or at least one running task
-    if (state->next_task_to_dispatch_ < state->task_config_files_.size() ||
+    if (state->next_task_to_dispatch_ < state->tasks_.size() ||
         state->active_task_count_ != 0) {
         return;
     }
@@ -79,7 +79,7 @@ static void complete_task(caf::event_based_actor* self,
 static void dispatch_tasks(caf::event_based_actor* self,
                            const std::shared_ptr<JobState>& state) {
     // Dispatch tasks to available simulation_unit actors until we run out of either
-    while (state->next_task_to_dispatch_ < state->task_config_files_.size() &&
+    while (state->next_task_to_dispatch_ < state->tasks_.size() &&
            !state->available_workers_.empty()) {
         // Update next task to dispatch
         const std::size_t task_id = state->next_task_to_dispatch_;
@@ -98,7 +98,7 @@ static void dispatch_tasks(caf::event_based_actor* self,
         // Forward a request to one simulation_unit actor for this task_id
         // The actor handles `caf::get_atom` and returns one result string
         // Makes call to caf::behavior simulation_unit_actor (see below)
-        self->mail(caf::get_atom_v, state->task_config_files_.at(task_id))
+        self->mail(caf::get_atom_v, state->tasks_.at(task_id))
             .request(state->workers_.at(worker_id), state->runtime_options_.task_request_timeout_)
             .then(
                 [self, state, worker_id, task_id](const std::string& message) {
@@ -121,13 +121,13 @@ static void dispatch_tasks(caf::event_based_actor* self,
 }
 
 // Leaf simulation_unit actor in the orchestrator -> job -> simulation unit hierarchy
-// These are used as workers by the job actor, which forwards workflow config files to them
+// These are used as workers by the job actor, which forwards workflow tasks to them
 caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
                                     SimulationUnitExecutor simulation_unit_executor) {
     return {
         [simulation_unit_executor = std::move(simulation_unit_executor)](
             caf::get_atom,
-            const std::string& config_file) -> caf::result<std::string> {
+            const Task& task) -> caf::result<std::string> {
             // Error if the simulation_unit_executor is not set for some reason
             if (!simulation_unit_executor) {
                 return caf::make_error(caf::sec::runtime_error, "SimulationUnitExecutor is null");
@@ -135,7 +135,7 @@ caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
 
             // If valid simulation unit, execute its behaviour and return the result
             try {
-                return simulation_unit_executor(config_file);
+                return simulation_unit_executor(task);
             } catch (const std::exception& exception) {
                 return caf::make_error(caf::sec::runtime_error, exception.what());
             } catch (...) {
@@ -148,24 +148,23 @@ caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
 
 // Per-job supervisor that owns simulation_unit actors
 caf::behavior job_actor(caf::event_based_actor* self,
-                        std::vector<std::string> config_files,
+                        std::vector<Task> tasks,
                         RuntimeOptions runtime_options,
                         SimulationUnitExecutor simulation_unit_executor) {
     // JobState holds all mutable state variables for the job actor
     auto state = std::make_shared<JobState>();
     state->runtime_options_ = std::move(runtime_options);
-    state->task_config_files_ = std::move(config_files);
+    state->tasks_ = std::move(tasks);
     state->job_start_time_ = std::chrono::steady_clock::now();
 
     // Initialize results vector with empty strings for each task
-    state->task_results_.assign(state->task_config_files_.size(), "");
-    state->task_start_times_.assign(state->task_config_files_.size(), state->job_start_time_);
-    state->task_times_s_.assign(state->task_config_files_.size(), 0.0);
+    state->task_results_.assign(state->tasks_.size(), "");
+    state->task_start_times_.assign(state->tasks_.size(), state->job_start_time_);
+    state->task_times_s_.assign(state->tasks_.size(), 0.0);
 
     // If max_workers > number of tasks, set worker_count to the number of tasks
     const std::size_t worker_count =
-        std::min<std::size_t>(state->runtime_options_.max_workers_,
-                              state->task_config_files_.size());
+        std::min<std::size_t>(state->runtime_options_.max_workers_, state->tasks_.size());
 
     // Spawn worker actors and add their IDs to the available_workers queue
     state->workers_.reserve(worker_count);
@@ -201,12 +200,12 @@ caf::behavior job_actor(caf::event_based_actor* self,
 }
 
 caf::behavior orchestrator_actor(caf::event_based_actor* self,
-                                 std::vector<std::string> config_files,
+                                 std::vector<Task> tasks,
                                  RuntimeOptions runtime_options,
                                  SimulationUnitExecutor simulation_unit_executor) {
     // Spawn a job actor to run the workflow (only one job per workflow in this version)
     caf::actor job = self->spawn(job_actor,
-                                 std::move(config_files),
+                                 std::move(tasks),
                                  runtime_options,
                                  std::move(simulation_unit_executor));
 

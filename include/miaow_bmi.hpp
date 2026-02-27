@@ -26,10 +26,18 @@ public:
 
     /**
      * @brief Execute one BMI workflow task.
-     * @param config_file Path passed to BMI Initialize.
+     * @param task Task arguments where args[0] is the BMI config path.
      * @return Success or error message for this execution.
      */
-    std::string execute(const std::string& config_file) override {
+    std::string execute(const Task& task) override {
+        if (task.args.empty()) {
+            return "BMI error: missing config path in task specification";
+        }
+        const auto* config_file = caf::get_if<std::string>(&task.args.front());
+        if (!config_file) {
+            return "BMI error: first task argument must be a config path string";
+        }
+
         BmiModelType bmi_model;
 
         bool model_initialized = false;
@@ -37,7 +45,7 @@ public:
 
         try {
             // Initialize a fresh BMI model instance for this workflow task
-            bmi_model.Initialize(config_file);
+            bmi_model.Initialize(*config_file);
             model_initialized = true;
 
             // Advance the model with Update until it reaches its declared end time

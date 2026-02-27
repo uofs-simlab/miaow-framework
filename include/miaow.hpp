@@ -11,7 +11,45 @@
 #include <utility>
 #include <vector>
 
+#include <caf/config_value.hpp>
+
 namespace miaow {
+
+/**
+ * @brief Generic task input specification.
+ *
+ * Arguments are positional and interpreted by the concrete SimulationUnit.
+ */
+struct Task {
+    // Generic arguments for this task to pass into SimulationUnit::execute(args)
+    std::vector<caf::config_value> args;
+
+    Task() = default;
+
+    /**
+     * @brief Construct a Task from a vector of config values.
+     * @param task_args Positional arguments for this task.
+     */
+    explicit Task(std::vector<caf::config_value> task_args)
+        : args(std::move(task_args)) {
+    }
+
+    /**
+     * @brief Construct a Task from a single config value.
+     * @param arg Single config value for this task.
+     */
+    explicit Task(caf::config_value arg)
+        : args{std::move(arg)} {
+    }
+
+    /**
+     * @brief Construct a Task from a single string argument.
+     * @param arg Single string argument for this task.
+     */
+    explicit Task(std::string arg)
+        : args{caf::config_value{std::move(arg)}} {
+    }
+};
 
 /**
  * @brief Base class for model-specific simulation units.
@@ -25,23 +63,23 @@ public:
 
     /**
      * @brief Execute the simulation unit for a single task.
-     * @param config_file Path to task configuration input.
+     * @param task Generic task arguments.
      * @return Result message for this execution.
      */
-    virtual std::string execute(const std::string& config_file) = 0;
+    virtual std::string execute(const Task& task) = 0;
 };
 
 /**
  * @brief Callable behavior used by each simulation_unit_actor.
  *
- * The executor receives a task config file and returns a result string.
+ * The executor receives generic task arguments and returns a result string.
  */
-using SimulationUnitExecutor = std::function<std::string(const std::string& config_file)>;
+using SimulationUnitExecutor = std::function<std::string(const Task& task)>;
 
 /**
  * @brief Runtime options for model-independent orchestration behavior.
  *
- * Solver-specific options should be passed in the config file and not included here.
+ * Solver-specific options should be passed in task arguments and not included here.
  */
 struct RuntimeOptions {
     /// Maximum number of worker actors that may run concurrently
@@ -91,6 +129,12 @@ struct WorkflowResult {
 };
 
 template <class Inspector>
+bool inspect(Inspector& inspector, Task& task) {
+    // Defines how CAF serializes/deserializes Task for actor messaging
+    return inspector.apply(task.args);
+}
+
+template <class Inspector>
 bool inspect(Inspector& inspector, JobDiagnostics& diagnostics) {
     // Defines how CAF serializes/deserializes JobDiagnostics for actor messaging
     return inspector.apply(diagnostics.total_time_s) &&
@@ -130,17 +174,17 @@ public:
 
     /**
      * @brief Run a single-task workflow.
-     * @param config_file Task configuration path.
+     * @param task Generic task arguments.
      * @return Workflow result with task messages and diagnostics.
      */
-    WorkflowResult run_workflow(const std::string& config_file) const;
+    WorkflowResult run_workflow(const Task& task) const;
 
     /**
      * @brief Run a multi-task workflow.
-     * @param config_files Task configuration paths.
+     * @param tasks Generic task arguments.
      * @return Workflow result with task messages and diagnostics.
      */
-    WorkflowResult run_workflow(const std::vector<std::string>& config_files) const;
+    WorkflowResult run_workflow(const std::vector<Task>& tasks) const;
 
 private:
     SimulationUnitExecutor simulation_unit_executor_;
@@ -148,7 +192,7 @@ private:
 };
 
 /**
- * @brief Validate config file inputs before dispatching tasks
+ * @brief Validate config path inputs for config-based helpers
  *
  * Returns an empty string on success, or an error message on failure
  */
@@ -186,7 +230,7 @@ Runtime make_runtime(RuntimeOptions options, ConstructorArgs... constructor_args
 
     SimulationUnitExecutor simulation_unit_executor =
         [stored_constructor_args = std::move(stored_constructor_args)](
-            const std::string& config_file) -> std::string {
+            const Task& task) -> std::string {
             std::unique_ptr<SimulationUnit> simulation_unit = std::apply(
                 [](const auto&... args) -> std::unique_ptr<SimulationUnit> {
                     return std::make_unique<SimulationUnitType>(args...);
@@ -195,7 +239,7 @@ Runtime make_runtime(RuntimeOptions options, ConstructorArgs... constructor_args
             if (!simulation_unit) {
                 return "SimulationUnit error: failed to create simulation unit";
             }
-            return simulation_unit->execute(config_file);
+            return simulation_unit->execute(task);
         };
 
     return Runtime(std::move(simulation_unit_executor), std::move(options));

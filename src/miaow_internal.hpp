@@ -14,7 +14,9 @@
 
 // Register MIAOW CAF type IDs for actor message serialization
 CAF_BEGIN_TYPE_ID_BLOCK(miaow_module, caf::first_custom_type_id)
+CAF_ADD_TYPE_ID(miaow_module, (miaow::Task))
 CAF_ADD_TYPE_ID(miaow_module, (std::vector<std::string>))
+CAF_ADD_TYPE_ID(miaow_module, (std::vector<miaow::Task>))
 CAF_ADD_TYPE_ID(miaow_module, (miaow::JobDiagnostics))
 CAF_ADD_TYPE_ID(miaow_module, (miaow::WorkflowResult))
 CAF_END_TYPE_ID_BLOCK(miaow_module)
@@ -28,9 +30,9 @@ struct JobState {
     // Runtime options for this job, copied from the runtime config
     RuntimeOptions runtime_options_;
 
-    // Config files for each task, passed in the initial message to job_actor
-    // Task IDs are the index of the config file in this vector
-    std::vector<std::string> task_config_files_;
+    // Task payloads, passed in the initial message to job_actor
+    // Task IDs are the index of the task in this vector
+    std::vector<Task> tasks_;
 
     // Results from each task, indexed by task ID
     // Initially empty strings, filled in (not necessarily in order) as results arrive
@@ -69,11 +71,11 @@ struct JobState {
 caf::behavior simulation_unit_actor(caf::event_based_actor* self,
                                     SimulationUnitExecutor simulation_unit_executor);
 caf::behavior job_actor(caf::event_based_actor* self,
-                        std::vector<std::string> config_files,
+                        std::vector<Task> tasks,
                         RuntimeOptions runtime_options,
                         SimulationUnitExecutor simulation_unit_executor);
 caf::behavior orchestrator_actor(caf::event_based_actor* self,
-                                 std::vector<std::string> config_files,
+                                 std::vector<Task> tasks,
                                  RuntimeOptions runtime_options,
                                  SimulationUnitExecutor simulation_unit_executor);
 

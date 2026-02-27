@@ -10,14 +10,14 @@ MIAOW uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) and
 
 MIAOW executes a workflow through the following actor chain, based on the architecture proposed by [Klenk and Spiteri (2024)](https://doi.org/10.1007/s10586-024-04318-5):
 ```text
-Runtime::run_workflow(config_file)
+Runtime::run_workflow(task)
   -> orchestrator_actor
      -> job_actor
         -> simulation_unit_actor
-           -> SimulationUnit::execute(config_file)
+           -> SimulationUnit::execute(task)
 ```
 
-`SimulationUnit` is a model-agnostic abstract type. Each model/solver implements `execute(config_file)` in a derived class. For BMI-based models, MIAOW provides a templated `BmiSimulationUnit<BmiModelType>` class, where `BmiModelType` derives from `bmi::Bmi` and implements the interface defined by [BMI C++ specification](https://github.com/csdms/bmi-cxx). This keeps orchestration-facing behavior shared while allowing different concrete BMI model types.
+`SimulationUnit` is a model-agnostic abstract type. Each model/solver implements `execute(task)` in a derived class. For BMI-based models, MIAOW provides a templated `BmiSimulationUnit<BmiModelType>` class, where `BmiModelType` derives from `bmi::Bmi` and implements the interface defined by [BMI C++ specification](https://github.com/csdms/bmi-cxx). This keeps orchestration-facing behavior shared while allowing different concrete BMI model types.
 
 ## Task scheduling
 
@@ -34,7 +34,7 @@ Each dispatch step pops one idle worker ID from `available_workers_`, uses it to
 
 ```cpp
 // Run the workflow
-miaow::WorkflowResult workflow_result = runtime.run_workflow(config_files);
+miaow::WorkflowResult workflow_result = runtime.run_workflow(tasks);
 
 // Print the diagnostics
 miaow::print_diagnostics(workflow_result.diagnostics);
@@ -80,7 +80,7 @@ ctest --test-dir build --output-on-failure
 
 We describe below how to run the example programs, noting that in all cases, it is assumed that we begin within the respective `examples/<xx_example_name>` subdirectory. 
 
-1. `examples/00_hello`: A basic orchestration example using CAF, which can be run as `./miaow_hello --config config.txt` (or with explicit runtime options, e.g. `./miaow_hello --config config.txt config.txt --max_workers 2 --task_request_timeout 5 --job_request_timeout 20`).
+1. `examples/00_hello`: A basic orchestration example using CAF that prints a cute ASCII cat and can be run simply as `./miaow_hello`.
 
 2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat --config config_400x400.txt` (or with multiple config files such as `./miaow_heat --config config_400x400.txt config_800x800.txt --max_workers 2`) and prints per-task workflow results to `stdout`.
 

@@ -43,15 +43,15 @@ Runtime::Runtime(SimulationUnitExecutor simulation_unit_executor, RuntimeOptions
 }
 
 // Running a single-task workflow is just a wrapper around the multi-task version
-WorkflowResult Runtime::run_workflow(const std::string& config_file) const {
-    return run_workflow(std::vector<std::string>{config_file});
+WorkflowResult Runtime::run_workflow(const Task& task) const {
+    return run_workflow(std::vector<Task>{task});
 }
 
 // Top-level workflow execution method 
 // Spawns an orchestrator actor to run a single-job workflow and waits for the results
-WorkflowResult Runtime::run_workflow(const std::vector<std::string>& config_files) const {
+WorkflowResult Runtime::run_workflow(const std::vector<Task>& tasks) const {
     WorkflowResult workflow_result;
-    if (config_files.empty()) {
+    if (tasks.empty()) {
         return workflow_result;
     }
 
@@ -60,18 +60,18 @@ WorkflowResult Runtime::run_workflow(const std::vector<std::string>& config_file
     caf::actor_system system{actor_system_config};
 
     /* Create the top-level orchestrator actor for this workflow, which creates a job
-    actor, which creates worker actors that run simulation units. The workflow config files
-    and runtime options are passed to all actors in the hierarchy so they can be used for
+    actor, which creates worker actors that run simulation units. The workflow tasks and
+    runtime options are passed to all actors in the hierarchy so they can be used for
     dispatching work and configuring timeouts. The orchestrator forwards the final results
     back to this function, which returns them to the caller */
     caf::actor orchestrator = system.spawn(internal::orchestrator_actor,
-                                           config_files,
+                                           tasks,
                                            runtime_options_,
                                            simulation_unit_executor_);
     caf::scoped_actor caller{system};
 
-    workflow_result.task_results.assign(config_files.size(), "");
-    workflow_result.diagnostics.task_times_s.assign(config_files.size(), 0.0);
+    workflow_result.task_results.assign(tasks.size(), "");
+    workflow_result.diagnostics.task_times_s.assign(tasks.size(), 0.0);
 
     // Request the top-level actor and block in this scope until a reply or timeout
     caller->mail(caf::get_atom_v)
