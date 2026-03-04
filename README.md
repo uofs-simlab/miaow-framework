@@ -1,6 +1,6 @@
 # MIAOW: Model-Independent Actor Orchestration Workflows for Scientific Computing
 
-[![Build And Test](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml)
+[![CI](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml)
 
 Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
 
@@ -8,14 +8,30 @@ MIAOW uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) and
 
 ## Orchestration structure
 
-MIAOW executes a workflow through the following actor chain, based on the architecture proposed by [Klenk and Spiteri (2024)](https://doi.org/10.1007/s10586-024-04318-5):
+MIAOW executes a job through the following request/result flow, based on the architecture proposed by [Klenk and Spiteri (2024)](https://doi.org/10.1007/s10586-024-04318-5):
+
 ```text
-Runtime::run_workflow(task)
-  -> orchestrator_actor
-     -> job_actor
-        -> simulation_unit_actor
-           -> SimulationUnit::execute(task)
+Actor hierarchy (ownership/lifetime):
+  Runtime (shared for process lifetime)
+  └─ orchestrator_actor (shared, one per Runtime)
+     └─ job_actor (one per submitted job)
+        └─ simulation_unit_actor (many per job, up to max_workers)
+
+Request flow:
+  caller -> Runtime::submit_job(tasks)
+  Runtime -> pending_jobs_ : store (job_id -> promise)
+  Runtime -> orchestrator_actor : (job_id, tasks)
+  orchestrator_actor -> job_actor : start job
+  job_actor -> simulation_unit_actor workers : Task(s)
+
+Result flow:
+  simulation_unit_actor workers -> job_actor : per-task result data
+  job_actor -> orchestrator_actor : JobResult
+  orchestrator_actor -> pending_jobs_ : find job_id, fulfil promise, erase entry
+  JobHandle future -> caller : ready; job.get() returns JobResult
 ```
+
+Each `Runtime` instance keeps one shared `orchestrator_actor`, so multiple `submit_job(...)` calls can be in progress concurrently.
 
 `SimulationUnit` is a model-agnostic abstract type. Each model/solver implements `execute(task)` in a derived class. For BMI-based models, MIAOW provides a templated `BmiSimulationUnit<BmiModelType>` class, where `BmiModelType` derives from `bmi::Bmi` and implements the interface defined by [BMI C++ specification](https://github.com/csdms/bmi-cxx). This keeps orchestration-facing behavior shared while allowing different concrete BMI model types.
 
@@ -28,16 +44,26 @@ MIAOW employs a simple greedy algorithm for task scheduling. Each `job_actor` co
 
 Each dispatch step pops one idle worker ID from `available_workers_`, uses it to select a `simulation_unit_actor` from `workers_`, and assigns the current pending task from `next_task_to_dispatch_`. When that worker finishes, the worker ID is returned to `available_workers_`, and `job_actor` immediately dispatches the next pending task from `next_task_to_dispatch_` if one exists. A job finishes when all tasks have been dispatched and no tasks are still running.
 
+## Limitations
+
+- Distributed runs are not currently supported. Jobs execute within a single runtime instance on a single machine.
+- Only embarrassingly parallel workloads are supported for now, where tasks are independent and do not require inter-task communication.
+
 ## Diagnostics
 
-`Runtime::run_workflow(...)` returns a `WorkflowResult` containing the simulation results (currently a placeholder vector of `std::string`) as well as timing diagnostics. Such diagnostics can be accessed as follows:
+`Runtime::submit_job(...)` returns a non-blocking `JobHandle`. Calling `get()` on the handle yields a `JobResult` containing simulation results (currently a placeholder vector of `std::string`) and timing diagnostics. You can submit multiple jobs before waiting on any one result:
 
 ```cpp
-// Run the workflow
-miaow::WorkflowResult workflow_result = runtime.run_workflow(tasks);
+// Submit non-blocking jobs
+miaow::JobHandle job = runtime.submit_job(tasks);
+miaow::JobHandle another_job = runtime.submit_job(other_tasks);
+
+// Wait for completion and get results
+miaow::JobResult job_result = job.get();
+miaow::JobResult another_job_result = another_job.get();
 
 // Print the diagnostics
-miaow::print_diagnostics(workflow_result.diagnostics);
+miaow::print_diagnostics(job_result.diagnostics);
 ```
 
 The diagnostics block includes the following information:
@@ -80,9 +106,9 @@ ctest --test-dir build --output-on-failure
 
 We describe below how to run the example programs, noting that in all cases, it is assumed that we begin within the respective `examples/<xx_example_name>` subdirectory. 
 
-1. `examples/00_hello`: A basic orchestration example using CAF that prints a cute ASCII cat and can be run simply as `./miaow_hello`.
+1. `examples/00_hello`: A basic orchestration example using CAF that submits two async two-task jobs, echoes task strings, and prints per-job diagnostics. Run it as `./miaow_hello`.
 
-2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat --config config_400x400.txt` (or with multiple config files such as `./miaow_heat --config config_400x400.txt config_800x800.txt --max_workers 2`) and prints per-task workflow results to `stdout`.
+2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat --config config_400x400.txt` (or with multiple config files such as `./miaow_heat --config config_400x400.txt config_800x800.txt --max_workers 2`) and prints per-task job results to `stdout`.
 
 ## License 
 This code ~~is~~ **will probably be** released under the [MIT license](https://opensource.org/license/mit).

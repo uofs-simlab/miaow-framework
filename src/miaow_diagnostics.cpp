@@ -35,8 +35,7 @@ std::string format_diagnostics(const JobDiagnostics& diagnostics,
     return output.str();
 }
 
-void print_diagnostics(const JobDiagnostics& diagnostics,
-                       std::size_t job_id) {
+void print_diagnostics(const JobDiagnostics& diagnostics, std::size_t job_id) {
     std::cout << format_diagnostics(diagnostics, job_id);
 }
 

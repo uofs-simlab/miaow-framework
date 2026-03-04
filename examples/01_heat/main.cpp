@@ -2,7 +2,7 @@
  * This example demonstrates how to use the MIAOW framework to run a simple BMI model of 
  * heat diffusion on a plate. The example includes a custom BMI implementation (BmiHeat) 
  * that wraps a simple heat diffusion model, and a main program that sets up the MIAOW 
- * runtime to execute the BMI workflow with a given configuration file.
+ * runtime to execute the BMI job with a given configuration file.
  */
 
 #include <iostream>
@@ -33,23 +33,28 @@ int main(int argc, char* argv[]) {
     miaow::Runtime runtime =
         miaow::make_runtime<miaow::BmiSimulationUnit<BmiHeat>>(runtime_options);
 
-    // Create one task per config file
+    // Create a vector of tasks to be executed
     std::vector<miaow::Task> tasks;
+
+    // Each task corresponds to running the BMI model with one of the provided config files
     tasks.reserve(config_files.size());
     for (const std::string& config_file : config_files) {
         tasks.emplace_back(config_file);
     }
 
-    // Run one job that may contain one or many independent simulation units
-    const miaow::WorkflowResult workflow_result = runtime.run_workflow(tasks);
-    
+    // Submit one job and continue (does not block)
+    miaow::JobHandle job = runtime.submit_job(tasks);
+
+    // Wait for the job to complete and get the results when ready
+    const miaow::JobResult job_result = job.get();
+
     // Print the results for each config file in order
-    for (std::size_t index = 0; index < workflow_result.task_results.size(); ++index) {
-        std::cout << "[" << index << "] " << workflow_result.task_results[index] << "\n";
+    for (std::size_t index = 0; index < job_result.task_results.size(); ++index) {
+        std::cout << "[" << index << "] " << job_result.task_results[index] << "\n";
     }
 
-    // Print timing diagnostics for this workflow run
-    miaow::print_diagnostics(workflow_result.diagnostics);
+    // Print timing diagnostics for this job run
+    miaow::print_diagnostics(job_result.diagnostics);
 
     return 0;
 }

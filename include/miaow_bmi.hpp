@@ -25,7 +25,7 @@ public:
                   "BmiModelType must be default constructible");
 
     /**
-     * @brief Execute one BMI workflow task.
+     * @brief Execute one BMI-wrapped simulation.
      * @param task Task arguments where args[0] is the BMI config path.
      * @return Success or error message for this execution.
      */
@@ -44,7 +44,7 @@ public:
         std::size_t update_steps = 0;
 
         try {
-            // Initialize a fresh BMI model instance for this workflow task
+            // Initialize a fresh BMI model instance for this BMI-wrapped simulation
             bmi_model.Initialize(*config_file);
             model_initialized = true;
 

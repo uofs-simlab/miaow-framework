@@ -34,6 +34,6 @@ if(BUILD_TESTING)
     )
     set_tests_properties(miaow_example_00_hello PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-        PASS_REGULAR_EXPRESSION "miaow!"
+        PASS_REGULAR_EXPRESSION "hello(.|\\n)*cats(.|\\n)*hello again(.|\\n)*more cats"
     )
 endif()

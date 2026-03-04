@@ -2,10 +2,14 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <queue>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <caf/all.hpp>
@@ -18,7 +22,7 @@ CAF_ADD_TYPE_ID(miaow_module, (miaow::Task))
 CAF_ADD_TYPE_ID(miaow_module, (std::vector<std::string>))
 CAF_ADD_TYPE_ID(miaow_module, (std::vector<miaow::Task>))
 CAF_ADD_TYPE_ID(miaow_module, (miaow::JobDiagnostics))
-CAF_ADD_TYPE_ID(miaow_module, (miaow::WorkflowResult))
+CAF_ADD_TYPE_ID(miaow_module, (miaow::JobResult))
 CAF_END_TYPE_ID_BLOCK(miaow_module)
 
 namespace miaow::internal {
@@ -52,7 +56,7 @@ struct JobState {
     std::size_t active_task_count_{0};
 
     // Response promise for the job actor used to deliver the final results to orchestrator
-    std::optional<caf::typed_response_promise<WorkflowResult>> response_promise_;
+    std::optional<caf::typed_response_promise<JobResult>> response_promise_;
 
     // Wall-clock start time for the full job
     std::chrono::steady_clock::time_point job_start_time_;
@@ -63,7 +67,7 @@ struct JobState {
     // Durations for each task, indexed by task ID in seconds
     std::vector<double> task_times_s_;
 
-    // Diagnostics for this workflow run
+    // Diagnostics for this job run
     JobDiagnostics diagnostics_;
 };
 
@@ -75,8 +79,9 @@ caf::behavior job_actor(caf::event_based_actor* self,
                         RuntimeOptions runtime_options,
                         SimulationUnitExecutor simulation_unit_executor);
 caf::behavior orchestrator_actor(caf::event_based_actor* self,
-                                 std::vector<Task> tasks,
                                  RuntimeOptions runtime_options,
-                                 SimulationUnitExecutor simulation_unit_executor);
+                                 SimulationUnitExecutor simulation_unit_executor,
+                                 std::mutex* pending_jobs_mutex,
+                                 PendingJobs* pending_jobs);
 
 } // namespace miaow::internal

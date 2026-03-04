@@ -1,5 +1,5 @@
-#include <algorithm>
 #include <chrono>
+#include <future>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -24,6 +24,13 @@ namespace miaow {
 
 static std::once_flag caf_init_flag;
 
+// Return a ready JobHandle for empty-task submissions.
+static JobHandle make_ready_job_handle(JobResult result) {
+    std::promise<JobResult> promise;
+    promise.set_value(std::move(result));
+    return promise.get_future();
+}
+
 // Initializes CAF global meta objects exactly once in a thread-safe way
 static void initialize_caf_once() {
     std::call_once(caf_init_flag, [] {
@@ -32,7 +39,7 @@ static void initialize_caf_once() {
     });
 }
 
-// Constructor for the MIAOW runtime, which initializes CAF and checks the simulation unit
+// Construct a Runtime with one shared actor system and orchestrator.
 Runtime::Runtime(SimulationUnitExecutor simulation_unit_executor, RuntimeOptions options)
     : simulation_unit_executor_(std::move(simulation_unit_executor)),
       runtime_options_(std::move(options)) {
@@ -40,54 +47,54 @@ Runtime::Runtime(SimulationUnitExecutor simulation_unit_executor, RuntimeOptions
     if (!simulation_unit_executor_) {
         throw std::invalid_argument("Runtime requires a non-null SimulationUnitExecutor");
     }
+
+    // Keep one actor system and one shared orchestrator for this Runtime.
+    actor_system_config_ = std::make_shared<caf::actor_system_config>();
+    actor_system_ = std::make_shared<caf::actor_system>(*actor_system_config_);
+
+    // Spawn the shared orchestrator actor to handle job requests and job completion
+    orchestrator_ = actor_system_->spawn(internal::orchestrator_actor,
+                                         runtime_options_,
+                                         simulation_unit_executor_,
+                                         &pending_jobs_mutex_,
+                                         &pending_jobs_);
 }
 
-// Running a single-task workflow is just a wrapper around the multi-task version
-WorkflowResult Runtime::run_workflow(const Task& task) const {
-    return run_workflow(std::vector<Task>{task});
+// Submitting one task is a wrapper around the multi-task submission path
+JobHandle Runtime::submit_job(const Task& task) const {
+    return submit_job(std::vector<Task>{task});
 }
 
-// Top-level workflow execution method 
-// Spawns an orchestrator actor to run a single-job workflow and waits for the results
-WorkflowResult Runtime::run_workflow(const std::vector<Task>& tasks) const {
-    WorkflowResult workflow_result;
+// `const&` copy path: lvalue input is copied, so caller retains ownership.
+JobHandle Runtime::submit_job(const std::vector<Task>& tasks) const {
+    return submit_job(std::vector<Task>{tasks});
+}
+
+// `&&` move path: rvalue input transfers ownership into the Runtime message path.
+JobHandle Runtime::submit_job(std::vector<Task>&& tasks) const {
+    JobResult job_result;
+
+    // If there are no tasks, return a ready future with an empty result immediately
     if (tasks.empty()) {
-        return workflow_result;
+        return make_ready_job_handle(std::move(job_result));
     }
 
-    // actor_system owns schedulers, mailboxes, and all local actors for this call
-    caf::actor_system_config actor_system_config;
-    caf::actor_system system{actor_system_config};
+    // Generate a unique job ID for this request
+    const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
-    /* Create the top-level orchestrator actor for this workflow, which creates a job
-    actor, which creates worker actors that run simulation units. The workflow tasks and
-    runtime options are passed to all actors in the hierarchy so they can be used for
-    dispatching work and configuring timeouts. The orchestrator forwards the final results
-    back to this function, which returns them to the caller */
-    caf::actor orchestrator = system.spawn(internal::orchestrator_actor,
-                                           tasks,
-                                           runtime_options_,
-                                           simulation_unit_executor_);
-    caf::scoped_actor caller{system};
+    // Create a promise/future pair for this submitted job.
+    std::promise<JobResult> promise;
 
-    workflow_result.task_results.assign(tasks.size(), "");
-    workflow_result.diagnostics.task_times_s.assign(tasks.size(), 0.0);
+    JobHandle job = promise.get_future();
+    {
+        std::lock_guard<std::mutex> lock(pending_jobs_mutex_);
+        // Register this in-progress job in the dictionary: job_id -> promise.
+        pending_jobs_.emplace(job_id, std::move(promise));
+    }
 
-    // Request the top-level actor and block in this scope until a reply or timeout
-    caller->mail(caf::get_atom_v)
-        .request(orchestrator, runtime_options_.job_request_timeout_)
-        .receive(
-            [&](const WorkflowResult& result) {
-                workflow_result = result;
-            },
-            [&](const caf::error& err) {
-                // Handles an error from orchestrator, job, or simulation unit actor
-                std::fill(workflow_result.task_results.begin(),
-                          workflow_result.task_results.end(),
-                          std::string("CAF error: ") + caf::to_string(err));
-            });
-
-    return workflow_result;
+    // Send this job to the shared orchestrator.
+    caf::anon_mail(caf::get_atom_v, job_id, std::move(tasks)).send(orchestrator_);
+    return job;
 }
 
 } // namespace miaow

@@ -19,8 +19,7 @@ static std::string failure_message(std::size_t task_id, const std::string& reaso
 static void dispatch_tasks(caf::event_based_actor* self,
                            const std::shared_ptr<JobState>& state);
 
-// Complete the job only when every task has been dispatched and every in-progress task has
-// reported back. Otherwise, return immediately and let dispatch/completion continue
+// Complete only when all tasks have been dispatched and finished.
 static void complete_job_if_all_tasks_finished(
     caf::event_based_actor* self,
     const std::shared_ptr<JobState>& state) {
@@ -40,7 +39,7 @@ static void complete_job_if_all_tasks_finished(
     state->diagnostics_.total_time_s = std::chrono::duration<double>(
                                          std::chrono::steady_clock::now() - state->job_start_time_)
                                          .count();
-    state->response_promise_->deliver(WorkflowResult{state->task_results_, state->diagnostics_});
+    state->response_promise_->deliver(JobResult{state->task_results_, state->diagnostics_});
     state->response_promise_.reset();
     self->quit();
 }
@@ -95,18 +94,14 @@ static void dispatch_tasks(caf::event_based_actor* self,
         // Record dispatch time for per-task runtime diagnostics
         state->task_start_times_.at(task_id) = std::chrono::steady_clock::now();
 
-        // Forward a request to one simulation_unit actor for this task_id
-        // The actor handles `caf::get_atom` and returns one result string
-        // Makes call to caf::behavior simulation_unit_actor (see below)
+        // Request one task execution from one simulation_unit actor.
         self->mail(caf::get_atom_v, state->tasks_.at(task_id))
             .request(state->workers_.at(worker_id), state->runtime_options_.task_request_timeout_)
             .then(
                 [self, state, worker_id, task_id](const std::string& message) {
-                    // If worker replies with message (not error), mark task as finished
                     complete_task(self, state, worker_id, task_id, true, message);
                 },
                 [self, state, worker_id, task_id](const caf::error& err) {
-                    // If worker replies with error or times out, mark task as failed
                     complete_task(self,
                                   state,
                                   worker_id,
@@ -120,8 +115,7 @@ static void dispatch_tasks(caf::event_based_actor* self,
     complete_job_if_all_tasks_finished(self, state);
 }
 
-// Leaf simulation_unit actor in the orchestrator -> job -> simulation unit hierarchy
-// These are used as workers by the job actor, which forwards workflow tasks to them
+// Leaf simulation_unit actors used as workers by each job actor.
 caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
                                     SimulationUnitExecutor simulation_unit_executor) {
     return {
@@ -177,58 +171,77 @@ caf::behavior job_actor(caf::event_based_actor* self,
     }
 
     return {
-        /* When the job_actor receives a message of type get_atom, it starts dispatching
-        pending tasks to available worker actors and returns all results back
-        to the caller (i.e. the orchestrator) */
-        [=](caf::get_atom) -> caf::result<WorkflowResult> {
+        // Start dispatching tasks when orchestrator requests this job.
+        [=](caf::get_atom) -> caf::result<JobResult> {
             if (state->response_promise_.has_value()) {
                 return caf::make_error(caf::sec::runtime_error,
                                        "job_actor only accepts one get_atom request");
             }
 
-            /* The promise lets the handler return immediately while the replies are
-            delivered later, keeping job_actor responsive as workers run */
-            state->response_promise_ = self->make_response_promise<WorkflowResult>();
+            // Keep handler non-blocking while workers execute.
+            state->response_promise_ = self->make_response_promise<JobResult>();
 
-            // Start dispatching tasks to available simulation_unit actors
             dispatch_tasks(self, state);
-
-            // Return to orchestrator when all tasks are complete (or errored)
             return *state->response_promise_;
         }
     };
 }
 
+// Shared orchestrator actor that handles job submission and completion delivery.
 caf::behavior orchestrator_actor(caf::event_based_actor* self,
-                                 std::vector<Task> tasks,
                                  RuntimeOptions runtime_options,
-                                 SimulationUnitExecutor simulation_unit_executor) {
-    // Spawn a job actor to run the workflow (only one job per workflow in this version)
-    caf::actor job = self->spawn(job_actor,
-                                 std::move(tasks),
-                                 runtime_options,
-                                 std::move(simulation_unit_executor));
-
+                                 SimulationUnitExecutor simulation_unit_executor,
+                                 std::mutex* pending_jobs_mutex,
+                                 PendingJobs* pending_jobs) {
     return {
-        [=](caf::get_atom) -> caf::result<WorkflowResult> {
-            /* Similarly to the job actor, the orchestrator uses the promise pattern to
-            forward replies from job_actor */
-            caf::typed_response_promise<WorkflowResult> response_promise =
-                self->make_response_promise<WorkflowResult>();
+        // Job submission event
+        [=](caf::get_atom, JobId job_id, std::vector<Task> tasks) {
+            const std::size_t task_count = tasks.size();
+            const caf::actor orchestrator = self;
 
-            /* Forward a request to the job_actor and deliver the response back to the
-            caller when it arrives. Note that get_atom is the message type; _v gets the
-            singleton value of that type */
+            // Spawn one job actor for this request
+            caf::actor job = self->spawn(job_actor,
+                                         std::move(tasks),
+                                         runtime_options,
+                                         simulation_unit_executor);
+
+            // Forward a request to the per-job actor and wait for one JobResult reply.
             self->mail(caf::get_atom_v).request(job, runtime_options.job_request_timeout_)
                 .then(
-                    [response_promise](const WorkflowResult& workflow_result) mutable {
-                        response_promise.deliver(workflow_result);
+                    // Forward successful completion back into this actor.
+                    [orchestrator, job_id](const JobResult& job_result) {
+                        caf::anon_mail(caf::put_atom_v, job_id, job_result)
+                            .send(orchestrator);
                     },
-                    [response_promise](const caf::error& err) mutable {
-                        response_promise.deliver(err);
-                    });
+                    // Convert timeout/error into a failed JobResult and route it the same way.
+                    [orchestrator, job_id, task_count](const caf::error& err) {
+                        JobResult job_result;
+                        job_result.task_results.assign(
+                            task_count,
+                            std::string("CAF error: ") + caf::to_string(err));
+                        job_result.diagnostics.task_times_s.assign(task_count, 0.0);
 
-            return response_promise;
+                        caf::anon_mail(caf::put_atom_v, job_id, std::move(job_result))
+                            .send(orchestrator);
+                    });
+        },
+        // Resolve Runtime promise for this completed job and mark its future ready
+        [pending_jobs_mutex,
+         pending_jobs](caf::put_atom,
+                       JobId job_id,
+                       JobResult job_result) mutable {
+            std::promise<JobResult> promise;
+            {
+                std::lock_guard<std::mutex> lock(*pending_jobs_mutex);
+                PendingJobs::iterator pending_job_entry = pending_jobs->find(job_id);
+                if (pending_job_entry == pending_jobs->end()) {
+                    return;
+                }
+                promise = std::move(pending_job_entry->second);
+                pending_jobs->erase(pending_job_entry);
+            } // mutex unlocks automatically here
+
+            promise.set_value(std::move(job_result));
         }
     };
 }

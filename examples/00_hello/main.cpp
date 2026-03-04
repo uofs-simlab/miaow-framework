@@ -1,11 +1,12 @@
 /**
  * A simple "Hello World" example demonstrating the basic structure of a simulation unit
- * and runtime. This example defines a HelloSimulationUnit that returns an ASCII cat
- * message when executed and uses the Runtime API to execute it.
+ * and runtime. This example defines a HelloSimulationUnit that echoes string task inputs
+ * and uses the Runtime API to execute two async jobs, each with two tasks, that simply
+ * pass string messages through the simulation unit and print the results and diagnostics.
 */
 
-#include <chrono>
 #include <iostream>
+#include <chrono>
 #include <string>
 #include <thread>
 #include <vector>
@@ -13,46 +14,65 @@
 #include "miaow.hpp" // Core MIAOW runtime API
 
 /**
- * @brief A simple simulation unit that returns an ASCII cat message.
+ * @brief A simple simulation unit that returns a string task argument.
  */
 class HelloSimulationUnit : public miaow::SimulationUnit {
 public:
     /**
-     * @brief Override the execute method to return ASCII cat art.
+     * @brief Override execute to return the first task string argument.
      * In a real simulation unit, this is where you would implement the logic to initialize
      * and run your model.
-     * @param task Unused task payload in this toy example.
-     * @return A multiline message with ASCII cat art.
+     * @param task Task payload; args[0] is expected to be a string.
+     * @return The first string argument, or an error message if missing/invalid.
      */
-    std::string execute(const miaow::Task& /*task*/) override {
-        // Do nothing; just wait one second and return a cat message
+    std::string execute(const miaow::Task& task) override {
+        if (task.args.empty()) {
+            return "missing task string";
+        }
+        const auto* message = caf::get_if<std::string>(&task.args.front());
+        if (!message) {
+            return "invalid task string";
+        }
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        return "miaow!\n"
-               " /\\_/\\\n"
-               "(='.'=)\n"
-               "(\")_(\")";
+        return *message;
     }
 };
 
 int main() {
-    // Construct a runtime for a simulation unit of type HelloSimulationUnit
-    miaow::Runtime runtime = miaow::make_runtime<HelloSimulationUnit>({});
+    // Construct a runtime for a simulation unit of type HelloSimulationUnit.
+    // Use two workers so two tasks in a job can run concurrently.
+    miaow::RuntimeOptions runtime_options{/*workers=*/2};
+    miaow::Runtime runtime = miaow::make_runtime<HelloSimulationUnit>(runtime_options);
 
-    std::vector<miaow::Task> tasks{
+    // Create two sets of tasks for separate jobs with two string arguments each
+    std::vector<miaow::Task> first_job_tasks{
         miaow::Task{"hello"},
         miaow::Task{"cats"},
     };
+    std::vector<miaow::Task> second_job_tasks{
+        miaow::Task{"hello again"},
+        miaow::Task{"more cats"},
+    };
 
-    // Run one job that may contain one or many independent simulation units
-    const miaow::WorkflowResult workflow_result = runtime.run_workflow(tasks);
+    // Submit both jobs and get their handles for collecting results when ready
+    miaow::JobHandle first_job = runtime.submit_job(first_job_tasks);
+    miaow::JobHandle second_job = runtime.submit_job(second_job_tasks);
 
-    // Print the results from each input message in order
-    for (std::size_t index = 0; index < workflow_result.task_results.size(); ++index) {
-        std::cout << "[" << index << "] " << workflow_result.task_results[index] << "\n";
+    // Wait for both jobs to complete.
+    const miaow::JobResult first_job_result = first_job.get();
+    const miaow::JobResult second_job_result = second_job.get();
+
+    // Print the returned task strings.
+    for (const std::string& result : first_job_result.task_results) {
+        std::cout << result << "\n";
+    }
+    for (const std::string& result : second_job_result.task_results) {
+        std::cout << result << "\n";
     }
 
-    // Print timing diagnostics for this workflow run
-    miaow::print_diagnostics(workflow_result.diagnostics);
+    // Print timing diagnostics for each job run.
+    miaow::print_diagnostics(first_job_result.diagnostics, 0);
+    miaow::print_diagnostics(second_job_result.diagnostics, 1);
 
     return 0;
 }
