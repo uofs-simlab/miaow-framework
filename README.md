@@ -8,9 +8,7 @@ MIAOW uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) and
 
 ## Orchestration structure
 
-MIAOW executes a job through the following request/result flow, based on the architecture proposed by [Klenk and Spiteri (2024)](https://doi.org/10.1007/s10586-024-04318-5):
-
-Actor hierarchy (ownership/lifetime):
+MIAOW executes simulation workflows using the actor hierarchy proposed by [Klenk and Spiteri (2024)](https://doi.org/10.1007/s10586-024-04318-5):
 
 ```text
 Runtime (shared for process lifetime)
@@ -19,7 +17,7 @@ Runtime (shared for process lifetime)
       └─ simulation_unit_actor (many per job, up to user-specified max_workers)
 ```
 
-Event sequence:
+The event sequence for a typical job is as follows:
 
 1. Caller calls `Runtime::submit_job(tasks)`.
 2. Runtime creates `job_id` and stores (`job_id -> promise`) in `pending_jobs_`.
