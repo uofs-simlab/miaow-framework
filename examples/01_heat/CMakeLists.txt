@@ -50,6 +50,6 @@ if(BUILD_TESTING)
     )
     set_tests_properties(miaow_example_01_heat PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-        PASS_REGULAR_EXPRESSION "bmi_job_tasks=2,bmi_max_workers=2"
+        PASS_REGULAR_EXPRESSION "\\[0\\] BMI workflow complete(.|\\n)*\\[1\\] BMI workflow complete"
     )
 endif()

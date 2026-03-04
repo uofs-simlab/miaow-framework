@@ -10,26 +10,27 @@ MIAOW uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) and
 
 MIAOW executes a job through the following request/result flow, based on the architecture proposed by [Klenk and Spiteri (2024)](https://doi.org/10.1007/s10586-024-04318-5):
 
-```text
 Actor hierarchy (ownership/lifetime):
-  Runtime (shared for process lifetime)
-  └─ orchestrator_actor (shared, one per Runtime)
-     └─ job_actor (one per submitted job)
-        └─ simulation_unit_actor (many per job, up to max_workers)
 
-Request flow:
-  caller -> Runtime::submit_job(tasks)
-  Runtime -> pending_jobs_ : store (job_id -> promise)
-  Runtime -> orchestrator_actor : (job_id, tasks)
-  orchestrator_actor -> job_actor : start job
-  job_actor -> simulation_unit_actor workers : Task(s)
-
-Result flow:
-  simulation_unit_actor workers -> job_actor : per-task result data
-  job_actor -> orchestrator_actor : JobResult
-  orchestrator_actor -> pending_jobs_ : find job_id, fulfil promise, erase entry
-  JobHandle future -> caller : ready; job.get() returns JobResult
+```text
+Runtime (shared for process lifetime)
+└─ orchestrator_actor (shared, one per Runtime)
+   └─ job_actor (one per submitted job)
+      └─ simulation_unit_actor (many per job, up to user-specified max_workers)
 ```
+
+Event sequence:
+
+1. Caller calls `Runtime::submit_job(tasks)`.
+2. Runtime creates `job_id` and stores (`job_id -> promise`) in `pending_jobs_`.
+3. Runtime sends (`job_id`, `tasks`) to `orchestrator_actor`.
+4. `orchestrator_actor` spawns one `job_actor` for that submission.
+5. `job_actor` dispatches task(s) to `simulation_unit_actor` workers.
+6. `simulation_unit_actor` workers return per-task result data to `job_actor`.
+7. `job_actor` aggregates and sends `JobResult` to `orchestrator_actor`.
+8. `orchestrator_actor` finds `job_id` in `pending_jobs_`, fulfils promise, and erases the entry.
+9. Caller-held `JobHandle` future becomes ready.
+10. Caller calls `job.get()` and receives `JobResult`.
 
 Each `Runtime` instance keeps one shared `orchestrator_actor`, so multiple `submit_job(...)` calls can be in progress concurrently.
 
