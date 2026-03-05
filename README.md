@@ -32,7 +32,22 @@ The event sequence for a typical job is as follows:
 
 Each `Runtime` instance keeps one shared `orchestrator_actor`, so multiple `submit_job(...)` calls can be in progress concurrently.
 
-`SimulationUnit` is a model-agnostic abstract type. Each model/solver implements `execute(task)` in a derived class. For BMI-based models, MIAOW provides a templated `BmiSimulationUnit<BmiModelType>` class, where `BmiModelType` derives from `bmi::Bmi` and implements the interface defined by [BMI C++ specification](https://github.com/csdms/bmi-cxx). This keeps orchestration-facing behavior shared while allowing different concrete BMI model types.
+`SimulationUnit` is a model-agnostic abstract type. Each model/solver implements `execute(task)` in a derived class. For BMI-based models, MIAOW provides a templated `BmiSimulationUnit<BmiModelType>` class, where `BmiModelType` derives from `bmi::Bmi` and implements the interface defined by [BMI C++ specification](https://github.com/csdms/bmi-cxx). This keeps orchestration-facing behaviour shared while allowing different concrete BMI model types.
+
+MIAOW supports registering multiple simulation units and selecting one per task. `SimulationUnitRegistry` provides `add<T>(...)`, which returns a `SimulationUnitId`. Each task carries `simulation_unit_id_`, so one job can mix task types:
+
+```cpp
+miaow::SimulationUnitRegistry simulation_unit_registry;
+miaow::SimulationUnitId hello = simulation_unit_registry.add<HelloSimulationUnit>();
+miaow::SimulationUnitId heat = simulation_unit_registry.add<miaow::BmiSimulationUnit<BmiHeat>>();
+
+miaow::Runtime runtime(simulation_unit_registry); // uses default RuntimeOptions
+
+std::vector<miaow::Task> tasks{
+    miaow::Task{hello, "hello"},
+    miaow::Task{heat, "config_400x400.txt"},
+};
+```
 
 ## Task scheduling
 
@@ -62,7 +77,7 @@ miaow::JobResult job_result = job.get();
 miaow::JobResult another_job_result = another_job.get();
 
 // Print the diagnostics
-miaow::print_diagnostics(job_result.diagnostics);
+miaow::print_diagnostics(job_result.diagnostics_);
 ```
 
 The diagnostics block includes the following information:

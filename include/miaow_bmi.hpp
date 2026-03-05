@@ -30,10 +30,11 @@ public:
      * @return Success or error message for this execution.
      */
     std::string execute(const Task& task) override {
-        if (task.args.empty()) {
+        if (task.args_.empty()) {
             return "BMI error: missing config path in task specification";
         }
-        const auto* config_file = caf::get_if<std::string>(&task.args.front());
+        const std::string* config_file =
+            caf::get_if<std::string>(&task.args_.front());
         if (!config_file) {
             return "BMI error: first task argument must be a config path string";
         }

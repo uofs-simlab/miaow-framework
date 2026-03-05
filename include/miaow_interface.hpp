@@ -36,12 +36,13 @@ inline std::string parse_workflow_cli_options(int argc,
                                               char* argv[],
                                               RuntimeOptions& runtime_options,
                                               std::vector<std::string>& config_files) {
-    auto parse_positive_integer =
+    std::function<std::string(const std::string&, const std::string&, std::size_t&)>
+        parse_positive_integer =
         [](const std::string& value,
            const std::string& option_name,
            std::size_t& output) -> std::string {
             std::size_t parsed_value = 0;
-            const auto parse_result =
+            const std::from_chars_result parse_result =
                 std::from_chars(value.data(), value.data() + value.size(), parsed_value);
             if (parse_result.ec != std::errc() ||
                 parse_result.ptr != value.data() + value.size() ||
@@ -52,7 +53,8 @@ inline std::string parse_workflow_cli_options(int argc,
             return "";
         };
 
-    auto ensure_single_value =
+    std::function<std::string(const std::string&, const std::vector<std::string>&)>
+        ensure_single_value =
         [](const std::string& option_name,
            const std::vector<std::string>& values) -> std::string {
             if (values.size() != 1) {
@@ -149,7 +151,10 @@ inline std::string parse_workflow_cli_options(int argc,
             return "Error: unrecognized positional argument: " + option_name;
         }
 
-        const auto handler_it = option_handlers.find(option_name);
+        const std::unordered_map<
+            std::string,
+            std::function<std::string(const std::vector<std::string>&)>>::const_iterator
+            handler_it = option_handlers.find(option_name);
         if (handler_it == option_handlers.end()) {
             return "Error: unrecognized argument: " + option_name;
         }

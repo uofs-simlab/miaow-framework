@@ -14,6 +14,21 @@
 #include "miaow_bmi.hpp"    // MIAOW API for running BMI models as simulation units
 #include "miaow_interface.hpp" // CLI parser for example programs
 
+/**
+ * @brief A simple simulation unit used to return a hello message.
+ */
+class HelloSimulationUnit : public miaow::SimulationUnit {
+public:
+    std::string execute(const miaow::Task& task) override {
+        if (task.args_.empty()) {
+            return "hello";
+        }
+
+        const std::string* message = caf::get_if<std::string>(&task.args_.front());
+        return message ? *message : "hello";
+    }
+};
+
 int main(int argc, char* argv[]) {
     // Initialize runtime options and config file list to be populated by CLI parser
     miaow::RuntimeOptions runtime_options;
@@ -29,9 +44,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Create a MIAOW runtime with a BMI simulation unit that uses the BmiHeat model
-    miaow::Runtime runtime =
-        miaow::make_runtime<miaow::BmiSimulationUnit<BmiHeat>>(runtime_options);
+    // Register BMI simulation units and build runtime routing from the registry
+    miaow::SimulationUnitRegistry simulation_unit_registry;
+    const miaow::SimulationUnitId hello =
+        simulation_unit_registry.add<HelloSimulationUnit>();
+    const miaow::SimulationUnitId heat =
+        simulation_unit_registry.add<miaow::BmiSimulationUnit<BmiHeat>>();
+    miaow::Runtime runtime(simulation_unit_registry, runtime_options);
 
     // Create a vector of tasks to be executed
     std::vector<miaow::Task> tasks;
@@ -39,8 +58,11 @@ int main(int argc, char* argv[]) {
     // Each task corresponds to running the BMI model with one of the provided config files
     tasks.reserve(config_files.size());
     for (const std::string& config_file : config_files) {
-        tasks.emplace_back(config_file);
+        tasks.emplace_back(heat, config_file);
     }
+
+    // Add one hello task to demonstrate mixed simulation-unit routing in the same job
+    tasks.emplace_back(hello, "hello");
 
     // Submit one job and continue (does not block)
     miaow::JobHandle job = runtime.submit_job(tasks);
@@ -49,12 +71,12 @@ int main(int argc, char* argv[]) {
     const miaow::JobResult job_result = job.get();
 
     // Print the results for each config file in order
-    for (std::size_t index = 0; index < job_result.task_results.size(); ++index) {
-        std::cout << "[" << index << "] " << job_result.task_results[index] << "\n";
+    for (std::size_t index = 0; index < job_result.task_results_.size(); ++index) {
+        std::cout << "[" << index << "] " << job_result.task_results_[index] << "\n";
     }
 
     // Print timing diagnostics for this job run
-    miaow::print_diagnostics(job_result.diagnostics);
+    miaow::print_diagnostics(job_result.diagnostics_);
 
     return 0;
 }

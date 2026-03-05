@@ -23,39 +23,51 @@
 
 namespace miaow {
 
+/// Monotonic identifier assigned to each registered simulation unit
+using SimulationUnitId = std::uint64_t;
+
 /**
  * @brief Generic task input specification.
  *
  * Arguments are positional and interpreted by the concrete SimulationUnit.
  */
 struct Task {
+    /// Simulation unit ID that selects which registered executor handles this task
+    SimulationUnitId simulation_unit_id_{0};
+
     /// Generic arguments for this task to pass into `SimulationUnit::execute(args)`
-    std::vector<caf::config_value> args;
+    std::vector<caf::config_value> args_;
 
     Task() = default;
 
     /**
-     * @brief Construct a Task from a vector of config values.
+     * @brief Construct a Task for a specific simulation unit from config values.
+     * @param task_simulation_unit_id Simulation unit ID for this task.
      * @param task_args Positional arguments for this task.
      */
-    explicit Task(std::vector<caf::config_value> task_args)
-        : args(std::move(task_args)) {
+    Task(SimulationUnitId task_simulation_unit_id, std::vector<caf::config_value> task_args)
+        : simulation_unit_id_(task_simulation_unit_id),
+          args_(std::move(task_args)) {
     }
 
     /**
-     * @brief Construct a Task from a single config value.
+     * @brief Construct a Task for a specific simulation unit from one config value.
+     * @param task_simulation_unit_id Simulation unit ID for this task.
      * @param arg Single config value for this task.
      */
-    explicit Task(caf::config_value arg)
-        : args{std::move(arg)} {
+    Task(SimulationUnitId task_simulation_unit_id, caf::config_value arg)
+        : simulation_unit_id_(task_simulation_unit_id),
+          args_{std::move(arg)} {
     }
 
     /**
-     * @brief Construct a Task from a single string argument.
+     * @brief Construct a Task for a specific simulation unit from one string argument.
+     * @param task_simulation_unit_id Simulation unit ID for this task.
      * @param arg Single string argument for this task.
      */
-    explicit Task(std::string arg)
-        : args{caf::config_value{std::move(arg)}} {
+    Task(SimulationUnitId task_simulation_unit_id, std::string arg)
+        : simulation_unit_id_(task_simulation_unit_id),
+          args_{caf::config_value{std::move(arg)}} {
     }
 };
 
@@ -77,14 +89,97 @@ public:
 };
 
 /**
- * @brief Callable behavior used by each simulation_unit_actor.
+ * @brief Callable behaviour used by each simulation_unit_actor.
  *
  * The executor receives generic task arguments and returns a result string.
  */
 using SimulationUnitExecutor = std::function<std::string(const Task& task)>;
 
 /**
- * @brief Runtime options for model-independent orchestration behavior.
+ * @brief Registry for simulation unit executors.
+ *
+ * Tracks `simulation_unit_id -> executor` for runtime task routing.
+ */
+class SimulationUnitRegistry {
+public:
+    SimulationUnitRegistry() = default;
+
+    /**
+     * @brief Register a concrete SimulationUnit type and return its assigned ID.
+     *
+     * Builds an executor that constructs a fresh SimulationUnitType for each task.
+     *
+     * @tparam SimulationUnitType Concrete simulation unit type.
+     * @tparam ConstructorArgs Constructor argument types for SimulationUnitType.
+     * @param constructor_args Arguments forwarded to SimulationUnitType constructor.
+     * @return SimulationUnitId assigned to this registered unit.
+     */
+    template <class SimulationUnitType, class... ConstructorArgs>
+    SimulationUnitId add(ConstructorArgs... constructor_args) {
+        // Check that SimulationUnitType is a valid simulation unit class at compile time
+        static_assert(std::is_base_of_v<SimulationUnit, SimulationUnitType>,
+                      "SimulationUnitType must derive from miaow::SimulationUnit");
+
+        // Store constructor arguments in a tuple
+        std::tuple<std::decay_t<ConstructorArgs>...> stored_constructor_args(
+            std::move(constructor_args)...);
+
+        // Build a SimulationUnitExecutor (an anonymous function) that constructs a fresh
+        // instance of SimulationUnitType for each task execution
+        SimulationUnitExecutor simulation_unit_executor =
+            [stored_constructor_args = std::move(stored_constructor_args)](
+                const Task& task) -> std::string {
+                // Create a new SimulationUnitType instance for this task execution
+                std::unique_ptr<SimulationUnit> simulation_unit = std::apply(
+                    [](const std::decay_t<ConstructorArgs>&... args)
+                        -> std::unique_ptr<SimulationUnit> {
+                        return std::make_unique<SimulationUnitType>(args...);
+                    }, stored_constructor_args);
+
+                // If we failed to create a valid simulation unit, return an error message
+                if (!simulation_unit) {
+                    return "SimulationUnit error: failed to create simulation unit";
+                }
+
+                // Execute the simulation unit with the given task and return the result
+                return simulation_unit->execute(task);
+            };
+
+        const SimulationUnitId simulation_unit_id = next_simulation_unit_id_++;
+        simulation_unit_executors_by_id_.emplace(simulation_unit_id,
+                                                 std::move(simulation_unit_executor));
+        return simulation_unit_id;
+    }
+
+    /**
+     * @brief Return true when no simulation units have been registered.
+     */
+    bool empty() const {
+        return simulation_unit_executors_by_id_.empty();
+    }
+
+    /**
+     * @brief Look up executor for a simulation unit ID.
+     * @param simulation_unit_id Registered ID to resolve.
+     * @return Pointer to executor, or null when ID is unknown.
+     */
+    const SimulationUnitExecutor* find_executor(SimulationUnitId simulation_unit_id) const {
+        const std::unordered_map<SimulationUnitId, SimulationUnitExecutor>::const_iterator
+            simulation_unit_entry = simulation_unit_executors_by_id_.find(simulation_unit_id);
+        if (simulation_unit_entry == simulation_unit_executors_by_id_.end()) {
+            return nullptr;
+        }
+        return &simulation_unit_entry->second;
+    }
+
+private:
+    std::unordered_map<SimulationUnitId, SimulationUnitExecutor>
+        simulation_unit_executors_by_id_;
+    SimulationUnitId next_simulation_unit_id_{1};
+};
+
+/**
+ * @brief Runtime options for model-independent orchestration behaviour.
  *
  * Solver-specific options should be passed in task arguments and not included here.
  */
@@ -118,10 +213,10 @@ struct RuntimeOptions {
  */
 struct JobDiagnostics {
     /// Total wall-clock runtime for the full job in seconds
-    double total_time_s{0.0};
+    double total_time_s_{0.0};
 
     /// Wall-clock duration for each task by task ID in seconds
-    std::vector<double> task_times_s;
+    std::vector<double> task_times_s_;
 };
 
 /**
@@ -129,10 +224,10 @@ struct JobDiagnostics {
  */
 struct JobResult {
     /// Result message for each task in input order
-    std::vector<std::string> task_results;
+    std::vector<std::string> task_results_;
 
     /// Timing diagnostics for this job run
-    JobDiagnostics diagnostics;
+    JobDiagnostics diagnostics_;
 };
 
 /**
@@ -142,7 +237,7 @@ struct JobResult {
  */
 using JobHandle = std::future<JobResult>;
 
-/// Monotonic identifier assigned to each submitted job.
+/// Monotonic identifier assigned to each submitted job
 using JobId = std::uint64_t;
 
 /**
@@ -159,21 +254,22 @@ using PendingJobs = std::unordered_map<JobId, std::promise<JobResult>>;
 template <class Inspector>
 bool inspect(Inspector& inspector, Task& task) {
     // Defines how CAF serializes/deserializes Task for actor messaging
-    return inspector.apply(task.args);
+    return inspector.apply(task.simulation_unit_id_) &&
+           inspector.apply(task.args_);
 }
 
 template <class Inspector>
 bool inspect(Inspector& inspector, JobDiagnostics& diagnostics) {
     // Defines how CAF serializes/deserializes JobDiagnostics for actor messaging
-    return inspector.apply(diagnostics.total_time_s) &&
-           inspector.apply(diagnostics.task_times_s);
+    return inspector.apply(diagnostics.total_time_s_) &&
+           inspector.apply(diagnostics.task_times_s_);
 }
 
 template <class Inspector>
 bool inspect(Inspector& inspector, JobResult& job_result) {
     // Defines how CAF serializes/deserializes JobResult for actor messaging
-    return inspector.apply(job_result.task_results) &&
-           inspector.apply(job_result.diagnostics);
+    return inspector.apply(job_result.task_results_) &&
+           inspector.apply(job_result.diagnostics_);
 }
 
 /**
@@ -194,11 +290,18 @@ void print_diagnostics(const JobDiagnostics& diagnostics, std::size_t job_id = 0
 class Runtime {
 public:
     /**
-     * @brief Construct runtime from an executor and options.
-     * @param simulation_unit_executor Callable used by simulation_unit_actor.
+     * @brief Construct runtime from a simulation unit registry with default options.
+     * @param simulation_unit_registry Registry mapping simulation_unit_id to executor.
+     */
+    Runtime(const SimulationUnitRegistry& simulation_unit_registry);
+
+    /**
+     * @brief Construct runtime from a simulation unit registry and options.
+     * @param simulation_unit_registry Registry mapping simulation_unit_id to executor.
      * @param options Runtime scheduling and timeout options.
      */
-    Runtime(SimulationUnitExecutor simulation_unit_executor, RuntimeOptions options = {});
+    Runtime(const SimulationUnitRegistry& simulation_unit_registry,
+            RuntimeOptions options);
 
     /**
      * @brief Submit one task as an asynchronous job.
@@ -228,8 +331,8 @@ public:
     JobHandle submit_job(std::vector<Task>&& tasks) const;
 
 private:
-    /// Shared simulation unit executor used by all simulation_unit actors in this runtime
-    SimulationUnitExecutor simulation_unit_executor_;
+    /// Shared simulation unit registry used by all simulation_unit actors in this runtime
+    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry_;
     
     /// Runtime options for this runtime, copied into each job_actor's JobState
     RuntimeOptions runtime_options_;
@@ -270,50 +373,6 @@ inline std::string validate_config_paths(const std::vector<std::string>& config_
         }
     }
     return ""; // return empty string on success
-}
-
-/**
- * @brief Create a runtime from a concrete SimulationUnit type.
- *
- * Builds a SimulationUnitExecutor that constructs a fresh unit for each task execution.
- *
- * @tparam SimulationUnitType Concrete simulation unit type.
- * @tparam ConstructorArgs Constructor argument types for SimulationUnitType.
- * @param options Runtime scheduling and timeout options.
- * @param constructor_args Arguments forwarded to SimulationUnitType constructor.
- * @return Runtime configured to execute SimulationUnitType tasks.
- */
-template <class SimulationUnitType, class... ConstructorArgs>
-Runtime make_runtime(RuntimeOptions options, ConstructorArgs... constructor_args) {
-    // Check that SimulationUnitType is a valid simulation unit class at compile time
-    static_assert(std::is_base_of_v<SimulationUnit, SimulationUnitType>,
-                  "SimulationUnitType must derive from miaow::SimulationUnit");
-
-    // Store constructor arguments in a tuple
-    auto stored_constructor_args = std::make_tuple(std::move(constructor_args)...);
-
-    // Build a SimulationUnitExecutor (an anonymous function) that constructs a fresh 
-    // instance of SimulationUnitType for each task execution
-    SimulationUnitExecutor simulation_unit_executor =
-        [stored_constructor_args = std::move(stored_constructor_args)](
-            const Task& task) -> std::string {
-            // Create a new SimulationUnitType instance for this task execution
-            std::unique_ptr<SimulationUnit> simulation_unit = std::apply(
-                [](const auto&... args) -> std::unique_ptr<SimulationUnit> {
-                    return std::make_unique<SimulationUnitType>(args...);
-                }, stored_constructor_args);
-        
-            // If we failed to create a valid simulation unit, return an error message
-            if (!simulation_unit) {
-                return "SimulationUnit error: failed to create simulation unit";
-            }
-            
-            // Execute the simulation unit with the given task and return the result
-            return simulation_unit->execute(task);
-        };
-
-    // Return a Runtime constructed with this SimulationUnitExecutor and the given options
-    return Runtime(std::move(simulation_unit_executor), std::move(options));
 }
 
 } // namespace miaow

@@ -26,10 +26,10 @@ public:
      * @return The first string argument, or an error message if missing/invalid.
      */
     std::string execute(const miaow::Task& task) override {
-        if (task.args.empty()) {
+        if (task.args_.empty()) {
             return "missing task string";
         }
-        const auto* message = caf::get_if<std::string>(&task.args.front());
+        const std::string* message = caf::get_if<std::string>(&task.args_.front());
         if (!message) {
             return "invalid task string";
         }
@@ -39,40 +39,43 @@ public:
 };
 
 int main() {
-    // Construct a runtime for a simulation unit of type HelloSimulationUnit.
-    // Use two workers so two tasks in a job can run concurrently.
+    // Register simulation units and construct a runtime from the registry
+    // Use two workers so two tasks in a job can run concurrently
+    miaow::SimulationUnitRegistry simulation_unit_registry;
+    const miaow::SimulationUnitId hello = simulation_unit_registry.add<HelloSimulationUnit>();
+
     miaow::RuntimeOptions runtime_options{/*workers=*/2};
-    miaow::Runtime runtime = miaow::make_runtime<HelloSimulationUnit>(runtime_options);
+    miaow::Runtime runtime(simulation_unit_registry, runtime_options);
 
     // Create two sets of tasks for separate jobs with two string arguments each
     std::vector<miaow::Task> first_job_tasks{
-        miaow::Task{"hello"},
-        miaow::Task{"cats"},
+        miaow::Task{hello, "hello"},
+        miaow::Task{hello, "cats"},
     };
     std::vector<miaow::Task> second_job_tasks{
-        miaow::Task{"hello again"},
-        miaow::Task{"more cats"},
+        miaow::Task{hello, "hello again"},
+        miaow::Task{hello, "more cats"},
     };
 
     // Submit both jobs and get their handles for collecting results when ready
     miaow::JobHandle first_job = runtime.submit_job(first_job_tasks);
     miaow::JobHandle second_job = runtime.submit_job(second_job_tasks);
 
-    // Wait for both jobs to complete.
+    // Wait for both jobs to complete
     const miaow::JobResult first_job_result = first_job.get();
     const miaow::JobResult second_job_result = second_job.get();
 
-    // Print the returned task strings.
-    for (const std::string& result : first_job_result.task_results) {
+    // Print the returned task strings
+    for (const std::string& result : first_job_result.task_results_) {
         std::cout << result << "\n";
     }
-    for (const std::string& result : second_job_result.task_results) {
+    for (const std::string& result : second_job_result.task_results_) {
         std::cout << result << "\n";
     }
 
-    // Print timing diagnostics for each job run.
-    miaow::print_diagnostics(first_job_result.diagnostics, 0);
-    miaow::print_diagnostics(second_job_result.diagnostics, 1);
+    // Print timing diagnostics for each job run
+    miaow::print_diagnostics(first_job_result.diagnostics_, 0);
+    miaow::print_diagnostics(second_job_result.diagnostics_, 1);
 
     return 0;
 }

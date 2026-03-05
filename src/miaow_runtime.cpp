@@ -1,6 +1,7 @@
 #include <chrono>
 #include <future>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -24,7 +25,7 @@ namespace miaow {
 
 static std::once_flag caf_init_flag;
 
-// Return a ready JobHandle for empty-task submissions.
+// Return a ready JobHandle for empty-task submissions
 static JobHandle make_ready_job_handle(JobResult result) {
     std::promise<JobResult> promise;
     promise.set_value(std::move(result));
@@ -39,23 +40,83 @@ static void initialize_caf_once() {
     });
 }
 
-// Construct a Runtime with one shared actor system and orchestrator.
-Runtime::Runtime(SimulationUnitExecutor simulation_unit_executor, RuntimeOptions options)
-    : simulation_unit_executor_(std::move(simulation_unit_executor)),
-      runtime_options_(std::move(options)) {
-    initialize_caf_once();
-    if (!simulation_unit_executor_) {
-        throw std::invalid_argument("Runtime requires a non-null SimulationUnitExecutor");
+// Validate that the simulation unit registry is not empty before starting the runtime
+// Otherwise, there are no simulation units to run any tasks!
+static void validate_simulation_unit_registry(
+    const SimulationUnitRegistry& simulation_unit_registry) {
+    if (simulation_unit_registry.empty()) {
+        throw std::invalid_argument("Runtime requires at least one SimulationUnit");
+    }
+}
+
+// Validate that all task simulation unit IDs are known before starting the job
+static std::optional<JobResult> validate_task_simulation_unit_ids(
+    const std::vector<Task>& tasks,
+    const SimulationUnitRegistry& simulation_unit_registry) {
+    // Track which tasks have valid simulation unit IDs
+    std::vector<bool> task_has_valid_simulation_unit_id(tasks.size(), false);
+    bool has_unknown_simulation_unit_id = false; // does any task have unknown id?
+
+    for (std::size_t task_id = 0; task_id < tasks.size(); ++task_id) {
+        const Task& task = tasks.at(task_id);
+        const SimulationUnitExecutor* simulation_unit_executor =
+            simulation_unit_registry.find_executor(task.simulation_unit_id_);
+        if (!simulation_unit_executor) {
+            has_unknown_simulation_unit_id = true;
+            continue;
+        }
+        task_has_valid_simulation_unit_id.at(task_id) = true;
     }
 
-    // Keep one actor system and one shared orchestrator for this Runtime.
+    if (!has_unknown_simulation_unit_id) {
+        return std::nullopt;
+    }
+
+    // Create a JobResult with error messages for tasks with unknown simulation unit IDs
+    JobResult job_result;
+    job_result.task_results_.resize(tasks.size());
+    for (std::size_t task_id = 0; task_id < tasks.size(); ++task_id) {
+        if (task_has_valid_simulation_unit_id.at(task_id)) {
+            job_result.task_results_.at(task_id) =
+                "Task " + std::to_string(task_id) + " failed: job submission rejected "
+                "because another task references an unknown SimulationUnitId";
+            continue;
+        }
+
+        job_result.task_results_.at(task_id) =
+            "Task " + std::to_string(task_id) + " failed: unknown SimulationUnitId " +
+            std::to_string(tasks.at(task_id).simulation_unit_id_) +
+            " detected at job submission";
+    }
+
+    job_result.diagnostics_.task_times_s_.assign(tasks.size(), 0.0);
+    return job_result;
+}
+
+// Construct a Runtime with default runtime options
+Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry)
+    : Runtime(simulation_unit_registry, RuntimeOptions{}) {
+}
+
+// Construct a Runtime with one shared actor system and orchestrator
+Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry, RuntimeOptions options)
+    : simulation_unit_registry_(
+          std::make_shared<const SimulationUnitRegistry>(simulation_unit_registry)),
+      runtime_options_(std::move(options)) {
+    // initialize CAF global meta objects exactly once in a thread-safe way
+    initialize_caf_once();
+
+    // Validate that the simulation unit registry is not empty before starting the runtime
+    validate_simulation_unit_registry(*simulation_unit_registry_);
+
+    // Keep one actor system and one shared orchestrator for this Runtime
     actor_system_config_ = std::make_shared<caf::actor_system_config>();
     actor_system_ = std::make_shared<caf::actor_system>(*actor_system_config_);
 
     // Spawn the shared orchestrator actor to handle job requests and job completion
     orchestrator_ = actor_system_->spawn(internal::orchestrator_actor,
                                          runtime_options_,
-                                         simulation_unit_executor_,
+                                         simulation_unit_registry_,
                                          &pending_jobs_mutex_,
                                          &pending_jobs_);
 }
@@ -65,12 +126,12 @@ JobHandle Runtime::submit_job(const Task& task) const {
     return submit_job(std::vector<Task>{task});
 }
 
-// `const&` copy path: lvalue input is copied, so caller retains ownership.
+// `const&` copy path: lvalue input is copied, so caller retains ownership
 JobHandle Runtime::submit_job(const std::vector<Task>& tasks) const {
     return submit_job(std::vector<Task>{tasks});
 }
 
-// `&&` move path: rvalue input transfers ownership into the Runtime message path.
+// `&&` move path: rvalue input transfers ownership into the Runtime message path
 JobHandle Runtime::submit_job(std::vector<Task>&& tasks) const {
     JobResult job_result;
 
@@ -79,20 +140,27 @@ JobHandle Runtime::submit_job(std::vector<Task>&& tasks) const {
         return make_ready_job_handle(std::move(job_result));
     }
 
+    // Reject invalid simulation unit IDs before creating actors for this job
+    std::optional<JobResult> invalid_submission_result =
+        validate_task_simulation_unit_ids(tasks, *simulation_unit_registry_);
+    if (invalid_submission_result.has_value()) {
+        return make_ready_job_handle(std::move(invalid_submission_result.value()));
+    }
+
     // Generate a unique job ID for this request
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
-    // Create a promise/future pair for this submitted job.
+    // Create a promise/future pair for this submitted job
     std::promise<JobResult> promise;
 
     JobHandle job = promise.get_future();
     {
         std::lock_guard<std::mutex> lock(pending_jobs_mutex_);
-        // Register this in-progress job in the dictionary: job_id -> promise.
+        // Register this in-progress job in the dictionary: job_id -> promise
         pending_jobs_.emplace(job_id, std::move(promise));
     }
 
-    // Send this job to the shared orchestrator.
+    // Send this job to the shared orchestrator
     caf::anon_mail(caf::get_atom_v, job_id, std::move(tasks)).send(orchestrator_);
     return job;
 }

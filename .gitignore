@@ -58,6 +58,10 @@ Makefile
 # Visual Studio Code settings
 .vscode/
 
+# Markdown files (temporary)
+**/*.md
+!README.md
+
 # Any directory starting with underscore
 _*/
 **/_*/

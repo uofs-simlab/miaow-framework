@@ -73,14 +73,17 @@ struct JobState {
 
 // Internal actor entry points used across translation units
 caf::behavior simulation_unit_actor(caf::event_based_actor* self,
-                                    SimulationUnitExecutor simulation_unit_executor);
+                                    std::shared_ptr<const SimulationUnitRegistry>
+                                        simulation_unit_registry);
 caf::behavior job_actor(caf::event_based_actor* self,
                         std::vector<Task> tasks,
                         RuntimeOptions runtime_options,
-                        SimulationUnitExecutor simulation_unit_executor);
+                        std::shared_ptr<const SimulationUnitRegistry>
+                            simulation_unit_registry);
 caf::behavior orchestrator_actor(caf::event_based_actor* self,
                                  RuntimeOptions runtime_options,
-                                 SimulationUnitExecutor simulation_unit_executor,
+                                 std::shared_ptr<const SimulationUnitRegistry>
+                                     simulation_unit_registry,
                                  std::mutex* pending_jobs_mutex,
                                  PendingJobs* pending_jobs);
 
