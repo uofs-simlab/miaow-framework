@@ -4,40 +4,34 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     project(miaow_heat_example CXX)
 endif()
 
-get_filename_component(MIAOW_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_bmi_model.cmake")
 
-if(NOT TARGET miaow)
-    set(BUILD_EXAMPLES OFF CACHE BOOL "Build example programs" FORCE)
-    add_subdirectory("${MIAOW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/miaow-build")
-endif()
-
-add_executable(miaow_heat
-    main.cpp
-    heat.cxx
-    bmi_heat.cxx
-)
-
-target_include_directories(miaow_heat
-    PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
-)
-
-target_link_libraries(miaow_heat PRIVATE miaow)
-
-set(miaow_heat_output_dir "${CMAKE_CURRENT_LIST_DIR}")
-set_target_properties(miaow_heat PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${miaow_heat_output_dir}"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${miaow_heat_output_dir}"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${miaow_heat_output_dir}"
-    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${miaow_heat_output_dir}"
-    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${miaow_heat_output_dir}"
+miaow_add_bmi_model(
+    EXAMPLE_NAME heat
+    MIAOW_ROOT "${MIAOW_ROOT}"
+    MODEL_ROOT "${MODEL_ROOT}"
+    EXECUTABLE_TARGET "${EXAMPLE_EXECUTABLE_TARGET}"
+    MODEL_TARGET "${EXAMPLE_MODEL_TARGET}"
+    MODEL_LOCAL_SUBDIR bmi-example-cxx
+    MODEL_GIT_REPOSITORY "https://github.com/csdms/bmi-example-cxx.git"
+    MODEL_GIT_TAG "cd6347165021e607204820420eb8af14df26fa59"
+    MODEL_FETCH_NAME bmi_example_cxx
+    EXECUTABLE_SOURCES main.cpp
+    MODEL_SOURCES
+        heat/heat.cxx
+        heat/bmi_heat.cxx
+    MODEL_INCLUDE_DIRS
+        heat
+    USE_MIAOW_BMI_INCLUDE
 )
 
 if(BUILD_TESTING)
-    add_test(
-        NAME miaow_example_01_heat
-        COMMAND
-            $<TARGET_FILE:miaow_heat>
+    miaow_add_workflow_test(
+        TEST_NAME miaow_example_01_heat
+        EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        PASS_REGULAR_EXPRESSION "\\[0\\] BMI workflow complete(.|\\n)*\\[1\\] BMI workflow complete"
+        CLI_ARGS
             --config
             "${CMAKE_CURRENT_LIST_DIR}/config_400x400.txt"
             "${CMAKE_CURRENT_LIST_DIR}/config_800x800.txt"
@@ -47,9 +41,5 @@ if(BUILD_TESTING)
             30
             --job_request_timeout
             300
-    )
-    set_tests_properties(miaow_example_01_heat PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-        PASS_REGULAR_EXPRESSION "\\[0\\] BMI workflow complete(.|\\n)*\\[1\\] BMI workflow complete"
     )
 endif()

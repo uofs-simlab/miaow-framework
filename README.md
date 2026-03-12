@@ -62,6 +62,7 @@ Each dispatch step pops one idle worker ID from `available_workers_`, uses it to
 
 - Distributed runs are not currently supported. Jobs execute within a single runtime instance on a single machine.
 - Only embarrassingly parallel workloads are supported for now, where tasks are independent and do not require inter-task communication.
+- File output is not yet handled by MIAOW, and it is currently assumed that individual simulation units write their own output when necessary.
 
 ## Diagnostics
 
@@ -100,11 +101,30 @@ For convenience, we have also provided a build script `scripts/build.sh`. In eit
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `-DBUILD_EXAMPLES` | `ON` | Build the `miaow_hello` and `miaow_heat` examples |
+| `-DBUILD_EXAMPLES` | `ON` | Build the `miaow_hello`, `miaow_heat`, and `miaow_soil_freeze_thaw` examples |
 | <span style="white-space:nowrap">`-DMIAOW_USE_SYSTEM_CAF`</span> | `ON` | Prefer a system-installed CAF via `find_package` |
 | `-DMIAOW_FETCH_CAF` | `ON` | Fall back to fetching CAF with CMake `FetchContent` if not found by `find_package` |
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version for system `find_package` |
 | `-DMIAOW_CAF_GIT_TAG` | `1.1.0` | CAF git tag or commit for CMake `FetchContent` |
+
+When configuring a model example independently (from inside `examples/01_heat` or `examples/02_soil_freeze_thaw` or within your own project), use the following flags:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-DMIAOW_ROOT` | `<example_dir>/../..` | Path to the `miaow-framework` source tree to link against; this default only works when the configured example directory is inside `miaow-framework/examples/` |
+| `-DMODEL_ROOT` | model-specific local default | Path to the model source tree for that example (`bmi-example-cxx` for `01_heat`, `SoilFreezeThaw` for `02_soil_freeze_thaw`); if this path is missing, the example helper fetches the pinned upstream repository automatically |
+| `-DEXAMPLE_EXECUTABLE_TARGET` | example default (`miaow_hello`, `miaow_heat`, or `miaow_soil_freeze_thaw`) | Override the executable target name when configuring an example directory independently |
+| `-DEXAMPLE_MODEL_TARGET` | example model default (`miaow_heat_model` or `miaow_soil_freeze_thaw_model`) | Override the model-library target name for model examples configured independently |
+
+The model examples use the reusable helper `cmake/miaow_bmi_model.cmake` so BMI model
+linking can be scripted with a short wrapper `CMakeLists.txt` around
+`miaow_add_bmi_model(...)`. This process can be used when integrating MIAOW with new 
+BMI-compatible models other than the ones used in our demonstrations.
+The same module also provides `miaow_add_workflow_test(...)` to keep example CTest
+definitions concise.
+Model resolution order is local-first: if `MODEL_ROOT` exists, MIAOW uses it directly;
+if `MODEL_ROOT` is missing, the helper clones the pinned upstream repository.
+By default, fetched model sources are placed in `<example_dir>/model/`.
 
 ## Tests
 
@@ -122,7 +142,9 @@ We describe below how to run the example programs, noting that in all cases, it 
 
 1. `examples/00_hello`: A basic orchestration example using CAF that submits two async two-task jobs, echoes task strings, and prints per-job diagnostics. Run it as `./miaow_hello`.
 
-2. `examples/01_heat`: Adapted from the heat equation example for the Basic Model Interface (BMI) provided by the [Community Surface Dynamics Modeling System (CSDMS)](https://csdms.colorado.edu/wiki/Main_Page). It can be run as `./miaow_heat --config config_400x400.txt` (or with multiple config files such as `./miaow_heat --config config_400x400.txt config_800x800.txt --max_workers 2`) and prints per-task job results to `stdout`.
+2. `examples/01_heat`: Uses the CSDMS BMI heat example from [csdms/bmi-example-cxx](https://github.com/csdms/bmi-example-cxx), pinned to commit `cd6347165021e607204820420eb8af14df26fa59` (loaded from `MODEL_ROOT` or fetched automatically if missing). The MIAOW wrapper is `examples/01_heat/main.cpp`. Run it as `./miaow_heat --config config_400x400.txt` (or with multiple config files such as `./miaow_heat --config config_400x400.txt config_800x800.txt --max_workers 2`) to print per-task job results to `stdout`.
+
+3. `examples/02_soil_freeze_thaw`: Uses [NOAA-OWP/SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw), pinned to commit `d7a4bdbbe773d79c5d5b81a1255e5288cec01e5b` (loaded from `MODEL_ROOT` or fetched automatically if missing). The MIAOW wrapper is `examples/02_soil_freeze_thaw/main.cpp`. Run it as `./miaow_soil_freeze_thaw --config /Users/tristanmontoya/Projects/miaow-framework/third_party/SoilFreezeThaw/configs/laramie_config_standalone.txt`.
 
 ## License 
 This code ~~is~~ **will probably be** released under the [MIT license](https://opensource.org/license/mit).

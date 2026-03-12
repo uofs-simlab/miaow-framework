@@ -4,33 +4,40 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     project(miaow_hello_example CXX)
 endif()
 
-get_filename_component(MIAOW_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+if(NOT DEFINED MIAOW_ROOT)
+    get_filename_component(miaow_root_default "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+    set(MIAOW_ROOT "${miaow_root_default}" CACHE PATH
+        "Path to the miaow-framework source root")
+endif()
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(EXAMPLE_EXECUTABLE_TARGET "miaow_hello" CACHE STRING
+        "Executable target name for this example")
+else()
+    set(EXAMPLE_EXECUTABLE_TARGET "miaow_hello")
+endif()
 
 if(NOT TARGET miaow)
     set(BUILD_EXAMPLES OFF CACHE BOOL "Build example programs" FORCE)
     add_subdirectory("${MIAOW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/miaow-build")
 endif()
 
-add_executable(miaow_hello
+add_executable(${EXAMPLE_EXECUTABLE_TARGET}
     main.cpp
 )
 
-target_link_libraries(miaow_hello PRIVATE miaow)
+target_compile_features(${EXAMPLE_EXECUTABLE_TARGET} PRIVATE cxx_std_17)
+target_link_libraries(${EXAMPLE_EXECUTABLE_TARGET} PRIVATE miaow)
 
-set(miaow_hello_output_dir "${CMAKE_CURRENT_LIST_DIR}")
-set_target_properties(miaow_hello PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${miaow_hello_output_dir}"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${miaow_hello_output_dir}"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${miaow_hello_output_dir}"
-    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${miaow_hello_output_dir}"
-    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${miaow_hello_output_dir}"
+set_target_properties(${EXAMPLE_EXECUTABLE_TARGET} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
 
 if(BUILD_TESTING)
     add_test(
         NAME miaow_example_00_hello
         COMMAND
-            $<TARGET_FILE:miaow_hello>
+            $<TARGET_FILE:${EXAMPLE_EXECUTABLE_TARGET}>
     )
     set_tests_properties(miaow_example_00_hello PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
