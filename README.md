@@ -144,7 +144,7 @@ We describe below how to run the example programs, noting that in all cases, it 
 
 2. `examples/01_heat`: Uses the CSDMS BMI heat example from [csdms/bmi-example-cxx](https://github.com/csdms/bmi-example-cxx), pinned to commit `cd6347165021e607204820420eb8af14df26fa59` (loaded from `MODEL_ROOT` or fetched automatically if missing). The MIAOW wrapper is `examples/01_heat/main.cpp`. Run it as `./miaow_heat --config config_400x400.txt` (or with multiple config files such as `./miaow_heat --config config_400x400.txt config_800x800.txt --max_workers 2`) to print per-task job results to `stdout`.
 
-3. `examples/02_soil_freeze_thaw`: Uses [NOAA-OWP/SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw), pinned to commit `d7a4bdbbe773d79c5d5b81a1255e5288cec01e5b` (loaded from `MODEL_ROOT` or fetched automatically if missing). The MIAOW wrapper is `examples/02_soil_freeze_thaw/main.cpp`. Run it as `./miaow_soil_freeze_thaw --config /Users/tristanmontoya/Projects/miaow-framework/third_party/SoilFreezeThaw/configs/laramie_config_standalone.txt`.
+3. `examples/02_soil_freeze_thaw`: Uses [NOAA-OWP/SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw), pinned to commit `d7a4bdbbe773d79c5d5b81a1255e5288cec01e5b` (loaded from `MODEL_ROOT` or fetched automatically if missing). The MIAOW wrapper is `examples/02_soil_freeze_thaw/main.cpp`. Run it as `./miaow_soil_freeze_thaw --config model/soil_freeze_thaw-src/configs/laramie_config_standalone.txt`.
 
 ## License 
 This code ~~is~~ **will probably be** released under the [MIT license](https://opensource.org/license/mit).
