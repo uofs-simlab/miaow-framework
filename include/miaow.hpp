@@ -23,11 +23,11 @@
 
 namespace miaow {
 
-/// Monotonic identifier assigned to each registered simulation unit
+// Monotonic identifier assigned to each registered simulation unit
 using SimulationUnitId = std::uint64_t;
-/// Monotonic identifier assigned to each task within one submitted job
+// Monotonic identifier assigned to each task within one submitted job
 using TaskId = std::uint64_t;
-/// Monotonic identifier assigned to each submitted job
+// Monotonic identifier assigned to each submitted job
 using JobId = std::uint64_t;
 
 /**
@@ -36,13 +36,13 @@ using JobId = std::uint64_t;
  * Arguments are positional and interpreted by the concrete SimulationUnit.
  */
 struct Task {
-    /// Simulation unit ID that selects which registered executor handles this task
+    // Simulation unit ID that selects which registered executor handles this task
     SimulationUnitId simulation_unit_id_{0};
 
-    /// Generic arguments for this task to pass into `SimulationUnit::execute(args)`
+    // Generic arguments for this task to pass into `SimulationUnit::execute(args)`
     std::vector<caf::config_value> args_;
 
-    /// Runtime-injected directory where this task should write output artifacts
+    // Runtime-injected directory where this task should write output artifacts
     std::string task_output_dir_;
 
     Task() = default;
@@ -90,22 +90,22 @@ enum class TaskStatus : std::uint8_t {
  * @brief Structured result payload returned for one task execution.
  */
 struct TaskResult {
-    /// Task ID within the submitted job
+    // Task ID within the submitted job
     TaskId task_id_{0};
 
-    /// Simulation unit ID that executed this task
+    // Simulation unit ID that executed this task
     SimulationUnitId simulation_unit_id_{0};
 
-    /// Success/failure state for this task
+    // Success/failure state for this task
     TaskStatus status_{TaskStatus::failed};
 
-    /// Message interpreted by `status_` as output or failure detail
+    // Message interpreted by `status_` as output or failure detail
     std::string message_;
 
-    /// Relative paths to task artifacts produced under task_output_dir_
+    // Relative paths to task artifacts produced under task_output_dir_
     std::vector<std::string> artifact_paths_;
 
-    /// Wall-clock runtime for this task in seconds
+    // Wall-clock runtime for this task in seconds
     double run_time_s_{0.0};
 };
 
@@ -226,17 +226,17 @@ private:
  * Solver-specific options should be passed in task arguments and not included here.
  */
 struct RuntimeOptions {
-    /// Maximum number of worker actors that may run concurrently
+    // Maximum number of worker actors that may run concurrently
     std::size_t max_workers_;
 
-    /// Timeout for a single task request from `job_actor` to `simulation_unit_actor`
+    // Timeout for a single task request from `job_actor` to `simulation_unit_actor`
     std::chrono::milliseconds task_request_timeout_;
 
-    /// Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
+    // Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
     std::chrono::milliseconds job_request_timeout_;
 
-    /// Root output directory where run/job/task artifact folders are created.
-    /// When empty (the default), no output directories or files are written.
+    // Root output directory where run/job/task artifact folders are created.
+    // When empty (the default), no output directories or files are written.
     std::string output_root_;
 
     /**
@@ -262,10 +262,10 @@ struct RuntimeOptions {
  * @brief Job timing diagnostics
  */
 struct JobDiagnostics {
-    /// Total wall-clock runtime for the full job in seconds
+    // Total wall-clock runtime for the full job in seconds
     double total_time_s_{0.0};
 
-    /// Wall-clock duration for each task by task ID in seconds
+    // Wall-clock duration for each task by task ID in seconds
     std::vector<double> task_times_s_;
 };
 
@@ -273,10 +273,10 @@ struct JobDiagnostics {
  * @brief Result payload returned when awaiting a Runtime::submit_job handle
  */
 struct JobResult {
-    /// Structured result for each task in input order
+    // Structured result for each task in input order
     std::vector<TaskResult> task_results_;
 
-    /// Timing diagnostics for this job run
+    // Timing diagnostics for this job run
     JobDiagnostics diagnostics_;
 };
 
@@ -402,32 +402,32 @@ public:
     JobHandle submit_job(std::vector<Task>&& tasks) const;
 
 private:
-    /// Shared simulation unit registry used by all simulation_unit actors in this runtime
+    // Shared simulation unit registry used by all simulation_unit actors in this runtime
     std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry_;
     
-    /// Runtime options for this runtime, copied into each job_actor's JobState
+    // Runtime options for this runtime, copied into each job_actor's JobState
     RuntimeOptions runtime_options_;
 
-    /// Monotonic run ID used to create deterministic output directory layouts
+    // Monotonic run ID used to create deterministic output directory layouts
     std::uint64_t run_id_{0};
 
-    /// Monotonic counter for generating unique JobIds for each submitted job
+    // Monotonic counter for generating unique JobIds for each submitted job
     mutable std::atomic<JobId> next_job_id_{1};
 
-    /// Mutex to protect access to the pending_jobs dictionary
+    // Mutex to protect access to the pending_jobs dictionary
     mutable std::mutex pending_jobs_mutex_;
 
-    /// Dictionary mapping in-progress JobIds to their completion promises
+    // Dictionary mapping in-progress JobIds to their completion promises
     mutable PendingJobs pending_jobs_;
 
-    /// CAF actor system configuration for this runtime instance
+    // CAF actor system configuration for this runtime instance
     std::shared_ptr<caf::actor_system_config> actor_system_config_;
 
-    /// CAF actor system for this runtime instance
+    // CAF actor system for this runtime instance
     std::shared_ptr<caf::actor_system> actor_system_;
 
-    /// Actor that receives requests from Runtime, spawns one job_actor per request,
-    /// and fulfills Runtime promises when jobs complete
+    // Actor that receives requests from Runtime, spawns one job_actor per request,
+    // and fulfills Runtime promises when jobs complete
     caf::actor orchestrator_;
 };
 

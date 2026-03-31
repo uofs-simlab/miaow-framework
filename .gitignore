@@ -62,7 +62,7 @@ Makefile
 # Visual Studio Code settings
 .vscode/
 
-# Markdown files (temporary)
+# Markdown files other than README.md
 **/*.md
 !README.md
 
