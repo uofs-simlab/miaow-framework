@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create deterministic MP4 animations from MIAOW BMI CSV output."""
+"""Create MP4 animations from MIAOW BMI CSV output."""
 
 from __future__ import annotations
 
