@@ -62,14 +62,6 @@ python3 ./tools/visualization/animate_bmi_csv.py \
   --fps 12 \
   --dpi 140
 ```
-
-## Notes on determinism
-
-- Input CSVs are processed in sorted filename order
-- Optional timestep downsampling is deterministic via `--stride N`
-- Rendering parameters are explicit (`fps`, `dpi`, codec, pixel format)
-- No randomization is used
-
 ## Requirements
 
 - Python 3
