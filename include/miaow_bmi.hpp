@@ -63,7 +63,9 @@ public:
             bmi_model.Initialize(*config_file);
             model_initialized = true;
 
-            // Open one CSV output file per output variable, write header rows
+            // Open one CSV output file per output variable, write header rows.
+            // Skipped when task_output_dir_ is empty, which occurs when
+            // RuntimeOptions::output_root_ is empty (the default).
             std::vector<BmiOutputVariable> output_vars;
             if (!task.task_output_dir_.empty()) {
                 output_vars = open_output_vars(bmi_model, task.task_output_dir_);

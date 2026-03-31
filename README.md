@@ -94,10 +94,12 @@ The diagnostics block includes the following information:
 
 ## Artifact layout
 
-By default, MIAOW creates a runtime-managed output tree rooted at `./miaow_output`:
+File output is disabled by default. To enable it, set `output_root` in
+`RuntimeOptions` or pass `--output_root <path>` on the command line. When
+enabled, MIAOW creates the following directory tree:
 
 ```text
-./miaow_output/
+<output_root>/
 └─ run_<run_id>/
    └─ job_<job_id>/
       ├─ job_manifest.json
@@ -107,6 +109,8 @@ By default, MIAOW creates a runtime-managed output tree rooted at `./miaow_outpu
 Each submitted task receives a runtime-injected `Task::task_output_dir_` set
 to the corresponding `task_<task_id>` directory. Simulation units can write
 files there and report relative paths through `TaskResult::artifact_paths_`.
+When `output_root` is empty, `task_output_dir_` is also empty and no
+directories or files are created.
 
 `job_manifest.json` is a per-job metadata record written when a job reaches a
 final `JobResult`. The file includes:
@@ -115,6 +119,11 @@ final `JobResult`. The file includes:
 - diagnostics: `total_time_s`, `task_times_s`
 - per-task entries in `tasks`: `task_id`, `simulation_unit_id`, `status`
   (`"succeeded"` or `"failed"`), `message`, `run_time_s`, `artifact_paths`
+
+`BmiSimulationUnit` writes one CSV file per BMI output variable into
+`task_output_dir_` when output is enabled, with one row per completed timestep.
+Each file is named `<var_name>.csv` and has a header row `time,val_0,...,val_N`
+followed by one data row per `Update()` call.
 
 ## Build instructions
 

@@ -41,7 +41,5 @@ if(BUILD_TESTING)
             60
             --job_request_timeout
             600
-            --output_root
-            "${CMAKE_CURRENT_LIST_DIR}/miaow_output"
     )
 endif()

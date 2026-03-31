@@ -235,7 +235,8 @@ struct RuntimeOptions {
     /// Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
     std::chrono::milliseconds job_request_timeout_;
 
-    /// Root output directory where run/job/task artifact folders are created
+    /// Root output directory where run/job/task artifact folders are created.
+    /// When empty (the default), no output directories or files are written.
     std::string output_root_;
 
     /**
@@ -244,11 +245,12 @@ struct RuntimeOptions {
      * @param task_timeout Timeout used for one simulation task request.
      * @param job_timeout Timeout used for whole-job requests.
      * @param output_root Root directory for runtime-managed task output folders.
+     *                   Empty string (default) disables all file output.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::seconds(5),
                    std::chrono::milliseconds job_timeout = std::chrono::minutes(5),
-                   std::string output_root = "./miaow_output")
+                   std::string output_root = "")
         : max_workers_(workers == 0 ? 1 : workers),
           task_request_timeout_(task_timeout),
           job_request_timeout_(job_timeout),
