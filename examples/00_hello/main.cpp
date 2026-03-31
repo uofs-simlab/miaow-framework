@@ -23,20 +23,34 @@ public:
      * In a real simulation unit, this is where you would implement the logic to initialize
      * and run your model.
      * @param task Task payload; args[0] is expected to be a string.
-     * @return The first string argument, or an error message if missing/invalid.
+     * @return Structured task result with success/failure status and message.
      */
-    std::string execute(const miaow::Task& task) override {
+    miaow::TaskResult execute(const miaow::Task& task) override {
+        miaow::TaskResult task_result;
+        task_result.status_ = miaow::TaskStatus::failed;
+
         if (task.args_.empty()) {
-            return "missing task string";
+            task_result.message_ = "missing task string";
+            return task_result;
         }
         const std::string* message = caf::get_if<std::string>(&task.args_.front());
         if (!message) {
-            return "invalid task string";
+            task_result.message_ = "invalid task string";
+            return task_result;
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        return *message;
+        task_result.status_ = miaow::TaskStatus::succeeded;
+        task_result.message_ = *message;
+        return task_result;
     }
 };
+
+static std::string task_status_string(miaow::TaskStatus status) {
+    if (status == miaow::TaskStatus::succeeded) {
+        return "succeeded";
+    }
+    return "failed";
+}
 
 int main() {
     // Register simulation units and construct a runtime from the registry
@@ -65,12 +79,16 @@ int main() {
     const miaow::JobResult first_job_result = first_job.get();
     const miaow::JobResult second_job_result = second_job.get();
 
-    // Print the returned task strings
-    for (const std::string& result : first_job_result.task_results_) {
-        std::cout << result << "\n";
+    // Print per-task status and message
+    for (const miaow::TaskResult& result : first_job_result.task_results_) {
+        std::cout << "[" << result.task_id_ << "] "
+                  << task_status_string(result.status_) << ": "
+                  << result.message_ << "\n";
     }
-    for (const std::string& result : second_job_result.task_results_) {
-        std::cout << result << "\n";
+    for (const miaow::TaskResult& result : second_job_result.task_results_) {
+        std::cout << "[" << result.task_id_ << "] "
+                  << task_status_string(result.status_) << ": "
+                  << result.message_ << "\n";
     }
 
     // Print timing diagnostics for each job run

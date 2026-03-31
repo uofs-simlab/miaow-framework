@@ -10,8 +10,8 @@ miaow_add_bmi_model(
     EXAMPLE_NAME heat
     MIAOW_ROOT "${MIAOW_ROOT}"
     MODEL_ROOT "${MODEL_ROOT}"
-    EXECUTABLE_TARGET "${EXAMPLE_EXECUTABLE_TARGET}"
-    MODEL_TARGET "${EXAMPLE_MODEL_TARGET}"
+    EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
+    MODEL_TARGET "${MODEL_TARGET}"
     MODEL_LOCAL_SUBDIR bmi-example-cxx
     MODEL_GIT_REPOSITORY "https://github.com/csdms/bmi-example-cxx.git"
     MODEL_GIT_TAG "cd6347165021e607204820420eb8af14df26fa59"
@@ -30,7 +30,7 @@ if(BUILD_TESTING)
         TEST_NAME miaow_example_01_heat
         EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-        PASS_REGULAR_EXPRESSION "\\[0\\] BMI workflow complete(.|\\n)*\\[1\\] BMI workflow complete"
+        PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete(.|\\n)*\\[1\\] succeeded: BMI workflow complete"
         CLI_ARGS
             --config
             "${CMAKE_CURRENT_LIST_DIR}/config_400x400.txt"
@@ -41,5 +41,7 @@ if(BUILD_TESTING)
             30
             --job_request_timeout
             300
+            --output_root
+            "${CMAKE_CURRENT_LIST_DIR}/miaow_output"
     )
 endif()

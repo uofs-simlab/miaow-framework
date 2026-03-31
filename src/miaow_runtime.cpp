@@ -1,4 +1,6 @@
+#include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <future>
 #include <mutex>
 #include <optional>
@@ -24,6 +26,64 @@
 namespace miaow {
 
 static std::once_flag caf_init_flag;
+static std::atomic<std::uint64_t> next_run_id{1};
+
+static std::filesystem::path run_directory_path(const RuntimeOptions& runtime_options,
+                                                std::uint64_t run_id) {
+    return std::filesystem::path(runtime_options.output_root_) /
+           ("run_" + std::to_string(run_id));
+}
+
+static std::filesystem::path job_directory_path(const RuntimeOptions& runtime_options,
+                                                std::uint64_t run_id,
+                                                JobId job_id) {
+    return run_directory_path(runtime_options, run_id) /
+           ("job_" + std::to_string(job_id));
+}
+
+static std::filesystem::path task_directory_path(const RuntimeOptions& runtime_options,
+                                                 std::uint64_t run_id,
+                                                 JobId job_id,
+                                                 TaskId task_id) {
+    return job_directory_path(runtime_options, run_id, job_id) /
+           ("task_" + std::to_string(task_id));
+}
+
+static void assign_task_output_directories(std::vector<Task>& tasks,
+                                           const RuntimeOptions& runtime_options,
+                                           std::uint64_t run_id,
+                                           JobId job_id) {
+    if (runtime_options.output_root_.empty()) {
+        for (Task& task : tasks) {
+            task.task_output_dir_.clear();
+        }
+        return;
+    }
+
+    try {
+        std::filesystem::create_directories(run_directory_path(runtime_options, run_id));
+    } catch (...) {
+    }
+    try {
+        std::filesystem::create_directories(
+            job_directory_path(runtime_options, run_id, job_id));
+    } catch (...) {
+    }
+
+    for (std::size_t task_index = 0; task_index < tasks.size(); ++task_index) {
+        Task& task = tasks.at(task_index);
+        const std::filesystem::path task_directory = task_directory_path(
+            runtime_options,
+            run_id,
+            job_id,
+            static_cast<TaskId>(task_index));
+        task.task_output_dir_ = task_directory.string();
+        try {
+            std::filesystem::create_directories(task_directory);
+        } catch (...) {
+        }
+    }
+}
 
 // Return a ready JobHandle for empty-task submissions
 static JobHandle make_ready_job_handle(JobResult result) {
@@ -76,17 +136,24 @@ static std::optional<JobResult> validate_task_simulation_unit_ids(
     JobResult job_result;
     job_result.task_results_.resize(tasks.size());
     for (std::size_t task_id = 0; task_id < tasks.size(); ++task_id) {
+        TaskResult task_result;
+        task_result.task_id_ = static_cast<TaskId>(task_id);
+        task_result.simulation_unit_id_ = tasks.at(task_id).simulation_unit_id_;
+        task_result.status_ = TaskStatus::failed;
+
         if (task_has_valid_simulation_unit_id.at(task_id)) {
-            job_result.task_results_.at(task_id) =
+            task_result.message_ =
                 "Task " + std::to_string(task_id) + " failed: job submission rejected "
                 "because another task references an unknown SimulationUnitId";
+            job_result.task_results_.at(task_id) = std::move(task_result);
             continue;
         }
 
-        job_result.task_results_.at(task_id) =
+        task_result.message_ =
             "Task " + std::to_string(task_id) + " failed: unknown SimulationUnitId " +
             std::to_string(tasks.at(task_id).simulation_unit_id_) +
             " detected at job submission";
+        job_result.task_results_.at(task_id) = std::move(task_result);
     }
 
     job_result.diagnostics_.task_times_s_.assign(tasks.size(), 0.0);
@@ -108,6 +175,7 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry, Runtime
 
     // Validate that the simulation unit registry is not empty before starting the runtime
     validate_simulation_unit_registry(*simulation_unit_registry_);
+    run_id_ = next_run_id.fetch_add(1, std::memory_order_relaxed);
 
     // Keep one actor system and one shared orchestrator for this Runtime
     actor_system_config_ = std::make_shared<caf::actor_system_config>();
@@ -116,6 +184,7 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry, Runtime
     // Spawn the shared orchestrator actor to handle job requests and job completion
     orchestrator_ = actor_system_->spawn(internal::orchestrator_actor,
                                          runtime_options_,
+                                         run_id_,
                                          simulation_unit_registry_,
                                          &pending_jobs_mutex_,
                                          &pending_jobs_);
@@ -149,6 +218,7 @@ JobHandle Runtime::submit_job(std::vector<Task>&& tasks) const {
 
     // Generate a unique job ID for this request
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
+    assign_task_output_directories(tasks, runtime_options_, run_id_, job_id);
 
     // Create a promise/future pair for this submitted job
     std::promise<JobResult> promise;

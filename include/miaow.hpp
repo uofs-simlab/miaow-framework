@@ -25,6 +25,10 @@ namespace miaow {
 
 /// Monotonic identifier assigned to each registered simulation unit
 using SimulationUnitId = std::uint64_t;
+/// Monotonic identifier assigned to each task within one submitted job
+using TaskId = std::uint64_t;
+/// Monotonic identifier assigned to each submitted job
+using JobId = std::uint64_t;
 
 /**
  * @brief Generic task input specification.
@@ -37,6 +41,9 @@ struct Task {
 
     /// Generic arguments for this task to pass into `SimulationUnit::execute(args)`
     std::vector<caf::config_value> args_;
+
+    /// Runtime-injected directory where this task should write output artifacts
+    std::string task_output_dir_;
 
     Task() = default;
 
@@ -72,6 +79,37 @@ struct Task {
 };
 
 /**
+ * @brief Per-task completion status.
+ */
+enum class TaskStatus : std::uint8_t {
+    succeeded = 0,
+    failed = 1
+};
+
+/**
+ * @brief Structured result payload returned for one task execution.
+ */
+struct TaskResult {
+    /// Task ID within the submitted job
+    TaskId task_id_{0};
+
+    /// Simulation unit ID that executed this task
+    SimulationUnitId simulation_unit_id_{0};
+
+    /// Success/failure state for this task
+    TaskStatus status_{TaskStatus::failed};
+
+    /// Message interpreted by `status_` as output or failure detail
+    std::string message_;
+
+    /// Relative paths to task artifacts produced under task_output_dir_
+    std::vector<std::string> artifact_paths_;
+
+    /// Wall-clock runtime for this task in seconds
+    double run_time_s_{0.0};
+};
+
+/**
  * @brief Base class for model-specific simulation units.
  *
  * Runtime dispatch occurs through subclasses overriding execute().
@@ -83,17 +121,17 @@ public:
     /**
      * @brief Execute the simulation unit for a single task.
      * @param task Generic task arguments.
-     * @return Result message for this execution.
+     * @return Structured result for this execution.
      */
-    virtual std::string execute(const Task& task) = 0;
+    virtual TaskResult execute(const Task& task) = 0;
 };
 
 /**
  * @brief Callable behaviour used by each simulation_unit_actor.
  *
- * The executor receives generic task arguments and returns a result string.
+ * The executor receives generic task arguments and returns a structured result.
  */
-using SimulationUnitExecutor = std::function<std::string(const Task& task)>;
+using SimulationUnitExecutor = std::function<TaskResult(const Task& task)>;
 
 /**
  * @brief Registry for simulation unit executors.
@@ -128,7 +166,7 @@ public:
         // instance of SimulationUnitType for each task execution
         SimulationUnitExecutor simulation_unit_executor =
             [stored_constructor_args = std::move(stored_constructor_args)](
-                const Task& task) -> std::string {
+                const Task& task) -> TaskResult {
                 // Create a new SimulationUnitType instance for this task execution
                 std::unique_ptr<SimulationUnit> simulation_unit = std::apply(
                     [](const std::decay_t<ConstructorArgs>&... args)
@@ -138,7 +176,11 @@ public:
 
                 // If we failed to create a valid simulation unit, return an error message
                 if (!simulation_unit) {
-                    return "SimulationUnit error: failed to create simulation unit";
+                    TaskResult task_result;
+                    task_result.simulation_unit_id_ = task.simulation_unit_id_;
+                    task_result.status_ = TaskStatus::failed;
+                    task_result.message_ = "SimulationUnit error: failed to create simulation unit";
+                    return task_result;
                 }
 
                 // Execute the simulation unit with the given task and return the result
@@ -193,18 +235,24 @@ struct RuntimeOptions {
     /// Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
     std::chrono::milliseconds job_request_timeout_;
 
+    /// Root output directory where run/job/task artifact folders are created
+    std::string output_root_;
+
     /**
      * @brief Construct runtime options with safe defaults.
      * @param workers Desired worker count. Values of zero are clamped to one.
      * @param task_timeout Timeout used for one simulation task request.
      * @param job_timeout Timeout used for whole-job requests.
+     * @param output_root Root directory for runtime-managed task output folders.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::seconds(5),
-                   std::chrono::milliseconds job_timeout = std::chrono::minutes(5))
+                   std::chrono::milliseconds job_timeout = std::chrono::minutes(5),
+                   std::string output_root = "./miaow_output")
         : max_workers_(workers == 0 ? 1 : workers),
           task_request_timeout_(task_timeout),
-          job_request_timeout_(job_timeout) {
+          job_request_timeout_(job_timeout),
+          output_root_(std::move(output_root)) {
     }
 };
 
@@ -223,8 +271,8 @@ struct JobDiagnostics {
  * @brief Result payload returned when awaiting a Runtime::submit_job handle
  */
 struct JobResult {
-    /// Result message for each task in input order
-    std::vector<std::string> task_results_;
+    /// Structured result for each task in input order
+    std::vector<TaskResult> task_results_;
 
     /// Timing diagnostics for this job run
     JobDiagnostics diagnostics_;
@@ -236,9 +284,6 @@ struct JobResult {
  * Call `get()` to wait for completion and retrieve the final result.
  */
 using JobHandle = std::future<JobResult>;
-
-/// Monotonic identifier assigned to each submitted job
-using JobId = std::uint64_t;
 
 /**
  * @brief Runtime-owned registry of in-progress jobs.
@@ -255,7 +300,31 @@ template <class Inspector>
 bool inspect(Inspector& inspector, Task& task) {
     // Defines how CAF serializes/deserializes Task for actor messaging
     return inspector.apply(task.simulation_unit_id_) &&
-           inspector.apply(task.args_);
+           inspector.apply(task.args_) &&
+           inspector.apply(task.task_output_dir_);
+}
+
+template <class Inspector>
+bool inspect(Inspector& inspector, TaskStatus& task_status) {
+    // Defines how CAF serializes/deserializes TaskStatus for actor messaging
+    std::uint8_t status_value = static_cast<std::uint8_t>(task_status);
+    const bool inspected = inspector.apply(status_value);
+    if (!inspected) {
+        return false;
+    }
+    task_status = static_cast<TaskStatus>(status_value);
+    return true;
+}
+
+template <class Inspector>
+bool inspect(Inspector& inspector, TaskResult& task_result) {
+    // Defines how CAF serializes/deserializes TaskResult for actor messaging
+    return inspector.apply(task_result.task_id_) &&
+           inspector.apply(task_result.simulation_unit_id_) &&
+           inspector.apply(task_result.status_) &&
+           inspector.apply(task_result.message_) &&
+           inspector.apply(task_result.artifact_paths_) &&
+           inspector.apply(task_result.run_time_s_);
 }
 
 template <class Inspector>
@@ -275,12 +344,12 @@ bool inspect(Inspector& inspector, JobResult& job_result) {
 /**
  * @brief Format diagnostics as a human-readable block
  */
-std::string format_diagnostics(const JobDiagnostics& diagnostics, std::size_t job_id = 0);
+std::string format_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
 
 /**
  * @brief Print diagnostics to stdout
  */
-void print_diagnostics(const JobDiagnostics& diagnostics, std::size_t job_id = 0);
+void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
 
 /**
  * @brief Actor runtime for orchestrating simulation tasks.
@@ -336,6 +405,9 @@ private:
     
     /// Runtime options for this runtime, copied into each job_actor's JobState
     RuntimeOptions runtime_options_;
+
+    /// Monotonic run ID used to create deterministic output directory layouts
+    std::uint64_t run_id_{0};
 
     /// Monotonic counter for generating unique JobIds for each submitted job
     mutable std::atomic<JobId> next_job_id_{1};

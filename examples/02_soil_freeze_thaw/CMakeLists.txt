@@ -10,8 +10,8 @@ miaow_add_bmi_model(
     EXAMPLE_NAME soil_freeze_thaw
     MIAOW_ROOT "${MIAOW_ROOT}"
     MODEL_ROOT "${MODEL_ROOT}"
-    EXECUTABLE_TARGET "${EXAMPLE_EXECUTABLE_TARGET}"
-    MODEL_TARGET "${EXAMPLE_MODEL_TARGET}"
+    EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
+    MODEL_TARGET "${MODEL_TARGET}"
     MODEL_LOCAL_SUBDIR SoilFreezeThaw
     MODEL_GIT_REPOSITORY "https://github.com/NOAA-OWP/SoilFreezeThaw.git"
     MODEL_GIT_TAG "d7a4bdbbe773d79c5d5b81a1255e5288cec01e5b"
@@ -31,7 +31,7 @@ if(BUILD_TESTING)
         TEST_NAME miaow_example_02_soil_freeze_thaw
         EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
         WORKING_DIRECTORY "${MIAOW_MODEL_ROOT_RESOLVED}"
-        PASS_REGULAR_EXPRESSION "\\[0\\] BMI workflow complete"
+        PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete"
         CLI_ARGS
             --config
             "${MIAOW_MODEL_ROOT_RESOLVED}/configs/laramie_config_standalone.txt"
@@ -41,5 +41,7 @@ if(BUILD_TESTING)
             60
             --job_request_timeout
             600
+            --output_root
+            "${CMAKE_CURRENT_LIST_DIR}/miaow_output"
     )
 endif()

@@ -8,7 +8,7 @@
 namespace miaow {
 
 std::string format_diagnostics(const JobDiagnostics& diagnostics,
-                               std::size_t job_id) {
+                               JobId job_id) {
     // Add up task times
     double sum_task_times = 0.0;
     for (double task_time : diagnostics.task_times_s_) {
@@ -39,7 +39,7 @@ std::string format_diagnostics(const JobDiagnostics& diagnostics,
 }
 
 // Print diagnostics to stdout
-void print_diagnostics(const JobDiagnostics& diagnostics, std::size_t job_id) {
+void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id) {
     std::cout << format_diagnostics(diagnostics, job_id);
 }
 

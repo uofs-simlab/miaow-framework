@@ -15,19 +15,35 @@
 #include "miaow_interface.hpp" // CLI parser for example programs
 
 /**
- * @brief A simple simulation unit used to return a hello message.
+ * @brief A simple simulation unit used to return a hello message. This is included to 
+ * demonstrate that multiple simulation units can be mixed in the same job.
+ * In a real workflow, this could be replaced with other simulation units that perform 
+ * different tasks, such as data preprocessing, postprocessing, or running different models.
  */
 class HelloSimulationUnit : public miaow::SimulationUnit {
 public:
-    std::string execute(const miaow::Task& task) override {
+    miaow::TaskResult execute(const miaow::Task& task) override {
+        miaow::TaskResult task_result;
+
         if (task.args_.empty()) {
-            return "hello";
+            task_result.status_ = miaow::TaskStatus::succeeded;
+            task_result.message_ = "hello";
+            return task_result;
         }
 
         const std::string* message = caf::get_if<std::string>(&task.args_.front());
-        return message ? *message : "hello";
+        task_result.status_ = miaow::TaskStatus::succeeded;
+        task_result.message_ = message ? *message : "hello";
+        return task_result;
     }
 };
+
+static std::string task_status_string(miaow::TaskStatus status) {
+    if (status == miaow::TaskStatus::succeeded) {
+        return "succeeded";
+    }
+    return "failed";
+}
 
 int main(int argc, char* argv[]) {
     // Initialize runtime options and config file list to be populated by CLI parser
@@ -72,7 +88,10 @@ int main(int argc, char* argv[]) {
 
     // Print the results for each config file in order
     for (std::size_t index = 0; index < job_result.task_results_.size(); ++index) {
-        std::cout << "[" << index << "] " << job_result.task_results_[index] << "\n";
+        const miaow::TaskResult& task_result = job_result.task_results_.at(index);
+        std::cout << "[" << index << "] "
+                  << task_status_string(task_result.status_) << ": "
+                  << task_result.message_ << "\n";
     }
 
     // Print timing diagnostics for this job run

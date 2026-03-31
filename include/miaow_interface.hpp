@@ -20,7 +20,7 @@ inline std::string workflow_cli_usage(const std::string& program_name) {
     return "Usage: " + program_name +
            " --config <config_file_1> [<config_file_2> ...]"
            " [--max_workers <n>] [--task_request_timeout <seconds>]"
-           " [--job_request_timeout <seconds>]";
+           " [--job_request_timeout <seconds>] [--output_root <path>]";
 }
 
 /**
@@ -31,6 +31,7 @@ inline std::string workflow_cli_usage(const std::string& program_name) {
  * - `--max_workers <num_workers>`
  * - `--task_request_timeout <seconds>`
  * - `--job_request_timeout <seconds>`
+ * - `--output_root <path>`
  */
 inline std::string parse_workflow_cli_options(int argc,
                                               char* argv[],
@@ -141,6 +142,21 @@ inline std::string parse_workflow_cli_options(int argc,
             }
             runtime_options.job_request_timeout_ = std::chrono::seconds(parsed_seconds);
             seen_options.push_back("--job_request_timeout");
+            return "";
+        };
+
+    option_handlers["--output_root"] =
+        [&](const std::vector<std::string>& values) -> std::string {
+            if (std::find(seen_options.begin(), seen_options.end(), "--output_root") !=
+                seen_options.end()) {
+                return "Error: --output_root may only be provided once";
+            }
+            const std::string value_count_error = ensure_single_value("--output_root", values);
+            if (!value_count_error.empty()) {
+                return value_count_error;
+            }
+            runtime_options.output_root_ = values.front();
+            seen_options.push_back("--output_root");
             return "";
         };
 

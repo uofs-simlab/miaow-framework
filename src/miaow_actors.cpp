@@ -2,7 +2,10 @@
 #include <chrono>
 #include <cstddef>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -11,10 +14,142 @@
 
 namespace miaow::internal {
 
-// Return failure message for a task in the format "Task {task_id} failed: {reason}"
-static std::string failure_message(std::size_t task_id, const std::string& reason) {
-    return "Task " + std::to_string(task_id) + " failed: " + reason;
+namespace {
+
+std::string task_status_to_string(TaskStatus status) {
+    if (status == TaskStatus::succeeded) {
+        return "succeeded";
+    }
+    return "failed";
 }
+
+std::string json_escape(const std::string& input) {
+    std::ostringstream escaped;
+    for (char character : input) {
+        switch (character) {
+            case '\\':
+                escaped << "\\\\";
+                break;
+            case '\"':
+                escaped << "\\\"";
+                break;
+            case '\b':
+                escaped << "\\b";
+                break;
+            case '\f':
+                escaped << "\\f";
+                break;
+            case '\n':
+                escaped << "\\n";
+                break;
+            case '\r':
+                escaped << "\\r";
+                break;
+            case '\t':
+                escaped << "\\t";
+                break;
+            default:
+                escaped << character;
+                break;
+        }
+    }
+    return escaped.str();
+}
+
+void write_job_manifest_best_effort(std::uint64_t run_id,
+                                    JobId job_id,
+                                    const RuntimeOptions& runtime_options,
+                                    const JobResult& job_result) {
+    if (runtime_options.output_root_.empty()) {
+        return;
+    }
+
+    try {
+        const std::filesystem::path job_directory =
+            std::filesystem::path(runtime_options.output_root_) /
+            ("run_" + std::to_string(run_id)) /
+            ("job_" + std::to_string(job_id));
+        std::filesystem::create_directories(job_directory);
+
+        std::ofstream manifest_file(job_directory / "job_manifest.json");
+        if (!manifest_file.is_open()) {
+            return;
+        }
+
+        manifest_file << "{\n";
+        manifest_file << "  \"run_id\": " << run_id << ",\n";
+        manifest_file << "  \"job_id\": " << job_id << ",\n";
+        manifest_file << "  \"diagnostics\": {\n";
+        manifest_file << "    \"total_time_s\": " << job_result.diagnostics_.total_time_s_ << ",\n";
+        manifest_file << "    \"task_times_s\": [";
+        for (std::size_t index = 0; index < job_result.diagnostics_.task_times_s_.size(); ++index) {
+            if (index > 0) {
+                manifest_file << ", ";
+            }
+            manifest_file << job_result.diagnostics_.task_times_s_.at(index);
+        }
+        manifest_file << "]\n";
+        manifest_file << "  },\n";
+        manifest_file << "  \"tasks\": [\n";
+
+        for (std::size_t index = 0; index < job_result.task_results_.size(); ++index) {
+            const TaskResult& task_result = job_result.task_results_.at(index);
+            manifest_file << "    {\n";
+            manifest_file << "      \"task_id\": " << task_result.task_id_ << ",\n";
+            manifest_file << "      \"simulation_unit_id\": " << task_result.simulation_unit_id_ << ",\n";
+            manifest_file << "      \"status\": \"" << task_status_to_string(task_result.status_)
+                          << "\",\n";
+            manifest_file << "      \"message\": \"" << json_escape(task_result.message_)
+                          << "\",\n";
+            manifest_file << "      \"run_time_s\": " << task_result.run_time_s_ << ",\n";
+            manifest_file << "      \"artifact_paths\": [";
+
+            for (std::size_t path_index = 0;
+                 path_index < task_result.artifact_paths_.size();
+                 ++path_index) {
+                if (path_index > 0) {
+                    manifest_file << ", ";
+                }
+                manifest_file << "\"" << json_escape(task_result.artifact_paths_.at(path_index))
+                              << "\"";
+            }
+
+            manifest_file << "]\n";
+            manifest_file << "    }";
+            if (index + 1 < job_result.task_results_.size()) {
+                manifest_file << ",";
+            }
+            manifest_file << "\n";
+        }
+
+        manifest_file << "  ]\n";
+        manifest_file << "}\n";
+    } catch (...) {
+        // best-effort manifest writing: do not propagate errors
+    }
+}
+
+TaskResult make_failed_task_result(TaskId task_id,
+                                   SimulationUnitId simulation_unit_id,
+                                   const std::string& message) {
+    TaskResult task_result;
+    task_result.task_id_ = task_id;
+    task_result.simulation_unit_id_ = simulation_unit_id;
+    task_result.status_ = TaskStatus::failed;
+    task_result.message_ = message;
+    return task_result;
+}
+
+void canonicalize_task_result(TaskResult& task_result,
+                              const Task& task,
+                              TaskId task_id,
+                              double run_time_s) {
+    task_result.task_id_ = task_id;
+    task_result.simulation_unit_id_ = task.simulation_unit_id_;
+    task_result.run_time_s_ = run_time_s;
+}
+
+} // namespace
 
 static void dispatch_tasks(caf::event_based_actor* self,
                            const std::shared_ptr<JobState>& state);
@@ -48,8 +183,7 @@ static void complete_task(caf::event_based_actor* self,
                           const std::shared_ptr<JobState>& state,
                           std::size_t worker_id,
                           std::size_t task_id,
-                          bool success,
-                          const std::string& message) {
+                          TaskResult task_result) {
     // Task is done, so decrement active_task_count
     if (state->active_task_count_ > 0) {
         --state->active_task_count_;
@@ -59,17 +193,18 @@ static void complete_task(caf::event_based_actor* self,
     state->available_workers_.push(worker_id);
 
     // Record the wall-clock duration and success/failure message for this task ID
-    state->task_times_s_.at(task_id) = std::chrono::duration<double>(
-                                          std::chrono::steady_clock::now() -
-                                          state->task_start_times_.at(task_id))
-                                          .count();
+    const double task_run_time_s = std::chrono::duration<double>(
+                                       std::chrono::steady_clock::now() -
+                                       state->task_start_times_.at(task_id))
+                                       .count();
+    state->task_times_s_.at(task_id) = task_run_time_s;
 
-    // Record the success or failure message for this task ID in the task_results vector
-    if (success) {
-        state->task_results_.at(task_id) = message;
-    } else {
-        state->task_results_.at(task_id) = failure_message(task_id, message);
-    }
+    // Runtime owns canonical identifiers and timing for task results
+    canonicalize_task_result(task_result,
+                             state->tasks_.at(task_id),
+                             static_cast<TaskId>(task_id),
+                             task_run_time_s);
+    state->task_results_.at(task_id) = std::move(task_result);
 
     // Dispatch more tasks if there are any left, now that a worker slot is free
     dispatch_tasks(self, state);
@@ -98,16 +233,19 @@ static void dispatch_tasks(caf::event_based_actor* self,
         self->mail(caf::get_atom_v, state->tasks_.at(task_id))
             .request(state->workers_.at(worker_id), state->runtime_options_.task_request_timeout_)
             .then(
-                [self, state, worker_id, task_id](const std::string& message) {
-                    complete_task(self, state, worker_id, task_id, true, message);
+                [self, state, worker_id, task_id](TaskResult task_result) {
+                    complete_task(self, state, worker_id, task_id, std::move(task_result));
                 },
                 [self, state, worker_id, task_id](const caf::error& err) {
+                    const TaskResult failed_task_result = make_failed_task_result(
+                        static_cast<TaskId>(task_id),
+                        state->tasks_.at(task_id).simulation_unit_id_,
+                        std::string("CAF error: ") + caf::to_string(err));
                     complete_task(self,
                                   state,
                                   worker_id,
                                   task_id,
-                                  false,
-                                  std::string("CAF error: ") + caf::to_string(err));
+                                  failed_task_result);
                 });
     }
 
@@ -122,7 +260,7 @@ caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
     return {
         [simulation_unit_registry = std::move(simulation_unit_registry)](
             caf::get_atom,
-            const Task& task) -> caf::result<std::string> {
+            const Task& task) -> caf::result<TaskResult> {
             // Error if simulation unit registry is missing
             if (!simulation_unit_registry) {
                 return caf::make_error(caf::sec::runtime_error,
@@ -163,8 +301,8 @@ caf::behavior job_actor(caf::event_based_actor* self,
     state->tasks_ = std::move(tasks);
     state->job_start_time_ = std::chrono::steady_clock::now();
 
-    // Initialize results vector with empty strings for each task
-    state->task_results_.assign(state->tasks_.size(), "");
+    // Initialize one default result entry per task
+    state->task_results_.resize(state->tasks_.size());
     state->task_start_times_.assign(state->tasks_.size(), state->job_start_time_);
     state->task_times_s_.assign(state->tasks_.size(), 0.0);
 
@@ -202,6 +340,7 @@ caf::behavior job_actor(caf::event_based_actor* self,
 // Shared orchestrator actor that handles job submission and completion delivery
 caf::behavior orchestrator_actor(caf::event_based_actor* self,
                                  RuntimeOptions runtime_options,
+                                 std::uint64_t run_id,
                                  std::shared_ptr<const SimulationUnitRegistry>
                                      simulation_unit_registry,
                                  std::mutex* pending_jobs_mutex,
@@ -210,6 +349,11 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
         // Job submission event
         [=](caf::get_atom, JobId job_id, std::vector<Task> tasks) {
             const std::size_t task_count = tasks.size();
+            std::vector<SimulationUnitId> task_simulation_unit_ids;
+            task_simulation_unit_ids.reserve(task_count);
+            for (const Task& task : tasks) {
+                task_simulation_unit_ids.push_back(task.simulation_unit_id_);
+            }
             const caf::actor orchestrator = self;
 
             // Spawn one job actor for this request
@@ -227,11 +371,21 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
                             .send(orchestrator);
                     },
                     // Convert timeout or error into a failed JobResult
-                    [orchestrator, job_id, task_count](const caf::error& err) {
+                    [orchestrator,
+                     job_id,
+                     task_count,
+                     task_simulation_unit_ids](const caf::error& err) {
                         JobResult job_result;
-                        job_result.task_results_.assign(
-                            task_count,
-                            std::string("CAF error: ") + caf::to_string(err));
+                        job_result.task_results_.resize(task_count);
+                        for (std::size_t task_index = 0; task_index < task_count; ++task_index) {
+                            TaskResult task_result;
+                            task_result.task_id_ = static_cast<TaskId>(task_index);
+                            task_result.simulation_unit_id_ =
+                                task_simulation_unit_ids.at(task_index);
+                            task_result.status_ = TaskStatus::failed;
+                            task_result.message_ = std::string("CAF error: ") + caf::to_string(err);
+                            job_result.task_results_.at(task_index) = std::move(task_result);
+                        }
                         job_result.diagnostics_.task_times_s_.assign(task_count, 0.0);
 
                         caf::anon_mail(caf::put_atom_v, job_id, std::move(job_result))
@@ -240,7 +394,9 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
         },
         // Resolve Runtime promise for this completed job and mark its future ready
         [pending_jobs_mutex,
-         pending_jobs](caf::put_atom,
+         pending_jobs,
+         runtime_options,
+         run_id](caf::put_atom,
                        JobId job_id,
                        JobResult job_result) mutable {
             std::promise<JobResult> promise;
@@ -254,6 +410,7 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
                 pending_jobs->erase(pending_job_entry);
             } // mutex unlocks automatically here
 
+            write_job_manifest_best_effort(run_id, job_id, runtime_options, job_result);
             promise.set_value(std::move(job_result));
         }
     };

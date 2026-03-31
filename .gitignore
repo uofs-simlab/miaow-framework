@@ -69,3 +69,11 @@ Makefile
 # Any directory starting with underscore
 _*/
 **/_*/
+
+# Generated runtime and visualization outputs
+**/miaow_output/
+*.mp4
+
+# Python cache files
+__pycache__/
+*.pyc

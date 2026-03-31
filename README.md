@@ -62,11 +62,11 @@ Each dispatch step pops one idle worker ID from `available_workers_`, uses it to
 
 - Distributed runs are not currently supported. Jobs execute within a single runtime instance on a single machine.
 - Only embarrassingly parallel workloads are supported for now, where tasks are independent and do not require inter-task communication.
-- File output is not yet handled by MIAOW, and it is currently assumed that individual simulation units write their own output when necessary.
+- Artifact path sanitization is not yet enforced in this minimal release.
 
 ## Diagnostics
 
-`Runtime::submit_job(...)` returns a non-blocking `JobHandle`. Calling `get()` on the handle yields a `JobResult` containing simulation results (currently a placeholder vector of `std::string`) and timing diagnostics. You can submit multiple jobs before waiting on any one result:
+`Runtime::submit_job(...)` returns a non-blocking `JobHandle`. Calling `get()` on the handle yields a `JobResult` containing one `TaskResult` per task plus timing diagnostics. Each `TaskResult` includes `status_`, `message_`, `artifact_paths_`, and `run_time_s_`. You can submit multiple jobs before waiting on any one result:
 
 ```cpp
 // Submit non-blocking jobs
@@ -76,6 +76,10 @@ miaow::JobHandle another_job = runtime.submit_job(other_tasks);
 // Wait for completion and get results
 miaow::JobResult job_result = job.get();
 miaow::JobResult another_job_result = another_job.get();
+
+for (const miaow::TaskResult& task_result : job_result.task_results_) {
+    std::cout << task_result.message_ << "\n";
+}
 
 // Print the diagnostics
 miaow::print_diagnostics(job_result.diagnostics_);
@@ -87,7 +91,31 @@ The diagnostics block includes the following information:
 - `total_time` (in seconds)
 - `concurrency`, computed as `sum(task_times) / total_time`
 - `task_times` listed by task ID (in seconds)
- 
+
+## Artifact layout
+
+By default, MIAOW creates a runtime-managed output tree rooted at `./miaow_output`:
+
+```text
+./miaow_output/
+└─ run_<run_id>/
+   └─ job_<job_id>/
+      ├─ job_manifest.json
+      └─ task_<task_id>/
+```
+
+Each submitted task receives a runtime-injected `Task::task_output_dir_` set
+to the corresponding `task_<task_id>` directory. Simulation units can write
+files there and report relative paths through `TaskResult::artifact_paths_`.
+
+`job_manifest.json` is a per-job metadata record written when a job reaches a
+final `JobResult`. The file includes:
+
+- top-level identifiers: `run_id`, `job_id`
+- diagnostics: `total_time_s`, `task_times_s`
+- per-task entries in `tasks`: `task_id`, `simulation_unit_id`, `status`
+  (`"succeeded"` or `"failed"`), `message`, `run_time_s`, `artifact_paths`
+
 ## Build instructions
 
 The following commands can be used to build `libmiaow.a` with [CMake](https://cmake.org/):
@@ -113,8 +141,8 @@ When configuring a model example independently (from inside `examples/01_heat` o
 | --- | --- | --- |
 | `-DMIAOW_ROOT` | `<example_dir>/../..` | Path to the `miaow-framework` source tree to link against; this default only works when the configured example directory is inside `miaow-framework/examples/` |
 | `-DMODEL_ROOT` | model-specific local default | Path to the model source tree for that example (`bmi-example-cxx` for `01_heat`, `SoilFreezeThaw` for `02_soil_freeze_thaw`); if this path is missing, the example helper fetches the pinned upstream repository automatically |
-| `-DEXAMPLE_EXECUTABLE_TARGET` | example default (`miaow_hello`, `miaow_heat`, or `miaow_soil_freeze_thaw`) | Override the executable target name when configuring an example directory independently |
-| `-DEXAMPLE_MODEL_TARGET` | example model default (`miaow_heat_model` or `miaow_soil_freeze_thaw_model`) | Override the model-library target name for model examples configured independently |
+| `-DEXECUTABLE_TARGET` | example default (`miaow_hello`, `miaow_heat`, or `miaow_soil_freeze_thaw`) | Override the executable target name when configuring an example directory independently |
+| `-DMODEL_TARGET` | example model default (`miaow_heat_model` or `miaow_soil_freeze_thaw_model`) | Override the model-library target name for model examples configured independently |
 
 The model examples use the reusable helper `cmake/miaow_bmi_model.cmake` so BMI model
 linking can be scripted with a short wrapper `CMakeLists.txt` around
@@ -140,7 +168,7 @@ ctest --test-dir build --output-on-failure
 
 We describe below how to run the example programs, noting that in all cases, it is assumed that we begin within the respective `examples/<xx_example_name>` subdirectory. 
 
-1. `examples/00_hello`: A basic orchestration example using CAF that submits two async two-task jobs, echoes task strings, and prints per-job diagnostics. Run it as `./miaow_hello`.
+1. `examples/00_hello`: A basic orchestration example using CAF that submits two async two-task jobs, echoes task strings, prints per-task `TaskResult` status/message, and prints per-job diagnostics. Run it as `./miaow_hello`.
 
 2. `examples/01_heat`: Uses the CSDMS BMI heat example from [csdms/bmi-example-cxx](https://github.com/csdms/bmi-example-cxx), pinned to commit `cd6347165021e607204820420eb8af14df26fa59` (loaded from `MODEL_ROOT` or fetched automatically if missing). The MIAOW wrapper is `examples/01_heat/main.cpp`. Run it as `./miaow_heat --config config_400x400.txt` (or with multiple config files such as `./miaow_heat --config config_400x400.txt config_800x800.txt --max_workers 2`) to print per-task job results to `stdout`.
 

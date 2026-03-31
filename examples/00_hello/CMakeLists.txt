@@ -11,10 +11,10 @@ if(NOT DEFINED MIAOW_ROOT)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    set(EXAMPLE_EXECUTABLE_TARGET "miaow_hello" CACHE STRING
+    set(EXECUTABLE_TARGET "miaow_hello" CACHE STRING
         "Executable target name for this example")
 else()
-    set(EXAMPLE_EXECUTABLE_TARGET "miaow_hello")
+    set(EXECUTABLE_TARGET "miaow_hello")
 endif()
 
 if(NOT TARGET miaow)
@@ -22,14 +22,14 @@ if(NOT TARGET miaow)
     add_subdirectory("${MIAOW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/miaow-build")
 endif()
 
-add_executable(${EXAMPLE_EXECUTABLE_TARGET}
+add_executable(${EXECUTABLE_TARGET}
     main.cpp
 )
 
-target_compile_features(${EXAMPLE_EXECUTABLE_TARGET} PRIVATE cxx_std_17)
-target_link_libraries(${EXAMPLE_EXECUTABLE_TARGET} PRIVATE miaow)
+target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_17)
+target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
 
-set_target_properties(${EXAMPLE_EXECUTABLE_TARGET} PROPERTIES
+set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
 
@@ -37,10 +37,24 @@ if(BUILD_TESTING)
     add_test(
         NAME miaow_example_00_hello
         COMMAND
-            $<TARGET_FILE:${EXAMPLE_EXECUTABLE_TARGET}>
+            $<TARGET_FILE:${EXECUTABLE_TARGET}>
     )
     set_tests_properties(miaow_example_00_hello PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-        PASS_REGULAR_EXPRESSION "hello(.|\\n)*cats(.|\\n)*hello again(.|\\n)*more cats"
+        PASS_REGULAR_EXPRESSION "succeeded: hello(.|\\n)*succeeded: cats(.|\\n)*succeeded: hello again(.|\\n)*succeeded: more cats"
+    )
+
+    add_test(
+        NAME miaow_example_00_hello_manifest_layout
+        COMMAND
+            ${CMAKE_COMMAND}
+            -DHELLO_EXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
+            -DWORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+            -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/miaow_output
+            -P
+            ${MIAOW_ROOT}/cmake/check_manifest_layout.cmake
+    )
+    set_tests_properties(miaow_example_00_hello_manifest_layout PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
 endif()
