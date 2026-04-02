@@ -21,7 +21,7 @@
 #include <caf/json_value.hpp>
 #include <caf/type_id.hpp>
 
-#include "miaow_internal.hpp"
+#include "internal.hpp"
 
 namespace miaow {
 
@@ -182,7 +182,7 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry, Runtime
     actor_system_ = std::make_shared<caf::actor_system>(*actor_system_config_);
 
     // Spawn the shared orchestrator actor to handle job requests and job completion
-    orchestrator_ = actor_system_->spawn(internal::orchestrator_actor,
+    orchestrator_ = actor_system_->spawn(core::orchestrator_actor,
                                          runtime_options_,
                                          run_id_,
                                          simulation_unit_registry_,

@@ -65,14 +65,18 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
 endif()
 
 add_library(miaow STATIC
-    src/miaow_actors.cpp
-    src/miaow_diagnostics.cpp
-    src/miaow_runtime.cpp
+    src/bmi/forcing.cpp
+    src/bmi/workflow.cpp
+    src/core/actors.cpp
+    src/core/diagnostics.cpp
+    src/core/runtime.cpp
 )
 
 target_include_directories(miaow
     PUBLIC
         ${PROJECT_SOURCE_DIR}/include
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/src
 )
 
 if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)

@@ -10,9 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include "miaow_internal.hpp"
+#include "internal.hpp"
 
-namespace miaow::internal {
+namespace miaow::core {
 
 namespace {
 
@@ -416,4 +416,4 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
     };
 }
 
-} // namespace miaow::internal
+} // namespace miaow::core

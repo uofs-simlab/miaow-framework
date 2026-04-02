@@ -30,11 +30,11 @@ if(BUILD_TESTING)
     miaow_add_workflow_test(
         TEST_NAME miaow_example_02_soil_freeze_thaw
         EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
-        WORKING_DIRECTORY "${MIAOW_MODEL_ROOT_RESOLVED}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete"
         CLI_ARGS
             --config
-            "${MIAOW_MODEL_ROOT_RESOLVED}/configs/laramie_config_standalone.txt"
+            "${CMAKE_CURRENT_LIST_DIR}/configs/laramie_config_standalone.txt"
             --max_workers
             1
             --task_request_timeout

@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
 import os
 from pathlib import Path
+import shutil
 import tempfile
 from typing import Iterable, Sequence
 
@@ -25,9 +27,25 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import animation
+from matplotlib.artist import Artist
 import numpy as np
 
 LOGGER = logging.getLogger("animate_bmi_csv")
+
+
+def resolve_ffmpeg_executable() -> tuple[str, str]:
+    try:
+        imageio_ffmpeg = importlib.import_module("imageio_ffmpeg")
+
+        return imageio_ffmpeg.get_ffmpeg_exe(), "imageio-ffmpeg"
+    except Exception:
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path:
+            return ffmpeg_path, "system"
+    raise RuntimeError(
+        "No ffmpeg executable found. Install imageio-ffmpeg in the visualization venv "
+        "or install system ffmpeg."
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -144,16 +162,14 @@ def render_animation(
     values: np.ndarray,
     fps: int,
     dpi: int,
+    ffmpeg_path: str,
 ) -> None:
     if fps <= 0:
         raise ValueError("--fps must be > 0")
     if dpi <= 0:
         raise ValueError("--dpi must be > 0")
 
-    if not animation.writers.is_available("ffmpeg"):
-        raise RuntimeError(
-            "Matplotlib ffmpeg writer is unavailable. Install ffmpeg to render MP4 output"
-        )
+    plt.rcParams["animation.ffmpeg_path"] = ffmpeg_path
 
     plt.rcParams.update(
         {
@@ -186,7 +202,7 @@ def render_animation(
         bbox={"facecolor": "white", "alpha": 0.7, "edgecolor": "none"},
     )
 
-    def update(frame_index: int) -> Sequence[object]:
+    def update(frame_index: int) -> Sequence[Artist]:
         line.set_ydata(values[frame_index, :])
         title.set_text(f"{csv_path.stem}: frame {frame_index + 1}/{len(times)}")
         time_text.set_text(f"time = {times[frame_index]:.6g}")
@@ -233,6 +249,7 @@ def render_many(
     fps: int,
     stride: int,
     dpi: int,
+    ffmpeg_path: str,
 ) -> list[Path]:
     outputs: list[Path] = []
 
@@ -248,7 +265,7 @@ def render_many(
             stride,
             values.shape[1],
         )
-        render_animation(csv_path, output_path, times, values, fps, dpi)
+        render_animation(csv_path, output_path, times, values, fps, dpi, ffmpeg_path)
         outputs.append(output_path)
 
     return outputs
@@ -258,6 +275,8 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     logging.getLogger("matplotlib").setLevel(logging.WARNING)
     args = parse_args()
+    ffmpeg_path, ffmpeg_source = resolve_ffmpeg_executable()
+    LOGGER.info("Using ffmpeg from %s: %s", ffmpeg_source, ffmpeg_path)
 
     input_path = args.input_path.resolve()
     csv_paths = resolve_input_csvs(input_path)
@@ -271,6 +290,7 @@ def main() -> int:
         fps=args.fps,
         stride=args.stride,
         dpi=args.dpi,
+        ffmpeg_path=ffmpeg_path,
     )
 
     LOGGER.info("Done. Generated %d MP4 file(s)", len(outputs))

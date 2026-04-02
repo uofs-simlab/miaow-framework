@@ -77,3 +77,4 @@ _*/
 # Python cache files
 __pycache__/
 *.pyc
+scripts/visualization/.venv/

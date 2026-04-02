@@ -26,7 +26,7 @@ CAF_ADD_TYPE_ID(miaow_module, (miaow::JobDiagnostics))
 CAF_ADD_TYPE_ID(miaow_module, (miaow::JobResult))
 CAF_END_TYPE_ID_BLOCK(miaow_module)
 
-namespace miaow::internal {
+namespace miaow::core {
 
 // Internal scheduler state for one job_actor instance
 // job_actor is the only owner/writer of this state
@@ -89,4 +89,4 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
                                  std::mutex* pending_jobs_mutex,
                                  PendingJobs* pending_jobs);
 
-} // namespace miaow::internal
+} // namespace miaow::core
