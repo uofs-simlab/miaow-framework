@@ -21,7 +21,7 @@ Run examples (reproducible from repo root):
 
 ```bash
 ./examples/00_hello/miaow_hello
-./examples/01_heat/miaow_heat --config examples/01_heat/config_400x400.txt
+./examples/01_heat/miaow_heat --config examples/01_heat/configs/config_400x400.txt
 ctest --test-dir build -R miaow_example_02_soil_freeze_thaw --output-on-failure
 ```
 
@@ -180,6 +180,14 @@ and `miaow_add_workflow_test(...)` for model integration and workflow tests.
 1. `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
 2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat equation example](https://github.com/csdms/bmi-example-cxx)
 3. `examples/02_soil_freeze_thaw`: [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) BMI integration
+
+Each example follows a common layout:
+
+```text
+examples/<example_name>/
+  configs/   # model configuration files
+  forcing/   # optional forcing data files
+```
 
 ## Limitations
 

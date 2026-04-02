@@ -33,8 +33,8 @@ if(BUILD_TESTING)
         PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete(.|\\n)*\\[1\\] succeeded: BMI workflow complete"
         CLI_ARGS
             --config
-            "${CMAKE_CURRENT_LIST_DIR}/config_400x400.txt"
-            "${CMAKE_CURRENT_LIST_DIR}/config_800x800.txt"
+            "${CMAKE_CURRENT_LIST_DIR}/configs/config_400x400.txt"
+            "${CMAKE_CURRENT_LIST_DIR}/configs/config_800x800.txt"
             --max_workers
             2
             --task_request_timeout

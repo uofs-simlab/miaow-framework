@@ -30,7 +30,7 @@ Dependencies are intentionally minimal and unpinned for low maintenance.
 
 ```bash
 ./examples/01_heat/miaow_heat \
-  --config ./examples/01_heat/config_400x400.txt \
+  --config ./examples/01_heat/configs/config_400x400.txt \
   --max_workers 1 \
   --task_request_timeout 30 \
   --job_request_timeout 300 \
@@ -71,7 +71,7 @@ For long runs (e.g., SoilFreezeThaw), render directly with timestep stride:
   --dpi 140
 ```
 
-## ffmpeg behavior
+## ffmpeg behaviour
 
 The script prefers the ffmpeg binary from `imageio-ffmpeg` in the venv. If that
 is not available, it falls back to system `ffmpeg` on `PATH`.
