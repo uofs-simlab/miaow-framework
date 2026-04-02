@@ -45,7 +45,7 @@ Typical flow:
 6. Runtime fulfils the caller's `JobHandle` future.
 
 Each `Runtime` instance keeps one shared orchestrator, so multiple
-`submit_job(...)` calls can be in flight concurrently.
+`submit_job(...)` calls can be running concurrently.
 
 ## Public API summary
 
