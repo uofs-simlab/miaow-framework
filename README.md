@@ -55,7 +55,7 @@ Key types in `include/miaow.hpp`:
 - `SimulationUnit`: abstract model-agnostic execution interface
 - `SimulationUnitRegistry`: registers units and returns `SimulationUnitId`
 - `Task`: carries `simulation_unit_id_`, positional `args_`, and runtime-set `task_output_dir_`
-- `TaskResult`: per-task status, message, artifacts, and runtime
+- `TaskResult`: per-task status, message, artifact paths, and runtime
 - `Runtime`: submits jobs and returns non-blocking `JobHandle`
 - `JobResult`: aggregate of `TaskResult` values plus diagnostics
 
@@ -193,7 +193,6 @@ examples/<example_name>/
 
 - Distributed runs are not currently supported.
 - Target workloads are embarrassingly parallel tasks without inter-task communication.
-- Artifact path sanitization is not yet enforced.
 
 ## Authors and funding
 MIAOW was developed at the University of Saskatchewan by Tristan Montoya and Raymond Spiteri, with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/).
