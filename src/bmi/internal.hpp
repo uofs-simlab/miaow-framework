@@ -34,4 +34,10 @@ std::size_t run_model_updates(
     const std::optional<ForcingData>& forcing_data,
     const std::string& task_output_dir);
 
+// Parse optional forcing path and run the model update workflow
+std::size_t run_model(
+    ::bmi::Bmi& model,
+    const std::optional<std::string>& forcing_config_path,
+    const std::string& task_output_dir);
+
 } // namespace miaow::bmi

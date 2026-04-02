@@ -1,4 +1,3 @@
-#include "miaow_bmi.hpp"
 #include "bmi/internal.hpp"
 
 #include <filesystem>

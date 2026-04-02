@@ -65,6 +65,7 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
 endif()
 
 add_library(miaow STATIC
+    src/bmi/execute.cpp
     src/bmi/forcing.cpp
     src/bmi/workflow.cpp
     src/core/actors.cpp

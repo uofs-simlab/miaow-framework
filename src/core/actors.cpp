@@ -56,76 +56,85 @@ std::string json_escape(const std::string& input) {
     return escaped.str();
 }
 
-void write_job_manifest_best_effort(std::uint64_t run_id,
-                                    JobId job_id,
-                                    const RuntimeOptions& runtime_options,
-                                    const JobResult& job_result) {
+void write_job_manifest(std::uint64_t run_id,
+                        JobId job_id,
+                        const RuntimeOptions& runtime_options,
+                        const JobResult& job_result) {
     if (runtime_options.output_root_.empty()) {
         return;
     }
 
-    try {
-        const std::filesystem::path job_directory =
-            std::filesystem::path(runtime_options.output_root_) /
-            ("run_" + std::to_string(run_id)) /
-            ("job_" + std::to_string(job_id));
-        std::filesystem::create_directories(job_directory);
+    const std::filesystem::path job_directory =
+        std::filesystem::path(runtime_options.output_root_) /
+        ("run_" + std::to_string(run_id)) /
+        ("job_" + std::to_string(job_id));
+    std::filesystem::create_directories(job_directory);
 
-        std::ofstream manifest_file(job_directory / "job_manifest.json");
-        if (!manifest_file.is_open()) {
-            return;
+    std::ofstream manifest_file(job_directory / "job_manifest.json");
+    if (!manifest_file.is_open()) {
+        throw std::ios_base::failure("Failed to open job_manifest.json for writing");
+    }
+    manifest_file.exceptions(std::ios::failbit | std::ios::badbit);
+
+    manifest_file << "{\n";
+    manifest_file << "  \"run_id\": " << run_id << ",\n";
+    manifest_file << "  \"job_id\": " << job_id << ",\n";
+    manifest_file << "  \"diagnostics\": {\n";
+    manifest_file << "    \"total_time_s\": " << job_result.diagnostics_.total_time_s_ << ",\n";
+    manifest_file << "    \"task_times_s\": [";
+    for (std::size_t index = 0; index < job_result.diagnostics_.task_times_s_.size(); ++index) {
+        if (index > 0) {
+            manifest_file << ", ";
         }
+        manifest_file << job_result.diagnostics_.task_times_s_.at(index);
+    }
+    manifest_file << "]\n";
+    manifest_file << "  },\n";
+    manifest_file << "  \"tasks\": [\n";
 
-        manifest_file << "{\n";
-        manifest_file << "  \"run_id\": " << run_id << ",\n";
-        manifest_file << "  \"job_id\": " << job_id << ",\n";
-        manifest_file << "  \"diagnostics\": {\n";
-        manifest_file << "    \"total_time_s\": " << job_result.diagnostics_.total_time_s_ << ",\n";
-        manifest_file << "    \"task_times_s\": [";
-        for (std::size_t index = 0; index < job_result.diagnostics_.task_times_s_.size(); ++index) {
-            if (index > 0) {
+    for (std::size_t index = 0; index < job_result.task_results_.size(); ++index) {
+        const TaskResult& task_result = job_result.task_results_.at(index);
+        manifest_file << "    {\n";
+        manifest_file << "      \"task_id\": " << task_result.task_id_ << ",\n";
+        manifest_file << "      \"simulation_unit_id\": " << task_result.simulation_unit_id_
+                      << ",\n";
+        manifest_file << "      \"status\": \"" << task_status_to_string(task_result.status_)
+                      << "\",\n";
+        manifest_file << "      \"message\": \"" << json_escape(task_result.message_) << "\",\n";
+        manifest_file << "      \"run_time_s\": " << task_result.run_time_s_ << ",\n";
+        manifest_file << "      \"artifact_paths\": [";
+
+        for (std::size_t path_index = 0; path_index < task_result.artifact_paths_.size();
+             ++path_index) {
+            if (path_index > 0) {
                 manifest_file << ", ";
             }
-            manifest_file << job_result.diagnostics_.task_times_s_.at(index);
+            manifest_file << "\"" << json_escape(task_result.artifact_paths_.at(path_index))
+                          << "\"";
         }
+
         manifest_file << "]\n";
-        manifest_file << "  },\n";
-        manifest_file << "  \"tasks\": [\n";
-
-        for (std::size_t index = 0; index < job_result.task_results_.size(); ++index) {
-            const TaskResult& task_result = job_result.task_results_.at(index);
-            manifest_file << "    {\n";
-            manifest_file << "      \"task_id\": " << task_result.task_id_ << ",\n";
-            manifest_file << "      \"simulation_unit_id\": " << task_result.simulation_unit_id_ << ",\n";
-            manifest_file << "      \"status\": \"" << task_status_to_string(task_result.status_)
-                          << "\",\n";
-            manifest_file << "      \"message\": \"" << json_escape(task_result.message_)
-                          << "\",\n";
-            manifest_file << "      \"run_time_s\": " << task_result.run_time_s_ << ",\n";
-            manifest_file << "      \"artifact_paths\": [";
-
-            for (std::size_t path_index = 0;
-                 path_index < task_result.artifact_paths_.size();
-                 ++path_index) {
-                if (path_index > 0) {
-                    manifest_file << ", ";
-                }
-                manifest_file << "\"" << json_escape(task_result.artifact_paths_.at(path_index))
-                              << "\"";
-            }
-
-            manifest_file << "]\n";
-            manifest_file << "    }";
-            if (index + 1 < job_result.task_results_.size()) {
-                manifest_file << ",";
-            }
-            manifest_file << "\n";
+        manifest_file << "    }";
+        if (index + 1 < job_result.task_results_.size()) {
+            manifest_file << ",";
         }
+        manifest_file << "\n";
+    }
 
-        manifest_file << "  ]\n";
-        manifest_file << "}\n";
-    } catch (...) {
-        // best-effort manifest writing: do not propagate errors
+    manifest_file << "  ]\n";
+    manifest_file << "}\n";
+    manifest_file.flush();
+}
+
+void mark_job_result_failed(JobResult& job_result, const std::string& message) {
+    const std::string manifest_error_message = "Manifest error: " + message;
+    for (TaskResult& task_result : job_result.task_results_) {
+        task_result.status_ = TaskStatus::failed;
+        if (task_result.message_.empty()) {
+            task_result.message_ = manifest_error_message;
+            continue;
+        }
+        task_result.message_ += " | " + manifest_error_message;
     }
 }
 
@@ -410,7 +419,13 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
                 pending_jobs->erase(pending_job_entry);
             } // mutex unlocks automatically here
 
-            write_job_manifest_best_effort(run_id, job_id, runtime_options, job_result);
+            try {
+                write_job_manifest(run_id, job_id, runtime_options, job_result);
+            } catch (const std::exception& err) {
+                mark_job_result_failed(job_result, err.what());
+            } catch (...) {
+                mark_job_result_failed(job_result, "unknown manifest write failure");
+            }
             promise.set_value(std::move(job_result));
         }
     };

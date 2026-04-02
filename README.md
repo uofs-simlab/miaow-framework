@@ -1,10 +1,11 @@
-# MIAOW: Model-independent actor orchestration workflows for scientific computing
+# MIAOW: Model-Independent Actor Orchestration Workflows for Scientific Computing
 
 [![CI](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml)
 
 Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
 
-MIAOW uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) and interfaces with the [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
+MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/), and interfaces with the [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
+
 
 ## Quick start
 
@@ -66,7 +67,7 @@ For BMI models, use `miaow::BmiSimulationUnit<BmiModelType>` from
 ```text
 include/
   miaow.hpp              # public runtime/task API
-  miaow_bmi.hpp          # BMI simulation-unit wrapper + BMI-facing contracts
+  miaow_bmi.hpp          # BMI simulation-unit wrapper/BMI-facing contracts
   miaow_interface.hpp    # CLI parsing helpers for workflow examples
 
 src/
@@ -77,12 +78,13 @@ src/
     internal.hpp         # core-private actor declarations and JobState
 
   bmi/
+    execute.cpp          # BMI lifecycle execution bridge for public wrapper
     forcing.cpp          # forcing config parsing + BMI input validation
-    workflow.cpp         # BMI update loop + per-step output writing
+    workflow.cpp         # BMI update loop/per-step output writing
 
   io/
-    csv.hpp/cpp          # CSV header and numeric-column extraction
-    utils.hpp/cpp        # small text helpers (for example trim)
+    csv.hpp              # header-only CSV header and numeric-column extraction
+    utils.hpp            # header-only text/string-parsing helpers
 
 examples/
   00_hello/
@@ -175,12 +177,15 @@ and `miaow_add_workflow_test(...)` for model integration and workflow tests.
 
 ## Examples
 
-1. `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing.
-2. `examples/01_heat`: BMI heat example integration (`csdms/bmi-example-cxx`).
-3. `examples/02_soil_freeze_thaw`: SoilFreezeThaw BMI integration (`NOAA-OWP/SoilFreezeThaw`).
+1. `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
+2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat equation example](https://github.com/csdms/bmi-example-cxx)
+3. `examples/02_soil_freeze_thaw`: [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) BMI integration
 
 ## Limitations
 
 - Distributed runs are not currently supported.
 - Target workloads are embarrassingly parallel tasks without inter-task communication.
 - Artifact path sanitization is not yet enforced.
+
+## Authors and funding
+MIAOW was developed at the University of Saskatchewan by Tristan Montoya and Raymond Spiteri, with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/).

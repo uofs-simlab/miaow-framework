@@ -60,15 +60,9 @@ static void assign_task_output_directories(std::vector<Task>& tasks,
         return;
     }
 
-    try {
-        std::filesystem::create_directories(run_directory_path(runtime_options, run_id));
-    } catch (...) {
-    }
-    try {
-        std::filesystem::create_directories(
-            job_directory_path(runtime_options, run_id, job_id));
-    } catch (...) {
-    }
+    std::filesystem::create_directories(run_directory_path(runtime_options, run_id));
+    std::filesystem::create_directories(
+        job_directory_path(runtime_options, run_id, job_id));
 
     for (std::size_t task_index = 0; task_index < tasks.size(); ++task_index) {
         Task& task = tasks.at(task_index);
@@ -78,10 +72,7 @@ static void assign_task_output_directories(std::vector<Task>& tasks,
             job_id,
             static_cast<TaskId>(task_index));
         task.task_output_dir_ = task_directory.string();
-        try {
-            std::filesystem::create_directories(task_directory);
-        } catch (...) {
-        }
+        std::filesystem::create_directories(task_directory);
     }
 }
 
