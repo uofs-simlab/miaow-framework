@@ -12,7 +12,7 @@
 #include "bmi_heat.hxx"     // defines the BmiHeat class that implements the BMI interface
 #include "miaow.hpp"        // Core MIAOW runtime API
 #include "miaow_bmi.hpp"    // MIAOW API for running BMI models as simulation units
-#include "miaow_interface.hpp" // CLI parser for example programs
+#include "miaow_cli.hpp" // CLI parser for example programs
 
 /**
  * @brief A simple simulation unit used to return a hello message. This is included to 

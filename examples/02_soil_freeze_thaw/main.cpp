@@ -10,7 +10,7 @@
 #include "bmi_soil_freeze_thaw.hxx"
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
-#include "miaow_interface.hpp"
+#include "miaow_cli.hpp"
 
 static std::string task_status_string(miaow::TaskStatus status) {
     if (status == miaow::TaskStatus::succeeded) {

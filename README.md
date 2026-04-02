@@ -68,7 +68,7 @@ For BMI models, use `miaow::BmiSimulationUnit<BmiModelType>` from
 include/
   miaow.hpp              # public runtime/task API
   miaow_bmi.hpp          # BMI simulation-unit wrapper/BMI-facing contracts
-  miaow_interface.hpp    # CLI parsing helpers for workflow examples
+  miaow_cli.hpp          # CLI parsing helpers for workflow examples
 
 src/
   core/
