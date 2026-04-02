@@ -153,7 +153,7 @@ Top-level CMake options:
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version when using system CAF |
 | `-DMIAOW_CAF_GIT_TAG` | `1.1.0` | CAF tag/commit for `FetchContent` |
 
-For Conan-based CI-style setup:
+For [Conan](https://conan.io/)-based CI-style setup:
 
 ```bash
 conan install . --output-folder=build/conan --build=missing
