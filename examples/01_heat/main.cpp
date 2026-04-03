@@ -1,8 +1,8 @@
 /**
- * This example demonstrates how to use the MIAOW framework to run a simple BMI model of 
- * heat diffusion on a plate. The example includes a custom BMI implementation (BmiHeat) 
- * that wraps a simple heat diffusion model, and a main program that sets up the MIAOW 
- * runtime to execute the BMI job with a given configuration file.
+ * This example demonstrates how to use the MIAOW framework to run a simple BMI model of
+ * heat diffusion on a plate. The example uses the CSDMS BMI C++ heat example
+ * implementation (`BmiHeat`) and a main program that sets up the MIAOW runtime
+ * to execute the BMI job with a given configuration file.
  */
 
 #include <iostream>
@@ -15,9 +15,9 @@
 #include "miaow_cli.hpp" // CLI parser for example programs
 
 /**
- * @brief A simple simulation unit used to return a hello message. This is included to 
+ * @brief A simple simulation unit used to return a hello message. This is included to
  * demonstrate that multiple simulation units can be mixed in the same job.
- * In a real workflow, this could be replaced with other simulation units that perform 
+ * In a real workflow, this could be replaced with other simulation units that perform
  * different tasks, such as data preprocessing, postprocessing, or running different models.
  */
 class HelloSimulationUnit : public miaow::SimulationUnit {
@@ -49,11 +49,12 @@ int main(int argc, char* argv[]) {
     // Initialize runtime options and config file list to be populated by CLI parser
     miaow::RuntimeOptions runtime_options;
     std::vector<std::string> config_files;
+    std::vector<std::string> forcing_config_files;
 
     // Parse and validate command-line arguments
     const std::string input_error = miaow::parse_and_validate_workflow_cli_options(
-        argc, argv, runtime_options, config_files);
-    
+        argc, argv, runtime_options, config_files, forcing_config_files);
+
     // Print any error in input arguments and output usage instructions if failed
     if (!input_error.empty()) {
         std::cerr << input_error << "\n" << miaow::workflow_cli_usage("miaow_heat") << "\n";
@@ -73,8 +74,18 @@ int main(int argc, char* argv[]) {
 
     // Each task corresponds to running the BMI model with one of the provided config files
     tasks.reserve(config_files.size());
-    for (const std::string& config_file : config_files) {
-        tasks.emplace_back(heat, config_file);
+    for (std::size_t index = 0; index < config_files.size(); ++index) {
+        const std::string& config_file = config_files.at(index);
+        if (forcing_config_files.empty()) {
+            tasks.emplace_back(heat, config_file);
+            continue;
+        }
+
+        std::vector<caf::config_value> task_args;
+        task_args.reserve(2);
+        task_args.emplace_back(config_file);
+        task_args.emplace_back(forcing_config_files.at(index));
+        tasks.emplace_back(heat, std::move(task_args));
     }
 
     // Add one hello task to demonstrate mixed simulation-unit routing in the same job

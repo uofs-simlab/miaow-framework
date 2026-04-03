@@ -1,9 +1,12 @@
 #include "bmi/internal.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -38,6 +41,61 @@ void validate_forcing_target(::bmi::Bmi& model, const std::string& bmi_input_var
             "BMI forcing error: input variable '" + bmi_input_var +
             "' must be scalar (8 bytes) but has " + std::to_string(n_bytes) +
             " byte(s)");
+    }
+}
+
+double parse_positive_time_step(const std::string& raw_value,
+                                const std::string& forcing_config_path) {
+    try {
+        std::size_t parsed_chars = 0;
+        const double parsed_value = std::stod(raw_value, &parsed_chars);
+        if (parsed_chars != raw_value.size() ||
+            !std::isfinite(parsed_value) ||
+            parsed_value <= 0.0) {
+            throw std::runtime_error(
+                "Forcing config error: invalid time_step_size '" + raw_value +
+                "' in '" + forcing_config_path + "'");
+        }
+        return parsed_value;
+    } catch (const std::exception&) {
+        throw std::runtime_error(
+            "Forcing config error: invalid time_step_size '" + raw_value +
+            "' in '" + forcing_config_path + "'");
+    }
+}
+
+void validate_forcing_timestep(::bmi::Bmi& model,
+                               const ForcingConfig& forcing_config) {
+    const std::string model_time_units = model.GetTimeUnits();
+    if (forcing_config.time_units_ != model_time_units) {
+        throw std::runtime_error(
+            "BMI forcing error: forcing time_units '" + forcing_config.time_units_ +
+            "' must match BMI time units '" + model_time_units + "'");
+    }
+
+    const double model_time_step = model.GetTimeStep();
+    if (!std::isfinite(model_time_step) || model_time_step <= 0.0) {
+        throw std::runtime_error(
+            "BMI forcing error: invalid BMI time step '" +
+            std::to_string(model_time_step) + "'");
+    }
+
+    const double forcing_time_step = forcing_config.time_step_size_;
+    const double absolute_difference =
+        std::abs(forcing_time_step - model_time_step);
+    const double tolerance = std::max(
+        1e-12,
+        std::numeric_limits<double>::epsilon() *
+            std::max(std::abs(forcing_time_step), std::abs(model_time_step)) *
+            16.0);
+
+    if (absolute_difference > tolerance) {
+        std::ostringstream error;
+        error.precision(std::numeric_limits<double>::max_digits10);
+        error << "BMI forcing error: forcing time_step_size "
+              << forcing_time_step << " must match BMI time step "
+              << model_time_step;
+        throw std::runtime_error(error.str());
     }
 }
 
@@ -91,6 +149,8 @@ ForcingConfig read_forcing_config(const std::string& forcing_config_path) {
         "subdomain_id",
         "csv_column",
         "bmi_input_var",
+        "time_step_size",
+        "time_units",
     };
     for (const std::string& key : required_keys) {
         const auto it = key_values.find(key);
@@ -120,12 +180,17 @@ ForcingConfig read_forcing_config(const std::string& forcing_config_path) {
     config.subdomain_id_ = key_values.at("subdomain_id");
     config.csv_column_ = key_values.at("csv_column");
     config.bmi_input_var_ = key_values.at("bmi_input_var");
+    config.time_step_size_ =
+        parse_positive_time_step(key_values.at("time_step_size"),
+                                 forcing_config_path);
+    config.time_units_ = key_values.at("time_units");
     return config;
 }
 
 ForcingData load_forcing_data(::bmi::Bmi& model,
                               const ForcingConfig& forcing_config) {
     validate_forcing_target(model, forcing_config.bmi_input_var_);
+    validate_forcing_timestep(model, forcing_config);
 
     ForcingData forcing_data;
     forcing_data.bmi_input_var_ = forcing_config.bmi_input_var_;

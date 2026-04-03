@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml)
 
+<p align="center">
+  <img src="docs/images/miaow_logo.svg" alt="MIAOW logo" width="360">
+</p>
+
 Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
 
 MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/), and interfaces with the [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
@@ -22,6 +26,9 @@ Run examples (reproducible from repo root):
 ```bash
 ./examples/00_hello/miaow_hello
 ./examples/01_heat/miaow_heat --config examples/01_heat/configs/config_400x400.txt
+./examples/02_soil_freeze_thaw/miaow_soil_freeze_thaw \
+  --config examples/02_soil_freeze_thaw/configs/laramie_config_standalone.txt \
+  --forcing_config examples/02_soil_freeze_thaw/forcing/ground_temperature_forcing_config.txt
 ctest --test-dir build -R miaow_example_02_soil_freeze_thaw --output-on-failure
 ```
 
@@ -100,7 +107,7 @@ examples/
 - IO helpers: `miaow::io`
 - External BMI C++ API alias in `miaow_bmi.hpp`: `miaow::bmi_api = ::bmi`
 
-## BMI integration
+## Basic Model Interface (BMI) integration
 
 `BmiSimulationUnit<BmiModelType>` wraps a complete BMI lifecycle per task:
 
@@ -111,6 +118,23 @@ examples/
 Optional forcing is supported through a second task argument (`args[1]`) that
 points to a forcing config. In forcing mode, one configured CSV column is
 applied to one BMI input variable before each `Update()` step.
+
+Workflow examples expose this through `--forcing_config`. When provided, the
+number of forcing config paths must match `--config`, and each task uses the
+pair with the same index.
+
+Forcing config files require these keys:
+- `source_type`
+- `source_path`
+- `subdomain_id`
+- `csv_column`
+- `bmi_input_var`
+- `time_step_size`
+- `time_units`
+
+`time_step_size` and `time_units` must match the BMI model timestep metadata.
+Forcing may contain additional trailing rows beyond simulation end, but it must
+not run out before the simulation finishes.
 
 ## Scheduling behaviour
 

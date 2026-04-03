@@ -108,13 +108,6 @@ std::size_t run_model_updates(
         }
     }
 
-    if (forcing_data.has_value() && forcing_step != forcing_data->values_.size()) {
-        throw std::runtime_error(
-            "Forcing alignment error: forcing series contains " +
-            std::to_string(forcing_data->values_.size()) +
-            " rows but model consumed " + std::to_string(forcing_step));
-    }
-
     return update_steps;
 }
 

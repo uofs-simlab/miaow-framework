@@ -15,6 +15,8 @@ struct ForcingConfig {
     std::string subdomain_id_;  // Subdomain label from config for traceability
     std::string csv_column_;    // CSV column name used as the forcing series
     std::string bmi_input_var_; // BMI input variable to set each update step
+    double time_step_size_{0.0}; // Forcing timestep size in declared time_units_
+    std::string time_units_;     // Time units used for forcing timestep metadata
 };
 
 struct ForcingData {
@@ -28,7 +30,7 @@ ForcingConfig read_forcing_config(const std::string& forcing_config_path);
 // Load forcing column values and validate compatibility with the BMI input
 ForcingData load_forcing_data(::bmi::Bmi& model, const ForcingConfig& forcing_config);
 
-// Run BMI updates with preloaded forcing and strict row-to-step alignment
+// Run BMI updates with preloaded forcing and row-index forcing injection
 std::size_t run_model_updates(
     ::bmi::Bmi& model,
     const std::optional<ForcingData>& forcing_data,

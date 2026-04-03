@@ -50,7 +50,7 @@ if(BUILD_TESTING)
             ${CMAKE_COMMAND}
             -DHELLO_EXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/miaow_output
+            -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/output
             -P
             ${MIAOW_ROOT}/cmake/check_manifest_layout.cmake
     )

@@ -64,7 +64,7 @@ For long runs (e.g., SoilFreezeThaw), render directly with timestep stride:
 
 ```bash
 ./scripts/visualization/.venv/bin/python ./scripts/visualization/animate_bmi_csv.py \
-  ./examples/02_soil_freeze_thaw/miaow_output/run_1/job_1/task_0 \
+  ./examples/02_soil_freeze_thaw/output/run_1/job_1/task_0 \
   --output-dir /tmp/miaow_soil_videos \
   --stride 96 \
   --fps 12 \

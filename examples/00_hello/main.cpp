@@ -59,7 +59,7 @@ int main() {
     const miaow::SimulationUnitId hello = simulation_unit_registry.add<HelloSimulationUnit>();
 
     miaow::RuntimeOptions runtime_options{/*workers=*/2};
-    runtime_options.output_root_ = "./miaow_output";
+    runtime_options.output_root_ = "./output";
     miaow::Runtime runtime(simulation_unit_registry, runtime_options);
 
     // Create two sets of tasks for separate jobs with two string arguments each

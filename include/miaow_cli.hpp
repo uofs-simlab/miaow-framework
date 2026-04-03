@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cstddef>
+#include <fstream>
 #include <functional>
 #include <string>
 #include <system_error>
@@ -19,6 +20,7 @@ namespace miaow {
 inline std::string workflow_cli_usage(const std::string& program_name) {
     return "Usage: " + program_name +
            " --config <config_file_1> [<config_file_2> ...]"
+           " [--forcing_config <forcing_config_file_1> [<forcing_config_file_2> ...]]"
            " [--max_workers <n>] [--task_request_timeout <seconds>]"
            " [--job_request_timeout <seconds>] [--output_root <path>]";
 }
@@ -28,6 +30,7 @@ inline std::string workflow_cli_usage(const std::string& program_name) {
  *
  * Supported arguments:
  * - `--config <config_file_1> [<config_file_2> ...]`
+ * - `--forcing_config <forcing_config_file_1> [<forcing_config_file_2> ...]`
  * - `--max_workers <num_workers>`
  * - `--task_request_timeout <seconds>`
  * - `--job_request_timeout <seconds>`
@@ -36,7 +39,8 @@ inline std::string workflow_cli_usage(const std::string& program_name) {
 inline std::string parse_workflow_cli_options(int argc,
                                               char* argv[],
                                               RuntimeOptions& runtime_options,
-                                              std::vector<std::string>& config_files) {
+                                              std::vector<std::string>& config_files,
+                                              std::vector<std::string>& forcing_config_files) {
     std::function<std::string(const std::string&, const std::string&, std::size_t&)>
         parse_positive_integer =
         [](const std::string& value,
@@ -80,6 +84,20 @@ inline std::string parse_workflow_cli_options(int argc,
         seen_options.push_back("--config");
         return "";
     };
+
+    option_handlers["--forcing_config"] =
+        [&](const std::vector<std::string>& values) -> std::string {
+            if (std::find(seen_options.begin(), seen_options.end(), "--forcing_config") !=
+                seen_options.end()) {
+                return "Error: --forcing_config may only be provided once";
+            }
+            if (values.empty()) {
+                return "Error: --forcing_config requires at least one forcing config file";
+            }
+            forcing_config_files = values;
+            seen_options.push_back("--forcing_config");
+            return "";
+        };
 
     option_handlers["--max_workers"] = [&](const std::vector<std::string>& values) -> std::string {
         if (std::find(seen_options.begin(), seen_options.end(), "--max_workers") !=
@@ -177,7 +195,7 @@ inline std::string parse_workflow_cli_options(int argc,
 
         std::vector<std::string> option_values;
         ++index;
-        if (option_name == "--config") {
+        if (option_name == "--config" || option_name == "--forcing_config") {
             while (index < argc) {
                 const std::string value = argv[index];
                 if (value.rfind("--", 0) == 0) {
@@ -208,6 +226,11 @@ inline std::string parse_workflow_cli_options(int argc,
         return "Error: missing required --config argument";
     }
 
+    if (!forcing_config_files.empty() &&
+        forcing_config_files.size() != config_files.size()) {
+        return "Error: --forcing_config count must match --config count";
+    }
+
     return "";
 }
 
@@ -218,13 +241,29 @@ inline std::string parse_and_validate_workflow_cli_options(
     int argc,
     char* argv[],
     RuntimeOptions& runtime_options,
-    std::vector<std::string>& config_files) {
+    std::vector<std::string>& config_files,
+    std::vector<std::string>& forcing_config_files) {
     const std::string parse_error =
-        parse_workflow_cli_options(argc, argv, runtime_options, config_files);
+        parse_workflow_cli_options(
+            argc, argv, runtime_options, config_files, forcing_config_files);
     if (!parse_error.empty()) {
         return parse_error;
     }
-    return validate_config_paths(config_files);
+
+    const std::string config_path_error = validate_config_paths(config_files);
+    if (!config_path_error.empty()) {
+        return config_path_error;
+    }
+
+    for (const std::string& forcing_config_file : forcing_config_files) {
+        std::ifstream input(forcing_config_file);
+        if (!input.good()) {
+            return std::string("Error: could not open forcing config file: ") +
+                   forcing_config_file;
+        }
+    }
+
+    return "";
 }
 
 } // namespace miaow

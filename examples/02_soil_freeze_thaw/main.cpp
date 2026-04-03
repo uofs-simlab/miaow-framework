@@ -22,9 +22,10 @@ static std::string task_status_string(miaow::TaskStatus status) {
 int main(int argc, char* argv[]) {
     miaow::RuntimeOptions runtime_options;
     std::vector<std::string> config_files;
+    std::vector<std::string> forcing_config_files;
 
     const std::string input_error = miaow::parse_and_validate_workflow_cli_options(
-        argc, argv, runtime_options, config_files);
+        argc, argv, runtime_options, config_files, forcing_config_files);
     if (!input_error.empty()) {
         std::cerr << input_error << "\n"
                   << miaow::workflow_cli_usage("miaow_soil_freeze_thaw") << "\n";
@@ -39,8 +40,18 @@ int main(int argc, char* argv[]) {
 
     std::vector<miaow::Task> tasks;
     tasks.reserve(config_files.size());
-    for (const std::string& config_file : config_files) {
-        tasks.emplace_back(soil_freeze_thaw, config_file);
+    for (std::size_t index = 0; index < config_files.size(); ++index) {
+        const std::string& config_file = config_files.at(index);
+        if (forcing_config_files.empty()) {
+            tasks.emplace_back(soil_freeze_thaw, config_file);
+            continue;
+        }
+
+        std::vector<caf::config_value> task_args;
+        task_args.reserve(2);
+        task_args.emplace_back(config_file);
+        task_args.emplace_back(forcing_config_files.at(index));
+        tasks.emplace_back(soil_freeze_thaw, std::move(task_args));
     }
 
     miaow::JobHandle job = runtime.submit_job(tasks);
