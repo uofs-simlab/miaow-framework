@@ -71,7 +71,7 @@ _*/
 **/_*/
 
 # Generated runtime and visualization outputs
-**/miaow_output/
+**/output/
 *.mp4
 
 # Python cache files

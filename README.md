@@ -8,12 +8,12 @@
 
 Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
 
-MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/), and interfaces with the [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
+MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/), and integrates with the [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
 
 
 ## Quick start
 
-From the repository root:
+From the repository root, using [CMake](https://cmake.org/):
 
 ```bash
 cmake -S . -B build
@@ -25,10 +25,13 @@ Run examples (reproducible from repo root):
 
 ```bash
 ./examples/00_hello/miaow_hello
-./examples/01_heat/miaow_heat --config examples/01_heat/configs/config_400x400.txt
+./examples/01_heat/miaow_heat \
+  --config examples/01_heat/configs/config_400x400.txt \
+  --output_root examples/01_heat/output
 ./examples/02_soil_freeze_thaw/miaow_soil_freeze_thaw \
   --config examples/02_soil_freeze_thaw/configs/laramie_config_standalone.txt \
-  --forcing_config examples/02_soil_freeze_thaw/forcing/ground_temperature_forcing_config.txt
+  --forcing_config examples/02_soil_freeze_thaw/forcing/ground_temperature_forcing_config.txt \
+  --output_root examples/02_soil_freeze_thaw/output
 ctest --test-dir build -R miaow_example_02_soil_freeze_thaw --output-on-failure
 ```
 

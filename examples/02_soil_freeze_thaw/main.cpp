@@ -19,18 +19,36 @@ static std::string task_status_string(miaow::TaskStatus status) {
     return "failed";
 }
 
+void print_output_mode(const miaow::RuntimeOptions& runtime_options) {
+    if (runtime_options.output_root_.empty()) {
+        std::cout << "Output mode: disabled\n";
+        return;
+    }
+
+    std::cout << "Output mode: writing artifacts under '"
+              << runtime_options.output_root_ << "'\n";
+}
+
 int main(int argc, char* argv[]) {
     miaow::RuntimeOptions runtime_options;
     std::vector<std::string> config_files;
     std::vector<std::string> forcing_config_files;
+    bool help_requested = false;
 
     const std::string input_error = miaow::parse_and_validate_workflow_cli_options(
-        argc, argv, runtime_options, config_files, forcing_config_files);
+        argc, argv, runtime_options, config_files, forcing_config_files,
+        help_requested);
+    if (help_requested) {
+        std::cout << miaow::workflow_cli_usage("miaow_soil_freeze_thaw") << "\n";
+        return 0;
+    }
     if (!input_error.empty()) {
         std::cerr << input_error << "\n"
                   << miaow::workflow_cli_usage("miaow_soil_freeze_thaw") << "\n";
         return 1;
     }
+
+    print_output_mode(runtime_options);
 
     miaow::SimulationUnitRegistry simulation_unit_registry;
     const miaow::SimulationUnitId soil_freeze_thaw =

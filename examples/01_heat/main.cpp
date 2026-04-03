@@ -9,9 +9,9 @@
 #include <string>
 #include <vector>
 
-#include "bmi_heat.hxx"     // defines the BmiHeat class that implements the BMI interface
-#include "miaow.hpp"        // Core MIAOW runtime API
-#include "miaow_bmi.hpp"    // MIAOW API for running BMI models as simulation units
+#include "bmi_heat.hxx"  // defines the BmiHeat class that implements the BMI interface
+#include "miaow.hpp"     // Core MIAOW runtime API
+#include "miaow_bmi.hpp" // MIAOW API for running BMI models as simulation units
 #include "miaow_cli.hpp" // CLI parser for example programs
 
 /**
@@ -45,21 +45,39 @@ static std::string task_status_string(miaow::TaskStatus status) {
     return "failed";
 }
 
+void print_output_mode(const miaow::RuntimeOptions& runtime_options) {
+    if (runtime_options.output_root_.empty()) {
+        std::cout << "Output mode: disabled\n";
+        return;
+    }
+
+    std::cout << "Output mode: writing artifacts under '"
+              << runtime_options.output_root_ << "'\n";
+}
+
 int main(int argc, char* argv[]) {
     // Initialize runtime options and config file list to be populated by CLI parser
     miaow::RuntimeOptions runtime_options;
     std::vector<std::string> config_files;
     std::vector<std::string> forcing_config_files;
+    bool help_requested = false;
 
     // Parse and validate command-line arguments
     const std::string input_error = miaow::parse_and_validate_workflow_cli_options(
-        argc, argv, runtime_options, config_files, forcing_config_files);
+        argc, argv, runtime_options, config_files, forcing_config_files,
+        help_requested);
+    if (help_requested) {
+        std::cout << miaow::workflow_cli_usage("miaow_heat") << "\n";
+        return 0;
+    }
 
     // Print any error in input arguments and output usage instructions if failed
     if (!input_error.empty()) {
         std::cerr << input_error << "\n" << miaow::workflow_cli_usage("miaow_heat") << "\n";
         return 1;
     }
+
+    print_output_mode(runtime_options);
 
     // Register BMI simulation units and build runtime routing from the registry
     miaow::SimulationUnitRegistry simulation_unit_registry;
