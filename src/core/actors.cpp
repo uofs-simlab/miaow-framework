@@ -1,140 +1,29 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
-#include <filesystem>
-#include <fstream>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "internal.hpp"
+#include "io/metadata.hpp"
 
 namespace miaow::core {
 
 namespace {
 
-std::string task_status_to_string(TaskStatus status) {
-    if (status == TaskStatus::succeeded) {
-        return "succeeded";
-    }
-    return "failed";
-}
-
-std::string json_escape(const std::string& input) {
-    std::ostringstream escaped;
-    for (char character : input) {
-        switch (character) {
-            case '\\':
-                escaped << "\\\\";
-                break;
-            case '\"':
-                escaped << "\\\"";
-                break;
-            case '\b':
-                escaped << "\\b";
-                break;
-            case '\f':
-                escaped << "\\f";
-                break;
-            case '\n':
-                escaped << "\\n";
-                break;
-            case '\r':
-                escaped << "\\r";
-                break;
-            case '\t':
-                escaped << "\\t";
-                break;
-            default:
-                escaped << character;
-                break;
-        }
-    }
-    return escaped.str();
-}
-
-void write_job_manifest(std::uint64_t run_id,
-                        JobId job_id,
-                        const RuntimeOptions& runtime_options,
-                        const JobResult& job_result) {
-    if (runtime_options.output_root_.empty()) {
-        return;
-    }
-
-    const std::filesystem::path job_directory =
-        std::filesystem::path(runtime_options.output_root_) /
-        ("run_" + std::to_string(run_id)) /
-        ("job_" + std::to_string(job_id));
-    std::filesystem::create_directories(job_directory);
-
-    std::ofstream manifest_file(job_directory / "job_manifest.json");
-    if (!manifest_file.is_open()) {
-        throw std::ios_base::failure("Failed to open job_manifest.json for writing");
-    }
-    manifest_file.exceptions(std::ios::failbit | std::ios::badbit);
-
-    manifest_file << "{\n";
-    manifest_file << "  \"run_id\": " << run_id << ",\n";
-    manifest_file << "  \"job_id\": " << job_id << ",\n";
-    manifest_file << "  \"diagnostics\": {\n";
-    manifest_file << "    \"total_time_s\": " << job_result.diagnostics_.total_time_s_ << ",\n";
-    manifest_file << "    \"task_times_s\": [";
-    for (std::size_t index = 0; index < job_result.diagnostics_.task_times_s_.size(); ++index) {
-        if (index > 0) {
-            manifest_file << ", ";
-        }
-        manifest_file << job_result.diagnostics_.task_times_s_.at(index);
-    }
-    manifest_file << "]\n";
-    manifest_file << "  },\n";
-    manifest_file << "  \"tasks\": [\n";
-
-    for (std::size_t index = 0; index < job_result.task_results_.size(); ++index) {
-        const TaskResult& task_result = job_result.task_results_.at(index);
-        manifest_file << "    {\n";
-        manifest_file << "      \"task_id\": " << task_result.task_id_ << ",\n";
-        manifest_file << "      \"simulation_unit_id\": " << task_result.simulation_unit_id_
-                      << ",\n";
-        manifest_file << "      \"status\": \"" << task_status_to_string(task_result.status_)
-                      << "\",\n";
-        manifest_file << "      \"message\": \"" << json_escape(task_result.message_) << "\",\n";
-        manifest_file << "      \"run_time_s\": " << task_result.run_time_s_ << ",\n";
-        manifest_file << "      \"artifact_paths\": [";
-
-        for (std::size_t path_index = 0; path_index < task_result.artifact_paths_.size();
-             ++path_index) {
-            if (path_index > 0) {
-                manifest_file << ", ";
-            }
-            manifest_file << "\"" << json_escape(task_result.artifact_paths_.at(path_index))
-                          << "\"";
-        }
-
-        manifest_file << "]\n";
-        manifest_file << "    }";
-        if (index + 1 < job_result.task_results_.size()) {
-            manifest_file << ",";
-        }
-        manifest_file << "\n";
-    }
-
-    manifest_file << "  ]\n";
-    manifest_file << "}\n";
-    manifest_file.flush();
-}
-
 void mark_job_result_failed(JobResult& job_result, const std::string& message) {
-    const std::string manifest_error_message = "Manifest error: " + message;
+    const std::string metadata_error_message = "Metadata error: " + message;
     for (TaskResult& task_result : job_result.task_results_) {
         task_result.status_ = TaskStatus::failed;
         if (task_result.message_.empty()) {
-            task_result.message_ = manifest_error_message;
+            task_result.message_ = metadata_error_message;
             continue;
         }
-        task_result.message_ += " | " + manifest_error_message;
+        task_result.message_ += " | " + metadata_error_message;
     }
 }
 
@@ -406,8 +295,8 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
          pending_jobs,
          runtime_options,
          run_id](caf::put_atom,
-                       JobId job_id,
-                       JobResult job_result) mutable {
+                 JobId job_id,
+                 JobResult job_result) mutable {
             std::promise<JobResult> promise;
             {
                 std::lock_guard<std::mutex> lock(*pending_jobs_mutex);
@@ -420,11 +309,11 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
             } // mutex unlocks automatically here
 
             try {
-                write_job_manifest(run_id, job_id, runtime_options, job_result);
+                io::write_job_metadata(run_id, job_id, runtime_options, job_result);
             } catch (const std::exception& err) {
                 mark_job_result_failed(job_result, err.what());
             } catch (...) {
-                mark_job_result_failed(job_result, "unknown manifest write failure");
+                mark_job_result_failed(job_result, "unknown metadata write failure");
             }
             promise.set_value(std::move(job_result));
         }

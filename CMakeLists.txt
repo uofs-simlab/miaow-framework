@@ -71,6 +71,7 @@ add_library(miaow STATIC
     src/core/actors.cpp
     src/core/diagnostics.cpp
     src/core/runtime.cpp
+    src/io/metadata.cpp
 )
 
 target_include_directories(miaow

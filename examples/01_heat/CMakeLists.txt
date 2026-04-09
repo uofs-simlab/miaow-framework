@@ -25,6 +25,10 @@ miaow_add_bmi_model(
     USE_MIAOW_BMI_INCLUDE
 )
 
+target_compile_definitions(${MIAOW_EXECUTABLE_TARGET_RESOLVED} PRIVATE
+    MIAOW_HEAT_EXAMPLE_DIR="${CMAKE_CURRENT_LIST_DIR}"
+)
+
 if(BUILD_TESTING)
     miaow_add_workflow_test(
         TEST_NAME miaow_example_01_heat
@@ -32,9 +36,6 @@ if(BUILD_TESTING)
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
         PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete(.|\\n)*\\[1\\] succeeded: BMI workflow complete"
         CLI_ARGS
-            --config
-            "${CMAKE_CURRENT_LIST_DIR}/configs/config_400x400.txt"
-            "${CMAKE_CURRENT_LIST_DIR}/configs/config_800x800.txt"
             --max_workers
             2
             --task_request_timeout

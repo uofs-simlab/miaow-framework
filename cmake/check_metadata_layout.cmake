@@ -1,5 +1,5 @@
-if(NOT DEFINED HELLO_EXECUTABLE OR HELLO_EXECUTABLE STREQUAL "")
-    message(FATAL_ERROR "HELLO_EXECUTABLE is required")
+if(NOT DEFINED EXECUTABLE OR EXECUTABLE STREQUAL "")
+    message(FATAL_ERROR "EXECUTABLE is required")
 endif()
 if(NOT DEFINED WORKING_DIRECTORY OR WORKING_DIRECTORY STREQUAL "")
     message(FATAL_ERROR "WORKING_DIRECTORY is required")
@@ -11,7 +11,7 @@ endif()
 file(REMOVE_RECURSE "${OUTPUT_ROOT}")
 
 execute_process(
-    COMMAND "${HELLO_EXECUTABLE}"
+    COMMAND "${EXECUTABLE}" ${EXECUTABLE_ARGS}
     WORKING_DIRECTORY "${WORKING_DIRECTORY}"
     RESULT_VARIABLE run_result
     OUTPUT_VARIABLE run_output
@@ -20,13 +20,13 @@ execute_process(
 
 if(NOT run_result EQUAL 0)
     message(FATAL_ERROR
-        "Hello example failed for manifest check\n"
+        "Executable failed for metadata check\n"
         "stdout:\n${run_output}\n"
         "stderr:\n${run_error}")
 endif()
 
 file(GLOB run_directories LIST_DIRECTORIES true "${OUTPUT_ROOT}/run_*")
-set(found_manifest FALSE)
+set(found_metadata FALSE)
 set(found_task_directory FALSE)
 
 foreach(run_directory IN LISTS run_directories)
@@ -40,8 +40,8 @@ foreach(run_directory IN LISTS run_directories)
             continue()
         endif()
 
-        if(EXISTS "${job_directory}/job_manifest.json")
-            set(found_manifest TRUE)
+        if(EXISTS "${job_directory}/job_metadata.json")
+            set(found_metadata TRUE)
         endif()
 
         file(GLOB task_directories LIST_DIRECTORIES true "${job_directory}/task_*")
@@ -53,8 +53,8 @@ foreach(run_directory IN LISTS run_directories)
     endforeach()
 endforeach()
 
-if(NOT found_manifest)
-    message(FATAL_ERROR "No job_manifest.json found under ${OUTPUT_ROOT}/run_*/job_*/")
+if(NOT found_metadata)
+    message(FATAL_ERROR "No job_metadata.json found under ${OUTPUT_ROOT}/run_*/job_*/")
 endif()
 
 if(NOT found_task_directory)

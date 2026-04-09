@@ -4,9 +4,9 @@
 #include <cstddef>
 #include <chrono>
 #include <cstdint>
-#include <fstream>
 #include <functional>
 #include <future>
+#include <initializer_list>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -29,7 +29,6 @@ using SimulationUnitId = std::uint64_t;
 using TaskId = std::uint64_t;
 // Monotonic identifier assigned to each submitted job
 using JobId = std::uint64_t;
-
 /**
  * @brief Generic task input specification.
  *
@@ -76,6 +75,32 @@ struct Task {
         : simulation_unit_id_(task_simulation_unit_id),
           args_{caf::config_value{std::move(arg)}} {
     }
+
+    /**
+     * @brief Construct a Task for a specific simulation unit from string arguments.
+     * @param task_simulation_unit_id Simulation unit ID for this task.
+     * @param string_args Positional string arguments for this task.
+     */
+    Task(SimulationUnitId task_simulation_unit_id,
+         std::initializer_list<std::string> string_args)
+        : simulation_unit_id_(task_simulation_unit_id) {
+        args_.reserve(string_args.size());
+        for (const std::string& string_arg : string_args) {
+            args_.emplace_back(string_arg);
+        }
+    }
+
+    /**
+     * @brief Return a string argument by index when present and typed as string.
+     * @param arg_index Positional argument index.
+     * @return Pointer to string value, or null if missing or not a string.
+     */
+    const std::string* string_arg(std::size_t arg_index) const {
+        if (arg_index >= args_.size()) {
+            return nullptr;
+        }
+        return caf::get_if<std::string>(&args_[arg_index]);
+    }
 };
 
 /**
@@ -85,6 +110,16 @@ enum class TaskStatus : std::uint8_t {
     succeeded = 0,
     failed = 1
 };
+
+/**
+ * @brief Convert task status to a stable string value.
+ */
+inline std::string task_status_to_string(TaskStatus status) {
+    if (status == TaskStatus::succeeded) {
+        return "succeeded";
+    }
+    return "failed";
+}
 
 /**
  * @brief Structured result payload returned for one task execution.
@@ -235,8 +270,8 @@ struct RuntimeOptions {
     // Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
     std::chrono::milliseconds job_request_timeout_;
 
-    // Root output directory where run/job/task artifact folders are created.
-    // When empty (the default), no output directories or files are written.
+    // Root output directory where run/job/task artifact folders are created
+    // When empty (the default), no output directories or files are written
     std::string output_root_;
 
     /**
@@ -301,9 +336,10 @@ using PendingJobs = std::unordered_map<JobId, std::promise<JobResult>>;
 template <class Inspector>
 bool inspect(Inspector& inspector, Task& task) {
     // Defines how CAF serializes/deserializes Task for actor messaging
-    return inspector.apply(task.simulation_unit_id_) &&
-           inspector.apply(task.args_) &&
-           inspector.apply(task.task_output_dir_);
+    return inspector.object(task).fields(
+        inspector.field("simulation_unit_id", task.simulation_unit_id_),
+        inspector.field("args", task.args_),
+        inspector.field("task_output_dir", task.task_output_dir_));
 }
 
 template <class Inspector>
@@ -321,26 +357,29 @@ bool inspect(Inspector& inspector, TaskStatus& task_status) {
 template <class Inspector>
 bool inspect(Inspector& inspector, TaskResult& task_result) {
     // Defines how CAF serializes/deserializes TaskResult for actor messaging
-    return inspector.apply(task_result.task_id_) &&
-           inspector.apply(task_result.simulation_unit_id_) &&
-           inspector.apply(task_result.status_) &&
-           inspector.apply(task_result.message_) &&
-           inspector.apply(task_result.artifact_paths_) &&
-           inspector.apply(task_result.run_time_s_);
+    return inspector.object(task_result).fields(
+        inspector.field("task_id", task_result.task_id_),
+        inspector.field("simulation_unit_id", task_result.simulation_unit_id_),
+        inspector.field("status", task_result.status_),
+        inspector.field("message", task_result.message_),
+        inspector.field("artifact_paths", task_result.artifact_paths_),
+        inspector.field("run_time_s", task_result.run_time_s_));
 }
 
 template <class Inspector>
 bool inspect(Inspector& inspector, JobDiagnostics& diagnostics) {
     // Defines how CAF serializes/deserializes JobDiagnostics for actor messaging
-    return inspector.apply(diagnostics.total_time_s_) &&
-           inspector.apply(diagnostics.task_times_s_);
+    return inspector.object(diagnostics).fields(
+        inspector.field("total_time_s", diagnostics.total_time_s_),
+        inspector.field("task_times_s", diagnostics.task_times_s_));
 }
 
 template <class Inspector>
 bool inspect(Inspector& inspector, JobResult& job_result) {
     // Defines how CAF serializes/deserializes JobResult for actor messaging
-    return inspector.apply(job_result.task_results_) &&
-           inspector.apply(job_result.diagnostics_);
+    return inspector.object(job_result).fields(
+        inspector.field("task_results", job_result.task_results_),
+        inspector.field("diagnostics", job_result.diagnostics_));
 }
 
 /**
@@ -430,23 +469,5 @@ private:
     // and fulfills Runtime promises when jobs complete
     caf::actor orchestrator_;
 };
-
-/**
- * @brief Validate config path inputs for config-based helpers
- *
- * Returns an empty string on success, or an error message on failure
- */
-inline std::string validate_config_paths(const std::vector<std::string>& config_files) {
-    if (config_files.empty()) {
-        return "Error: at least one config file must be provided";
-    }
-    for (const std::string& config_file : config_files) {
-        std::ifstream input(config_file);
-        if (!input.good()) {
-            return std::string("Error: could not open config file: ") + config_file;
-        }
-    }
-    return ""; // return empty string on success
-}
 
 } // namespace miaow

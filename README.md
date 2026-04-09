@@ -26,14 +26,16 @@ Run examples (reproducible from repo root):
 ```bash
 ./examples/00_hello/miaow_hello
 ./examples/01_heat/miaow_heat \
-  --config examples/01_heat/configs/config_400x400.txt \
   --output_root examples/01_heat/output
 ./examples/02_soil_freeze_thaw/miaow_soil_freeze_thaw \
-  --config examples/02_soil_freeze_thaw/configs/laramie_config_standalone.txt \
-  --forcing_config examples/02_soil_freeze_thaw/forcing/ground_temperature_forcing_config.txt \
-  --output_root examples/02_soil_freeze_thaw/output
+  --output_root examples/02_soil_freeze_thaw/output \
+  --max_workers 2
 ctest --test-dir build -R miaow_example_02_soil_freeze_thaw --output-on-failure
 ```
+
+For CLI-driven examples, only runtime options are accepted:
+`--max_workers`, `--task_request_timeout`, `--job_request_timeout`,
+and `--output_root`.
 
 ## Orchestration model
 
@@ -78,7 +80,7 @@ For BMI models, use `miaow::BmiSimulationUnit<BmiModelType>` from
 include/
   miaow.hpp              # public runtime/task API
   miaow_bmi.hpp          # BMI simulation-unit wrapper/BMI-facing contracts
-  miaow_cli.hpp          # CLI parsing helpers for workflow examples
+  miaow_cli.hpp          # runtime CLI option parsing helpers for examples
 
 src/
   core/
@@ -93,6 +95,7 @@ src/
     workflow.cpp         # BMI update loop/per-step output writing
 
   io/
+    metadata.cpp         # runtime metadata output writing
     csv.hpp              # header-only CSV header and numeric-column extraction
     utils.hpp            # header-only text/string-parsing helpers
 
@@ -122,9 +125,9 @@ Optional forcing is supported through a second task argument (`args[1]`) that
 points to a forcing config. In forcing mode, one configured CSV column is
 applied to one BMI input variable before each `Update()` step.
 
-Workflow examples expose this through `--forcing_config`. When provided, the
-number of forcing config paths must match `--config`, and each task uses the
-pair with the same index.
+Each example specifies task inputs in its `main.cpp`. In
+`examples/02_soil_freeze_thaw`, this includes one task without forcing and two
+tasks with forcing.
 
 Forcing config files require these keys:
 - `source_type`
@@ -161,7 +164,7 @@ If `RuntimeOptions::output_root_` (or CLI `--output_root`) is set, MIAOW writes:
 <output_root>/
 └─ run_<run_id>/
    └─ job_<job_id>/
-      ├─ job_manifest.json
+      ├─ job_metadata.json
       └─ task_<task_id>/
 ```
 
@@ -206,7 +209,7 @@ and `miaow_add_workflow_test(...)` for model integration and workflow tests.
 
 1. `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
 2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat equation example](https://github.com/csdms/bmi-example-cxx)
-3. `examples/02_soil_freeze_thaw`: [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) BMI integration
+3. `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with optional forcing per task
 
 Each example follows a common layout:
 

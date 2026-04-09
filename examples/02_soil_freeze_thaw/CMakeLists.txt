@@ -26,38 +26,21 @@ miaow_add_bmi_model(
     MODEL_COMPILE_DEFINITIONS BMI_ACTIVE
 )
 
+target_compile_definitions(${MIAOW_EXECUTABLE_TARGET_RESOLVED} PRIVATE
+    MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR="${CMAKE_CURRENT_LIST_DIR}"
+)
+
 if(BUILD_TESTING)
     miaow_add_workflow_test(
         TEST_NAME miaow_example_02_soil_freeze_thaw
         EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete"
+        PASS_REGULAR_EXPRESSION "\\[2\\] succeeded: BMI workflow complete"
         CLI_ARGS
-            --config
-            "${CMAKE_CURRENT_LIST_DIR}/configs/laramie_config_standalone.txt"
+            --output_root
+            "${CMAKE_CURRENT_BINARY_DIR}/output_smoke"
             --max_workers
-            1
-            --task_request_timeout
-            60
-            --job_request_timeout
-            600
-    )
-
-    miaow_add_workflow_test(
-        TEST_NAME miaow_example_02_soil_freeze_thaw_forcing
-        EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION
-            "\\[0\\] succeeded: BMI workflow complete(.|\\n)*\\[1\\] succeeded: BMI workflow complete"
-        CLI_ARGS
-            --config
-            "${CMAKE_CURRENT_LIST_DIR}/configs/laramie_config_short_3_updates.txt"
-            "${CMAKE_CURRENT_LIST_DIR}/configs/laramie_config_short_3_updates.txt"
-            --forcing_config
-            "${CMAKE_CURRENT_LIST_DIR}/forcing/ground_temperature_forcing_config_3_rows.txt"
-            "${CMAKE_CURRENT_LIST_DIR}/forcing/ground_temperature_forcing_config_3_rows.txt"
-            --max_workers
-            1
+            2
             --task_request_timeout
             60
             --job_request_timeout
@@ -70,15 +53,38 @@ if(BUILD_TESTING)
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete"
         CLI_ARGS
-            --config
-            "${CMAKE_CURRENT_LIST_DIR}/configs/laramie_config_short_3_updates.txt"
-            --forcing_config
-            "${CMAKE_CURRENT_LIST_DIR}/forcing/ground_temperature_forcing_config.txt"
             --max_workers
             1
             --task_request_timeout
             60
             --job_request_timeout
             600
+    )
+
+    set(soil_freeze_thaw_layout_cli_args
+        --output_root
+        "${CMAKE_CURRENT_BINARY_DIR}/output_metadata"
+        --max_workers
+        1
+        --task_request_timeout
+        60
+        --job_request_timeout
+        600
+    )
+    list(JOIN soil_freeze_thaw_layout_cli_args ";" soil_freeze_thaw_layout_cli_args_serialized)
+
+    add_test(
+        NAME miaow_example_02_soil_freeze_thaw_metadata_layout
+        COMMAND
+            ${CMAKE_COMMAND}
+            -DEXECUTABLE=$<TARGET_FILE:${MIAOW_EXECUTABLE_TARGET_RESOLVED}>
+            -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
+            -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/output_metadata
+            "-DEXECUTABLE_ARGS=${soil_freeze_thaw_layout_cli_args_serialized}"
+            -P
+            ${MIAOW_ROOT}/cmake/check_metadata_layout.cmake
+    )
+    set_tests_properties(miaow_example_02_soil_freeze_thaw_metadata_layout PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
 endif()

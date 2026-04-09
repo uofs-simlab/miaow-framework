@@ -45,16 +45,16 @@ if(BUILD_TESTING)
     )
 
     add_test(
-        NAME miaow_example_00_hello_manifest_layout
+        NAME miaow_example_00_hello_metadata_layout
         COMMAND
             ${CMAKE_COMMAND}
-            -DHELLO_EXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
+            -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
             -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/output
             -P
-            ${MIAOW_ROOT}/cmake/check_manifest_layout.cmake
+            ${MIAOW_ROOT}/cmake/check_metadata_layout.cmake
     )
-    set_tests_properties(miaow_example_00_hello_manifest_layout PROPERTIES
+    set_tests_properties(miaow_example_00_hello_metadata_layout PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
 endif()
