@@ -72,6 +72,7 @@ add_library(miaow STATIC
     src/core/diagnostics.cpp
     src/core/runtime.cpp
     src/io/metadata.cpp
+    src/io/realization.cpp
 )
 
 target_include_directories(miaow
@@ -97,4 +98,5 @@ if(BUILD_EXAMPLES)
     add_subdirectory(examples/00_hello)
     add_subdirectory(examples/01_heat)
     add_subdirectory(examples/02_soil_freeze_thaw)
+    add_subdirectory(examples/03_noah_owp)
 endif()

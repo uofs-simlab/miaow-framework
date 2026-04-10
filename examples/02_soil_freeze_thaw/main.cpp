@@ -39,10 +39,10 @@ int main(int argc, char* argv[]) {
         "/configs/laramie_config_short_3_updates.txt";
     const std::string short_forcing =
         std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/forcing/ground_temperature_forcing_config_3_rows.txt";
+        "/forcings/ground_temperature_forcing_config_3_rows.txt";
     const std::string trailing_rows_forcing =
         std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/forcing/ground_temperature_forcing_config.txt";
+        "/forcings/ground_temperature_forcing_config.txt";
 
     // Create three tasks with different combinations of config and forcing files
     const std::vector<miaow::Task> tasks{

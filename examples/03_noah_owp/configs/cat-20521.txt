@@ -1,0 +1,7 @@
+&timing
+  dt               = 3600.0
+  startdate        = "200906142000"
+  enddate          = "200906142200"
+  forcing_filename = ""                        ! forcing comes from realization.json
+  output_filename  = "./output.nc"
+/

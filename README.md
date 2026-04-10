@@ -142,6 +142,30 @@ Forcing config files require these keys:
 Forcing may contain additional trailing rows beyond simulation end, but it must
 not run out before the simulation finishes.
 
+### Noah-OWP input contract status
+
+Current status for planned `miaow_noah_owp` workflow support:
+- Step 1 JSON/CSV contract samples are available under `examples/03_noah_owp/`
+- Step 2A adds realization-file parse and validation utilities in
+  `src/io/realization.cpp`
+- runtime wiring for realization-driven execution is not implemented yet
+
+Contract files:
+- `realization.json`: subdomain tasks and shared forcing metadata
+  (`subdomains.<id>.config`, `subdomains.<id>.forcing`, global
+  `variables_names_map`, `time_step_size`, `time_units`)
+- forcing `CSV`: per-subdomain timeseries values referenced by `forcing`
+- config files remain model-initialization inputs; forcing location is sourced
+  from `realization.json` only
+
+Mapping semantics for Step 2 implementation:
+- global `variables_names_map` links forcing CSV column names to BMI input names
+- for timestep `i`, all mapped inputs are set before `Update()`
+- row-index alignment remains authoritative (`row i -> step i`)
+
+See `_design/noah_owp_json_contract.md` and `examples/03_noah_owp/` for the
+current contract artifacts.
+
 ## Scheduling behaviour
 
 Each `job_actor` maintains:
@@ -210,13 +234,14 @@ and `miaow_add_workflow_test(...)` for model integration and workflow tests.
 1. `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
 2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat equation example](https://github.com/csdms/bmi-example-cxx)
 3. `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with optional forcing per task
+4. `examples/03_noah_owp`: realization-contract parse/validation smoke example for `miaow_noah_owp`
 
 Each example follows a common layout:
 
 ```text
 examples/<example_name>/
   configs/   # model configuration files
-  forcing/   # optional forcing data files
+  forcings/  # optional forcing data files
 ```
 
 ## Limitations

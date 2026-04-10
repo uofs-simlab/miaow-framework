@@ -1,0 +1,20 @@
+{
+  "time_step_size": 3600,
+  "time_units": "s",
+  "variables_names_map": {
+    "RAINRATE": "atmosphere_water__liquid_equivalent_precipitation_rate",
+    "T2D": "land_surface_air__temperature",
+    "Q2D": "atmosphere_air_water~vapor__specific_humidity",
+    "U2D": "land_surface_wind__x_component_of_velocity",
+    "V2D": "land_surface_wind__y_component_of_velocity",
+    "PSFC": "land_surface_air__pressure",
+    "SWDOWN": "land_surface_radiation~incoming~shortwave__energy_flux",
+    "LWDOWN": "land_surface_radiation~incoming~longwave__energy_flux"
+  },
+  "subdomains": {
+    "cat-20521": {
+      "config": "./configs/cat-20521.txt",
+      "forcing": "./forcings/cat-20521.csv"
+    }
+  }
+}
