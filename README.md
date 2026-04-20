@@ -139,7 +139,7 @@ BMI interface. The plugin path is supplied at runtime and is passed directly
 to the platform dynamic loader. The
 plugin must export a C-callable `register_bmi` symbol that creates a model
 handle compatible with the linked [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
-Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as C++ BMI
+Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as statically linked C++ BMI
 models. For example, if `plugin_path` is the path to the model's shared library, one can register the simulation unit in MIAOW as follows:
 ```cpp
 const miaow::SimulationUnitId my_dynamic_bmi_model =
