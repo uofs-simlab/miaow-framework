@@ -130,25 +130,48 @@ Optional forcing is supported through a second task argument (`args[1]`) that
 points to a forcing config. In forcing mode, one configured CSV column is
 applied to one BMI input variable before each `Update()` step.
 
-Each example specifies task inputs in its `main.cpp`. In
-`examples/02_soil_freeze_thaw`, this includes one task without forcing and two
-tasks with forcing.
+Each example specifies task inputs in its `main.cpp`. 
 
-The `miaow::DynamicBmiModel` class adapts a dynamically loaded BMI plugin to MIAOW's C++
-BMI interface. The plugin path is supplied at runtime and is passed directly
-to the platform dynamic loader. The
-plugin must export a C-callable `register_bmi` symbol that creates a model
-handle compatible with the linked [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi),
-which provides ISO C bindings for BMI-compatible Fortran models. Dynamic BMI registration
-uses the same `BmiSimulationUnit` wrapper as statically linked C++ BMI
-models. For example, if `plugin_path` is the path to the model's shared library, one can
-register the simulation unit in MIAOW as follows:
+### Reading forcing data
+
+Forcing configs are `key=value` text files:
+
+| Key | Purpose |
+| --- | --- |
+| `source_type` | Forcing backend (currently only `csv`) |
+| `source_path` | Path to the forcing file (relative paths resolve against the forcing config) |
+| `csv_column` | Column header read from the CSV |
+| `bmi_input_var` | BMI input variable set before each `Update()` |
+| `time_step_size` | Forcing step length; must equal `GetTimeStep()` |
+| `time_units` | Must equal `GetTimeUnits()` |
+
+Each row maps one value from `csv_column` to `bmi_input_var` via `SetValue`.
+Exhausting the forcing data before the model's `end_time` fails the task with a
+`Forcing alignment error`; forcing file rows beyond `end_time` are silently ignored. In
+`examples/02_soil_freeze_thaw`, three tasks exercise matched and mismatched
+combinations of model end time and forcing series length: a matched 1024-day
+run, a 1024-day run whose 1-day forcing is exhausted early (deliberate
+failure), and a 1-day run that stops well before its 1024-day forcing ends.
+
+
+### Dynamically linking BMI models
+
+The `miaow::DynamicBmiModel` class adapts a dynamically loaded BMI plugin to MIAOW's 
+C++ BMI interface. The plugin path is supplied at runtime and is passed directly
+to the platform dynamic loader. The plugin must export a C-callable `register_bmi`
+symbol that creates a model handle compatible with the linked 
+[NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi),
+which provides ISO C bindings for BMI-compatible Fortran models. Dynamic BMI
+registration uses the same `BmiSimulationUnit` wrapper as statically linked C++ BMI
+models. For example, if `plugin_path` is the path to the model's shared library, one
+can register the simulation unit in MIAOW as follows:
 ```cpp
 const miaow::SimulationUnitId my_dynamic_bmi_model =
     registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(
         plugin_path
     );
 ```
+This functionality is currently implemented in the `03_fortran_heat` example.
 
 ## Scheduling behaviour
 
@@ -225,7 +248,7 @@ ignored by Git.
 
 1. `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
 2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat equation example](https://github.com/csdms/bmi-example-cxx)
-3. `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with optional forcing per task
+3. `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with per-task forcing, including matched, short, and long forcing cases
 4. `examples/03_fortran_heat`: dynamic BMI plugin integration using the [CSDMS Fortran heat example](https://github.com/csdms/bmi-example-fortran)
 
 Each example follows a common layout:

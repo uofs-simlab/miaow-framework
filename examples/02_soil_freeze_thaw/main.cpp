@@ -1,6 +1,7 @@
 /**
  * This example demonstrates how to run a multi-task SoilFreezeThaw workflow
- * with runtime CLI options.
+ * with runtime CLI options, exercising matched and mismatched combinations of
+ * model end time and forcing series length.
  */
 
 #include <iostream>
@@ -31,24 +32,27 @@ int main(int argc, char* argv[]) {
     miaow::Runtime runtime(registry, runtime_options);
 
     // Get config and forcing file paths for this SoilFreezeThaw workload
-    const std::string standalone_config =
+    const std::string config_1024_days =
         std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/configs/laramie_config_standalone.txt";
-    const std::string short_config =
+        "/configs/laramie_config_1024_days.txt";
+    const std::string config_1_day =
         std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/configs/laramie_config_short_3_updates.txt";
-    const std::string short_forcing =
+        "/configs/laramie_config_1_day.txt";
+    const std::string forcing_1024_days =
         std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/forcings/ground_temperature_forcing_config_3_rows.txt";
-    const std::string trailing_rows_forcing =
+        "/forcings/ground_temperature_forcing_config_1024_days.txt";
+    const std::string forcing_1_day =
         std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/forcings/ground_temperature_forcing_config.txt";
+        "/forcings/ground_temperature_forcing_config_1_day.txt";
 
-    // Create three tasks with different combinations of config and forcing files
+    // Three cases exercising matched and mismatched config/forcing durations:
+    //   0: 1024-day model, 1024-day forcing (exact match)
+    //   1: 1024-day model, 1-day forcing (forcing exhausts before end time)
+    //   2: 1-day    model, 1024-day forcing (model stops before forcing ends)
     const std::vector<miaow::Task> tasks{
-        {soil_freeze_thaw, standalone_config},
-        {soil_freeze_thaw, {short_config, short_forcing}},
-        {soil_freeze_thaw, {short_config, trailing_rows_forcing}},
+        {soil_freeze_thaw, {config_1024_days, forcing_1024_days}},
+        {soil_freeze_thaw, {config_1024_days, forcing_1_day}},
+        {soil_freeze_thaw, {config_1_day, forcing_1024_days}},
     };
 
     // Submit tasks and wait for results

@@ -48,10 +48,24 @@ if(BUILD_TESTING)
     )
 
     miaow_add_workflow_test(
-        TEST_NAME miaow_example_02_soil_freeze_thaw_forcing_trailing_rows
+        TEST_NAME miaow_example_02_soil_freeze_thaw_forcing_matched
         EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete"
+        CLI_ARGS
+            --max_workers
+            1
+            --task_request_timeout
+            60
+            --job_request_timeout
+            600
+    )
+
+    miaow_add_workflow_test(
+        TEST_NAME miaow_example_02_soil_freeze_thaw_forcing_exhausted
+        EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+        PASS_REGULAR_EXPRESSION "\\[1\\] failed: Forcing alignment error: forcing series exhausted at step 24 \\(updates: 24\\)"
         CLI_ARGS
             --max_workers
             1

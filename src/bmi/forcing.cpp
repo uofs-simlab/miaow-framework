@@ -146,7 +146,6 @@ ForcingConfig read_forcing_config(const std::string& forcing_config_path) {
     const std::vector<std::string> required_keys{
         "source_type",
         "source_path",
-        "subdomain_id",
         "csv_column",
         "bmi_input_var",
         "time_step_size",
@@ -177,7 +176,6 @@ ForcingConfig read_forcing_config(const std::string& forcing_config_path) {
     ForcingConfig config;
     config.source_type_ = source_type;
     config.source_path_ = source_path.lexically_normal().string();
-    config.subdomain_id_ = key_values.at("subdomain_id");
     config.csv_column_ = key_values.at("csv_column");
     config.bmi_input_var_ = key_values.at("bmi_input_var");
     config.time_step_size_ =

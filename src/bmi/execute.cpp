@@ -66,13 +66,14 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
         model.Initialize(*config_file);
         needs_finalize = true;
 
-        update_steps = bmi::run_model(
-            model, forcing_config_path, task.task_output_dir_);
+        bmi::run_model(
+            model, forcing_config_path, task.task_output_dir_, update_steps);
 
         needs_finalize = false;
         model.Finalize();
     } catch (const std::exception& exception) {
-        const std::string base_message = format_bmi_error_message(exception.what());
+        const std::string base_message = format_bmi_error_message(exception.what()) +
+            " (updates: " + std::to_string(update_steps) + ")";
         if (needs_finalize) {
             needs_finalize = false;
             try {
@@ -93,7 +94,8 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
         task_result.message_ = base_message;
         return task_result;
     } catch (...) {
-        const std::string base_message = "BMI error: unknown exception";
+        const std::string base_message = std::string("BMI error: unknown exception") +
+            " (updates: " + std::to_string(update_steps) + ")";
         if (needs_finalize) {
             needs_finalize = false;
             try {

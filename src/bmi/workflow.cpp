@@ -72,10 +72,11 @@ void write_output_step(::bmi::Bmi& model, const std::string& name,
 
 } // namespace
 
-std::size_t run_model_updates(
+void run_model_updates(
     ::bmi::Bmi& model,
     const std::optional<ForcingData>& forcing_data,
-    const std::string& task_output_dir) {
+    const std::string& task_output_dir,
+    std::size_t& update_steps) {
     std::vector<OutputVariable> output_vars;
     if (!task_output_dir.empty()) {
         output_vars = open_output_vars(model, task_output_dir);
@@ -83,7 +84,7 @@ std::size_t run_model_updates(
 
     const double end_time = model.GetEndTime();
     std::size_t forcing_step = 0;
-    std::size_t update_steps = 0;
+    update_steps = 0;
 
     while (model.GetCurrentTime() < end_time) {
         if (forcing_data.has_value()) {
@@ -107,14 +108,13 @@ std::size_t run_model_updates(
                               current_time, variable.stream_);
         }
     }
-
-    return update_steps;
 }
 
-std::size_t run_model(
+void run_model(
     ::bmi::Bmi& model,
     const std::optional<std::string>& forcing_config_path,
-    const std::string& task_output_dir) {
+    const std::string& task_output_dir,
+    std::size_t& update_steps) {
     // Bridge public template code to internal forcing parse/load logic
     std::optional<ForcingData> forcing_data;
     if (forcing_config_path.has_value()) {
@@ -122,7 +122,7 @@ std::size_t run_model(
             read_forcing_config(forcing_config_path.value());
         forcing_data = load_forcing_data(model, forcing_config);
     }
-    return run_model_updates(model, forcing_data, task_output_dir);
+    run_model_updates(model, forcing_data, task_output_dir, update_steps);
 }
 
 } // namespace miaow::bmi

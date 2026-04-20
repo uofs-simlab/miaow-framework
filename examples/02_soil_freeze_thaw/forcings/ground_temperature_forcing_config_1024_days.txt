@@ -1,6 +1,5 @@
 source_type=csv
-source_path=./Laramie_14Jun09_to_15Apr12.csv
-subdomain_id=laramie_standalone
+source_path=./Laramie_14Jun09_to_03Apr12.csv
 csv_column=TMP_ground_surface
 bmi_input_var=ground_temperature
 time_step_size=3600

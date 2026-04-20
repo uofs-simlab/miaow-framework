@@ -13,17 +13,13 @@ file(REMOVE_RECURSE "${OUTPUT_ROOT}")
 execute_process(
     COMMAND "${EXECUTABLE}" ${EXECUTABLE_ARGS}
     WORKING_DIRECTORY "${WORKING_DIRECTORY}"
-    RESULT_VARIABLE run_result
     OUTPUT_VARIABLE run_output
     ERROR_VARIABLE run_error
 )
 
-if(NOT run_result EQUAL 0)
-    message(FATAL_ERROR
-        "Executable failed for metadata check\n"
-        "stdout:\n${run_output}\n"
-        "stderr:\n${run_error}")
-endif()
+# Non-zero exit codes are tolerated: this test asserts the metadata layout
+# contract, which must hold even when some tasks in a job fail. Absence of
+# metadata or task directories below is still treated as fatal.
 
 file(GLOB run_directories LIST_DIRECTORIES true "${OUTPUT_ROOT}/run_*")
 set(found_metadata FALSE)

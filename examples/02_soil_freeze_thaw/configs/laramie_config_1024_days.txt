@@ -1,4 +1,3 @@
-forcing_file=./forcings/Laramie_14Jun09_to_15Apr12.csv
 end_time=1024.0[d]
 dt=1.0[h]
 soil_params.smcmax=0.439[m/m]
