@@ -225,12 +225,12 @@ cmake --build build --config Release
 
 ### Configuring model examples independently
 
-When configuring from an example directory or another project, these flags are relevant:
+When configuring from an example directory or another project, the following flags are relevant:
 
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-DMIAOW_ROOT` | `<example_dir>/../..` | Path to the `miaow-framework` source tree |
-| `-DMODEL_ROOT` | `${MIAOW_ROOT}/third_party/<model>` | Path to the BMI model source tree |
+| `-DMODEL_ROOT` | `${MIAOW_ROOT}/third_party/<model>` | Path to the model source tree |
 | `-DEXECUTABLE_TARGET` | example default | Override executable target name |
 | `-DMODEL_TARGET` | example model default | Override model-library target name |
 
