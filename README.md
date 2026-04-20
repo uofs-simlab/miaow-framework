@@ -139,30 +139,15 @@ BMI interface. The plugin path is supplied at runtime and is passed directly
 to the platform dynamic loader; MIAOW does not append library suffixes. The
 plugin must export a C-callable `register_bmi` symbol that creates a model
 handle compatible with the linked procedural BMI bridge. The current bridge
-target is NOAA `iso_c_bmi`.
-
-Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as C++ BMI
-models:
+target is NOAA `iso_c_bmi`. Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as C++ BMI
+models. For example, if `plugin_path` is the path to the model's shared library, one can register the simulation unit in MIAOW as follows
 
 ```cpp
-const miaow::SimulationUnitId heat =
+const miaow::SimulationUnitId my_dynamic_bmi_model =
     registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(
         plugin_path
     );
 ```
-
-Forcing config files require these keys:
-- `source_type`
-- `source_path`
-- `subdomain_id`
-- `csv_column`
-- `bmi_input_var`
-- `time_step_size`
-- `time_units`
-
-`time_step_size` and `time_units` must match the BMI model timestep metadata.
-Forcing may contain additional trailing rows beyond simulation end, but it must
-not run out before the simulation finishes.
 
 ## Scheduling behaviour
 
