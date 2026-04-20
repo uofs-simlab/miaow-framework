@@ -40,7 +40,7 @@ examples/*/miaow_*
 examples/*/build*/
 
 # Locally fetched vendored code
-third_party/
+/third_party/
 
 # debug information files
 *.dwo
