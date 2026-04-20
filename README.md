@@ -187,9 +187,7 @@ remaining simple and predictable.
 ## Diagnostics and artifacts
 
 `Runtime::submit_job(...)` returns a non-blocking `JobHandle`; `get()` yields a
-`JobResult` with per-task results and runtime diagnostics.
-
-If `RuntimeOptions::output_root_` (or CLI `--output_root`) is set, MIAOW writes:
+`JobResult` with per-task results and runtime diagnostics. If `RuntimeOptions::output_root_` (or CLI `--output_root`) is set, MIAOW writes:
 
 ```text
 <output_root>/
