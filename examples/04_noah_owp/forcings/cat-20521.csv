@@ -1,0 +1,4 @@
+time,atmosphere_water__liquid_equivalent_precipitation_rate,land_surface_air__temperature,atmosphere_air_water~vapor__specific_humidity,land_surface_wind__x_component_of_velocity,land_surface_wind__y_component_of_velocity,land_surface_air__pressure,land_surface_radiation~incoming~shortwave__energy_flux,land_surface_radiation~incoming~longwave__energy_flux
+2007-01-01 00:00:00,0.0,267.06,0.00213,-1.163,1.37,98574.2,0.0,210.18
+2007-01-01 01:00:00,0.0,266.93,0.00202,-1.811,2.644,98465.5,0.0,210.27
+2007-01-01 02:00:00,0.0,266.80,0.00190,-2.459,3.925,98356.9,0.0,210.35

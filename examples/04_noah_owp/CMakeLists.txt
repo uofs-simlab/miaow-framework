@@ -38,11 +38,11 @@ set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
 
 if(BUILD_TESTING)
     add_test(
-        NAME miaow_example_03_noah_owp_parse
+        NAME miaow_example_04_noah_owp_parse
         COMMAND
             $<TARGET_FILE:${EXECUTABLE_TARGET}>
     )
-    set_tests_properties(miaow_example_03_noah_owp_parse PROPERTIES
+    set_tests_properties(miaow_example_04_noah_owp_parse PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "Parsed realization with 1 subdomain\\(s\\)"
     )

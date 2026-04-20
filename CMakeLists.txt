@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(miaow CXX)
+project(miaow CXX Fortran)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,6 +13,12 @@ option(MIAOW_USE_SYSTEM_CAF "Prefer a system-installed CAF" ON)
 option(MIAOW_FETCH_CAF "Fetch CAF if not found" ON)
 set(MIAOW_CAF_VERSION "1.1.0" CACHE STRING "Minimum CAF version for system find_package")
 set(MIAOW_CAF_GIT_TAG "1.1.0" CACHE STRING "CAF git tag or commit to fetch")
+set(MIAOW_ISO_C_FORTRAN_BMI_ROOT "" CACHE PATH
+    "Path to a local NOAA-OWP/iso_c_fortran_bmi checkout")
+set(MIAOW_ISO_C_FORTRAN_BMI_GIT_TAG
+    "fad31177d5a10b3773db528d117e7ff17159fb07"
+    CACHE STRING
+    "NOAA-OWP/iso_c_fortran_bmi commit used for dynamic BMI support")
 
 set(MIAOW_CAF_CORE_TARGET "")
 set(MIAOW_CAF_IO_TARGET "")
@@ -64,8 +70,35 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
     miaow_set_caf_targets()
 endif()
 
+if(MIAOW_ISO_C_FORTRAN_BMI_ROOT)
+    if(NOT EXISTS "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "MIAOW_ISO_C_FORTRAN_BMI_ROOT must point to a NOAA-OWP/iso_c_fortran_bmi checkout")
+    endif()
+    add_subdirectory(
+        "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}"
+        "${CMAKE_CURRENT_BINARY_DIR}/iso_c_fortran_bmi-build"
+    )
+else()
+    include(FetchContent)
+    FetchContent_Declare(
+        iso_c_fortran_bmi
+        GIT_REPOSITORY https://github.com/NOAA-OWP/iso_c_fortran_bmi.git
+        GIT_TAG "${MIAOW_ISO_C_FORTRAN_BMI_GIT_TAG}"
+        SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/iso_c_fortran_bmi"
+        BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/iso_c_fortran_bmi-build"
+    )
+    FetchContent_MakeAvailable(iso_c_fortran_bmi)
+endif()
+
+if(NOT TARGET iso_c_bmi)
+    message(FATAL_ERROR
+        "NOAA-OWP/iso_c_fortran_bmi did not provide the expected iso_c_bmi target")
+endif()
+
 add_library(miaow STATIC
     src/bmi/execute.cpp
+    src/bmi/dynamic.cpp
     src/bmi/forcing.cpp
     src/bmi/workflow.cpp
     src/core/actors.cpp
@@ -90,6 +123,8 @@ target_link_libraries(miaow
     PUBLIC
         ${MIAOW_CAF_CORE_TARGET}
         ${MIAOW_CAF_IO_TARGET}
+        iso_c_bmi
+        ${CMAKE_DL_LIBS}
 )
 
 option(BUILD_EXAMPLES "Build example programs" ON)
@@ -98,5 +133,6 @@ if(BUILD_EXAMPLES)
     add_subdirectory(examples/00_hello)
     add_subdirectory(examples/01_heat)
     add_subdirectory(examples/02_soil_freeze_thaw)
-    add_subdirectory(examples/03_noah_owp)
+    add_subdirectory(examples/03_fortran_heat)
+    add_subdirectory(examples/04_noah_owp)
 endif()

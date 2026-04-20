@@ -21,6 +21,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+MIAOW requires C++ and Fortran compilers. The Fortran compiler is used to
+build the shared procedural BMI bridge and the Fortran heat example.
+
 Run examples (reproducible from repo root):
 
 ```bash
@@ -29,6 +32,9 @@ Run examples (reproducible from repo root):
   --output_root examples/01_heat/output
 ./examples/02_soil_freeze_thaw/miaow_soil_freeze_thaw \
   --output_root examples/02_soil_freeze_thaw/output \
+  --max_workers 2
+./examples/03_fortran_heat/miaow_fortran_heat \
+  --output_root examples/03_fortran_heat/output \
   --max_workers 2
 ctest --test-dir build -R miaow_example_02_soil_freeze_thaw --output-on-failure
 ```
@@ -103,6 +109,8 @@ examples/
   00_hello/
   01_heat/
   02_soil_freeze_thaw/
+  03_fortran_heat/
+  04_noah_owp/
 ```
 
 ## Namespace layout
@@ -129,6 +137,23 @@ Each example specifies task inputs in its `main.cpp`. In
 `examples/02_soil_freeze_thaw`, this includes one task without forcing and two
 tasks with forcing.
 
+`miaow::DynamicBmiModel` adapts a dynamically loaded BMI plugin to MIAOW's C++
+BMI interface. The plugin path is supplied at runtime and is passed directly
+to the platform dynamic loader; MIAOW does not append library suffixes. The
+plugin must export a C-callable `register_bmi` symbol that creates a model
+handle compatible with the linked procedural BMI bridge. The current bridge
+target is NOAA `iso_c_bmi`.
+
+Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as C++ BMI
+models:
+
+```cpp
+const miaow::SimulationUnitId heat =
+    registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(
+        plugin_path
+    );
+```
+
 Forcing config files require these keys:
 - `source_type`
 - `source_path`
@@ -144,26 +169,45 @@ not run out before the simulation finishes.
 
 ### Noah-OWP input contract status
 
-Current status for planned `miaow_noah_owp` workflow support:
-- Step 1 JSON/CSV contract samples are available under `examples/03_noah_owp/`
-- Step 2A adds realization-file parse and validation utilities in
-  `src/io/realization.cpp`
-- runtime wiring for realization-driven execution is not implemented yet
+`miaow_noah_owp` workflow support is organized into three phases:
+- Phase 1: many-task orchestration with model-owned forcing. Each task supplies
+  a Noah-OWP config, and the model reads its own native forcing paths from that
+  config
+- Phase 2: realization-driven external forcing, where MIAOW owns per-subdomain
+  forcing CSV paths and injects values through BMI
+- Phase 3: translation from provider-specific forcing products such as
+  NextGen/ngen-forcing outputs into the Phase 2 canonical CSV contract
 
-Contract files:
-- `realization.json`: subdomain tasks and shared forcing metadata
-  (`subdomains.<id>.config`, `subdomains.<id>.forcing`, global
-  `variables_names_map`, `time_step_size`, `time_units`)
-- forcing `CSV`: per-subdomain timeseries values referenced by `forcing`
-- config files remain model-initialization inputs; forcing location is sourced
-  from `realization.json` only
+Implemented support:
+- `examples/04_noah_owp/`: Phase 1 config-only realization sample
+- `src/io/realization.cpp`: Phase 1 realization-file parse and validation
+  utilities
+- Phase 2 realization-driven runtime execution is unavailable
 
-Mapping semantics for Step 2 implementation:
-- global `variables_names_map` links forcing CSV column names to BMI input names
+Phase 1 contract files:
+- `realization.json`: subdomain task metadata (`subdomains.<id>.config`)
+- config files remain model-initialization inputs and own their forcing paths
+
+Phase 2 contract files:
+- `realization.json`: extends the Phase 1 contract with shared forcing
+  metadata and per-subdomain forcing paths
+- forcing `CSV`: per-subdomain timeseries values referenced by the extended
+  realization contract
+- config files remain model-initialization inputs, but forcing location is
+  sourced from `realization.json`
+
+Phase 2 mapping semantics:
+- forcing CSVs should use canonical BMI input variable names as column headers
 - for timestep `i`, all mapped inputs are set before `Update()`
 - row-index alignment remains authoritative (`row i -> step i`)
 
-See `_design/noah_owp_json_contract.md` and `examples/03_noah_owp/` for the
+Phase 3 adaptation semantics:
+- provider-specific products should be translated into the Phase 2 canonical
+  CSV contract before execution
+- provider-native column names or realization schemas are out of scope for the
+  Phase 2 runtime contract
+
+See `_design/noah_owp_json_contract.md` and `examples/04_noah_owp/` for the
 current contract artifacts.
 
 ## Scheduling behaviour
@@ -206,6 +250,8 @@ Top-level CMake options:
 | `-DMIAOW_FETCH_CAF` | `ON` | Fetch CAF with `FetchContent` if not found |
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version when using system CAF |
 | `-DMIAOW_CAF_GIT_TAG` | `1.1.0` | CAF tag/commit for `FetchContent` |
+| `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Path to a local `NOAA-OWP/iso_c_fortran_bmi` checkout |
+| `-DMIAOW_ISO_C_FORTRAN_BMI_GIT_TAG` | pinned commit | Commit for fetching `NOAA-OWP/iso_c_fortran_bmi` |
 
 For [Conan](https://conan.io/)-based CI-style setup:
 
@@ -222,19 +268,29 @@ When configuring from an example directory or another project, these flags are r
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-DMIAOW_ROOT` | `<example_dir>/../..` | Path to the `miaow-framework` source tree |
-| `-DMODEL_ROOT` | model-specific | Path to the BMI model source tree |
+| `-DMODEL_ROOT` | `${MIAOW_ROOT}/third_party/<model>` | Path to the BMI model source tree |
 | `-DEXECUTABLE_TARGET` | example default | Override executable target name |
 | `-DMODEL_TARGET` | example model default | Override model-library target name |
+| `-DMIAOW_FORTRAN_HEAT_MODEL_ROOT` | `${MIAOW_ROOT}/third_party/bmi-example-fortran` | Path to a local `csdms/bmi-example-fortran` checkout |
+| `-DMIAOW_FORTRAN_HEAT_MODEL_GIT_TAG` | pinned commit | Commit for fetching `csdms/bmi-example-fortran` |
 
 The helper `cmake/miaow_bmi_model.cmake` provides `miaow_add_bmi_model(...)`
 and `miaow_add_workflow_test(...)` for model integration and workflow tests.
+Model examples keep their MIAOW-specific source and input files under
+`examples/<example_name>/`. External BMI model source is resolved separately:
+`MODEL_ROOT` takes precedence; otherwise, examples use
+`${MIAOW_ROOT}/third_party/<MODEL_LOCAL_SUBDIR>`. If that directory is missing
+and the example declares a Git repository and tag, CMake fetches the model into
+that same `third_party/<MODEL_LOCAL_SUBDIR>` path. These local checkouts are
+ignored by Git.
 
 ## Examples
 
 1. `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
 2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat equation example](https://github.com/csdms/bmi-example-cxx)
 3. `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with optional forcing per task
-4. `examples/03_noah_owp`: realization-contract parse/validation smoke example for `miaow_noah_owp`
+4. `examples/03_fortran_heat`: dynamic BMI plugin integration using the [CSDMS Fortran heat example](https://github.com/csdms/bmi-example-fortran)
+5. `examples/04_noah_owp`: realization-contract parse/validation smoke example for `miaow_noah_owp`
 
 Each example follows a common layout:
 

@@ -7,7 +7,6 @@ function(miaow_add_bmi_model)
         MIAOW_ROOT
         MODEL_ROOT
         MODEL_LOCAL_SUBDIR
-        MODEL_CLONE_DIR
         MODEL_GIT_REPOSITORY
         MODEL_GIT_TAG
         MODEL_FETCH_NAME
@@ -50,18 +49,19 @@ function(miaow_add_bmi_model)
         set(model_root "${MIAOW_MIAOW_ROOT}/third_party/${MIAOW_MODEL_LOCAL_SUBDIR}")
     endif()
 
-    if(NOT model_root OR NOT EXISTS "${model_root}")
+    if(NOT model_root)
+        message(FATAL_ERROR "Missing model source: set MODEL_ROOT or MODEL_LOCAL_SUBDIR")
+    endif()
+
+    if(NOT EXISTS "${model_root}")
         if(NOT MIAOW_MODEL_GIT_REPOSITORY OR NOT MIAOW_MODEL_GIT_TAG)
             message(FATAL_ERROR "Missing model source: set MODEL_ROOT or MODEL_GIT_REPOSITORY + MODEL_GIT_TAG")
         endif()
 
-        if(NOT MIAOW_MODEL_CLONE_DIR)
-            set(MIAOW_MODEL_CLONE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/model")
-        endif()
-        file(MAKE_DIRECTORY "${MIAOW_MODEL_CLONE_DIR}")
+        get_filename_component(model_parent "${model_root}" DIRECTORY)
+        file(MAKE_DIRECTORY "${model_parent}")
 
         include(FetchContent)
-        set(FETCHCONTENT_BASE_DIR "${MIAOW_MODEL_CLONE_DIR}")
         if(NOT MIAOW_MODEL_FETCH_NAME)
             set(MIAOW_MODEL_FETCH_NAME "${MIAOW_MODEL_TARGET}_source")
         endif()
@@ -71,6 +71,8 @@ function(miaow_add_bmi_model)
             ${model_fetch_name}
             GIT_REPOSITORY "${MIAOW_MODEL_GIT_REPOSITORY}"
             GIT_TAG "${MIAOW_MODEL_GIT_TAG}"
+            SOURCE_DIR "${model_root}"
+            BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/${model_fetch_name}-build"
         )
 
         if(POLICY CMP0169)
@@ -80,8 +82,6 @@ function(miaow_add_bmi_model)
         if(NOT ${model_fetch_name}_POPULATED)
             FetchContent_Populate(${model_fetch_name})
         endif()
-
-        set(model_root "${${model_fetch_name}_SOURCE_DIR}")
     endif()
 
     if(NOT MIAOW_OUTPUT_DIR)

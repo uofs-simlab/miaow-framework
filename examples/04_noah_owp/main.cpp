@@ -42,11 +42,6 @@ int main(int argc, char* argv[]) {
         std::cout << "Parsed realization with "
                   << realization.subdomains_.size()
                   << " subdomain(s)\n";
-        std::cout << "time_step_size=" << realization.time_step_size_ << "\n";
-        std::cout << "time_units=" << realization.time_units_ << "\n";
-        std::cout << "variables_names_map="
-                  << realization.variables_names_map_.size()
-                  << " mapping(s)\n";
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";
         return 1;

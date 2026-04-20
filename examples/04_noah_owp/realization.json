@@ -1,0 +1,7 @@
+{
+  "subdomains": {
+    "cat-20521": {
+      "config": "./configs/cat-20521.txt"
+    }
+  }
+}

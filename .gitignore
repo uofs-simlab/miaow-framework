@@ -1,23 +1,23 @@
 # Prerequisites
 *.d
 
-# Compiled Object files
+# Compiled object files
 *.slo
 *.lo
 *.o
 *.obj
 
-# Precompiled Headers
+# Precompiled headers
 *.gch
 *.pch
 
 # Linker files
 *.ilk
 
-# Debugger Files
+# Debugger files
 *.pdb
 
-# Compiled Dynamic libraries
+# Compiled dynamic libraries
 *.so
 *.dylib
 *.dll
@@ -26,7 +26,7 @@
 *.mod
 *.smod
 
-# Compiled Static libraries
+# Compiled static libraries
 *.lai
 *.la
 *.a
@@ -37,14 +37,10 @@
 *.out
 *.app
 examples/*/miaow_*
-examples/00_hello/miaow_hello
-examples/01_heat/miaow_heat
-examples/01_heat/bmiheatcxx.out
-examples/00_hello/build/
-examples/01_heat/build/
-examples/*/model/
-third_party/bmi-example-cxx/
-third_party/SoilFreezeThaw/
+examples/*/build*/
+
+# Locally fetched vendored code
+third_party/
 
 # debug information files
 *.dwo

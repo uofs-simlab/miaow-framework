@@ -2,6 +2,6 @@
   dt               = 3600.0
   startdate        = "200906142000"
   enddate          = "200906142200"
-  forcing_filename = ""                        ! forcing comes from realization.json
+  forcing_filename = ""                        ! placeholder for model-owned forcing
   output_filename  = "./output.nc"
 /

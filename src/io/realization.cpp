@@ -1,8 +1,6 @@
 #include "io/realization.hpp"
 
-#include <cmath>
 #include <filesystem>
-#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -87,23 +85,6 @@ std::string require_non_empty_string(const caf::json_object& object,
     return parsed;
 }
 
-double require_positive_number(const caf::json_object& object,
-                               const std::string& key,
-                               const std::string& context) {
-    const caf::json_value value = require_member(object, key, context);
-    if (!value.is_number()) {
-        throw_realization_config_error(
-            context + " key '" + key + "' must be a number");
-    }
-
-    const double parsed = value.to_double(std::numeric_limits<double>::quiet_NaN());
-    if (!std::isfinite(parsed) || parsed <= 0.0) {
-        throw_realization_config_error(
-            context + " key '" + key + "' must be a positive finite number");
-    }
-    return parsed;
-}
-
 std::filesystem::path resolve_input_path(const std::filesystem::path& base_directory,
                                          const std::string& raw_path,
                                          const std::string& field_name,
@@ -126,49 +107,6 @@ std::filesystem::path resolve_input_path(const std::filesystem::path& base_direc
     }
 
     return resolved_path;
-}
-
-std::map<std::string, std::string> parse_variables_names_map(
-    const caf::json_object& root) {
-    const caf::json_value map_value =
-        require_member(root, "variables_names_map", "root");
-    const caf::json_object map_object =
-        require_object_value(map_value, "root key 'variables_names_map'");
-
-    if (map_object.empty()) {
-        throw_realization_config_error(
-            "root key 'variables_names_map' must not be empty");
-    }
-
-    std::map<std::string, std::string> mappings;
-    for (const auto [raw_csv_column, bmi_var_value] : map_object) {
-        const std::string csv_column = trim(std::string(raw_csv_column));
-        if (csv_column.empty()) {
-            throw_realization_config_error(
-                "root key 'variables_names_map' contains an empty CSV column key");
-        }
-        if (!bmi_var_value.is_string()) {
-            throw_realization_config_error(
-                "root key 'variables_names_map' entry '" + csv_column +
-                "' must map to a string BMI variable name");
-        }
-
-        const std::string bmi_var_name = trim(std::string(bmi_var_value.to_string()));
-        if (bmi_var_name.empty()) {
-            throw_realization_config_error(
-                "root key 'variables_names_map' entry '" + csv_column +
-                "' must map to a non-empty BMI variable name");
-        }
-
-        const auto insertion = mappings.emplace(csv_column, bmi_var_name);
-        if (!insertion.second) {
-            throw_realization_config_error(
-                "root key 'variables_names_map' has duplicate CSV column key '" +
-                csv_column + "'");
-        }
-    }
-
-    return mappings;
 }
 
 std::vector<RealizationSubdomain> parse_subdomains(
@@ -199,17 +137,11 @@ std::vector<RealizationSubdomain> parse_subdomains(
         const std::string config_path = require_non_empty_string(
             subdomain_object, "config",
             "root key 'subdomains' entry '" + subdomain_id + "'");
-        const std::string forcing_path = require_non_empty_string(
-            subdomain_object, "forcing",
-            "root key 'subdomains' entry '" + subdomain_id + "'");
 
         RealizationSubdomain subdomain;
         subdomain.subdomain_id_ = subdomain_id;
         subdomain.config_path_ =
             resolve_input_path(base_directory, config_path, "config", subdomain_id)
-                .string();
-        subdomain.forcing_path_ =
-            resolve_input_path(base_directory, forcing_path, "forcing", subdomain_id)
                 .string();
         subdomains.push_back(std::move(subdomain));
     }
@@ -235,11 +167,6 @@ RealizationConfig read_realization_config(const std::string& realization_path) {
 
     RealizationConfig realization_config;
     realization_config.realization_path_ = normalized_path.string();
-    realization_config.time_step_size_ =
-        require_positive_number(root, "time_step_size", "root");
-    realization_config.time_units_ =
-        require_non_empty_string(root, "time_units", "root");
-    realization_config.variables_names_map_ = parse_variables_names_map(root);
     realization_config.subdomains_ =
         parse_subdomains(root, normalized_path.parent_path());
     return realization_config;

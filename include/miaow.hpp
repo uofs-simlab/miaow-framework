@@ -29,6 +29,7 @@ using SimulationUnitId = std::uint64_t;
 using TaskId = std::uint64_t;
 // Monotonic identifier assigned to each submitted job
 using JobId = std::uint64_t;
+
 /**
  * @brief Generic task input specification.
  *
