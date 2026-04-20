@@ -78,3 +78,4 @@ _*/
 __pycache__/
 *.pyc
 scripts/visualization/.venv/
+scripts/preprocessing/.venv/
