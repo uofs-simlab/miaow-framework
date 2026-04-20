@@ -97,8 +97,10 @@ src/
 
   bmi/
     execute.cpp          # BMI lifecycle execution bridge for public wrapper
+    dynamic.cpp          # DynamicBmiModel adapter over iso_c_fortran_bmi plugins
     forcing.cpp          # forcing config parsing + BMI input validation
     workflow.cpp         # BMI update loop/per-step output writing
+    internal.hpp         # BMI-private forcing/run helper declarations
 
   io/
     metadata.cpp         # runtime metadata output writing
@@ -110,7 +112,6 @@ examples/
   01_heat/
   02_soil_freeze_thaw/
   03_fortran_heat/
-  04_noah_owp/
 ```
 
 ## Namespace layout
@@ -166,49 +167,6 @@ Forcing config files require these keys:
 `time_step_size` and `time_units` must match the BMI model timestep metadata.
 Forcing may contain additional trailing rows beyond simulation end, but it must
 not run out before the simulation finishes.
-
-### Noah-OWP input contract status
-
-`miaow_noah_owp` workflow support is organized into three phases:
-- Phase 1: many-task orchestration with model-owned forcing. Each task supplies
-  a Noah-OWP config, and the model reads its own native forcing paths from that
-  config
-- Phase 2: realization-driven external forcing, where MIAOW owns per-subdomain
-  forcing CSV paths and injects values through BMI
-- Phase 3: translation from provider-specific forcing products such as
-  NextGen/ngen-forcing outputs into the Phase 2 canonical CSV contract
-
-Implemented support:
-- `examples/04_noah_owp/`: Phase 1 config-only realization sample
-- `src/io/realization.cpp`: Phase 1 realization-file parse and validation
-  utilities
-- Phase 2 realization-driven runtime execution is unavailable
-
-Phase 1 contract files:
-- `realization.json`: subdomain task metadata (`subdomains.<id>.config`)
-- config files remain model-initialization inputs and own their forcing paths
-
-Phase 2 contract files:
-- `realization.json`: extends the Phase 1 contract with shared forcing
-  metadata and per-subdomain forcing paths
-- forcing `CSV`: per-subdomain timeseries values referenced by the extended
-  realization contract
-- config files remain model-initialization inputs, but forcing location is
-  sourced from `realization.json`
-
-Phase 2 mapping semantics:
-- forcing CSVs should use canonical BMI input variable names as column headers
-- for timestep `i`, all mapped inputs are set before `Update()`
-- row-index alignment remains authoritative (`row i -> step i`)
-
-Phase 3 adaptation semantics:
-- provider-specific products should be translated into the Phase 2 canonical
-  CSV contract before execution
-- provider-native column names or realization schemas are out of scope for the
-  Phase 2 runtime contract
-
-See `_design/noah_owp_json_contract.md` and `examples/04_noah_owp/` for the
-current contract artifacts.
 
 ## Scheduling behaviour
 
@@ -290,7 +248,6 @@ ignored by Git.
 2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat equation example](https://github.com/csdms/bmi-example-cxx)
 3. `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with optional forcing per task
 4. `examples/03_fortran_heat`: dynamic BMI plugin integration using the [CSDMS Fortran heat example](https://github.com/csdms/bmi-example-fortran)
-5. `examples/04_noah_owp`: realization-contract parse/validation smoke example for `miaow_noah_owp`
 
 Each example follows a common layout:
 
