@@ -35,7 +35,7 @@ Run examples (reproducible from repo root):
   --max_workers 2
 ```
 
-For CLI-driven examples, only runtime options are accepted:
+For CLI-driven examples, the following runtime options are accepted:
 `--max_workers`, `--task_request_timeout`, `--job_request_timeout`,
 and `--output_root`.
 
@@ -134,14 +134,13 @@ Each example specifies task inputs in its `main.cpp`. In
 `examples/02_soil_freeze_thaw`, this includes one task without forcing and two
 tasks with forcing.
 
-`miaow::DynamicBmiModel` adapts a dynamically loaded BMI plugin to MIAOW's C++
+The `miaow::DynamicBmiModel` class adapts a dynamically loaded BMI plugin to MIAOW's C++
 BMI interface. The plugin path is supplied at runtime and is passed directly
-to the platform dynamic loader; MIAOW does not append library suffixes. The
+to the platform dynamic loader. The
 plugin must export a C-callable `register_bmi` symbol that creates a model
-handle compatible with the linked procedural BMI bridge. The current bridge
-target is NOAA `iso_c_bmi`. Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as C++ BMI
-models. For example, if `plugin_path` is the path to the model's shared library, one can register the simulation unit in MIAOW as follows
-
+handle compatible with the linked [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
+Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as C++ BMI
+models. For example, if `plugin_path` is the path to the model's shared library, one can register the simulation unit in MIAOW as follows:
 ```cpp
 const miaow::SimulationUnitId my_dynamic_bmi_model =
     registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(
