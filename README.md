@@ -13,16 +13,13 @@ MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html), u
 
 ## Quick start
 
-From the repository root, using [CMake](https://cmake.org/):
+From the repository root, using [CMake](https://cmake.org/) (requires C++ and Fortran compilers):
 
 ```bash
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
-
-MIAOW requires C++ and Fortran compilers. The Fortran compiler is used to
-build the shared procedural BMI bridge and the Fortran heat example.
 
 Run examples (reproducible from repo root):
 
@@ -36,7 +33,6 @@ Run examples (reproducible from repo root):
 ./examples/03_fortran_heat/miaow_fortran_heat \
   --output_root examples/03_fortran_heat/output \
   --max_workers 2
-ctest --test-dir build -R miaow_example_02_soil_freeze_thaw --output-on-failure
 ```
 
 For CLI-driven examples, only runtime options are accepted:
@@ -45,7 +41,7 @@ and `--output_root`.
 
 ## Orchestration model
 
-MIAOW executes simulation workflows with this actor hierarchy:
+MIAOW executes simulation workflows with the following actor hierarchy:
 
 ```text
 Runtime (shared for process lifetime)
@@ -54,7 +50,7 @@ Runtime (shared for process lifetime)
       └─ simulation_unit_actor (many per job, up to max_workers)
 ```
 
-Typical flow:
+Typical workflow:
 
 1. Caller invokes `Runtime::submit_job(tasks)`.
 2. Runtime assigns a `job_id` and sends `(job_id, tasks)` to `orchestrator_actor`.
@@ -63,7 +59,7 @@ Typical flow:
 5. Completed task results are aggregated into one `JobResult`.
 6. Runtime fulfils the caller's `JobHandle` future.
 
-Each `Runtime` instance keeps one shared orchestrator, so multiple
+ Note that multiple
 `submit_job(...)` calls can be running concurrently.
 
 ## Public API summary
@@ -209,7 +205,6 @@ Top-level CMake options:
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version when using system CAF |
 | `-DMIAOW_CAF_GIT_TAG` | `1.1.0` | CAF tag/commit for `FetchContent` |
 | `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Path to a local `NOAA-OWP/iso_c_fortran_bmi` checkout |
-| `-DMIAOW_ISO_C_FORTRAN_BMI_GIT_TAG` | pinned commit | Commit for fetching `NOAA-OWP/iso_c_fortran_bmi` |
 
 For [Conan](https://conan.io/)-based CI-style setup:
 
@@ -229,8 +224,6 @@ When configuring from an example directory or another project, these flags are r
 | `-DMODEL_ROOT` | `${MIAOW_ROOT}/third_party/<model>` | Path to the BMI model source tree |
 | `-DEXECUTABLE_TARGET` | example default | Override executable target name |
 | `-DMODEL_TARGET` | example model default | Override model-library target name |
-| `-DMIAOW_FORTRAN_HEAT_MODEL_ROOT` | `${MIAOW_ROOT}/third_party/bmi-example-fortran` | Path to a local `csdms/bmi-example-fortran` checkout |
-| `-DMIAOW_FORTRAN_HEAT_MODEL_GIT_TAG` | pinned commit | Commit for fetching `csdms/bmi-example-fortran` |
 
 The helper `cmake/miaow_bmi_model.cmake` provides `miaow_add_bmi_model(...)`
 and `miaow_add_workflow_test(...)` for model integration and workflow tests.

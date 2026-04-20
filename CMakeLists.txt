@@ -15,10 +15,6 @@ set(MIAOW_CAF_VERSION "1.1.0" CACHE STRING "Minimum CAF version for system find_
 set(MIAOW_CAF_GIT_TAG "1.1.0" CACHE STRING "CAF git tag or commit to fetch")
 set(MIAOW_ISO_C_FORTRAN_BMI_ROOT "" CACHE PATH
     "Path to a local NOAA-OWP/iso_c_fortran_bmi checkout")
-set(MIAOW_ISO_C_FORTRAN_BMI_GIT_TAG
-    "fad31177d5a10b3773db528d117e7ff17159fb07"
-    CACHE STRING
-    "NOAA-OWP/iso_c_fortran_bmi commit used for dynamic BMI support")
 
 set(MIAOW_CAF_CORE_TARGET "")
 set(MIAOW_CAF_IO_TARGET "")
@@ -84,7 +80,7 @@ else()
     FetchContent_Declare(
         iso_c_fortran_bmi
         GIT_REPOSITORY https://github.com/NOAA-OWP/iso_c_fortran_bmi.git
-        GIT_TAG "${MIAOW_ISO_C_FORTRAN_BMI_GIT_TAG}"
+        GIT_TAG "fad31177d5a10b3773db528d117e7ff17159fb07"
         SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/iso_c_fortran_bmi"
         BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/iso_c_fortran_bmi-build"
     )

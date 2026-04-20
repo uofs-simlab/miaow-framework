@@ -22,15 +22,8 @@ if(NOT TARGET miaow)
     add_subdirectory("${MIAOW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/miaow-build")
 endif()
 
-set(MIAOW_FORTRAN_HEAT_MODEL_ROOT "" CACHE PATH
-    "Path to a local csdms/bmi-example-fortran checkout")
-set(MIAOW_FORTRAN_HEAT_MODEL_GIT_TAG
-    "74df8d888433c43fc7f7b96109a445bead9972d2"
-    CACHE STRING
-    "csdms/bmi-example-fortran commit used for the Fortran heat example")
-
-if(MIAOW_FORTRAN_HEAT_MODEL_ROOT)
-    set(fortran_heat_model_root "${MIAOW_FORTRAN_HEAT_MODEL_ROOT}")
+if(MODEL_ROOT)
+    set(fortran_heat_model_root "${MODEL_ROOT}")
 else()
     set(fortran_heat_model_root "${MIAOW_ROOT}/third_party/bmi-example-fortran")
 endif()
@@ -40,7 +33,7 @@ if(NOT EXISTS "${fortran_heat_model_root}")
     FetchContent_Declare(
         bmi_example_fortran
         GIT_REPOSITORY https://github.com/csdms/bmi-example-fortran.git
-        GIT_TAG "${MIAOW_FORTRAN_HEAT_MODEL_GIT_TAG}"
+        GIT_TAG "74df8d888433c43fc7f7b96109a445bead9972d2"
         SOURCE_DIR "${fortran_heat_model_root}"
         BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/bmi_example_fortran-build"
     )
@@ -56,7 +49,7 @@ endif()
 
 if(NOT EXISTS "${fortran_heat_model_root}/heat/heat.f90")
     message(FATAL_ERROR
-        "MIAOW_FORTRAN_HEAT_MODEL_ROOT must point to a csdms/bmi-example-fortran checkout")
+        "MODEL_ROOT must point to a csdms/bmi-example-fortran checkout")
 endif()
 
 set(fortran_heat_module_dir "${CMAKE_CURRENT_BINARY_DIR}/mod")
