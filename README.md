@@ -35,15 +35,6 @@ Run examples (reproducible from repo root):
   --realization examples/04_noah_owp/realization.json
 ```
 
-For orchestration examples using MIAOW's provided runtime command line interface (CLI), the following options are accepted:
-
-| Option | Value | Default | Description |
-| --- | --- | --- | --- |
-| `--max_workers` | Positive integer | `1` | Maximum number of worker actors used for a job |
-| `--task_request_timeout` | Seconds | `5` | Timeout for task requests sent to worker actors |
-| `--job_request_timeout` | Seconds | `300` | Timeout for job result requests |
-| `--output_root` | Path | Empty (runtime-managed file output disabled) | Root directory for runtime-managed output folders |
-
 ## Orchestration model
 
 MIAOW executes simulation workflows with the following actor hierarchy:
@@ -256,6 +247,17 @@ helper-based examples use `MODEL_ROOT` when provided, otherwise they use
 one Fortran plugin. If a required source directory is missing and the example
 declares a Git repository and tag, CMake fetches the model into the matching
 `third_party/` path. These local checkouts are ignored by Git.
+
+## Runtime CLI
+
+For orchestration examples using MIAOW's provided runtime command line interface (CLI), the following options are accepted:
+
+| Option | Value | Default | Description |
+| --- | --- | --- | --- |
+| `--max_workers` | Positive integer | `1` | Maximum number of worker actors used for a job |
+| `--task_request_timeout` | Seconds | `5` | Timeout for task requests sent to worker actors |
+| `--job_request_timeout` | Seconds | `300` | Timeout for job result requests |
+| `--output_root` | Path | Empty (runtime-managed file output disabled) | Root directory for runtime-managed output folders |
 
 ## Examples
 
