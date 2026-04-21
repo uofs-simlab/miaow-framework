@@ -252,12 +252,12 @@ declares a Git repository and tag, CMake fetches the model into the matching
 
 For orchestration examples using MIAOW's provided runtime command line interface (CLI), the following options are accepted:
 
-| Option | Value | Default | Description |
-| --- | --- | --- | --- |
-| `--max_workers` | Positive integer | `1` | Maximum number of worker actors used for a job |
-| `--task_request_timeout` | Seconds | `5` | Timeout for task requests sent to worker actors |
-| `--job_request_timeout` | Seconds | `300` | Timeout for job result requests |
-| `--output_root` | Path | Empty (runtime-managed file output disabled) | Root directory for runtime-managed output folders |
+| Option | Default | Description |
+| --- | --- | --- |
+| `--max_workers` | `1` | Maximum number of worker actors used for each job |
+| `--task_request_timeout` | `5` | Timeout for task requests sent to worker actors (seconds) |
+| `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
+| `--output_root` | Empty (runtime-managed file output disabled) | Root directory path for runtime-managed output folders |
 
 ## Examples
 
