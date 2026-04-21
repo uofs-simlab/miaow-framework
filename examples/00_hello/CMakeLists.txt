@@ -44,6 +44,12 @@ if(BUILD_TESTING)
         PASS_REGULAR_EXPRESSION "succeeded: hello(.|\\n)*succeeded: cats(.|\\n)*succeeded: hello again(.|\\n)*succeeded: more cats"
     )
 
+    set(hello_layout_cli_args
+        --output_root
+        "${CMAKE_CURRENT_BINARY_DIR}/output"
+    )
+    list(JOIN hello_layout_cli_args ";" hello_layout_cli_args_serialized)
+
     add_test(
         NAME miaow_example_00_hello_metadata_layout
         COMMAND
@@ -51,6 +57,7 @@ if(BUILD_TESTING)
             -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
             -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/output
+            "-DEXECUTABLE_ARGS=${hello_layout_cli_args_serialized}"
             -P
             ${MIAOW_ROOT}/cmake/check_metadata_layout.cmake
     )

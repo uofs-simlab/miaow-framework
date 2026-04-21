@@ -40,8 +40,7 @@ public:
 
 int main(int argc, char* argv[]) {
     // Initialize runtime options and parse runtime-wide CLI arguments
-    miaow::RuntimeOptions runtime_options{/*workers=*/2};
-    runtime_options.output_root_ = "./output";
+    miaow::RuntimeOptions runtime_options;
     const std::string input_error =
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
     if (!input_error.empty()) {

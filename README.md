@@ -89,7 +89,7 @@ For BMI models, use `miaow::BmiSimulationUnit<BmiModelType>` from
 include/
   miaow.hpp              # public runtime/task API
   miaow_bmi.hpp          # BMI simulation-unit wrapper/BMI-facing contracts
-  miaow_cli.hpp          # runtime CLI option parsing helpers for examples
+  miaow_cli.hpp          # runtime command-line option parsing helpers for examples
 
 src/
   core/
@@ -248,24 +248,15 @@ one Fortran plugin. If a required source directory is missing and the example
 declares a Git repository and tag, CMake fetches the model into the matching
 `third_party/` path. These local checkouts are ignored by Git.
 
-## Runtime CLI
-
-For orchestration examples using MIAOW's provided runtime command line interface (CLI), the following options are accepted:
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `--max_workers` | `1` | Maximum number of worker actors used for each job |
-| `--task_request_timeout` | `5` | Timeout for task requests sent to worker actors (seconds) |
-| `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
-| `--output_root` | Empty (runtime-managed file output disabled) | Root directory path for runtime-managed output folders |
-
 ## Examples
 
-1. `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
-2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
-3. `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with per-task forcing, including matched, short, and long forcing cases
-4. `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
-5. `examples/04_noah_owp`: Noah-OWP realization parsing smoke example
+The following examples are provided to illustrate the functionality of MIAOW:
+
+- `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
+- `examples/01_heat`: basic BMI integration using the [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
+- `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with per-task forcing, including matched, short, and long forcing cases
+- `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
+- `examples/04_noah_owp`: Noah-OWP realization parsing smoke example
 
 Each example follows a common layout:
 
@@ -274,6 +265,15 @@ examples/<example_name>/
   configs/   # model configuration files
   forcings/  # optional forcing data files
 ```
+
+The `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi` examples accept the following runtime command-line options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--max_workers` | `1` | Maximum number of worker actors used for each job |
+| `--task_request_timeout` | `5` | Timeout for task requests sent to worker actors (seconds) |
+| `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
+| `--output_root` | `""` | Root directory path for runtime-managed output folders (disabled by default) |
 
 ## Limitations
 
