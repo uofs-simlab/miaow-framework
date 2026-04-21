@@ -25,8 +25,7 @@ Run examples (reproducible from repo root):
 
 ```bash
 ./examples/00_hello/miaow_hello
-./examples/01_heat/miaow_heat \
-  --output_root examples/01_heat/output
+./examples/01_heat/miaow_heat
 ./examples/02_soil_freeze_thaw/miaow_soil_freeze_thaw \
   --output_root examples/02_soil_freeze_thaw/output \
   --max_workers 2
