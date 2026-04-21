@@ -70,20 +70,11 @@ int main(int argc, char* argv[]) {
     const miaow::JobResult job_result = job.get();
 
     // Print per-task status and message in completion order
-    bool saw_failure = false;
-    for (std::size_t index = 0; index < job_result.task_results_.size(); ++index) {
-        const miaow::TaskResult& task_result = job_result.task_results_.at(index);
-        std::cout << "[" << task_result.task_id_ << "] "
-                  << miaow::task_status_to_string(task_result.status_) << ": "
-                  << task_result.message_ << "\n";
-        if (task_result.status_ != miaow::TaskStatus::succeeded) {
-            saw_failure = true;
-        }
-    }
+    miaow::print_task_results(job_result);
 
     // Print timing diagnostics for this job run
     miaow::print_diagnostics(job_result.diagnostics_);
 
     // Return 1 if any task failed, or 0 if all tasks succeeded
-    return saw_failure ? 1 : 0;
+    return miaow::all_tasks_succeeded(job_result) ? 0 : 1;
 }

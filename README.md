@@ -30,12 +30,14 @@ Run examples (reproducible from repo root):
 ./examples/02_soil_freeze_thaw/miaow_soil_freeze_thaw \
   --output_root examples/02_soil_freeze_thaw/output \
   --max_workers 2
-./examples/03_fortran_heat/miaow_fortran_heat \
-  --output_root examples/03_fortran_heat/output \
+./examples/03_dynamic_bmi/miaow_dynamic_bmi \
+  --output_root examples/03_dynamic_bmi/output \
   --max_workers 2
+./examples/04_noah_owp/miaow_noah_owp \
+  --realization examples/04_noah_owp/realization.json
 ```
 
-For CLI-driven examples, the following runtime options are accepted:
+For CLI-driven orchestration examples, the following runtime options are accepted:
 `--max_workers`, `--task_request_timeout`, `--job_request_timeout`,
 and `--output_root`.
 
@@ -59,8 +61,19 @@ Typical workflow:
 5. Completed task results are aggregated into one `JobResult`.
 6. Runtime fulfils the caller's `JobHandle` future.
 
- Note that multiple
+Note that multiple
 `submit_job(...)` calls can be running concurrently.
+
+## Scheduling behaviour
+
+Each `job_actor` maintains:
+
+- a pending-task cursor (`next_task_to_dispatch_`)
+- a queue of idle workers (`available_workers_`)
+
+When a worker finishes, it is immediately returned to the idle queue and the
+next pending task is dispatched. This greedy policy keeps workers occupied while
+remaining simple and predictable.
 
 ## Public API summary
 
@@ -93,7 +106,7 @@ src/
 
   bmi/
     execute.cpp          # BMI lifecycle execution bridge for public wrapper
-    dynamic.cpp          # DynamicBmiModel adapter over iso_c_fortran_bmi plugins
+    dynamic.cpp          # DynamicBmiModel adapter over dynamic C++/Fortran plugins
     forcing.cpp          # forcing config parsing + BMI input validation
     workflow.cpp         # BMI update loop/per-step output writing
     internal.hpp         # BMI-private forcing/run helper declarations
@@ -107,7 +120,8 @@ examples/
   00_hello/
   01_heat/
   02_soil_freeze_thaw/
-  03_fortran_heat/
+  03_dynamic_bmi/
+  04_noah_owp/
 ```
 
 ## Namespace layout
@@ -153,36 +167,31 @@ combinations of model end time and forcing series length: a matched 1024-day
 run, a 1024-day run whose 1-day forcing is exhausted early (deliberate
 failure), and a 1-day run that stops well before its 1024-day forcing ends.
 
-
 ### Dynamically linking BMI models
 
-The `miaow::DynamicBmiModel` class adapts a dynamically loaded BMI plugin to MIAOW's 
-C++ BMI interface. The plugin path is supplied at runtime and is passed directly
-to the platform dynamic loader. The plugin must export a C-callable `register_bmi`
-symbol that creates a model handle compatible with the linked 
-[NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi),
-which provides ISO C bindings for BMI-compatible Fortran models. Dynamic BMI
-registration uses the same `BmiSimulationUnit` wrapper as statically linked C++ BMI
-models. For example, if `plugin_path` is the path to the model's shared library, one
-can register the simulation unit in MIAOW as follows:
+The `miaow::DynamicBmiModel<Language>` template adapts a dynamically loaded BMI
+plugin to MIAOW's C++ BMI interface. The plugin path is supplied at runtime and
+is passed directly to the platform dynamic loader. The plugin language is
+explicit in the model type:
+
+- `miaow::DynamicCppBmiModel` loads a C++ plugin that exports
+  `register_bmi(bmi::Bmi**)` and `unregister_bmi(bmi::Bmi**)`.
+- `miaow::DynamicFortranBmiModel` loads a Fortran plugin that exports
+  `register_bmi(void**)` for the linked
+  [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
+  A Fortran `unregister_bmi(void**)` symbol is used when present.
+
+Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as statically linked
+C++ BMI models. For example, if `plugin_path` is the path to a C++ BMI plugin, one can 
+register the simulation unit in MIAOW as follows:
 ```cpp
 const miaow::SimulationUnitId my_dynamic_bmi_model =
-    registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(
-        plugin_path
-    );
+    registry.add<miaow::BmiSimulationUnit<miaow::DynamicCppBmiModel>>(
+        plugin_path);
 ```
-This functionality is currently implemented in the `03_fortran_heat` example.
-
-## Scheduling behaviour
-
-Each `job_actor` maintains:
-
-- a pending-task cursor (`next_task_to_dispatch_`)
-- a queue of idle workers (`available_workers_`)
-
-When a worker finishes, it is immediately returned to the idle queue and the
-next pending task is dispatched. This greedy policy keeps workers occupied while
-remaining simple and predictable.
+Dynamic C++ and Fortran loading are exercised together in the
+`03_dynamic_bmi` example, which prints the resolved C++ and Fortran plugin
+library paths before running both models in one job.
 
 ## Diagnostics and artifacts
 
@@ -206,7 +215,7 @@ Top-level CMake options:
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `-DBUILD_EXAMPLES` | `ON` | Build `miaow_hello`, `miaow_heat`, and `miaow_soil_freeze_thaw` |
+| `-DBUILD_EXAMPLES` | `ON` | Build all example programs |
 | `-DMIAOW_USE_SYSTEM_CAF` | `ON` | Prefer a system-installed CAF via `find_package` |
 | `-DMIAOW_FETCH_CAF` | `ON` | Fetch CAF with `FetchContent` if not found |
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version when using system CAF |
@@ -228,7 +237,7 @@ When configuring from an example directory or another project, the following fla
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-DMIAOW_ROOT` | `<example_dir>/../..` | Path to the `miaow-framework` source tree |
-| `-DMODEL_ROOT` | `${MIAOW_ROOT}/third_party/<model>` | Path to the model source tree |
+| `-DMODEL_ROOT` | `${MIAOW_ROOT}/third_party/<model>` | Path to the model source tree for helper-based BMI examples |
 | `-DEXECUTABLE_TARGET` | example default | Override executable target name |
 | `-DMODEL_TARGET` | example model default | Override model-library target name |
 
@@ -236,18 +245,20 @@ The helper `cmake/miaow_bmi_model.cmake` provides `miaow_add_bmi_model(...)`
 and `miaow_add_workflow_test(...)` for model integration and workflow tests.
 Model examples keep their MIAOW-specific source and input files under
 `examples/<example_name>/`. External BMI model source is resolved separately:
-`MODEL_ROOT` takes precedence; otherwise, examples use
-`${MIAOW_ROOT}/third_party/<MODEL_LOCAL_SUBDIR>`. If that directory is missing
-and the example declares a Git repository and tag, CMake fetches the model into
-that same `third_party/<MODEL_LOCAL_SUBDIR>` path. These local checkouts are
-ignored by Git.
+helper-based examples use `MODEL_ROOT` when provided, otherwise they use
+`${MIAOW_ROOT}/third_party/<MODEL_LOCAL_SUBDIR>`. The dynamic BMI example uses
+`CXX_MODEL_ROOT` and `FORTRAN_MODEL_ROOT` because it builds one C++ plugin and
+one Fortran plugin. If a required source directory is missing and the example
+declares a Git repository and tag, CMake fetches the model into the matching
+`third_party/` path. These local checkouts are ignored by Git.
 
 ## Examples
 
 1. `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
-2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat equation example](https://github.com/csdms/bmi-example-cxx)
+2. `examples/01_heat`: Basic BMI integration using the [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
 3. `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with per-task forcing, including matched, short, and long forcing cases
-4. `examples/03_fortran_heat`: dynamic BMI plugin integration using the [CSDMS Fortran heat example](https://github.com/csdms/bmi-example-fortran)
+4. `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
+5. `examples/04_noah_owp`: Noah-OWP realization parsing smoke example
 
 Each example follows a common layout:
 

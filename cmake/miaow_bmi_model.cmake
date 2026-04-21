@@ -67,21 +67,13 @@ function(miaow_add_bmi_model)
         endif()
         string(MAKE_C_IDENTIFIER "${MIAOW_MODEL_FETCH_NAME}" model_fetch_name)
 
-        FetchContent_Declare(
+        FetchContent_Populate(
             ${model_fetch_name}
             GIT_REPOSITORY "${MIAOW_MODEL_GIT_REPOSITORY}"
             GIT_TAG "${MIAOW_MODEL_GIT_TAG}"
             SOURCE_DIR "${model_root}"
             BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/${model_fetch_name}-build"
         )
-
-        if(POLICY CMP0169)
-            cmake_policy(SET CMP0169 OLD)
-        endif()
-        FetchContent_GetProperties(${model_fetch_name})
-        if(NOT ${model_fetch_name}_POPULATED)
-            FetchContent_Populate(${model_fetch_name})
-        endif()
     endif()
 
     if(NOT MIAOW_OUTPUT_DIR)

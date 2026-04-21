@@ -22,18 +22,27 @@ namespace bmi_api = ::bmi;
 TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task);
 
 /**
- * @brief C++ BMI model backed by a dynamically loaded BMI plugin.
- *
- * The plugin path is used exactly as provided. The plugin must export the
- * C-callable `register_bmi(void**)` symbol expected by NOAA's
- * `iso_c_fortran_bmi` bridge. The loaded model is exposed to MIAOW through the
- * C++ BMI interface and can be used with the BmiSimulationUnit in the same way as a 
- * statically linked BMI model.
+ * @brief Language interface exposed by a dynamically loaded BMI plugin.
  */
-class DynamicBmiModel : public bmi_api::Bmi {
+enum class DynamicBmiLanguage {
+    cpp,
+    fortran,
+};
+
+template <DynamicBmiLanguage Language>
+class DynamicBmiModel;
+
+/**
+ * @brief C++ BMI model backed by a dynamically loaded C++ BMI plugin.
+ *
+ * The plugin must export `register_bmi(bmi::Bmi**)` and
+ * `unregister_bmi(bmi::Bmi**)`.
+ */
+template <>
+class DynamicBmiModel<DynamicBmiLanguage::cpp> : public bmi_api::Bmi {
 public:
     /**
-     * @brief Open a dynamic BMI plugin from an explicit filesystem path.
+     * @brief Open a dynamic C++ BMI plugin from an explicit filesystem path.
      * @param plugin_path Path passed directly to the platform dynamic loader.
      */
     explicit DynamicBmiModel(std::string plugin_path);
@@ -96,13 +105,90 @@ public:
     void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
 
 private:
-    using RegisterBmiFunction = int (*)(void**);
-
-    std::string plugin_path_;
-    void* plugin_handle_{nullptr};
-    void* model_handle_{nullptr};
-    RegisterBmiFunction register_bmi_{nullptr};
+    struct State;
+    std::unique_ptr<State> state_;
 };
+
+/**
+ * @brief C++ BMI model backed by a dynamically loaded Fortran BMI plugin.
+ *
+ * The plugin must export `register_bmi(void**)` for the linked NOAA-OWP
+ * procedural BMI bridge. If the plugin exports `unregister_bmi(void**)`, MIAOW
+ * calls it after BMI finalization.
+ */
+template <>
+class DynamicBmiModel<DynamicBmiLanguage::fortran> : public bmi_api::Bmi {
+public:
+    /**
+     * @brief Open a dynamic Fortran BMI plugin from an explicit filesystem path.
+     * @param plugin_path Path passed directly to the platform dynamic loader.
+     */
+    explicit DynamicBmiModel(std::string plugin_path);
+
+    DynamicBmiModel(const DynamicBmiModel&) = delete;
+    DynamicBmiModel& operator=(const DynamicBmiModel&) = delete;
+
+    ~DynamicBmiModel() override;
+
+    void Initialize(std::string config_file) override;
+    void Update() override;
+    void UpdateUntil(double time) override;
+    void Finalize() override;
+
+    std::string GetComponentName() override;
+    int GetInputItemCount() override;
+    int GetOutputItemCount() override;
+    std::vector<std::string> GetInputVarNames() override;
+    std::vector<std::string> GetOutputVarNames() override;
+
+    int GetVarGrid(std::string name) override;
+    std::string GetVarType(std::string name) override;
+    std::string GetVarUnits(std::string name) override;
+    int GetVarItemsize(std::string name) override;
+    int GetVarNbytes(std::string name) override;
+    std::string GetVarLocation(std::string name) override;
+
+    double GetCurrentTime() override;
+    double GetStartTime() override;
+    double GetEndTime() override;
+    std::string GetTimeUnits() override;
+    double GetTimeStep() override;
+
+    void GetValue(std::string name, void* dest) override;
+    void* GetValuePtr(std::string name) override;
+    void GetValueAtIndices(std::string name, void* dest, int* inds, int count) override;
+
+    void SetValue(std::string name, void* src) override;
+    void SetValueAtIndices(std::string name, int* inds, int count, void* src) override;
+
+    int GetGridRank(const int grid) override;
+    int GetGridSize(const int grid) override;
+    std::string GetGridType(const int grid) override;
+
+    void GetGridShape(const int grid, int* shape) override;
+    void GetGridSpacing(const int grid, double* spacing) override;
+    void GetGridOrigin(const int grid, double* origin) override;
+
+    void GetGridX(const int grid, double* x) override;
+    void GetGridY(const int grid, double* y) override;
+    void GetGridZ(const int grid, double* z) override;
+
+    int GetGridNodeCount(const int grid) override;
+    int GetGridEdgeCount(const int grid) override;
+    int GetGridFaceCount(const int grid) override;
+
+    void GetGridEdgeNodes(const int grid, int* edge_nodes) override;
+    void GetGridFaceEdges(const int grid, int* face_edges) override;
+    void GetGridFaceNodes(const int grid, int* face_nodes) override;
+    void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
+
+private:
+    struct State;
+    std::unique_ptr<State> state_;
+};
+
+using DynamicCppBmiModel = DynamicBmiModel<DynamicBmiLanguage::cpp>;
+using DynamicFortranBmiModel = DynamicBmiModel<DynamicBmiLanguage::fortran>;
 
 /**
  * @brief Simulation unit that runs a complete BMI model lifecycle.

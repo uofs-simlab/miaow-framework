@@ -389,9 +389,24 @@ bool inspect(Inspector& inspector, JobResult& job_result) {
 std::string format_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
 
 /**
+ * @brief Format all task results in a job as human-readable status lines.
+ */
+std::string format_task_results(const JobResult& job_result);
+
+/**
  * @brief Print diagnostics to stdout
  */
 void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
+
+/**
+ * @brief Print all task results in a job to stdout.
+ */
+void print_task_results(const JobResult& job_result);
+
+/**
+ * @brief Return true when every task result in a job succeeded.
+ */
+bool all_tasks_succeeded(const JobResult& job_result);
 
 /**
  * @brief Actor runtime for orchestrating simulation tasks.
