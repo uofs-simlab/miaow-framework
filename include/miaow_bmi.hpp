@@ -22,14 +22,14 @@ namespace bmi_api = ::bmi;
 TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task);
 
 /**
- * @brief Language interface exposed by a dynamically loaded BMI plugin.
+ * @brief Backend interface exposed by a dynamically loaded BMI plugin.
  */
-enum class DynamicBmiLanguage {
+enum class DynamicBmiBackend {
     cpp,
     fortran,
 };
 
-template <DynamicBmiLanguage Language>
+template <DynamicBmiBackend Backend>
 class DynamicBmiModel;
 
 /**
@@ -39,7 +39,7 @@ class DynamicBmiModel;
  * `unregister_bmi(bmi::Bmi**)`.
  */
 template <>
-class DynamicBmiModel<DynamicBmiLanguage::cpp> : public bmi_api::Bmi {
+class DynamicBmiModel<DynamicBmiBackend::cpp> : public bmi_api::Bmi {
 public:
     /**
      * @brief Open a dynamic C++ BMI plugin from an explicit filesystem path.
@@ -117,7 +117,7 @@ private:
  * calls it after BMI finalization.
  */
 template <>
-class DynamicBmiModel<DynamicBmiLanguage::fortran> : public bmi_api::Bmi {
+class DynamicBmiModel<DynamicBmiBackend::fortran> : public bmi_api::Bmi {
 public:
     /**
      * @brief Open a dynamic Fortran BMI plugin from an explicit filesystem path.
@@ -187,8 +187,8 @@ private:
     std::unique_ptr<State> state_;
 };
 
-using DynamicCppBmiModel = DynamicBmiModel<DynamicBmiLanguage::cpp>;
-using DynamicFortranBmiModel = DynamicBmiModel<DynamicBmiLanguage::fortran>;
+using DynamicCppBmiModel = DynamicBmiModel<DynamicBmiBackend::cpp>;
+using DynamicFortranBmiModel = DynamicBmiModel<DynamicBmiBackend::fortran>;
 
 /**
  * @brief Simulation unit that runs a complete BMI model lifecycle.

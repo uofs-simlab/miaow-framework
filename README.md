@@ -169,14 +169,16 @@ failure), and a 1-day run that stops well before its 1024-day forcing ends.
 
 ### Dynamically linking BMI models
 
-The `miaow::DynamicBmiModel<Language>` template adapts a dynamically loaded BMI
+The `miaow::DynamicBmiModel<Backend>` template adapts a dynamically loaded BMI
 plugin to MIAOW's C++ BMI interface. The plugin path is supplied at runtime and
-is passed directly to the platform dynamic loader. The plugin language is
+is passed directly to the platform dynamic loader. The plugin backend is
 explicit in the model type:
 
-- `miaow::DynamicCppBmiModel` loads a C++ plugin that exports
-  `register_bmi(bmi::Bmi**)` and `unregister_bmi(bmi::Bmi**)`.
-- `miaow::DynamicFortranBmiModel` loads a Fortran plugin that exports
+- `miaow::DynamicCppBmiModel` (alias for `miaow::DynamicBmiModel<DynamicBmiBackend::cpp>`) 
+  loads a C++ plugin that exports `register_bmi(bmi::Bmi**)` and 
+  `unregister_bmi(bmi::Bmi**)`.
+- `miaow::DynamicFortranBmiModel` (alias for 
+  `miaow::DynamicBmiModel<DynamicBmiBackend::fortran>`) loads a Fortran plugin that exports
   `register_bmi(void**)` for the linked
   [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
   A Fortran `unregister_bmi(void**)` symbol is used when present.
