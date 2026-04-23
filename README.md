@@ -99,7 +99,7 @@ src/
 
   bmi/
     execute.cpp          # BMI lifecycle execution bridge for public wrapper
-    dynamic.cpp          # DynamicBmiModel adapter over dynamic C++/Fortran plugins
+    dynamic.cpp          # DynamicBmiModel adapter over for C++/Fortran plugins
     forcing.cpp          # forcing config parsing + BMI input validation
     workflow.cpp         # BMI update loop/per-step output writing
     internal.hpp         # BMI-private forcing/run helper declarations
