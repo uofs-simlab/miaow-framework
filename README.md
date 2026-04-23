@@ -239,9 +239,7 @@ The following examples are provided to illustrate the functionality of MIAOW, an
 - `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
 - `examples/04_noah_owp`: Noah-OWP realization parsing smoke example
 
-### Example directory structure
-
-Each example follows a common layout:
+Each example directory follows a common layout:
 
 ```text
 examples/<example_name>/
