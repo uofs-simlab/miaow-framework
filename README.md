@@ -266,13 +266,7 @@ When configuring from an example directory or another project, the following fla
 | --- | --- | --- |
 | `-DMIAOW_ROOT` | `<example_dir>/../..` | Path to the `miaow-framework` source tree |
 | `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
-| `-DMIAOW_HEAT_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/bmi-example-cxx` | Path to a local `csdms/bmi-example-cxx` source tree |
-| `-DMIAOW_SOIL_FREEZE_THAW_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/SoilFreezeThaw` | Path to a local `NOAA-OWP/SoilFreezeThaw` source tree |
-| `-DMIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/bmi-example-cxx` | Path to a local `csdms/bmi-example-cxx` source tree for dynamic C++ plugin build |
-| `-DMIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/bmi-example-fortran` | Path to a local `csdms/bmi-example-fortran` source tree for dynamic Fortran plugin build |
-| `-DMIAOW_NOAH_OWP_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/noah-owp-modular` | Path to a local `NOAA-OWP/noah-owp-modular` source tree |
 | `-DEXECUTABLE_TARGET` | example default | Override executable target name |
-| `-DMODEL_TARGET` | example model default | Override model-library target name |
 
 The helper `cmake/miaow_bmi_model.cmake` provides `miaow_add_bmi_model(...)`
 and `miaow_add_workflow_test(...)` for model integration and workflow tests.

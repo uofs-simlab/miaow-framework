@@ -15,12 +15,13 @@ endif()
 
 # Build csdms/bmi-example-cxx as a static model library and link it directly
 # into the example executable (no dynamic plugin loading).
+set(heat_model_target "${EXECUTABLE_TARGET}_model")
 miaow_add_bmi_model(
     EXAMPLE_NAME heat
     MIAOW_ROOT "${MIAOW_ROOT}"
     MODEL_ROOT "${heat_model_root_override}"
     EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
-    MODEL_TARGET "${MODEL_TARGET}"
+    MODEL_TARGET "${heat_model_target}"
     MODEL_LOCAL_SUBDIR bmi-example-cxx
     MODEL_GIT_REPOSITORY "https://github.com/csdms/bmi-example-cxx.git"
     MODEL_GIT_TAG "cd6347165021e607204820420eb8af14df26fa59"

@@ -15,12 +15,13 @@ endif()
 
 # Build NOAA-OWP/SoilFreezeThaw as a static model library and link it directly
 # into the example executable (no dynamic plugin loading).
+set(soil_freeze_thaw_model_target "${EXECUTABLE_TARGET}_model")
 miaow_add_bmi_model(
     EXAMPLE_NAME soil_freeze_thaw
     MIAOW_ROOT "${MIAOW_ROOT}"
     MODEL_ROOT "${soil_freeze_thaw_model_root_override}"
     EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
-    MODEL_TARGET "${MODEL_TARGET}"
+    MODEL_TARGET "${soil_freeze_thaw_model_target}"
     MODEL_LOCAL_SUBDIR SoilFreezeThaw
     MODEL_GIT_REPOSITORY "https://github.com/NOAA-OWP/SoilFreezeThaw.git"
     MODEL_GIT_TAG "d7a4bdbbe773d79c5d5b81a1255e5288cec01e5b"
