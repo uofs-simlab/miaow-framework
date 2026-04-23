@@ -249,14 +249,9 @@ examples/<example_name>/
     configs/        # configuration files
     forcings/       # forcing data files (when needed)
     parameters/     # parameter tables (when needed)
-  extern/           # model-backed examples: symlinks to model sources (created by CMake)
-  output/           # runtime/model output data (generated, not tracked)
+  extern/           # model-backed examples: symlinks to model sources (created by CMake, not tracked)
+  output/           # runtime/model output data (generated with --output_root ./output, not tracked)
 ```
-
-`examples/<example_name>/output/` is generated during runs:
-
-- For `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi`, runtime-managed outputs are written there when you run with `--output_root ./output`.
-- For `04_noah_owp`, the bundled namelist writes model output to `./output/output.nc` by default.
 
 ### Configuring model examples independently
 
