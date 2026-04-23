@@ -28,6 +28,33 @@ CAF_END_TYPE_ID_BLOCK(miaow_module)
 
 namespace miaow::core {
 
+// Root actor owned by Runtime: receives job submissions, spawns one job_actor per
+// JobId, and delivers each completed JobResult back to the user-facing future
+// registered in pending_jobs (guarded by pending_jobs_mutex).
+caf::behavior orchestrator_actor(caf::event_based_actor* self,
+                                 RuntimeOptions runtime_options,
+                                 std::uint64_t run_id,
+                                 std::shared_ptr<const SimulationUnitRegistry>
+                                     simulation_unit_registry,
+                                 std::mutex* pending_jobs_mutex,
+                                 PendingJobs* pending_jobs);
+
+// Per-job supervisor: owns a JobState, spawns up to max_workers simulation_unit
+// worker actors, dispatches tasks to available workers, and fulfils the job's
+// response promise with the aggregated JobResult once every task has completed.
+caf::behavior job_actor(caf::event_based_actor* self,
+                        std::vector<Task> tasks,
+                        RuntimeOptions runtime_options,
+                        std::shared_ptr<const SimulationUnitRegistry>
+                            simulation_unit_registry);
+
+// Leaf worker actor: on each Task message, resolves the matching
+// SimulationUnitExecutor from the shared registry, runs it, and replies with a
+// TaskResult (or a CAF error if the executor throws or the ID is unknown).
+caf::behavior simulation_unit_actor(caf::event_based_actor* self,
+                                    std::shared_ptr<const SimulationUnitRegistry>
+                                        simulation_unit_registry);
+
 // Internal scheduler state for one job_actor instance
 // job_actor is the only owner/writer of this state
 // Worker actors never write to this directly and only communicate by message replies
@@ -71,22 +98,5 @@ struct JobState {
     // Diagnostics for this job run
     JobDiagnostics diagnostics_;
 };
-
-// Internal actor entry points used across translation units
-caf::behavior simulation_unit_actor(caf::event_based_actor* self,
-                                    std::shared_ptr<const SimulationUnitRegistry>
-                                        simulation_unit_registry);
-caf::behavior job_actor(caf::event_based_actor* self,
-                        std::vector<Task> tasks,
-                        RuntimeOptions runtime_options,
-                        std::shared_ptr<const SimulationUnitRegistry>
-                            simulation_unit_registry);
-caf::behavior orchestrator_actor(caf::event_based_actor* self,
-                                 RuntimeOptions runtime_options,
-                                 std::uint64_t run_id,
-                                 std::shared_ptr<const SimulationUnitRegistry>
-                                     simulation_unit_registry,
-                                 std::mutex* pending_jobs_mutex,
-                                 PendingJobs* pending_jobs);
 
 } // namespace miaow::core

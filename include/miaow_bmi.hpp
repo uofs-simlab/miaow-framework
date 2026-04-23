@@ -30,7 +30,7 @@ enum class DynamicBmiBackend {
 };
 
 template <DynamicBmiBackend Backend>
-class DynamicBmiModel;
+class DynamicBmi;
 
 /**
  * @brief C++ BMI model backed by a dynamically loaded C++ BMI plugin.
@@ -39,18 +39,18 @@ class DynamicBmiModel;
  * `unregister_bmi(bmi::Bmi**)`.
  */
 template <>
-class DynamicBmiModel<DynamicBmiBackend::cpp> : public bmi_api::Bmi {
+class DynamicBmi<DynamicBmiBackend::cpp> : public bmi_api::Bmi {
 public:
     /**
      * @brief Open a dynamic C++ BMI plugin from an explicit filesystem path.
      * @param plugin_path Path passed directly to the platform dynamic loader.
      */
-    explicit DynamicBmiModel(std::string plugin_path);
+    explicit DynamicBmi(std::string plugin_path);
 
-    DynamicBmiModel(const DynamicBmiModel&) = delete;
-    DynamicBmiModel& operator=(const DynamicBmiModel&) = delete;
+    DynamicBmi(const DynamicBmi&) = delete;
+    DynamicBmi& operator=(const DynamicBmi&) = delete;
 
-    ~DynamicBmiModel() override;
+    ~DynamicBmi() override;
 
     void Initialize(std::string config_file) override;
     void Update() override;
@@ -117,18 +117,18 @@ private:
  * calls it after BMI finalization.
  */
 template <>
-class DynamicBmiModel<DynamicBmiBackend::fortran> : public bmi_api::Bmi {
+class DynamicBmi<DynamicBmiBackend::fortran> : public bmi_api::Bmi {
 public:
     /**
      * @brief Open a dynamic Fortran BMI plugin from an explicit filesystem path.
      * @param plugin_path Path passed directly to the platform dynamic loader.
      */
-    explicit DynamicBmiModel(std::string plugin_path);
+    explicit DynamicBmi(std::string plugin_path);
 
-    DynamicBmiModel(const DynamicBmiModel&) = delete;
-    DynamicBmiModel& operator=(const DynamicBmiModel&) = delete;
+    DynamicBmi(const DynamicBmi&) = delete;
+    DynamicBmi& operator=(const DynamicBmi&) = delete;
 
-    ~DynamicBmiModel() override;
+    ~DynamicBmi() override;
 
     void Initialize(std::string config_file) override;
     void Update() override;
@@ -187,8 +187,8 @@ private:
     std::unique_ptr<State> state_;
 };
 
-using DynamicCppBmiModel = DynamicBmiModel<DynamicBmiBackend::cpp>;
-using DynamicFortranBmiModel = DynamicBmiModel<DynamicBmiBackend::fortran>;
+using DynamicCppBmi = DynamicBmi<DynamicBmiBackend::cpp>;
+using DynamicFortranBmi = DynamicBmi<DynamicBmiBackend::fortran>;
 
 /**
  * @brief Simulation unit that runs a complete BMI model lifecycle.

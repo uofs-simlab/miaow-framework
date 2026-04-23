@@ -98,11 +98,11 @@ src/
     internal.hpp         # core-private actor declarations and JobState
 
   bmi/
-    execute.cpp          # BMI lifecycle execution bridge for public wrapper
-    dynamic.cpp          # DynamicBmiModel adapter over for C++/Fortran plugins
-    forcing.cpp          # forcing config parsing + BMI input validation
-    workflow.cpp         # BMI update loop/per-step output writing
-    internal.hpp         # BMI-private forcing/run helper declarations
+    execute.cpp          # BMI lifecycle execution bridge and update loop
+    dynamic.cpp          # DynamicBmi adapter for C++/Fortran plugins
+    forcing.cpp          # ForcingBmi (BMI-compliant CSV forcing source)
+    output.cpp           # per-step BMI output-variable CSV writers
+    internal.hpp         # BMI-private forcing and output helper declarations
 
   io/
     cli.cpp              # runtime command-line option parsing
@@ -137,8 +137,9 @@ MIAOW implements `BmiSimulationUnit<BmiModelType>`, which wraps a complete BMI l
 3. `Finalize()`
 
 Optional forcing is supported through a second task argument (`args[1]`) that
-points to a forcing config. In forcing mode, one configured CSV column is
-applied to one BMI input variable before each `Update()` step.
+points to a forcing config (recall that `args[0]` is the model config). In forcing mode,
+one configured CSV column is applied to one BMI input variable before each `Update()` 
+step.
 
 Each example specifies task inputs in its `main.cpp`. 
 
@@ -165,16 +166,16 @@ failure), and a 1-day run that stops well before its 1024-day forcing ends.
 
 ### Dynamically linking BMI models
 
-The `miaow::DynamicBmiModel<Backend>` template adapts a dynamically loaded BMI
+The `miaow::DynamicBmi<Backend>` template adapts a dynamically loaded BMI
 plugin to MIAOW's C++ BMI interface. The plugin path is supplied at runtime and
 is passed directly to the platform dynamic loader. The plugin backend is
 explicit in the model type:
 
-- `miaow::DynamicCppBmiModel` (alias for `miaow::DynamicBmiModel<DynamicBmiBackend::cpp>`) 
+- `miaow::DynamicCppBmi` (alias for `miaow::DynamicBmi<DynamicBmiBackend::cpp>`) 
   loads a C++ plugin that exports `register_bmi(bmi::Bmi**)` and 
   `unregister_bmi(bmi::Bmi**)`.
-- `miaow::DynamicFortranBmiModel` (alias for 
-  `miaow::DynamicBmiModel<DynamicBmiBackend::fortran>`) loads a Fortran plugin that exports
+- `miaow::DynamicFortranBmi` (alias for 
+  `miaow::DynamicBmi<DynamicBmiBackend::fortran>`) loads a Fortran plugin that exports
   `register_bmi(void**)` for the linked
   [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
   A Fortran `unregister_bmi(void**)` symbol is used when present.
@@ -184,7 +185,7 @@ C++ BMI models. For example, if `plugin_path` is the path to a C++ BMI plugin, o
 register the simulation unit in MIAOW as follows:
 ```cpp
 const miaow::SimulationUnitId my_dynamic_bmi_model =
-    registry.add<miaow::BmiSimulationUnit<miaow::DynamicCppBmiModel>>(
+    registry.add<miaow::BmiSimulationUnit<miaow::DynamicCppBmi>>(
         plugin_path);
 ```
 Dynamic C++ and Fortran loading are exercised together in the
@@ -237,7 +238,7 @@ The following examples are provided to illustrate the functionality of MIAOW, an
 - `examples/01_heat`: basic BMI integration using the [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
 - `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with per-task forcing, including matched, short, and long forcing cases
 - `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
-- `examples/04_noah_owp`: Noah-OWP realization parsing smoke example
+- `examples/04_noah_owp`: Noah-OWP-Modular run using realization-driven task setup
 
 Each example directory follows a common layout:
 
@@ -248,7 +249,7 @@ examples/<example_name>/
     forcings/       # forcing data files (when needed)
     parameters/     # parameter tables (when needed)
   extern/           # model-backed examples: symlinks to model sources (created by CMake)
-  output/           # runtime/model output data (generated with --output_root ./output)
+  output/           # runtime/model output data (generated, not tracked)
 ```
 
 ### Configuring model examples independently
@@ -274,7 +275,7 @@ fetches the model from GitHub into the resolved location under
 
 ### Example command line options
 
-The `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi` examples accept the following runtime command-line options:
+All examples accept the following runtime command-line options:
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -282,6 +283,7 @@ The `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi` examples 
 | `--task_request_timeout` | `5` | Timeout for task requests sent to worker actors (seconds) |
 | `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
 | `--output_root` | `""` | Root directory path for runtime-managed output folders (disabled by default) |
+| `--realization` | `realization.json` | Realization file path for `04_noah_owp` |
 
 Public CLI parsers throw `std::runtime_error` for unrecognized arguments,
 missing option values, and invalid option values. Example executables catch
@@ -292,7 +294,7 @@ these errors, print the message, and exit with status `1`.
 - Distributed runs are not currently supported.
 - Target workloads are embarrassingly parallel tasks without inter-task communication.
 - BMI-provided forcing supports only one variable currently.
-- Windows is not supported and there is no plan to do so.
+- Windows is not supported and there is no plan to add such support.
 
 ## Authors and funding
 MIAOW was developed at the University of Saskatchewan by Tristan Montoya and Raymond Spiteri, with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/).

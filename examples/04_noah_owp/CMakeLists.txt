@@ -199,7 +199,7 @@ if(BUILD_TESTING)
     set_tests_properties(miaow_example_04_noah_owp_parse PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION
-            "Parsed realization with 1 subdomain\\(s\\)(.|\\n)*Loaded Noah-OWP BMI plugin: .*libsurfacebmi"
+            "Parsed realization with 1 subdomain\\(s\\)(.|\\n)*Loaded Noah-OWP BMI plugin: .*libsurfacebmi(.|\\n)*\\[0\\] succeeded: BMI workflow complete"
     )
 
     add_test(
