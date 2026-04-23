@@ -18,10 +18,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Fortran Compiler
+      - name: Install Fortran and NetCDF dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gfortran
+          sudo apt-get install -y \
+            gfortran \
+            libnetcdf-dev \
+            libnetcdff-dev
 
       - name: Cache Conan
         uses: actions/cache@v4

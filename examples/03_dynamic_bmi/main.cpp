@@ -15,6 +15,11 @@
 #include "miaow_io.hpp"
 
 int main(int argc, char* argv[]) {
+    // Check that we're running from the expected directory for proper relative paths
+    if (!miaow::ensure_expected_run_dir("miaow_dynamic_bmi", MIAOW_DYNAMIC_BMI_RUN_DIR)) {
+        return 1;
+    }
+
     // Initialize runtime options and parse runtime-wide CLI arguments
     miaow::RuntimeOptions runtime_options;
     try {
@@ -41,7 +46,7 @@ int main(int argc, char* argv[]) {
     miaow::Runtime runtime(registry, runtime_options);
 
     // Get the shared config file path for this dynamic heat workload
-    const std::string heat_config = MIAOW_DYNAMIC_HEAT_CONFIG_PATH;
+    const std::string heat_config = "./data/configs/config_dynamic_heat.txt";
 
     // Run one C++ heat task and one Fortran heat task in the same job
     const std::vector<miaow::Task> tasks{

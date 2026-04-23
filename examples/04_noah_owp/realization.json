@@ -1,7 +1,7 @@
 {
   "subdomains": {
-    "cat-20521": {
-      "config": "./configs/cat-20521.txt"
+    "bondville": {
+      "config": "./data/configs/bondville_namelist.input"
     }
   }
 }

@@ -38,6 +38,7 @@
 *.app
 examples/*/miaow_*
 examples/*/build*/
+examples/*/extern/
 
 # Locally fetched vendored code
 /third_party/

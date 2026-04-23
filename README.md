@@ -20,19 +20,19 @@ cmake -S . -B build
 cmake --build build
 ```
 
-Run examples (reproducible from repo root):
+Run each example from its own `examples/<example_name>` directory:
 
 ```sh
-./examples/00_hello/miaow_hello
-./examples/01_heat/miaow_heat
-./examples/02_soil_freeze_thaw/miaow_soil_freeze_thaw \
-  --output_root examples/02_soil_freeze_thaw/output \
-  --max_workers 2
-./examples/03_dynamic_bmi/miaow_dynamic_bmi \
-  --output_root examples/03_dynamic_bmi/output \
-  --max_workers 2
-./examples/04_noah_owp/miaow_noah_owp \
-  --realization examples/04_noah_owp/realization.json
+cd examples/00_hello
+./miaow_hello
+cd ../01_heat
+./miaow_heat
+cd ../02_soil_freeze_thaw
+./miaow_soil_freeze_thaw --output_root ./output --max_workers 2
+cd ../03_dynamic_bmi
+./miaow_dynamic_bmi --output_root ./output --max_workers 2
+cd ../04_noah_owp
+./miaow_noah_owp --realization realization.json
 ```
 
 ## Orchestration model
@@ -218,6 +218,7 @@ Top-level CMake options:
 | `-DMIAOW_FETCH_CAF` | `ON` | Fetch CAF with `FetchContent` if not found |
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version when using system CAF |
 | `-DMIAOW_CAF_GIT_TAG` | `1.1.0` | CAF tag/commit for `FetchContent` |
+| `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
 | `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Path to a local `NOAA-OWP/iso_c_fortran_bmi` checkout |
 
 For [Conan](https://conan.io/)-based CI-style setup:
@@ -235,7 +236,8 @@ When configuring from an example directory or another project, the following fla
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-DMIAOW_ROOT` | `<example_dir>/../..` | Path to the `miaow-framework` source tree |
-| `-DMODEL_ROOT` | `${MIAOW_ROOT}/third_party/<model>` | Path to the model source tree for helper-based BMI examples |
+| `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
+| `-DMODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/<model>` | Path to the model source tree for helper-based BMI examples |
 | `-DEXECUTABLE_TARGET` | example default | Override executable target name |
 | `-DMODEL_TARGET` | example model default | Override model-library target name |
 
@@ -244,15 +246,38 @@ and `miaow_add_workflow_test(...)` for model integration and workflow tests.
 Model examples keep their MIAOW-specific source and input files under
 `examples/<example_name>/`. External BMI model source is resolved separately:
 helper-based examples use `MODEL_ROOT` when provided, otherwise they use
-`${MIAOW_ROOT}/third_party/<MODEL_LOCAL_SUBDIR>`. The dynamic BMI example uses
-`CXX_MODEL_ROOT` and `FORTRAN_MODEL_ROOT` because it builds one C++ plugin and
-one Fortran plugin. If a required source directory is missing and the example
-declares a Git repository and tag, CMake fetches the model into the matching
-`third_party/` path. These local checkouts are ignored by Git.
+`${MIAOW_DEFAULT_MODEL_BASE_DIR}/<MODEL_LOCAL_SUBDIR>`. The dynamic BMI example
+uses `MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT` and
+`MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT` (legacy `CXX_MODEL_ROOT` and
+`FORTRAN_MODEL_ROOT` are still accepted) because it builds one C++ plugin and
+one Fortran plugin. The Noah example uses `MIAOW_NOAH_OWP_MODEL_ROOT` (legacy
+`NOAH_OWP_ROOT` is still accepted). If a required source directory is missing
+and the example declares a Git repository and tag, CMake fetches the model into
+the resolved location under `MIAOW_DEFAULT_MODEL_BASE_DIR`.
+
+## Model source and example extern layout
+
+MIAOW uses a central model source root and per-example `extern` symlinks:
+
+- External model sources are resolved from `${MIAOW_DEFAULT_MODEL_BASE_DIR}`.
+- By default, `${MIAOW_DEFAULT_MODEL_BASE_DIR}` is `${MIAOW_ROOT}/third_party`.
+- Each model-backed example provisions symlinks under
+  `examples/<example_name>/extern/` to the resolved model source directories.
+
+This mirrors the NextGen-style run layout where examples can refer to `./extern/...`
+paths while model sources remain centrally managed.
+
+Resolution precedence for model roots:
+
+1. Example-specific override variable, when set:
+   `MIAOW_HEAT_MODEL_ROOT`, `MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT`,
+   `MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT`, `MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT`,
+   or `MIAOW_NOAH_OWP_MODEL_ROOT`
+2. Fallback under `${MIAOW_DEFAULT_MODEL_BASE_DIR}/<model-subdir>`
 
 ## Examples
 
-The following examples are provided to illustrate the functionality of MIAOW:
+The following examples are provided to illustrate the functionality of MIAOW, and should be run from the corresponding example's top-level `examples/<example_name>` directory:
 
 - `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
 - `examples/01_heat`: basic BMI integration using the [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
@@ -264,9 +289,18 @@ Each example follows a common layout:
 
 ```text
 examples/<example_name>/
-  configs/   # model configuration files
-  forcings/  # optional forcing data files
+  data/             # example input data (tracked in repo)
+    configs/        # configuration files
+    forcings/       # forcing data files (when needed)
+    parameters/     # parameter tables (when needed)
+  extern/           # model-backed examples: symlinks to model sources (created by CMake)
+  output/           # runtime/model output data (generated, not tracked)
 ```
+
+`output/` is generated during runs:
+
+- For `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi`, runtime-managed outputs are written there when you run with `--output_root ./output`
+- For `04_noah_owp`, the bundled namelist writes model output to `./output/output.nc` by default
 
 The `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi` examples accept the following runtime command-line options:
 
@@ -285,7 +319,8 @@ these errors, print the message, and exit with status `1`.
 
 - Distributed runs are not currently supported.
 - Target workloads are embarrassingly parallel tasks without inter-task communication.
-- BMI forcing supports only one variable currently.
+- BMI-provided forcing supports only one variable currently.
+- Windows is not supported and there is no plan to do so.
 
 ## Authors and funding
 MIAOW was developed at the University of Saskatchewan by Tristan Montoya and Raymond Spiteri, with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/).

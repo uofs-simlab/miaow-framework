@@ -9,6 +9,8 @@
 #
 # CXX is always enabled; pass extra languages (e.g. Fortran) as positional
 # arguments. Must be called as a macro because project() needs file scope.
+include(CMakeParseArguments)
+
 macro(miaow_setup_example example_name)
     if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         project(miaow_${example_name}_example CXX ${ARGN})
@@ -20,6 +22,11 @@ macro(miaow_setup_example example_name)
         set(MIAOW_ROOT "${_miaow_root_default}" CACHE PATH
             "Path to the miaow-framework source root")
         unset(_miaow_root_default)
+    endif()
+
+    if(NOT DEFINED MIAOW_DEFAULT_MODEL_BASE_DIR)
+        set(MIAOW_DEFAULT_MODEL_BASE_DIR "${MIAOW_ROOT}/third_party" CACHE PATH
+            "Default base directory containing external model source trees")
     endif()
 
     if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -36,3 +43,66 @@ macro(miaow_setup_example example_name)
         add_subdirectory("${MIAOW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/miaow-build")
     endif()
 endmacro()
+
+function(miaow_resolve_model_root out_var)
+    set(options)
+    set(one_value_args MODEL_ROOT MODEL_LOCAL_SUBDIR MODEL_LABEL)
+    cmake_parse_arguments(MIAOW_MODEL "${options}" "${one_value_args}" "" ${ARGN})
+
+    if(MIAOW_MODEL_MODEL_ROOT)
+        set(resolved_model_root "${MIAOW_MODEL_MODEL_ROOT}")
+    elseif(MIAOW_MODEL_MODEL_LOCAL_SUBDIR)
+        set(resolved_model_root
+            "${MIAOW_DEFAULT_MODEL_BASE_DIR}/${MIAOW_MODEL_MODEL_LOCAL_SUBDIR}")
+    else()
+        message(FATAL_ERROR
+            "miaow_resolve_model_root: set MODEL_ROOT or MODEL_LOCAL_SUBDIR")
+    endif()
+
+    if(MIAOW_MODEL_MODEL_LABEL)
+        message(STATUS
+            "MIAOW: resolved model root for ${MIAOW_MODEL_MODEL_LABEL}: ${resolved_model_root}")
+    else()
+        message(STATUS "MIAOW: resolved model root: ${resolved_model_root}")
+    endif()
+
+    set(${out_var} "${resolved_model_root}" PARENT_SCOPE)
+endfunction()
+
+function(miaow_provision_example_extern_link)
+    set(options)
+    set(one_value_args EXAMPLE_DIR LINK_NAME TARGET_DIR)
+    cmake_parse_arguments(MIAOW_EXTERN "${options}" "${one_value_args}" "" ${ARGN})
+
+    if(WIN32)
+        message(FATAL_ERROR
+            "MIAOW extern symlink workflow is POSIX-only (macOS/Linux)")
+    endif()
+    if(NOT MIAOW_EXTERN_EXAMPLE_DIR OR NOT MIAOW_EXTERN_LINK_NAME OR
+            NOT MIAOW_EXTERN_TARGET_DIR)
+        message(FATAL_ERROR
+            "miaow_provision_example_extern_link: EXAMPLE_DIR, LINK_NAME, and TARGET_DIR are required")
+    endif()
+
+    get_filename_component(example_dir_abs "${MIAOW_EXTERN_EXAMPLE_DIR}" ABSOLUTE)
+    get_filename_component(target_dir_abs "${MIAOW_EXTERN_TARGET_DIR}" ABSOLUTE)
+    set(example_extern_dir "${example_dir_abs}/extern")
+    set(example_extern_link_path "${example_extern_dir}/${MIAOW_EXTERN_LINK_NAME}")
+
+    file(MAKE_DIRECTORY "${example_extern_dir}")
+
+    if(EXISTS "${example_extern_link_path}" OR IS_SYMLINK "${example_extern_link_path}")
+        if(IS_SYMLINK "${example_extern_link_path}")
+            execute_process(
+                COMMAND "${CMAKE_COMMAND}" -E rm -f "${example_extern_link_path}"
+            )
+        else()
+            message(FATAL_ERROR
+                "MIAOW extern link path exists and is not a symlink: ${example_extern_link_path}")
+        endif()
+    endif()
+
+    file(CREATE_LINK "${target_dir_abs}" "${example_extern_link_path}" SYMBOLIC)
+    message(STATUS
+        "MIAOW: linked ${example_extern_link_path} -> ${target_dir_abs}")
+endfunction()

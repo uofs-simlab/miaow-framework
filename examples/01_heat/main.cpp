@@ -38,6 +38,11 @@ public:
 };
 
 int main(int argc, char* argv[]) {
+    // Check that we're running from the expected directory for proper relative paths
+    if (!miaow::ensure_expected_run_dir("miaow_heat", MIAOW_HEAT_RUN_DIR)) {
+        return 1;
+    }
+
     // Initialize runtime options and parse runtime-wide CLI arguments
     miaow::RuntimeOptions runtime_options;
     try {
@@ -55,10 +60,8 @@ int main(int argc, char* argv[]) {
     miaow::Runtime runtime(registry, runtime_options);
 
     // Get config file paths for this heat workload
-    const std::string first_heat_config =
-        std::string(MIAOW_HEAT_EXAMPLE_DIR) + "/configs/config_400x400.txt";
-    const std::string second_heat_config =
-        std::string(MIAOW_HEAT_EXAMPLE_DIR) + "/configs/config_800x800.txt";
+    const std::string first_heat_config = "./data/configs/config_400x400.txt";
+    const std::string second_heat_config = "./data/configs/config_800x800.txt";
 
     // Tasks for this job include heat simulations and one hello message
     std::vector<miaow::Task> tasks{

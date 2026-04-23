@@ -13,6 +13,8 @@ option(MIAOW_USE_SYSTEM_CAF "Prefer a system-installed CAF" ON)
 option(MIAOW_FETCH_CAF "Fetch CAF if not found" ON)
 set(MIAOW_CAF_VERSION "1.1.0" CACHE STRING "Minimum CAF version for system find_package")
 set(MIAOW_CAF_GIT_TAG "1.1.0" CACHE STRING "CAF git tag or commit to fetch")
+set(MIAOW_DEFAULT_MODEL_BASE_DIR "${PROJECT_SOURCE_DIR}/third_party" CACHE PATH
+    "Default base directory containing external model source trees")
 set(MIAOW_ISO_C_FORTRAN_BMI_ROOT "" CACHE PATH
     "Path to a local NOAA-OWP/iso_c_fortran_bmi checkout")
 
@@ -67,6 +69,7 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
 endif()
 
 if(MIAOW_ISO_C_FORTRAN_BMI_ROOT)
+    message(STATUS "MIAOW: using iso_c_fortran_bmi source root ${MIAOW_ISO_C_FORTRAN_BMI_ROOT}")
     if(NOT EXISTS "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}/CMakeLists.txt")
         message(FATAL_ERROR
             "MIAOW_ISO_C_FORTRAN_BMI_ROOT must point to a NOAA-OWP/iso_c_fortran_bmi checkout")
@@ -76,15 +79,24 @@ if(MIAOW_ISO_C_FORTRAN_BMI_ROOT)
         "${CMAKE_CURRENT_BINARY_DIR}/iso_c_fortran_bmi-build"
     )
 else()
-    include(FetchContent)
-    FetchContent_Declare(
-        iso_c_fortran_bmi
-        GIT_REPOSITORY https://github.com/NOAA-OWP/iso_c_fortran_bmi.git
-        GIT_TAG "fad31177d5a10b3773db528d117e7ff17159fb07"
-        SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/iso_c_fortran_bmi"
-        BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/iso_c_fortran_bmi-build"
-    )
-    FetchContent_MakeAvailable(iso_c_fortran_bmi)
+    set(iso_c_fortran_bmi_source_dir "${MIAOW_DEFAULT_MODEL_BASE_DIR}/iso_c_fortran_bmi")
+    message(STATUS "MIAOW: using iso_c_fortran_bmi source root ${iso_c_fortran_bmi_source_dir}")
+    if(EXISTS "${iso_c_fortran_bmi_source_dir}/CMakeLists.txt")
+        add_subdirectory(
+            "${iso_c_fortran_bmi_source_dir}"
+            "${CMAKE_CURRENT_BINARY_DIR}/iso_c_fortran_bmi-build"
+        )
+    else()
+        include(FetchContent)
+        FetchContent_Declare(
+            iso_c_fortran_bmi
+            GIT_REPOSITORY https://github.com/NOAA-OWP/iso_c_fortran_bmi.git
+            GIT_TAG "fad31177d5a10b3773db528d117e7ff17159fb07"
+            SOURCE_DIR "${iso_c_fortran_bmi_source_dir}"
+            BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/iso_c_fortran_bmi-build"
+        )
+        FetchContent_MakeAvailable(iso_c_fortran_bmi)
+    endif()
 endif()
 
 if(NOT TARGET iso_c_bmi)

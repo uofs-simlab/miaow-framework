@@ -40,6 +40,10 @@ public:
 };
 
 int main(int argc, char* argv[]) {
+    if (!miaow::ensure_expected_run_dir("miaow_hello", MIAOW_HELLO_RUN_DIR)) {
+        return 1;
+    }
+
     // Initialize runtime options and parse runtime-wide CLI arguments
     miaow::RuntimeOptions runtime_options;
     try {

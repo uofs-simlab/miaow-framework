@@ -15,6 +15,12 @@
 #include "miaow_io.hpp"
 
 int main(int argc, char* argv[]) {
+    // Check that we're running from the expected directory for proper relative paths
+    if (!miaow::ensure_expected_run_dir("miaow_soil_freeze_thaw",
+                                        MIAOW_SOIL_FREEZE_THAW_RUN_DIR)) {
+        return 1;
+    }
+
     // Initialize runtime options and parse runtime-wide CLI arguments
     miaow::RuntimeOptions runtime_options;
     try {
@@ -32,17 +38,13 @@ int main(int argc, char* argv[]) {
 
     // Get config and forcing file paths for this SoilFreezeThaw workload
     const std::string config_1024_days =
-        std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/configs/laramie_config_1024_days.txt";
+        "./data/configs/laramie_config_1024_days.txt";
     const std::string config_1_day =
-        std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/configs/laramie_config_1_day.txt";
+        "./data/configs/laramie_config_1_day.txt";
     const std::string forcing_1024_days =
-        std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/forcings/ground_temperature_forcing_config_1024_days.txt";
+        "./data/forcings/ground_temperature_forcing_config_1024_days.txt";
     const std::string forcing_1_day =
-        std::string(MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR) +
-        "/forcings/ground_temperature_forcing_config_1_day.txt";
+        "./data/forcings/ground_temperature_forcing_config_1_day.txt";
 
     // Three cases exercising matched and mismatched config/forcing durations:
     //   0: 1024-day model, 1024-day forcing (exact match)

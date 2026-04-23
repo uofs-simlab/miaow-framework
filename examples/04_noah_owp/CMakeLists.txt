@@ -5,17 +5,26 @@ miaow_setup_example(noah_owp Fortran)
 
 include("${MIAOW_ROOT}/cmake/miaow_dynamic_bmi_plugin.cmake")
 
+set(MIAOW_NOAH_OWP_MODEL_ROOT "" CACHE PATH
+    "Path to a local NOAA-OWP/noah-owp-modular source tree")
 # Resolve/fetch the NOAA-OWP/noah-owp-modular reference model
 set(NOAH_OWP_ROOT "" CACHE PATH
     "Path to a local NOAA-OWP/noah-owp-modular source tree")
 set(NOAH_OWP_GIT_TAG "0ff055efd93c37f5bce83255f06180e2e779cea6" CACHE STRING
     "NOAA-OWP/noah-owp-modular Git tag, branch, or commit to fetch")
 
-if(NOAH_OWP_ROOT)
-    set(noah_owp_source_dir "${NOAH_OWP_ROOT}")
+if(MIAOW_NOAH_OWP_MODEL_ROOT)
+    set(noah_owp_model_root_override "${MIAOW_NOAH_OWP_MODEL_ROOT}")
+elseif(NOAH_OWP_ROOT)
+    set(noah_owp_model_root_override "${NOAH_OWP_ROOT}")
 else()
-    set(noah_owp_source_dir "${MIAOW_ROOT}/third_party/noah-owp-modular")
+    set(noah_owp_model_root_override "")
 endif()
+miaow_resolve_model_root(noah_owp_source_dir
+    MODEL_ROOT "${noah_owp_model_root_override}"
+    MODEL_LOCAL_SUBDIR "noah-owp-modular"
+    MODEL_LABEL "noah_owp"
+)
 
 if(NOT EXISTS "${noah_owp_source_dir}")
     get_filename_component(noah_owp_source_parent "${noah_owp_source_dir}" DIRECTORY)
@@ -32,14 +41,20 @@ if(NOT EXISTS "${noah_owp_source_dir}")
 endif()
 
 if(NOT EXISTS "${noah_owp_source_dir}/bmi/bmi_noahowp.f90")
-    if(NOAH_OWP_ROOT)
+    if(noah_owp_model_root_override)
         message(FATAL_ERROR
-            "NOAH_OWP_ROOT must point to a NOAA-OWP/noah-owp-modular source tree")
+            "MIAOW_NOAH_OWP_MODEL_ROOT/NOAH_OWP_ROOT must point to a NOAA-OWP/noah-owp-modular source tree")
     else()
         message(FATAL_ERROR
             "Fetched NOAA-OWP/noah-owp-modular source tree is missing bmi/bmi_noahowp.f90")
     endif()
 endif()
+
+miaow_provision_example_extern_link(
+    EXAMPLE_DIR "${CMAKE_CURRENT_LIST_DIR}"
+    LINK_NAME "noah-owp-modular"
+    TARGET_DIR "${noah_owp_source_dir}"
+)
 
 # Discover NetCDF Fortran. Noah-OWP-Modular reads forcing/parameter NetCDF
 # files at runtime, so the plugin must link against both libnetcdff and
@@ -155,6 +170,9 @@ target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
 target_include_directories(${EXECUTABLE_TARGET} PRIVATE
     "${MIAOW_ROOT}/src"
 )
+target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
+    MIAOW_NOAH_OWP_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
+)
 
 miaow_attach_plugin_paths(${EXECUTABLE_TARGET}
     MIAOW_NOAH_OWP_PLUGIN_PATH miaow_noah_owp_plugin
@@ -168,6 +186,16 @@ set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
 
 if(BUILD_TESTING)
     add_test(
+        NAME miaow_example_04_noah_owp_extern_symlink
+        COMMAND
+            ${CMAKE_COMMAND}
+            -DLINK_PATH=${CMAKE_CURRENT_LIST_DIR}/extern/noah-owp-modular
+            -DEXPECT_TARGET=${noah_owp_source_dir}
+            -P
+            ${MIAOW_ROOT}/cmake/check_symlink.cmake
+    )
+
+    add_test(
         NAME miaow_example_04_noah_owp_parse
         COMMAND
             $<TARGET_FILE:${EXECUTABLE_TARGET}>
@@ -176,5 +204,15 @@ if(BUILD_TESTING)
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION
             "Parsed realization with 1 subdomain\\(s\\)(.|\\n)*Loaded Noah-OWP BMI plugin: .*libsurfacebmi"
+    )
+
+    add_test(
+        NAME miaow_example_04_noah_owp_wrong_cwd
+        COMMAND
+            $<TARGET_FILE:${EXECUTABLE_TARGET}>
+    )
+    set_tests_properties(miaow_example_04_noah_owp_wrong_cwd PROPERTIES
+        WORKING_DIRECTORY "${MIAOW_ROOT}"
+        PASS_REGULAR_EXPRESSION "Run directory error: miaow_noah_owp must be run from"
     )
 endif()

@@ -5,12 +5,24 @@ miaow_setup_example(dynamic_bmi Fortran)
 
 include("${MIAOW_ROOT}/cmake/miaow_dynamic_bmi_plugin.cmake")
 
+set(MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT "" CACHE PATH
+    "Path to a local csdms/bmi-example-cxx source tree")
+set(MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT "" CACHE PATH
+    "Path to a local csdms/bmi-example-fortran source tree")
+
 # Resolve/fetch the CSDMS C++ heat reference model
-if(CXX_MODEL_ROOT)
-    set(cxx_heat_model_root "${CXX_MODEL_ROOT}")
+if(MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT)
+    set(cxx_heat_model_root_override "${MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT}")
+elseif(CXX_MODEL_ROOT)
+    set(cxx_heat_model_root_override "${CXX_MODEL_ROOT}")
 else()
-    set(cxx_heat_model_root "${MIAOW_ROOT}/third_party/bmi-example-cxx")
+    set(cxx_heat_model_root_override "")
 endif()
+miaow_resolve_model_root(cxx_heat_model_root
+    MODEL_ROOT "${cxx_heat_model_root_override}"
+    MODEL_LOCAL_SUBDIR "bmi-example-cxx"
+    MODEL_LABEL "dynamic_bmi_cpp_heat"
+)
 
 if(NOT EXISTS "${cxx_heat_model_root}")
     include(FetchContent)
@@ -25,15 +37,22 @@ endif()
 
 if(NOT EXISTS "${cxx_heat_model_root}/heat/heat.cxx")
     message(FATAL_ERROR
-        "CXX_MODEL_ROOT must point to a csdms/bmi-example-cxx checkout")
+        "MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT/CXX_MODEL_ROOT must point to a csdms/bmi-example-cxx checkout")
 endif()
 
 # Resolve/fetch the CSDMS Fortran heat reference model
-if(FORTRAN_MODEL_ROOT)
-    set(fortran_heat_model_root "${FORTRAN_MODEL_ROOT}")
+if(MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT)
+    set(fortran_heat_model_root_override "${MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT}")
+elseif(FORTRAN_MODEL_ROOT)
+    set(fortran_heat_model_root_override "${FORTRAN_MODEL_ROOT}")
 else()
-    set(fortran_heat_model_root "${MIAOW_ROOT}/third_party/bmi-example-fortran")
+    set(fortran_heat_model_root_override "")
 endif()
+miaow_resolve_model_root(fortran_heat_model_root
+    MODEL_ROOT "${fortran_heat_model_root_override}"
+    MODEL_LOCAL_SUBDIR "bmi-example-fortran"
+    MODEL_LABEL "dynamic_bmi_fortran_heat"
+)
 
 if(NOT EXISTS "${fortran_heat_model_root}")
     include(FetchContent)
@@ -48,8 +67,19 @@ endif()
 
 if(NOT EXISTS "${fortran_heat_model_root}/heat/heat.f90")
     message(FATAL_ERROR
-        "FORTRAN_MODEL_ROOT must point to a csdms/bmi-example-fortran checkout")
+        "MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT/FORTRAN_MODEL_ROOT must point to a csdms/bmi-example-fortran checkout")
 endif()
+
+miaow_provision_example_extern_link(
+    EXAMPLE_DIR "${CMAKE_CURRENT_LIST_DIR}"
+    LINK_NAME "bmi-example-cxx"
+    TARGET_DIR "${cxx_heat_model_root}"
+)
+miaow_provision_example_extern_link(
+    EXAMPLE_DIR "${CMAKE_CURRENT_LIST_DIR}"
+    LINK_NAME "bmi-example-fortran"
+    TARGET_DIR "${fortran_heat_model_root}"
+)
 
 miaow_add_dynamic_bmi_plugin(
     PLUGIN_TARGET miaow_dynamic_cpp_heat_plugin
@@ -100,7 +130,7 @@ add_executable(${EXECUTABLE_TARGET}
 target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_17)
 target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
 target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
-    MIAOW_DYNAMIC_HEAT_CONFIG_PATH="${CMAKE_CURRENT_LIST_DIR}/configs/config_dynamic_heat.txt"
+    MIAOW_DYNAMIC_BMI_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
 )
 
 miaow_attach_plugin_paths(${EXECUTABLE_TARGET}
@@ -115,6 +145,25 @@ set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
 )
 
 if(BUILD_TESTING)
+    add_test(
+        NAME miaow_example_03_dynamic_bmi_extern_symlink_cpp
+        COMMAND
+            ${CMAKE_COMMAND}
+            -DLINK_PATH=${CMAKE_CURRENT_LIST_DIR}/extern/bmi-example-cxx
+            -DEXPECT_TARGET=${cxx_heat_model_root}
+            -P
+            ${MIAOW_ROOT}/cmake/check_symlink.cmake
+    )
+    add_test(
+        NAME miaow_example_03_dynamic_bmi_extern_symlink_fortran
+        COMMAND
+            ${CMAKE_COMMAND}
+            -DLINK_PATH=${CMAKE_CURRENT_LIST_DIR}/extern/bmi-example-fortran
+            -DEXPECT_TARGET=${fortran_heat_model_root}
+            -P
+            ${MIAOW_ROOT}/cmake/check_symlink.cmake
+    )
+
     string(CONCAT dynamic_bmi_pass_regex
         "C\\+\\+ dynamic BMI plugin: .*miaow_dynamic_cpp_heat_plugin(.|\\n)*"
         "Fortran dynamic BMI plugin: .*miaow_dynamic_fortran_heat_plugin(.|\\n)*"
@@ -134,7 +183,7 @@ if(BUILD_TESTING)
             600
     )
     set_tests_properties(miaow_example_03_dynamic_bmi PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "${dynamic_bmi_pass_regex}"
     )
 endif()

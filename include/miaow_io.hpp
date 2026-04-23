@@ -23,6 +23,17 @@ void print_task_results(const JobResult& job_result);
 bool all_tasks_succeeded(const JobResult& job_result);
 
 /**
+ * @brief Validate that an example is running from its required working directory.
+ *
+ * On mismatch, prints an actionable error message with the expected and current
+ * directories and a suggested `cd` command.
+ *
+ * @return true when the current directory matches `expected_run_dir`, false otherwise.
+ */
+bool ensure_expected_run_dir(const std::string& executable_name,
+                             const std::string& expected_run_dir);
+
+/**
  * @brief Parse runtime-wide CLI arguments without workflow task inputs.
  *
  * Supported arguments:

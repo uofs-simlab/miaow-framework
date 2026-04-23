@@ -43,10 +43,18 @@ function(miaow_add_bmi_model)
         endif()
     endif()
 
-    if(MIAOW_MODEL_ROOT)
-        set(model_root "${MIAOW_MODEL_ROOT}")
-    elseif(MIAOW_MODEL_LOCAL_SUBDIR)
-        set(model_root "${MIAOW_MIAOW_ROOT}/third_party/${MIAOW_MODEL_LOCAL_SUBDIR}")
+    if(COMMAND miaow_resolve_model_root)
+        miaow_resolve_model_root(model_root
+            MODEL_ROOT "${MIAOW_MODEL_ROOT}"
+            MODEL_LOCAL_SUBDIR "${MIAOW_MODEL_LOCAL_SUBDIR}"
+            MODEL_LABEL "${MIAOW_MODEL_TARGET}"
+        )
+    else()
+        if(MIAOW_MODEL_ROOT)
+            set(model_root "${MIAOW_MODEL_ROOT}")
+        elseif(MIAOW_MODEL_LOCAL_SUBDIR)
+            set(model_root "${MIAOW_MIAOW_ROOT}/third_party/${MIAOW_MODEL_LOCAL_SUBDIR}")
+        endif()
     endif()
 
     if(NOT model_root)

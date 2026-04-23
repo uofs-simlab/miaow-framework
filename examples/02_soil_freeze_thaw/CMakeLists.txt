@@ -5,12 +5,20 @@ miaow_setup_example(soil_freeze_thaw)
 
 include("${MIAOW_ROOT}/cmake/miaow_bmi_model.cmake")
 
+set(MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT "" CACHE PATH
+    "Path to a local NOAA-OWP/SoilFreezeThaw source tree")
+if(MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT)
+    set(soil_freeze_thaw_model_root_override "${MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT}")
+else()
+    set(soil_freeze_thaw_model_root_override "${MODEL_ROOT}")
+endif()
+
 # Build NOAA-OWP/SoilFreezeThaw as a static model library and link it directly
 # into the example executable (no dynamic plugin loading).
 miaow_add_bmi_model(
     EXAMPLE_NAME soil_freeze_thaw
     MIAOW_ROOT "${MIAOW_ROOT}"
-    MODEL_ROOT "${MODEL_ROOT}"
+    MODEL_ROOT "${soil_freeze_thaw_model_root_override}"
     EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
     MODEL_TARGET "${MODEL_TARGET}"
     MODEL_LOCAL_SUBDIR SoilFreezeThaw
@@ -27,12 +35,27 @@ miaow_add_bmi_model(
     MODEL_COMPILE_DEFINITIONS BMI_ACTIVE
 )
 
-# Inject the example dir so main.cpp can reference its bundled configs/forcings
+miaow_provision_example_extern_link(
+    EXAMPLE_DIR "${CMAKE_CURRENT_LIST_DIR}"
+    LINK_NAME "SoilFreezeThaw"
+    TARGET_DIR "${MODEL_ROOT}"
+)
+
 target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
-    MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR="${CMAKE_CURRENT_LIST_DIR}"
+    MIAOW_SOIL_FREEZE_THAW_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
 )
 
 if(BUILD_TESTING)
+    add_test(
+        NAME miaow_example_02_soil_freeze_thaw_extern_symlink
+        COMMAND
+            ${CMAKE_COMMAND}
+            -DLINK_PATH=${CMAKE_CURRENT_LIST_DIR}/extern/SoilFreezeThaw
+            -DEXPECT_TARGET=${MODEL_ROOT}
+            -P
+            ${MIAOW_ROOT}/cmake/check_symlink.cmake
+    )
+
     miaow_add_workflow_test(
         TEST_NAME miaow_example_02_soil_freeze_thaw
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
@@ -40,7 +63,7 @@ if(BUILD_TESTING)
         PASS_REGULAR_EXPRESSION "\\[2\\] succeeded: BMI workflow complete"
         CLI_ARGS
             --output_root
-            "${CMAKE_CURRENT_BINARY_DIR}/output_smoke"
+            "${CMAKE_CURRENT_LIST_DIR}/output/smoke"
             --max_workers
             2
             --task_request_timeout
@@ -81,7 +104,7 @@ if(BUILD_TESTING)
     # run/job/task metadata layout via a shared CMake script.
     set(soil_freeze_thaw_layout_cli_args
         --output_root
-        "${CMAKE_CURRENT_BINARY_DIR}/output_metadata"
+        "${CMAKE_CURRENT_LIST_DIR}/output/metadata"
         --max_workers
         1
         --task_request_timeout
@@ -97,12 +120,12 @@ if(BUILD_TESTING)
             ${CMAKE_COMMAND}
             -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/output_metadata
+            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output/metadata
             "-DEXECUTABLE_ARGS=${soil_freeze_thaw_layout_cli_args_serialized}"
             -P
             ${MIAOW_ROOT}/cmake/check_metadata_layout.cmake
     )
     set_tests_properties(miaow_example_02_soil_freeze_thaw_metadata_layout PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
     )
 endif()

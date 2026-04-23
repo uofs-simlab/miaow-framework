@@ -9,6 +9,9 @@ add_executable(${EXECUTABLE_TARGET}
 
 target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_17)
 target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
+target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
+    MIAOW_HELLO_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
+)
 
 # Drop the binary next to the source so example data (configs, realization
 # files) can be referenced relative to the executable.
@@ -23,7 +26,7 @@ if(BUILD_TESTING)
             $<TARGET_FILE:${EXECUTABLE_TARGET}>
     )
     set_tests_properties(miaow_example_00_hello PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "succeeded: hello(.|\\n)*succeeded: cats(.|\\n)*succeeded: hello again(.|\\n)*succeeded: more cats"
     )
 
@@ -31,7 +34,7 @@ if(BUILD_TESTING)
     # run/job/task metadata layout via a shared CMake script.
     set(hello_layout_cli_args
         --output_root
-        "${CMAKE_CURRENT_BINARY_DIR}/output"
+        "${CMAKE_CURRENT_LIST_DIR}/output"
     )
     list(JOIN hello_layout_cli_args ";" hello_layout_cli_args_serialized)
 
@@ -40,13 +43,13 @@ if(BUILD_TESTING)
         COMMAND
             ${CMAKE_COMMAND}
             -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
-            -DWORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/output
+            -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
+            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
             "-DEXECUTABLE_ARGS=${hello_layout_cli_args_serialized}"
             -P
             ${MIAOW_ROOT}/cmake/check_metadata_layout.cmake
     )
     set_tests_properties(miaow_example_00_hello_metadata_layout PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
     )
 endif()

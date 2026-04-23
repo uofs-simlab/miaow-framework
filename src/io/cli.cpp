@@ -3,6 +3,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -46,6 +47,28 @@ void require_option_value(int argc,
 }
 
 } // namespace
+
+bool ensure_expected_run_dir(const std::string& executable_name,
+                             const std::string& expected_run_dir) {
+    const std::filesystem::path expected_path(expected_run_dir);
+    const std::filesystem::path actual_path = std::filesystem::current_path();
+
+    std::error_code error_code;
+    const bool run_dir_matches =
+        std::filesystem::equivalent(actual_path, expected_path, error_code);
+    if (!error_code && run_dir_matches) {
+        return true;
+    }
+
+    std::cerr
+        << "Run directory error: " << executable_name << " must be run from '"
+        << expected_path.string() << "'\n"
+        << "Current directory: '" << actual_path.string() << "'\n"
+        << "Use:\n"
+        << "  cd " << expected_path.string() << "\n"
+        << "  ./" << executable_name << "\n";
+    return false;
+}
 
 void parse_runtime_cli_options(int argc,
                                char* argv[],
