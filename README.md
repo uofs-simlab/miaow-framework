@@ -287,27 +287,6 @@ Public CLI parsers throw `std::runtime_error` for unrecognized arguments,
 missing option values, and invalid option values. Example executables catch
 these errors, print the message, and exit with status `1`.
 
-### Model dependencies for example programs
-
-By default, MIAOW assumes a central model source root and per-example `extern` symlinks:
-
-- External model sources are resolved from `${MIAOW_DEFAULT_MODEL_BASE_DIR}`.
-- By default, `${MIAOW_DEFAULT_MODEL_BASE_DIR}` is `${MIAOW_ROOT}/third_party`.
-- Each model-backed example provisions symlinks under
-  `examples/<example_name>/extern/` to the resolved model source directories.
-
-This mirrors the NextGen-style run layout where examples can refer to `./extern/...`
-paths while model sources remain centrally managed.
-
-Resolution precedence for model roots:
-
-1. Example-specific override variable, when set:
-   `MIAOW_HEAT_MODEL_ROOT`, `MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT`,
-   `MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT`, `MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT`,
-   or `MIAOW_NOAH_OWP_MODEL_ROOT`
-2. Fallback under `${MIAOW_DEFAULT_MODEL_BASE_DIR}/<model-subdir>`
-
-
 ## Limitations
 
 - Distributed runs are not currently supported.
