@@ -249,8 +249,8 @@ examples/<example_name>/
     configs/        # configuration files
     forcings/       # forcing data files (when needed)
     parameters/     # parameter tables (when needed)
-  extern/           # model-backed examples: symlinks to model sources (created by CMake, not tracked)
-  output/           # runtime/model output data (generated with --output_root ./output, not tracked)
+  extern/           # model-backed examples: symlinks to model sources (created by CMake)
+  output/           # runtime/model output data (generated with --output_root ./output)
 ```
 
 ### Configuring model examples independently
