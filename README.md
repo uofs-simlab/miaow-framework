@@ -219,7 +219,7 @@ Top-level CMake options:
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version when using system CAF |
 | `-DMIAOW_CAF_GIT_TAG` | `1.1.0` | CAF tag/commit for `FetchContent` |
 | `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
-| `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Optional explicit path to a valid local `NOAA-OWP/iso_c_fortran_bmi` checkout; when empty, CMake uses `${MIAOW_DEFAULT_MODEL_BASE_DIR}/iso_c_fortran_bmi` and fetches into that location if missing |
+| `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Optional explicit path to a valid local `NOAA-OWP/iso_c_fortran_bmi` checkout; when empty, CMake looks for `iso_c_fortran_bmi` in `${MIAOW_DEFAULT_MODEL_BASE_DIR}/` and fetches into that location if missing |
 
 For [Conan](https://conan.io/)-based CI-style setup:
 
