@@ -283,6 +283,10 @@ struct RuntimeOptions {
     // When empty (the default), no output directories or files are written
     std::string output_root_;
 
+    // Path to a NextGen-style realization file for realization-driven workflows
+    // When empty (the default), the caller may substitute its own default path
+    std::string realization_path_;
+
     /**
      * @brief Construct runtime options with safe defaults.
      * @param workers Desired worker count. Values of zero are clamped to one.
@@ -290,15 +294,19 @@ struct RuntimeOptions {
      * @param job_timeout Timeout used for whole-job requests.
      * @param output_root Root directory for runtime-managed task output folders.
      *                   Empty string (default) disables all file output.
+     * @param realization_path Path to a realization file. Empty string (default)
+     *                   lets realization-driven callers fall back to their own default.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::seconds(5),
                    std::chrono::milliseconds job_timeout = std::chrono::minutes(5),
-                   std::string output_root = "")
+                   std::string output_root = "",
+                   std::string realization_path = "")
         : max_workers_(workers == 0 ? 1 : workers),
           task_request_timeout_(task_timeout),
           job_request_timeout_(job_timeout),
-          output_root_(std::move(output_root)) {
+          output_root_(std::move(output_root)),
+          realization_path_(std::move(realization_path)) {
     }
 };
 

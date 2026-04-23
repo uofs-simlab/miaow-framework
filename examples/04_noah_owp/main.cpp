@@ -6,54 +6,11 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
-
-namespace {
-
-bool cli_option_requires_value(const std::string_view option_name) {
-    return option_name == "--max_workers" ||
-        option_name == "--task_request_timeout" ||
-        option_name == "--job_request_timeout" ||
-        option_name == "--output_root" ||
-        option_name == "--realization";
-}
-
-void split_cli_arguments(int argc,
-                         char* argv[],
-                         std::vector<char*>& runtime_argv,
-                         std::vector<char*>& realization_argv) {
-    runtime_argv.clear();
-    realization_argv.clear();
-    runtime_argv.reserve(static_cast<std::size_t>(argc));
-    realization_argv.reserve(static_cast<std::size_t>(argc));
-
-    runtime_argv.push_back(argv[0]);
-    realization_argv.push_back(argv[0]);
-
-    int index = 1;
-    while (index < argc) {
-        const std::string_view option_name = argv[index];
-        const bool route_to_realization =
-            option_name == "--realization" || option_name == "--help";
-
-        std::vector<char*>& target_argv =
-            route_to_realization ? realization_argv : runtime_argv;
-        target_argv.push_back(argv[index]);
-        ++index;
-
-        if (cli_option_requires_value(option_name) && index < argc) {
-            target_argv.push_back(argv[index]);
-            ++index;
-        }
-    }
-}
-
-} // namespace
 
 int main(int argc, char* argv[]) {
     // Check that we're running from the expected directory for proper relative paths
@@ -61,24 +18,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Parse runtime and realization CLI options
+    // Parse runtime CLI options (including --realization) and read the realization file
     miaow::RuntimeOptions runtime_options;
-    std::string realization_path;
     miaow::RealizationConfig realization;
-    std::vector<char*> runtime_argv;
-    std::vector<char*> realization_argv;
-    split_cli_arguments(argc, argv, runtime_argv, realization_argv);
-
     try {
-        miaow::parse_runtime_cli_options(
-            static_cast<int>(runtime_argv.size()),
-            runtime_argv.data(),
-            runtime_options);
-        realization_path = miaow::parse_realization_cli_path(
-            static_cast<int>(realization_argv.size()),
-            realization_argv.data(),
-            "miaow_noah_owp",
-            "realization.json");
+        miaow::parse_runtime_cli_options(argc, argv, runtime_options);
+        const std::string realization_path = runtime_options.realization_path_.empty()
+            ? std::string("realization.json")
+            : runtime_options.realization_path_;
         realization = miaow::read_realization_config(realization_path);
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";

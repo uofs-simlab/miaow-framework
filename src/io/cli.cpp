@@ -2,7 +2,6 @@
 
 #include <charconv>
 #include <cstddef>
-#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -107,35 +106,15 @@ void parse_runtime_cli_options(int argc,
             runtime_options.output_root_ = option_value;
             continue;
         }
+
+        if (option_name == "--realization") {
+            require_option_value(argc, argv, index, option_name, option_value);
+            runtime_options.realization_path_ = option_value;
+            continue;
+        }
         throw std::runtime_error(
             "Error: unrecognized argument: " + std::string(option_name));
     }
-}
-
-std::string parse_realization_cli_path(
-    int argc,
-    char* argv[],
-    const std::string& executable_name,
-    const std::string& default_realization_path) {
-    std::string realization_path = default_realization_path;
-    int index = 1;
-    while (index < argc) {
-        const std::string_view option_name = argv[index];
-        if (option_name == "--realization") {
-            std::string option_value;
-            require_option_value(argc, argv, index, option_name, option_value);
-            realization_path = option_value;
-            continue;
-        }
-        if (option_name == "--help") {
-            std::cout << "Usage: " << executable_name
-                      << " [--realization <path>]\n";
-            std::exit(0);
-        }
-        throw std::runtime_error("Error: unrecognized argument: " +
-                                 std::string(option_name));
-    }
-    return realization_path;
 }
 
 } // namespace miaow

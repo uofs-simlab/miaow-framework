@@ -41,6 +41,8 @@ bool ensure_expected_run_dir(const std::string& executable_name,
  * - `--task_request_timeout <seconds>`
  * - `--job_request_timeout <seconds>`
  * - `--output_root <path>`
+ * - `--realization <path>` (used by realization-driven workflows; left empty
+ *   when absent so callers may substitute their own default)
  *
  * @throws std::runtime_error if an argument is unrecognized, missing a value,
  * or has an invalid value.
@@ -48,22 +50,6 @@ bool ensure_expected_run_dir(const std::string& executable_name,
 void parse_runtime_cli_options(int argc,
                                char* argv[],
                                RuntimeOptions& runtime_options);
-
-/**
- * @brief Parse CLI arguments for a realization-driven example.
- *
- * Supported arguments:
- * - `--realization <path>`
- *
- * `--help` prints usage for the supplied executable name and exits with success.
- * The default realization path is returned when no arguments are supplied.
- *
- * @throws std::runtime_error if an argument is unrecognized or missing a value.
- */
-std::string parse_realization_cli_path(int argc,
-                                       char* argv[],
-                                       const std::string& executable_name,
-                                       const std::string& default_realization_path);
 
 /**
  * @brief One subdomain entry from a NextGen-style realization file.
