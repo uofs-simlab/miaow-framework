@@ -5,12 +5,13 @@
  * pass string messages through the simulation unit and print the results and diagnostics.
 */
 
+#include <exception>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "miaow.hpp"     // Core MIAOW runtime API
-#include "miaow_cli.hpp" // CLI parser for example programs
+#include "miaow_io.hpp"  // I/O helpers for example programs
 
 /**
  * @brief A simple simulation unit that returns a string task argument.
@@ -41,10 +42,10 @@ public:
 int main(int argc, char* argv[]) {
     // Initialize runtime options and parse runtime-wide CLI arguments
     miaow::RuntimeOptions runtime_options;
-    const std::string input_error =
+    try {
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
-    if (!input_error.empty()) {
-        std::cerr << input_error << "\n";
+    } catch (const std::exception& exception) {
+        std::cerr << exception.what() << "\n";
         return 1;
     }
 

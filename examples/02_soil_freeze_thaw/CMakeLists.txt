@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    project(miaow_soil_freeze_thaw_example CXX)
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_setup_example.cmake")
+miaow_setup_example(soil_freeze_thaw)
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_bmi_model.cmake")
+include("${MIAOW_ROOT}/cmake/miaow_bmi_model.cmake")
 
+# Build NOAA-OWP/SoilFreezeThaw as a static model library and link it directly
+# into the example executable (no dynamic plugin loading).
 miaow_add_bmi_model(
     EXAMPLE_NAME soil_freeze_thaw
     MIAOW_ROOT "${MIAOW_ROOT}"
@@ -26,14 +27,15 @@ miaow_add_bmi_model(
     MODEL_COMPILE_DEFINITIONS BMI_ACTIVE
 )
 
-target_compile_definitions(${MIAOW_EXECUTABLE_TARGET_RESOLVED} PRIVATE
+# Inject the example dir so main.cpp can reference its bundled configs/forcings
+target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
     MIAOW_SOIL_FREEZE_THAW_EXAMPLE_DIR="${CMAKE_CURRENT_LIST_DIR}"
 )
 
 if(BUILD_TESTING)
     miaow_add_workflow_test(
         TEST_NAME miaow_example_02_soil_freeze_thaw
-        EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
+        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "\\[2\\] succeeded: BMI workflow complete"
         CLI_ARGS
@@ -49,7 +51,7 @@ if(BUILD_TESTING)
 
     miaow_add_workflow_test(
         TEST_NAME miaow_example_02_soil_freeze_thaw_forcing_matched
-        EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
+        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete"
         CLI_ARGS
@@ -63,7 +65,7 @@ if(BUILD_TESTING)
 
     miaow_add_workflow_test(
         TEST_NAME miaow_example_02_soil_freeze_thaw_forcing_exhausted
-        EXECUTABLE_TARGET "${MIAOW_EXECUTABLE_TARGET_RESOLVED}"
+        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "\\[1\\] failed: Forcing alignment error: forcing series exhausted at step 24 \\(updates: 24\\)"
         CLI_ARGS
@@ -75,6 +77,8 @@ if(BUILD_TESTING)
             600
     )
 
+    # Drives the example with --output_root and validates the on-disk
+    # run/job/task metadata layout via a shared CMake script.
     set(soil_freeze_thaw_layout_cli_args
         --output_root
         "${CMAKE_CURRENT_BINARY_DIR}/output_metadata"
@@ -91,7 +95,7 @@ if(BUILD_TESTING)
         NAME miaow_example_02_soil_freeze_thaw_metadata_layout
         COMMAND
             ${CMAKE_COMMAND}
-            -DEXECUTABLE=$<TARGET_FILE:${MIAOW_EXECUTABLE_TARGET_RESOLVED}>
+            -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
             -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/output_metadata
             "-DEXECUTABLE_ARGS=${soil_freeze_thaw_layout_cli_args_serialized}"

@@ -15,14 +15,14 @@ MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html), u
 
 From the repository root, using [CMake](https://cmake.org/) (requires C++ and Fortran compilers):
 
-```bash
+```sh
 cmake -S . -B build
 cmake --build build
 ```
 
 Run examples (reproducible from repo root):
 
-```bash
+```sh
 ./examples/00_hello/miaow_hello
 ./examples/01_heat/miaow_heat
 ./examples/02_soil_freeze_thaw/miaow_soil_freeze_thaw \
@@ -89,13 +89,12 @@ For BMI models, use `miaow::BmiSimulationUnit<BmiModelType>` from
 include/
   miaow.hpp              # public runtime/task API
   miaow_bmi.hpp          # BMI simulation-unit wrapper/BMI-facing contracts
-  miaow_cli.hpp          # runtime command-line option parsing helpers for examples
+  miaow_io.hpp           # public I/O, diagnostics, realization, and CLI API
 
 src/
   core/
-    runtime.cpp          # Runtime submit path and output-tree setup
+    runtime.cpp          # Runtime submit path and output tree setup
     actors.cpp           # orchestrator/job/worker actor behaviour
-    diagnostics.cpp      # diagnostics formatting helpers
     internal.hpp         # core-private actor declarations and JobState
 
   bmi/
@@ -106,9 +105,12 @@ src/
     internal.hpp         # BMI-private forcing/run helper declarations
 
   io/
+    cli.cpp              # runtime command-line option parsing
+    csv.cpp              # CSV header and numeric-column extraction
+    diagnostics.cpp      # diagnostics formatting and printing helpers
     metadata.cpp         # runtime metadata output writing
-    csv.hpp              # header-only CSV header and numeric-column extraction
-    utils.hpp            # header-only text/string-parsing helpers
+    realization.cpp      # realization JSON parsing
+    internal.hpp         # IO-private declarations and helpers
 
 examples/
   00_hello/
@@ -123,12 +125,12 @@ examples/
 - Public API: `miaow`
 - Core internals: `miaow::core`
 - BMI internals: `miaow::bmi`
-- IO helpers: `miaow::io`
-- External BMI C++ API alias in `miaow_bmi.hpp`: `miaow::bmi_api = ::bmi`
+- Internal I/O helpers: `miaow::io`
+- External [BMI C++ API](https://github.com/csdms/bmi-cxx/tree/master) alias in `miaow_bmi.hpp`: `miaow::bmi_api = ::bmi`
 
 ## Basic Model Interface (BMI) integration
 
-`BmiSimulationUnit<BmiModelType>` wraps a complete BMI lifecycle per task:
+MIAOW implements `BmiSimulationUnit<BmiModelType>`, which wraps a complete BMI lifecycle per task:
 
 1. `Initialize(config_path)`
 2. zero or more `Update()` calls
@@ -220,7 +222,7 @@ Top-level CMake options:
 
 For [Conan](https://conan.io/)-based CI-style setup:
 
-```bash
+```sh
 conan install . --output-folder=build/conan --build=missing
 cmake -S . -B build -DMIAOW_FETCH_CAF=OFF
 cmake --build build --config Release
@@ -275,10 +277,15 @@ The `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi` examples 
 | `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
 | `--output_root` | `""` | Root directory path for runtime-managed output folders (disabled by default) |
 
+Public CLI parsers throw `std::runtime_error` for unrecognized arguments,
+missing option values, and invalid option values. Example executables catch
+these errors, print the message, and exit with status `1`.
+
 ## Limitations
 
 - Distributed runs are not currently supported.
 - Target workloads are embarrassingly parallel tasks without inter-task communication.
+- BMI forcing supports only one variable currently.
 
 ## Authors and funding
 MIAOW was developed at the University of Saskatchewan by Tristan Montoya and Raymond Spiteri, with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/).

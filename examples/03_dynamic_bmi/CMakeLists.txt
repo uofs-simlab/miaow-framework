@@ -1,27 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    project(miaow_dynamic_bmi_example CXX Fortran)
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_setup_example.cmake")
+miaow_setup_example(dynamic_bmi Fortran)
 
-if(NOT DEFINED MIAOW_ROOT)
-    get_filename_component(miaow_root_default "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
-    set(MIAOW_ROOT "${miaow_root_default}" CACHE PATH
-        "Path to the miaow-framework source root")
-endif()
+include("${MIAOW_ROOT}/cmake/miaow_dynamic_bmi_plugin.cmake")
 
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    set(EXECUTABLE_TARGET "miaow_dynamic_bmi" CACHE STRING
-        "Executable target name for this example")
-else()
-    set(EXECUTABLE_TARGET "miaow_dynamic_bmi")
-endif()
-
-if(NOT TARGET miaow)
-    set(BUILD_EXAMPLES OFF CACHE BOOL "Build example programs" FORCE)
-    add_subdirectory("${MIAOW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/miaow-build")
-endif()
-
+# Resolve/fetch the CSDMS C++ heat reference model
 if(CXX_MODEL_ROOT)
     set(cxx_heat_model_root "${CXX_MODEL_ROOT}")
 else()
@@ -44,6 +28,7 @@ if(NOT EXISTS "${cxx_heat_model_root}/heat/heat.cxx")
         "CXX_MODEL_ROOT must point to a csdms/bmi-example-cxx checkout")
 endif()
 
+# Resolve/fetch the CSDMS Fortran heat reference model
 if(FORTRAN_MODEL_ROOT)
     set(fortran_heat_model_root "${FORTRAN_MODEL_ROOT}")
 else()
@@ -66,19 +51,20 @@ if(NOT EXISTS "${fortran_heat_model_root}/heat/heat.f90")
         "FORTRAN_MODEL_ROOT must point to a csdms/bmi-example-fortran checkout")
 endif()
 
-add_library(miaow_dynamic_cpp_heat_plugin SHARED
-    "${cxx_heat_model_root}/heat/heat.cxx"
-    "${cxx_heat_model_root}/heat/bmi_heat.cxx"
-    register_bmi_heat.cpp
+miaow_add_dynamic_bmi_plugin(
+    PLUGIN_TARGET miaow_dynamic_cpp_heat_plugin
+    SOURCES
+        "${cxx_heat_model_root}/heat/heat.cxx"
+        "${cxx_heat_model_root}/heat/bmi_heat.cxx"
+        register_bmi_heat.cpp
+    INCLUDE_DIRS
+        "${cxx_heat_model_root}/heat"
+    USE_MIAOW_BMI_INCLUDE
 )
 
-target_compile_features(miaow_dynamic_cpp_heat_plugin PRIVATE cxx_std_17)
-target_include_directories(miaow_dynamic_cpp_heat_plugin PRIVATE
-    "${cxx_heat_model_root}/heat"
-    "${MIAOW_ROOT}/include/third_party/bmi"
-)
-
-set(fortran_heat_module_dir "${CMAKE_CURRENT_BINARY_DIR}/mod")
+# csdms/bmi-example-fortran ships bmi_heat.f90 against the standard `bmif_2_0`
+# module, but our iso_c_bmi-based dynamic loader expects the matching
+# `bmif_2_0_iso` shim. Patch the source in-place into the build tree.
 set(fortran_heat_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${fortran_heat_generated_dir}")
 
@@ -97,20 +83,14 @@ file(WRITE
     "${bmi_heat_source}"
 )
 
-add_library(miaow_dynamic_fortran_heat_plugin SHARED
-    "${fortran_heat_model_root}/heat/heat.f90"
-    "${fortran_heat_generated_dir}/bmi_heat.f90"
-    register_bmi_heat.f90
-)
-
-target_link_libraries(miaow_dynamic_fortran_heat_plugin
-    PRIVATE
-        iso_c_bmi
-)
-
-set_target_properties(miaow_dynamic_fortran_heat_plugin
-    PROPERTIES
-        Fortran_MODULE_DIRECTORY "${fortran_heat_module_dir}"
+miaow_add_dynamic_bmi_plugin(
+    PLUGIN_TARGET miaow_dynamic_fortran_heat_plugin
+    SOURCES
+        "${fortran_heat_model_root}/heat/heat.f90"
+        "${fortran_heat_generated_dir}/bmi_heat.f90"
+        register_bmi_heat.f90
+    LINK_ISO_C_BMI
+    FORTRAN_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/mod"
 )
 
 add_executable(${EXECUTABLE_TARGET}
@@ -120,15 +100,16 @@ add_executable(${EXECUTABLE_TARGET}
 target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_17)
 target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
 target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
-    MIAOW_CPP_HEAT_PLUGIN_PATH="$<TARGET_FILE:miaow_dynamic_cpp_heat_plugin>"
-    MIAOW_FORTRAN_HEAT_PLUGIN_PATH="$<TARGET_FILE:miaow_dynamic_fortran_heat_plugin>"
     MIAOW_DYNAMIC_HEAT_CONFIG_PATH="${CMAKE_CURRENT_LIST_DIR}/configs/config_dynamic_heat.txt"
 )
-add_dependencies(${EXECUTABLE_TARGET}
-    miaow_dynamic_cpp_heat_plugin
-    miaow_dynamic_fortran_heat_plugin
+
+miaow_attach_plugin_paths(${EXECUTABLE_TARGET}
+    MIAOW_CPP_HEAT_PLUGIN_PATH      miaow_dynamic_cpp_heat_plugin
+    MIAOW_FORTRAN_HEAT_PLUGIN_PATH  miaow_dynamic_fortran_heat_plugin
 )
 
+# Drop the binary next to the source so example data (configs, realization
+# files) can be referenced relative to the executable.
 set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
@@ -156,5 +137,4 @@ if(BUILD_TESTING)
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
         PASS_REGULAR_EXPRESSION "${dynamic_bmi_pass_regex}"
     )
-
 endif()

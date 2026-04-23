@@ -8,7 +8,7 @@
 
 #include <caf/json.hpp>
 
-#include "metadata.hpp"
+#include "io/internal.hpp"
 
 namespace miaow::io {
 

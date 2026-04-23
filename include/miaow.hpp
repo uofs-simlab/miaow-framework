@@ -23,11 +23,19 @@
 
 namespace miaow {
 
-// Monotonic identifier assigned to each registered simulation unit
+/**
+ * @brief Monotonic identifier assigned to each registered simulation unit.
+ */
 using SimulationUnitId = std::uint64_t;
-// Monotonic identifier assigned to each task within one submitted job
+
+/**
+ * @brief Monotonic identifier assigned to each task within one submitted job.
+ */
 using TaskId = std::uint64_t;
-// Monotonic identifier assigned to each submitted job
+
+/**
+ * @brief Monotonic identifier assigned to each submitted job.
+ */
 using JobId = std::uint64_t;
 
 /**
@@ -382,31 +390,6 @@ bool inspect(Inspector& inspector, JobResult& job_result) {
         inspector.field("task_results", job_result.task_results_),
         inspector.field("diagnostics", job_result.diagnostics_));
 }
-
-/**
- * @brief Format diagnostics as a human-readable block
- */
-std::string format_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
-
-/**
- * @brief Format all task results in a job as human-readable status lines.
- */
-std::string format_task_results(const JobResult& job_result);
-
-/**
- * @brief Print diagnostics to stdout
- */
-void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
-
-/**
- * @brief Print all task results in a job to stdout.
- */
-void print_task_results(const JobResult& job_result);
-
-/**
- * @brief Return true when every task result in a job succeeded.
- */
-bool all_tasks_succeeded(const JobResult& job_result);
 
 /**
  * @brief Actor runtime for orchestrating simulation tasks.

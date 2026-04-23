@@ -11,8 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "io/csv.hpp"
-#include "io/utils.hpp"
+#include "io/internal.hpp"
 
 namespace miaow::bmi {
 

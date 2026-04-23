@@ -5,23 +5,22 @@
  * the standard BMI simulation-unit path rather than comparing numeric output.
  */
 
+#include <exception>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
-#include "miaow_cli.hpp"
+#include "miaow_io.hpp"
 
 int main(int argc, char* argv[]) {
     // Initialize runtime options and parse runtime-wide CLI arguments
     miaow::RuntimeOptions runtime_options;
-    const std::string input_error = miaow::parse_runtime_cli_options(
-        argc,
-        argv,
-        runtime_options);
-    if (!input_error.empty()) {
-        std::cerr << input_error << "\n";
+    try {
+        miaow::parse_runtime_cli_options(argc, argv, runtime_options);
+    } catch (const std::exception& exception) {
+        std::cerr << exception.what() << "\n";
         return 1;
     }
 

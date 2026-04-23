@@ -4,14 +4,16 @@
  * implementation (`BmiHeat`) and accepts runtime CLI options.
  */
 
+#include <exception>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "bmi_heat.hxx"  // defines the BmiHeat class that implements the BMI interface
+
 #include "miaow.hpp"     // Core MIAOW runtime API
 #include "miaow_bmi.hpp" // MIAOW API for running BMI models as simulation units
-#include "miaow_cli.hpp" // CLI parser for example programs
+#include "miaow_io.hpp"  // I/O helpers for example programs
 
 /**
  * @brief A simple simulation unit used to return a hello message. This is included to
@@ -38,10 +40,10 @@ public:
 int main(int argc, char* argv[]) {
     // Initialize runtime options and parse runtime-wide CLI arguments
     miaow::RuntimeOptions runtime_options;
-    const std::string input_error =
+    try {
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
-    if (!input_error.empty()) {
-        std::cerr << input_error << "\n";
+    } catch (const std::exception& exception) {
+        std::cerr << exception.what() << "\n";
         return 1;
     }
 

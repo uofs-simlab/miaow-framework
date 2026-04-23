@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "internal.hpp"
-#include "io/metadata.hpp"
+#include "io/internal.hpp"
 
 namespace miaow::core {
 

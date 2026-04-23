@@ -1,21 +1,28 @@
-#pragma once
+#include "io/internal.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
-#include <cstddef>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-#include "io/utils.hpp"
-
 namespace miaow::io {
 
-namespace detail {
+std::string trim(std::string value) {
+    const auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
+    const auto begin = std::find_if(value.begin(), value.end(), not_space);
+    if (begin == value.end()) {
+        return "";
+    }
+    const auto end = std::find_if(value.rbegin(), value.rend(), not_space).base();
+    return std::string(begin, end);
+}
 
-inline std::vector<std::string> split_csv_line(const std::string& line) {
+std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> cells;
     std::stringstream line_stream(line);
     std::string cell;
@@ -25,9 +32,7 @@ inline std::vector<std::string> split_csv_line(const std::string& line) {
     return cells;
 }
 
-} // namespace detail
-
-inline std::vector<std::string> read_csv_header(const std::string& csv_path) {
+std::vector<std::string> read_csv_header(const std::string& csv_path) {
     std::ifstream csv_stream(csv_path);
     if (!csv_stream.is_open()) {
         throw std::runtime_error("unable to open CSV file '" + csv_path + "'");
@@ -38,11 +43,11 @@ inline std::vector<std::string> read_csv_header(const std::string& csv_path) {
         throw std::runtime_error("CSV file '" + csv_path + "' is missing a header row");
     }
 
-    return detail::split_csv_line(header_line);
+    return split_csv_line(header_line);
 }
 
-inline std::size_t find_csv_column_index(const std::vector<std::string>& headers,
-                                         const std::string& column_name) {
+std::size_t find_csv_column_index(const std::vector<std::string>& headers,
+                                  const std::string& column_name) {
     const auto it = std::find(headers.begin(), headers.end(), column_name);
     if (it == headers.end()) {
         throw std::runtime_error("column '" + column_name + "' not found in CSV header");
@@ -50,8 +55,8 @@ inline std::size_t find_csv_column_index(const std::vector<std::string>& headers
     return static_cast<std::size_t>(std::distance(headers.begin(), it));
 }
 
-inline std::vector<double> read_csv_numeric_column(const std::string& csv_path,
-                                                   const std::string& column_name) {
+std::vector<double> read_csv_numeric_column(const std::string& csv_path,
+                                            const std::string& column_name) {
     std::ifstream csv_stream(csv_path);
     if (!csv_stream.is_open()) {
         throw std::runtime_error("unable to open CSV file '" + csv_path + "'");
@@ -62,7 +67,7 @@ inline std::vector<double> read_csv_numeric_column(const std::string& csv_path,
         throw std::runtime_error("CSV file '" + csv_path + "' is missing a header row");
     }
 
-    const std::vector<std::string> headers = detail::split_csv_line(header_line);
+    const std::vector<std::string> headers = split_csv_line(header_line);
     const std::size_t column_index = find_csv_column_index(headers, column_name);
 
     std::vector<double> values;
@@ -74,7 +79,7 @@ inline std::vector<double> read_csv_numeric_column(const std::string& csv_path,
             continue;
         }
 
-        const std::vector<std::string> cells = detail::split_csv_line(row_line);
+        const std::vector<std::string> cells = split_csv_line(row_line);
         if (column_index >= cells.size()) {
             throw std::runtime_error(
                 "row " + std::to_string(line_number) +

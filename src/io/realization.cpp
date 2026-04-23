@@ -1,4 +1,6 @@
-#include "io/realization.hpp"
+#include "miaow_io.hpp"
+
+#include "io/internal.hpp"
 
 #include <filesystem>
 #include <stdexcept>
@@ -8,9 +10,7 @@
 #include <caf/expected.hpp>
 #include <caf/json.hpp>
 
-#include "io/utils.hpp"
-
-namespace miaow::io {
+namespace miaow {
 
 namespace {
 
@@ -31,7 +31,7 @@ constexpr std::string_view realization_path_error_prefix =
 
 std::filesystem::path normalize_realization_path(
     const std::string& realization_path) {
-    if (trim(realization_path).empty()) {
+    if (io::trim(realization_path).empty()) {
         throw_realization_path_error("empty realization path");
     }
 
@@ -77,7 +77,7 @@ std::string require_non_empty_string(const caf::json_object& object,
             context + " key '" + key + "' must be a string");
     }
 
-    const std::string parsed = trim(std::string(value.to_string()));
+    const std::string parsed = io::trim(std::string(value.to_string()));
     if (parsed.empty()) {
         throw_realization_config_error(
             context + " key '" + key + "' must be a non-empty string");
@@ -124,7 +124,8 @@ std::vector<RealizationSubdomain> parse_subdomains(
     std::vector<RealizationSubdomain> subdomains;
     subdomains.reserve(subdomains_object.size());
     for (const auto [raw_subdomain_id, subdomain_value] : subdomains_object) {
-        const std::string subdomain_id = trim(std::string(raw_subdomain_id));
+        const std::string subdomain_id =
+            io::trim(std::string(raw_subdomain_id));
         if (subdomain_id.empty()) {
             throw_realization_config_error(
                 "root key 'subdomains' contains an empty subdomain ID key");
@@ -172,4 +173,4 @@ RealizationConfig read_realization_config(const std::string& realization_path) {
     return realization_config;
 }
 
-} // namespace miaow::io
+} // namespace miaow

@@ -1,26 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    project(miaow_hello_example CXX)
-endif()
-
-if(NOT DEFINED MIAOW_ROOT)
-    get_filename_component(miaow_root_default "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
-    set(MIAOW_ROOT "${miaow_root_default}" CACHE PATH
-        "Path to the miaow-framework source root")
-endif()
-
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    set(EXECUTABLE_TARGET "miaow_hello" CACHE STRING
-        "Executable target name for this example")
-else()
-    set(EXECUTABLE_TARGET "miaow_hello")
-endif()
-
-if(NOT TARGET miaow)
-    set(BUILD_EXAMPLES OFF CACHE BOOL "Build example programs" FORCE)
-    add_subdirectory("${MIAOW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/miaow-build")
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_setup_example.cmake")
+miaow_setup_example(hello)
 
 add_executable(${EXECUTABLE_TARGET}
     main.cpp
@@ -29,6 +10,8 @@ add_executable(${EXECUTABLE_TARGET}
 target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_17)
 target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
 
+# Drop the binary next to the source so example data (configs, realization
+# files) can be referenced relative to the executable.
 set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
@@ -44,6 +27,8 @@ if(BUILD_TESTING)
         PASS_REGULAR_EXPRESSION "succeeded: hello(.|\\n)*succeeded: cats(.|\\n)*succeeded: hello again(.|\\n)*succeeded: more cats"
     )
 
+    # Drives the example with --output_root and validates the on-disk
+    # run/job/task metadata layout via a shared CMake script.
     set(hello_layout_cli_args
         --output_root
         "${CMAKE_CURRENT_BINARY_DIR}/output"

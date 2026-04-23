@@ -1,25 +1,26 @@
+#include "miaow_io.hpp"
+
+#include "io/internal.hpp"
+
 #include <cstddef>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 
-#include "miaow.hpp"
-
 namespace miaow {
+
+namespace io {
 
 std::string format_diagnostics(const JobDiagnostics& diagnostics,
                                JobId job_id) {
-    // Add up task times
     double sum_task_times = 0.0;
     for (double task_time : diagnostics.task_times_s_) {
         sum_task_times += task_time;
     }
 
-    // Define concurrency as the sum of task times divided by total time
     const double total_time = diagnostics.total_time_s_;
     const double concurrency = total_time > 0.0 ? (sum_task_times / total_time) : 0.0;
 
-    // Format diagnostics into a human-readable block
     std::ostringstream output;
     output << "\n=== MIAOW Job Diagnostics ===\n";
     output << "job_id: " << job_id << "\n";
@@ -34,7 +35,6 @@ std::string format_diagnostics(const JobDiagnostics& diagnostics,
     }
     output << "=============================\n";
 
-    // Return the formatted diagnostics string
     return output.str();
 }
 
@@ -48,13 +48,14 @@ std::string format_task_results(const JobResult& job_result) {
     return output.str();
 }
 
-// Print diagnostics to stdout
+} // namespace io
+
 void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id) {
-    std::cout << format_diagnostics(diagnostics, job_id);
+    std::cout << io::format_diagnostics(diagnostics, job_id);
 }
 
 void print_task_results(const JobResult& job_result) {
-    std::cout << format_task_results(job_result);
+    std::cout << io::format_task_results(job_result);
 }
 
 bool all_tasks_succeeded(const JobResult& job_result) {

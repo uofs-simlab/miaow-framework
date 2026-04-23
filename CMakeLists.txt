@@ -98,8 +98,10 @@ add_library(miaow STATIC
     src/bmi/forcing.cpp
     src/bmi/workflow.cpp
     src/core/actors.cpp
-    src/core/diagnostics.cpp
     src/core/runtime.cpp
+    src/io/cli.cpp
+    src/io/csv.cpp
+    src/io/diagnostics.cpp
     src/io/metadata.cpp
     src/io/realization.cpp
 )
