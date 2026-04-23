@@ -8,15 +8,11 @@ include("${MIAOW_ROOT}/cmake/miaow_dynamic_bmi_plugin.cmake")
 set(MIAOW_NOAH_OWP_MODEL_ROOT "" CACHE PATH
     "Path to a local NOAA-OWP/noah-owp-modular source tree")
 # Resolve/fetch the NOAA-OWP/noah-owp-modular reference model
-set(NOAH_OWP_ROOT "" CACHE PATH
-    "Path to a local NOAA-OWP/noah-owp-modular source tree")
 set(NOAH_OWP_GIT_TAG "0ff055efd93c37f5bce83255f06180e2e779cea6" CACHE STRING
     "NOAA-OWP/noah-owp-modular Git tag, branch, or commit to fetch")
 
 if(MIAOW_NOAH_OWP_MODEL_ROOT)
     set(noah_owp_model_root_override "${MIAOW_NOAH_OWP_MODEL_ROOT}")
-elseif(NOAH_OWP_ROOT)
-    set(noah_owp_model_root_override "${NOAH_OWP_ROOT}")
 else()
     set(noah_owp_model_root_override "")
 endif()
@@ -43,7 +39,7 @@ endif()
 if(NOT EXISTS "${noah_owp_source_dir}/bmi/bmi_noahowp.f90")
     if(noah_owp_model_root_override)
         message(FATAL_ERROR
-            "MIAOW_NOAH_OWP_MODEL_ROOT/NOAH_OWP_ROOT must point to a NOAA-OWP/noah-owp-modular source tree")
+            "MIAOW_NOAH_OWP_MODEL_ROOT must point to a NOAA-OWP/noah-owp-modular source tree")
     else()
         message(FATAL_ERROR
             "Fetched NOAA-OWP/noah-owp-modular source tree is missing bmi/bmi_noahowp.f90")

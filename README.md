@@ -229,6 +229,35 @@ cmake -S . -B build -DMIAOW_FETCH_CAF=OFF
 cmake --build build --config Release
 ```
 
+## Examples
+
+The following examples are provided to illustrate the functionality of MIAOW, and should be run from the corresponding example's top-level `examples/<example_name>` directory:
+
+- `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
+- `examples/01_heat`: basic BMI integration using the [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
+- `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with per-task forcing, including matched, short, and long forcing cases
+- `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
+- `examples/04_noah_owp`: Noah-OWP realization parsing smoke example
+
+### Example directory structure
+
+Each example follows a common layout:
+
+```text
+examples/<example_name>/
+  data/             # example input data (tracked in repo)
+    configs/        # configuration files
+    forcings/       # forcing data files (when needed)
+    parameters/     # parameter tables (when needed)
+  extern/           # model-backed examples: symlinks to model sources (created by CMake)
+  output/           # runtime/model output data (generated, not tracked)
+```
+
+`examples/<example_name>/output/` is generated during runs:
+
+- For `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi`, runtime-managed outputs are written there when you run with `--output_root ./output`.
+- For `04_noah_owp`, the bundled namelist writes model output to `./output/output.nc` by default.
+
 ### Configuring model examples independently
 
 When configuring from an example directory or another project, the following flags are relevant:
@@ -237,7 +266,11 @@ When configuring from an example directory or another project, the following fla
 | --- | --- | --- |
 | `-DMIAOW_ROOT` | `<example_dir>/../..` | Path to the `miaow-framework` source tree |
 | `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
-| `-DMODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/<model>` | Path to the model source tree for helper-based BMI examples |
+| `-DMIAOW_HEAT_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/bmi-example-cxx` | Path to a local `csdms/bmi-example-cxx` source tree |
+| `-DMIAOW_SOIL_FREEZE_THAW_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/SoilFreezeThaw` | Path to a local `NOAA-OWP/SoilFreezeThaw` source tree |
+| `-DMIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/bmi-example-cxx` | Path to a local `csdms/bmi-example-cxx` source tree for dynamic C++ plugin build |
+| `-DMIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/bmi-example-fortran` | Path to a local `csdms/bmi-example-fortran` source tree for dynamic Fortran plugin build |
+| `-DMIAOW_NOAH_OWP_MODEL_ROOT` | `${MIAOW_DEFAULT_MODEL_BASE_DIR}/noah-owp-modular` | Path to a local `NOAA-OWP/noah-owp-modular` source tree |
 | `-DEXECUTABLE_TARGET` | example default | Override executable target name |
 | `-DMODEL_TARGET` | example model default | Override model-library target name |
 
@@ -245,19 +278,31 @@ The helper `cmake/miaow_bmi_model.cmake` provides `miaow_add_bmi_model(...)`
 and `miaow_add_workflow_test(...)` for model integration and workflow tests.
 Model examples keep their MIAOW-specific source and input files under
 `examples/<example_name>/`. External BMI model source is resolved separately:
-helper-based examples use `MODEL_ROOT` when provided, otherwise they use
-`${MIAOW_DEFAULT_MODEL_BASE_DIR}/<MODEL_LOCAL_SUBDIR>`. The dynamic BMI example
-uses `MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT` and
-`MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT` (legacy `CXX_MODEL_ROOT` and
-`FORTRAN_MODEL_ROOT` are still accepted) because it builds one C++ plugin and
-one Fortran plugin. The Noah example uses `MIAOW_NOAH_OWP_MODEL_ROOT` (legacy
-`NOAH_OWP_ROOT` is still accepted). If a required source directory is missing
-and the example declares a Git repository and tag, CMake fetches the model into
-the resolved location under `MIAOW_DEFAULT_MODEL_BASE_DIR`.
+each model-backed example uses its corresponding `MIAOW_*_MODEL_ROOT` override
+when set, otherwise it resolves to
+`${MIAOW_DEFAULT_MODEL_BASE_DIR}/<model-subdir>`. If a required source
+directory is missing and the example declares a Git repository and tag, CMake
+fetches the model from GitHub into the resolved location under
+`MIAOW_DEFAULT_MODEL_BASE_DIR`.
 
-## Model source and example extern layout
+### Example command line options
 
-MIAOW uses a central model source root and per-example `extern` symlinks:
+The `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi` examples accept the following runtime command-line options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--max_workers` | `1` | Maximum number of worker actors used for each job |
+| `--task_request_timeout` | `5` | Timeout for task requests sent to worker actors (seconds) |
+| `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
+| `--output_root` | `""` | Root directory path for runtime-managed output folders (disabled by default) |
+
+Public CLI parsers throw `std::runtime_error` for unrecognized arguments,
+missing option values, and invalid option values. Example executables catch
+these errors, print the message, and exit with status `1`.
+
+### Model dependencies for example programs
+
+By default, MIAOW assumes a central model source root and per-example `extern` symlinks:
 
 - External model sources are resolved from `${MIAOW_DEFAULT_MODEL_BASE_DIR}`.
 - By default, `${MIAOW_DEFAULT_MODEL_BASE_DIR}` is `${MIAOW_ROOT}/third_party`.
@@ -275,45 +320,6 @@ Resolution precedence for model roots:
    or `MIAOW_NOAH_OWP_MODEL_ROOT`
 2. Fallback under `${MIAOW_DEFAULT_MODEL_BASE_DIR}/<model-subdir>`
 
-## Examples
-
-The following examples are provided to illustrate the functionality of MIAOW, and should be run from the corresponding example's top-level `examples/<example_name>` directory:
-
-- `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
-- `examples/01_heat`: basic BMI integration using the [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
-- `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with per-task forcing, including matched, short, and long forcing cases
-- `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
-- `examples/04_noah_owp`: Noah-OWP realization parsing smoke example
-
-Each example follows a common layout:
-
-```text
-examples/<example_name>/
-  data/             # example input data (tracked in repo)
-    configs/        # configuration files
-    forcings/       # forcing data files (when needed)
-    parameters/     # parameter tables (when needed)
-  extern/           # model-backed examples: symlinks to model sources (created by CMake)
-  output/           # runtime/model output data (generated, not tracked)
-```
-
-`output/` is generated during runs:
-
-- For `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi`, runtime-managed outputs are written there when you run with `--output_root ./output`
-- For `04_noah_owp`, the bundled namelist writes model output to `./output/output.nc` by default
-
-The `00_hello`, `01_heat`, `02_soil_freeze_thaw`, and `03_dynamic_bmi` examples accept the following runtime command-line options:
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `--max_workers` | `1` | Maximum number of worker actors used for each job |
-| `--task_request_timeout` | `5` | Timeout for task requests sent to worker actors (seconds) |
-| `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
-| `--output_root` | `""` | Root directory path for runtime-managed output folders (disabled by default) |
-
-Public CLI parsers throw `std::runtime_error` for unrecognized arguments,
-missing option values, and invalid option values. Example executables catch
-these errors, print the message, and exit with status `1`.
 
 ## Limitations
 

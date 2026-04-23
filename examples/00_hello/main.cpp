@@ -40,6 +40,7 @@ public:
 };
 
 int main(int argc, char* argv[]) {
+    // Check that we're running from the expected directory for proper relative paths
     if (!miaow::ensure_expected_run_dir("miaow_hello", MIAOW_HELLO_RUN_DIR)) {
         return 1;
     }

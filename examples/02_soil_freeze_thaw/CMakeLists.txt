@@ -10,7 +10,7 @@ set(MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT "" CACHE PATH
 if(MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT)
     set(soil_freeze_thaw_model_root_override "${MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT}")
 else()
-    set(soil_freeze_thaw_model_root_override "${MODEL_ROOT}")
+    set(soil_freeze_thaw_model_root_override "")
 endif()
 
 # Build NOAA-OWP/SoilFreezeThaw as a static model library and link it directly

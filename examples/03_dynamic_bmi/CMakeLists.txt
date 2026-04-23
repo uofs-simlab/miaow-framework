@@ -13,8 +13,6 @@ set(MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT "" CACHE PATH
 # Resolve/fetch the CSDMS C++ heat reference model
 if(MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT)
     set(cxx_heat_model_root_override "${MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT}")
-elseif(CXX_MODEL_ROOT)
-    set(cxx_heat_model_root_override "${CXX_MODEL_ROOT}")
 else()
     set(cxx_heat_model_root_override "")
 endif()
@@ -37,14 +35,12 @@ endif()
 
 if(NOT EXISTS "${cxx_heat_model_root}/heat/heat.cxx")
     message(FATAL_ERROR
-        "MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT/CXX_MODEL_ROOT must point to a csdms/bmi-example-cxx checkout")
+        "MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT must point to a csdms/bmi-example-cxx checkout")
 endif()
 
 # Resolve/fetch the CSDMS Fortran heat reference model
 if(MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT)
     set(fortran_heat_model_root_override "${MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT}")
-elseif(FORTRAN_MODEL_ROOT)
-    set(fortran_heat_model_root_override "${FORTRAN_MODEL_ROOT}")
 else()
     set(fortran_heat_model_root_override "")
 endif()
@@ -67,7 +63,7 @@ endif()
 
 if(NOT EXISTS "${fortran_heat_model_root}/heat/heat.f90")
     message(FATAL_ERROR
-        "MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT/FORTRAN_MODEL_ROOT must point to a csdms/bmi-example-fortran checkout")
+        "MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT must point to a csdms/bmi-example-fortran checkout")
 endif()
 
 miaow_provision_example_extern_link(

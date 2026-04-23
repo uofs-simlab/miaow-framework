@@ -10,7 +10,7 @@ set(MIAOW_HEAT_MODEL_ROOT "" CACHE PATH
 if(MIAOW_HEAT_MODEL_ROOT)
     set(heat_model_root_override "${MIAOW_HEAT_MODEL_ROOT}")
 else()
-    set(heat_model_root_override "${MODEL_ROOT}")
+    set(heat_model_root_override "")
 endif()
 
 # Build csdms/bmi-example-cxx as a static model library and link it directly
