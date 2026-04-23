@@ -3,7 +3,6 @@
  * realization file with one or more subdomains.
  */
 #include <exception>
-#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -18,7 +17,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Parse runtime CLI options (including --realization) and read the realization file
+    // Parse runtime CLI options and read the realization file
     miaow::RuntimeOptions runtime_options;
     miaow::RealizationConfig realization;
     try {
@@ -35,7 +34,7 @@ int main(int argc, char* argv[]) {
               << realization.subdomains_.size()
               << " subdomain(s)\n";
 
-    // Register Noah-OWP BMI simulation unit and build one task per subdomain
+    // Register Noah-OWP BMI simulation unit as a dynamic Fortran BMI plugin
     const std::string plugin_path = MIAOW_NOAH_OWP_PLUGIN_PATH;
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId noah_owp =
@@ -43,6 +42,10 @@ int main(int argc, char* argv[]) {
             plugin_path);
     miaow::Runtime runtime(registry, runtime_options);
 
+    // Build one task per realization subdomain with the subdomain config as the argument
+    // No forcing config is provided in this example; the model config files for each 
+    // subdomain should include forcing paths if needed, and the model will read them 
+    // directly.
     std::vector<miaow::Task> tasks;
     tasks.reserve(realization.subdomains_.size());
     for (const miaow::RealizationSubdomain& subdomain : realization.subdomains_) {
@@ -50,15 +53,6 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Loaded Noah-OWP BMI plugin: " << plugin_path << "\n";
-
-    // The bundled namelist writes output to ./output/output.nc
-    std::error_code output_dir_error;
-    std::filesystem::create_directories("output", output_dir_error);
-    if (output_dir_error) {
-        std::cerr << "Failed to create output directory './output': "
-                  << output_dir_error.message() << "\n";
-        return 1;
-    }
 
     // Submit tasks and wait for results
     miaow::JobHandle job = runtime.submit_job(tasks);

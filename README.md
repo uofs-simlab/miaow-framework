@@ -238,7 +238,7 @@ The following examples are provided to illustrate the functionality of MIAOW, an
 - `examples/01_heat`: basic BMI integration using the [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
 - `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with per-task forcing, including matched, short, and long forcing cases
 - `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
-- `examples/04_noah_owp`: Noah-OWP-Modular run using realization-driven task setup
+- `examples/04_noah_owp`: Noah-OWP-Modular run using realization-driven task setup. The plugin is compiled with `NGEN_ACTIVE` and `NGEN_OUTPUT_ACTIVE` defined, and `NGEN_FORCING_ACTIVE` left undefined. This enables Noah-OWP's BMI hooks, suppresses its internal NetCDF output writer (so MIAOW's BMI `GetValue` pipeline is the sole output path via `--output_root`), and keeps Noah-OWP's own NetCDF forcing reader active.
 
 Each example directory follows a common layout:
 

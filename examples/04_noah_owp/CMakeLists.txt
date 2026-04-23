@@ -132,8 +132,14 @@ set(noah_owp_plugin_sources
 )
 
 # OUTPUT_NAME=surfacebmi matches the filename Noah-OWP's BMI registration
-# code expects when the plugin is loaded via dlopen. NGEN_ACTIVE selects the
-# NextGen-compatible code paths in bmi_noahowp.f90.
+# code expects when the plugin is loaded via dlopen. The NGEN_* preprocessor
+# flags select NextGen-compatible code paths in Noah-OWP:
+#   NGEN_ACTIVE         - enables BMI-side hooks in bmi_noahowp.f90 (required)
+#   NGEN_OUTPUT_ACTIVE  - compiles out the internal NetCDF output writer so
+#                         MIAOW's BMI GetValue pipeline is the sole output path
+#   NGEN_FORCING_ACTIVE - left OFF so Noah-OWP reads forcing from its own
+#                         NetCDF forcing file (the Bondville example relies on
+#                         this). Define it to drive forcing via BMI SetValue.
 miaow_add_dynamic_bmi_plugin(
     PLUGIN_TARGET miaow_noah_owp_plugin
     SOURCES ${noah_owp_plugin_sources}
@@ -142,7 +148,7 @@ miaow_add_dynamic_bmi_plugin(
         "${noah_owp_source_dir}/driver"
         "${noah_owp_source_dir}/bmi"
         "${NOAH_OWP_NETCDF_INCLUDE_DIR}"
-    COMPILE_DEFINITIONS NGEN_ACTIVE
+    COMPILE_DEFINITIONS NGEN_ACTIVE NGEN_OUTPUT_ACTIVE
     COMPILE_OPTIONS
         $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:-cpp>
         $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:-ffree-form>
