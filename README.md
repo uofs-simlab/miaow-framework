@@ -283,7 +283,7 @@ All examples accept the following runtime command-line options:
 | `--task_request_timeout` | `5` | Timeout for task requests sent to worker actors (seconds) |
 | `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
 | `--output_root` | `""` | Root directory path for runtime-managed output folders (disabled by default) |
-| `--realization` | `realization.json` | Realization file path for `04_noah_owp` |
+| `--realization` | `realization.json` | Realization file path (used only in`04_noah_owp`) |
 
 Public CLI parsers throw `std::runtime_error` for unrecognized arguments,
 missing option values, and invalid option values. Example executables catch
