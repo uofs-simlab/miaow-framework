@@ -1,3 +1,5 @@
+include(CMakeParseArguments)
+
 # miaow_setup_example(<name> [extra_languages...])
 #
 # Boilerplate shared by every example CMakeLists.txt. Configures the file to
@@ -9,8 +11,6 @@
 #
 # CXX is always enabled; pass extra languages (e.g. Fortran) as positional
 # arguments. Must be called as a macro because project() needs file scope.
-include(CMakeParseArguments)
-
 macro(miaow_setup_example example_name)
     if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         project(miaow_${example_name}_example CXX ${ARGN})
@@ -44,6 +44,13 @@ macro(miaow_setup_example example_name)
     endif()
 endmacro()
 
+# miaow_resolve_model_root(<out-var> [MODEL_ROOT <dir>]
+#     [MODEL_LOCAL_SUBDIR <dir>] [MODEL_LABEL <label>])
+#
+# Resolve the source root for an external model. MODEL_ROOT takes precedence;
+# otherwise MODEL_LOCAL_SUBDIR is resolved relative to
+# MIAOW_DEFAULT_MODEL_BASE_DIR. The resolved path is returned through <out-var>,
+# and MODEL_LABEL is used only for status output.
 function(miaow_resolve_model_root out_var)
     set(options)
     set(one_value_args MODEL_ROOT MODEL_LOCAL_SUBDIR MODEL_LABEL)
@@ -69,6 +76,15 @@ function(miaow_resolve_model_root out_var)
     set(${out_var} "${resolved_model_root}" PARENT_SCOPE)
 endfunction()
 
+# miaow_provision_example_extern_link(EXAMPLE_DIR <dir> LINK_NAME <name>
+#     TARGET_DIR <dir>)
+#
+# Ensure EXAMPLE_DIR/extern/LINK_NAME is a symlink to TARGET_DIR. This keeps
+# example-local extern paths stable whether the backing model source was
+# supplied manually or fetched into third_party/.
+#
+# Existing symlinks at the destination are replaced. A non-symlink entry at the
+# same path is treated as an error to avoid clobbering user files.
 function(miaow_provision_example_extern_link)
     set(options)
     set(one_value_args EXAMPLE_DIR LINK_NAME TARGET_DIR)
