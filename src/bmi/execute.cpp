@@ -15,19 +15,16 @@ namespace {
 
 void run_model(
     bmi_api::Bmi& model, // BMI model, init'd with model config file in execute_bmi_model
-    const std::optional<std::string>& forcing_config_path,
+    const caf::config_value::dictionary* forcing_config,
     const std::string& task_output_dir,
     std::size_t& update_steps /* diagnostic to determine number of update steps */) {
-    
-    // If a forcing config path is provided, construct a ForcingBmi and validate that it
-    // can indeed drive the model
+
+    // Build the forcing source once so the update loop only moves scalar values
     std::unique_ptr<bmi_api::Bmi> forcing_model;
-    std::string forcing_var;
-    if (forcing_config_path.has_value()) {
-        forcing_model = bmi::make_forcing_bmi();
-        forcing_model->Initialize(forcing_config_path.value());
-        bmi::validate_forcing_coupling(*forcing_model, model);
-        forcing_var = forcing_model->GetOutputVarNames().front();
+    std::vector<std::string> forcing_vars;
+    if (forcing_config != nullptr) {
+        forcing_model = bmi::make_forcing_bmi(*forcing_config, model);
+        forcing_vars = forcing_model->GetOutputVarNames();
     }
 
     // Open output streams for BMI output variables if an output directory is provided
@@ -42,12 +39,14 @@ void run_model(
 
     // Main execution loop: update the model and forcing until the end time is reached
     while (model.GetCurrentTime() < end_time) {
-        // Apply external forcing if available
         if (forcing_model) {
-            double forcing_value = 0.0;
-            forcing_model->GetValue(forcing_var, &forcing_value);
-            model.SetValue(forcing_var, &forcing_value);
-            forcing_model->Update();
+            // If there is forcing, apply to each variable requested by the model
+            for (const std::string& forcing_var : forcing_vars) {
+                double forcing_value = 0.0;
+                forcing_model->GetValue(forcing_var, &forcing_value);
+                model.SetValue(forcing_var, &forcing_value);
+            }
+            forcing_model->Update(); // advance the forcing model to the next time step
         }
 
         // Call the model update function and increment the update step counter
@@ -99,19 +98,18 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
         return task_result;
     }
 
-    std::optional<std::string> forcing_config_path;
+    const caf::config_value::dictionary* forcing_config = nullptr;
     if (task.args_.size() >= 2) {
-        // args[1] is optional forcing config path for external forcing injection
-        const std::string* forcing_config_file =
-            caf::get_if<std::string>(&task.args_.at(1));
-        if (!forcing_config_file) {
+        // args[1] is the structured forcing payload when external forcing is enabled
+        forcing_config =
+            caf::get_if<caf::config_value::dictionary>(&task.args_.at(1));
+        if (!forcing_config) {
             task_result.status_ = TaskStatus::failed;
             task_result.message_ =
                 "Forcing config error: second task argument must be a forcing "
-                "config path string";
+                "dictionary";
             return task_result;
         }
-        forcing_config_path = *forcing_config_file;
     }
 
     bool needs_finalize = false;
@@ -121,7 +119,7 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
         model.Initialize(*config_file);
         needs_finalize = true;
 
-        run_model(model, forcing_config_path, task.task_output_dir_, update_steps);
+        run_model(model, forcing_config, task.task_output_dir_, update_steps);
 
         needs_finalize = false;
         model.Finalize();

@@ -64,13 +64,16 @@ if(BUILD_TESTING)
         PASS_REGULAR_EXPRESSION "\\[2\\] succeeded: BMI workflow complete"
         CLI_ARGS
             --output_root
-            "${CMAKE_CURRENT_LIST_DIR}/output/smoke"
+            "${CMAKE_CURRENT_LIST_DIR}/output"
             --max_workers
             2
             --task_request_timeout
             60
             --job_request_timeout
             600
+    )
+    set_tests_properties(miaow_example_02_soil_freeze_thaw PROPERTIES
+        RESOURCE_LOCK miaow_example_02_soil_freeze_thaw_output
     )
 
     miaow_add_workflow_test(
@@ -105,7 +108,7 @@ if(BUILD_TESTING)
     # run/job/task metadata layout via a shared CMake script.
     set(soil_freeze_thaw_layout_cli_args
         --output_root
-        "${CMAKE_CURRENT_LIST_DIR}/output/metadata"
+        "${CMAKE_CURRENT_LIST_DIR}/output"
         --max_workers
         1
         --task_request_timeout
@@ -121,12 +124,13 @@ if(BUILD_TESTING)
             ${CMAKE_COMMAND}
             -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output/metadata
+            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
             "-DEXECUTABLE_ARGS=${soil_freeze_thaw_layout_cli_args_serialized}"
             -P
             ${MIAOW_ROOT}/cmake/check_metadata_layout.cmake
     )
     set_tests_properties(miaow_example_02_soil_freeze_thaw_metadata_layout PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+        RESOURCE_LOCK miaow_example_02_soil_freeze_thaw_output
     )
 endif()

@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <caf/config_value.hpp>
+
 #include "third_party/bmi/bmi.hxx"
 
 namespace miaow::bmi {
@@ -17,13 +19,11 @@ struct OutputVariable {
     std::ofstream stream_;          // CSV output stream for this variable
 };
 
-// Construct a BMI-compliant forcing source. Caller must invoke Initialize with a
-// forcing config path before any other BMI call.
-std::unique_ptr<::bmi::Bmi> make_forcing_bmi();
-
-// Validate that an initialized forcing model can drive model: its single output
-// variable must name a scalar double input on model, and time step/units must match.
-void validate_forcing_coupling(::bmi::Bmi& forcing, ::bmi::Bmi& model);
+// Construct an initialized BMI-compliant forcing source from the structured
+// forcing dictionary in `Task.args_[1]`
+std::unique_ptr<::bmi::Bmi> make_forcing_bmi(
+    const caf::config_value::dictionary& forcing_config,
+    ::bmi::Bmi& model);
 
 // Open CSV output files for all BMI output variables in output_dir
 std::vector<OutputVariable> open_output_vars(

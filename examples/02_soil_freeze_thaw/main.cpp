@@ -37,23 +37,38 @@ int main(int argc, char* argv[]) {
     miaow::Runtime runtime(registry, runtime_options);
 
     // Get config and forcing file paths for this SoilFreezeThaw workload
-    const std::string config_1024_days =
-        "./data/configs/laramie_config_1024_days.txt";
+    const std::string config_512_days =
+        "./data/configs/laramie_config_512_days.txt";
     const std::string config_1_day =
         "./data/configs/laramie_config_1_day.txt";
-    const std::string forcing_1024_days =
-        "./data/forcings/ground_temperature_forcing_config_1024_days.txt";
     const std::string forcing_1_day =
-        "./data/forcings/ground_temperature_forcing_config_1_day.txt";
+        "./data/forcings/Laramie_14Jun09_to_15Jun09.csv";
+    const std::string forcing_512_days =
+        "./data/forcings/Laramie_14Jun09_to_08Nov10.csv";
+    const std::map<std::string, std::string> forcing_names_map{
+        {"ground_temperature", "TMP_ground_surface"},
+    };
 
     // Three cases exercising matched and mismatched config/forcing durations:
-    //   0: 1024-day model, 1024-day forcing (exact match)
-    //   1: 1024-day model, 1-day forcing (forcing exhausts before end time)
-    //   2: 1-day    model, 1024-day forcing (model stops before forcing ends)
+    //   0: 512-day model, 512-day forcing (exact match)
+    //   1: 512-day model, 1-day forcing (forcing exhausts before end time)
+    //   2: 1-day model, 512-day forcing (model stops before forcing ends)
     const std::vector<miaow::Task> tasks{
-        {soil_freeze_thaw, {config_1024_days, forcing_1024_days}},
-        {soil_freeze_thaw, {config_1024_days, forcing_1_day}},
-        {soil_freeze_thaw, {config_1_day, forcing_1024_days}},
+        {soil_freeze_thaw,
+         std::vector<caf::config_value>{
+             caf::config_value{config_512_days},
+             miaow::make_forcing_config(forcing_512_days, forcing_names_map),
+         }},
+        {soil_freeze_thaw,
+         std::vector<caf::config_value>{
+             caf::config_value{config_512_days},
+             miaow::make_forcing_config(forcing_1_day, forcing_names_map),
+         }},
+        {soil_freeze_thaw,
+         std::vector<caf::config_value>{
+             caf::config_value{config_1_day},
+             miaow::make_forcing_config(forcing_512_days, forcing_names_map),
+         }},
     };
 
     // Submit tasks and wait for results

@@ -18,6 +18,11 @@ std::vector<std::string> read_csv_header(const std::string& csv_path);
 std::size_t find_csv_column_index(const std::vector<std::string>& headers,
                                   const std::string& column_name);
 
+std::int64_t parse_timestamp_seconds(const std::string& raw_timestamp);
+
+std::string format_timestamp_seconds(std::int64_t seconds_since_epoch,
+                                     char date_separator);
+
 std::vector<double> read_csv_numeric_column(const std::string& csv_path,
                                             const std::string& column_name);
 

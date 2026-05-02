@@ -42,14 +42,22 @@ int main(int argc, char* argv[]) {
             plugin_path);
     miaow::Runtime runtime(registry, runtime_options);
 
-    // Build one task per realization subdomain with the subdomain config as the argument
-    // No forcing config is provided in this example; the model config files for each 
-    // subdomain should include forcing paths if needed, and the model will read them 
-    // directly.
+    // Build one task per realization subdomain with the subdomain config as the first
+    // argument and optional MIAOW-managed forcing as the second argument.
     std::vector<miaow::Task> tasks;
     tasks.reserve(realization.subdomains_.size());
     for (const miaow::RealizationSubdomain& subdomain : realization.subdomains_) {
-        tasks.emplace_back(noah_owp, subdomain.config_path_);
+        if (subdomain.forcing_file_.has_value()) {
+            tasks.emplace_back(noah_owp,
+                               std::vector<caf::config_value>{
+                                   caf::config_value{subdomain.config_path_},
+                                   miaow::make_forcing_config(
+                                       *subdomain.forcing_file_,
+                                       subdomain.variables_names_map_),
+                               });
+        } else {
+            tasks.emplace_back(noah_owp, subdomain.config_path_);
+        }
     }
 
     std::cout << "Loaded Noah-OWP BMI plugin: " << plugin_path << "\n";
