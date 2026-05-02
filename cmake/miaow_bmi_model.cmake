@@ -1,5 +1,27 @@
 include(CMakeParseArguments)
 
+# miaow_add_bmi_model([EXAMPLE_NAME <name>] [MIAOW_ROOT <path>]
+#     [MODEL_ROOT <dir> | MODEL_LOCAL_SUBDIR <dir>]
+#     [MODEL_GIT_REPOSITORY <url> MODEL_GIT_TAG <rev>]
+#     [MODEL_FETCH_NAME <name>] [EXECUTABLE_TARGET <target>]
+#     [MODEL_TARGET <target>] [OUTPUT_DIR <dir>]
+#     [EXECUTABLE_SOURCES <src>...] [MODEL_SOURCES <src>...]
+#     [MODEL_INCLUDE_DIRS <dir>...]
+#     [MODEL_COMPILE_DEFINITIONS <def>...]
+#     [MODEL_LINK_LIBRARIES <lib>...] [USE_MIAOW_BMI_INCLUDE])
+#
+# Build an example-local static BMI model target and an executable that links
+# it with miaow.
+#
+# Model source discovery follows this order:
+#   1. explicit MODEL_ROOT
+#   2. MODEL_LOCAL_SUBDIR under the default model base directory
+#   3. fetch from MODEL_GIT_REPOSITORY at MODEL_GIT_TAG if the resolved path
+#      does not exist yet
+#
+# Relative MODEL_SOURCES and MODEL_INCLUDE_DIRS are interpreted relative to the
+# resolved model root. Resolved target names and the final model root are
+# exported back to the caller via parent-scope variables.
 function(miaow_add_bmi_model)
     set(options USE_MIAOW_BMI_INCLUDE)
     set(one_value_args
@@ -140,6 +162,13 @@ function(miaow_add_bmi_model)
     set(MIAOW_MODEL_TARGET_RESOLVED "${MIAOW_MODEL_TARGET}" PARENT_SCOPE)
 endfunction()
 
+# miaow_add_workflow_test(TEST_NAME <name> EXECUTABLE_TARGET <target>
+#     [WORKING_DIRECTORY <dir>] [PASS_REGULAR_EXPRESSION <regex>]
+#     [CLI_ARGS <arg>...])
+#
+# Register a CTest test for a workflow-style example executable. CLI_ARGS are
+# forwarded directly to the executable, while WORKING_DIRECTORY and
+# PASS_REGULAR_EXPRESSION are applied only when provided.
 function(miaow_add_workflow_test)
     set(options)
     set(one_value_args

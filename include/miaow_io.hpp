@@ -1,7 +1,12 @@
 #pragma once
 
+#include <cstddef>
+#include <map>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include <caf/config_value.hpp>
 
 #include "miaow.hpp"
 
@@ -52,23 +57,46 @@ void parse_runtime_cli_options(int argc,
                                RuntimeOptions& runtime_options);
 
 /**
+ * @brief Write a generated forcing CSV by repeating one hourly source cycle.
+ *
+ * The source CSV must define its timestamp in the first column, followed by
+ * one or more data columns. The generated file is written under the system
+ * temporary directory using `output_filename`.
+ */
+std::string write_repeated_hourly_forcing_csv(const std::string& source_path,
+                                              const std::string& output_filename,
+                                              std::size_t total_rows);
+
+/**
+ * @brief Build the structured forcing payload consumed by BMI tasks.
+ *
+ * `variables_names_map` is optional. When omitted, forcing falls back to
+ * identity mapping between BMI input names and CSV headers.
+ */
+caf::config_value make_forcing_config(
+    const std::string& forcing_file,
+    const std::map<std::string, std::string>& variables_names_map = {});
+
+/**
  * @brief One subdomain entry from a NextGen-style realization file.
  *
- * The current contract stores the subdomain identifier and a resolved model
- * config path. Forcing remains model-owned, matching the config-only
- * orchestration path used by the Noah-OWP example.
+ * The current contract stores the subdomain identifier, a resolved model
+ * config path, and optional MIAOW-managed forcing metadata.
  */
 struct RealizationSubdomain {
     std::string subdomain_id_;
     std::string config_path_;
+    std::optional<std::string> forcing_file_;
+    std::map<std::string, std::string> variables_names_map_;
 };
 
 /**
- * @brief Parsed config-only realization used to build one task per subdomain.
+ * @brief Parsed realization used to build one task per subdomain.
  *
  * The JSON shape follows the NextGen realization convention of a top-level
- * `subdomains` object keyed by subdomain ID. Each subdomain currently requires
- * a `config` string path.
+ * `subdomains` object keyed by subdomain ID. Each subdomain requires a
+ * `config` string path and may optionally include `forcing_file` plus an
+ * optional `variables_names_map`.
  */
 struct RealizationConfig {
     std::string realization_path_;
@@ -76,11 +104,12 @@ struct RealizationConfig {
 };
 
 /**
- * @brief Read and validate a config-only NextGen-style realization file.
+ * @brief Read and validate a NextGen-style realization file.
  *
- * Relative subdomain config paths are resolved against the realization file's
- * parent directory. The parser fails if the JSON is malformed, `subdomains` is
- * missing or empty, or any referenced config path does not exist.
+ * Relative subdomain input paths are resolved against the realization file's
+ * parent directory. The parser fails if the JSON is malformed, `subdomains`
+ * is missing or empty, any referenced path does not exist, or
+ * `variables_names_map` is present without `forcing_file`.
  */
 RealizationConfig read_realization_config(const std::string& realization_path);
 

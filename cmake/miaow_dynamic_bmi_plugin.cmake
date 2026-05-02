@@ -1,5 +1,31 @@
 include(CMakeParseArguments)
 
+# miaow_add_dynamic_bmi_plugin(PLUGIN_TARGET <target> SOURCES <src>...
+#     [OUTPUT_NAME <file-name>] [FORTRAN_MODULE_DIR <dir>]
+#     [MIAOW_ROOT <path>] [INCLUDE_DIRS <dir>...]
+#     [COMPILE_DEFINITIONS <def>...] [COMPILE_OPTIONS <opt>...]
+#     [LINK_LIBRARIES <lib>...] [LINK_ISO_C_BMI]
+#     [USE_MIAOW_BMI_INCLUDE])
+#
+# Build a dynamic BMI plugin as a shared library.
+#
+# Required arguments:
+#   - PLUGIN_TARGET: CMake target name for the shared library
+#   - SOURCES: source files compiled into the plugin
+#
+# Optional arguments:
+#   - OUTPUT_NAME: override the generated library file name
+#   - FORTRAN_MODULE_DIR: directory for generated Fortran `.mod` files
+#   - INCLUDE_DIRS / COMPILE_DEFINITIONS / COMPILE_OPTIONS / LINK_LIBRARIES:
+#     passed through to the plugin target
+#   - LINK_ISO_C_BMI: link the NOAA-OWP iso_c_bmi bridge library
+#   - USE_MIAOW_BMI_INCLUDE: add miaow's vendored BMI C++ headers
+#
+# For C++ plugins, the shared library typically exports `register_bmi` and
+# `unregister_bmi` for a concrete `bmi::Bmi` implementation. For Fortran
+# plugins, the shared library provides `register_bmi(void**)`, while the linked
+# iso_c_bmi library supplies the procedural BMI entry points such as
+# `initialize` and `finalize`.
 function(miaow_add_dynamic_bmi_plugin)
     set(options LINK_ISO_C_BMI USE_MIAOW_BMI_INCLUDE)
     set(one_value_args
@@ -57,6 +83,8 @@ function(miaow_add_dynamic_bmi_plugin)
 
     set(plugin_link_libs)
     if(MIAOW_PLUGIN_LINK_ISO_C_BMI)
+        # Fortran dynamic plugins provide the factory entry point in their own
+        # sources and delegate the procedural BMI surface to iso_c_bmi
         list(APPEND plugin_link_libs iso_c_bmi)
     endif()
     if(MIAOW_PLUGIN_LINK_LIBRARIES)
@@ -82,6 +110,12 @@ function(miaow_add_dynamic_bmi_plugin)
     endif()
 endfunction()
 
+# miaow_attach_plugin_paths(<executable-target> <definition> <plugin-target> ...)
+#
+# Attach built plugin paths to an executable via compile definitions. Each
+# definition receives the resolved $<TARGET_FILE:...> of its plugin target. The
+# executable also depends on each plugin target so the paths are valid when the
+# example or test is run.
 function(miaow_attach_plugin_paths executable_target)
     list(LENGTH ARGN pair_args_length)
     math(EXPR pair_remainder "${pair_args_length} % 2")

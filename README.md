@@ -100,13 +100,13 @@ src/
   bmi/
     execute.cpp          # BMI lifecycle execution bridge and update loop
     dynamic.cpp          # DynamicBmi adapter for C++/Fortran plugins
-    forcing.cpp          # ForcingBmi (BMI-compliant CSV forcing source)
+    forcing.cpp          # External BMI forcing CSV loader and coupling logic
     output.cpp           # per-step BMI output-variable CSV writers
     internal.hpp         # BMI-private forcing and output helper declarations
 
   io/
     cli.cpp              # runtime command-line option parsing
-    csv.cpp              # CSV header and numeric-column extraction
+    csv.cpp              # CSV parsing plus shared forcing helper utilities
     diagnostics.cpp      # diagnostics formatting and printing helpers
     metadata.cpp         # runtime metadata output writing
     realization.cpp      # realization JSON parsing
@@ -137,32 +137,46 @@ MIAOW implements `BmiSimulationUnit<BmiModelType>`, which wraps a complete BMI l
 3. `Finalize()`
 
 Optional forcing is supported through a second task argument (`args[1]`) that
-points to a forcing config (recall that `args[0]` is the model config). In forcing mode,
-one configured CSV column is applied to one BMI input variable before each `Update()` 
-step.
+stores a structured forcing dictionary (recall that `args[0]` is the model
+config). The same forcing fields may also appear in realization-driven
+subdomain entries. In forcing mode, MIAOW reads a CSV forcing file and applies
+one or more mapped values to BMI input variables before each `Update()` step.
 
 Each example specifies task inputs in its `main.cpp`. 
+Shared helpers in `miaow_io.hpp` can build forcing dictionaries with
+`make_forcing_config(...)` and generate repeated hourly forcing CSVs with
+`write_repeated_hourly_forcing_csv(...)`.
 
 ### Reading forcing data
 
-Forcing configs are `key=value` text files:
+The forcing dictionary uses the following fields:
 
 | Key | Purpose |
 | --- | --- |
-| `source_type` | Forcing backend (currently only `csv`) |
-| `source_path` | Path to the forcing file (relative paths resolve against the forcing config) |
-| `csv_column` | Column header read from the CSV |
-| `bmi_input_var` | BMI input variable set before each `Update()` |
-| `time_step_size` | Forcing step length; must equal `GetTimeStep()` |
-| `time_units` | Must equal `GetTimeUnits()` |
+| `forcing_file` | Path to the CSV forcing file |
+| `variables_names_map` | Optional `BMI input variable -> CSV header` map |
 
-Each row maps one value from `csv_column` to `bmi_input_var` via `SetValue`.
+If `variables_names_map` is omitted, MIAOW derives a model-authoritative
+identity map from `GetInputVarNames()` and expects same-named CSV headers.
+Explicit map entries override that identity behaviour completely.
+
+MIAOW's external forcing reader supports CSV only. The file must define a
+`time` or `Time` column plus all required numeric data columns. Supported
+timestamp formats are `YYYY-MM-DD HH:MM:SS` and `YYYY/MM/DD HH:MM:SS`. The
+forcing timestep is inferred from the time column and must match the BMI model
+timestep after unit normalization.
+
 Exhausting the forcing data before the model's `end_time` fails the task with a
-`Forcing alignment error`; forcing file rows beyond `end_time` are silently ignored. In
-`examples/02_soil_freeze_thaw`, three tasks exercise matched and mismatched
-combinations of model end time and forcing series length: a matched 1024-day
-run, a 1024-day run whose 1-day forcing is exhausted early (deliberate
-failure), and a 1-day run that stops well before its 1024-day forcing ends.
+`Forcing alignment error`; forcing rows beyond `end_time` are silently ignored.
+In `examples/02_soil_freeze_thaw`, three tasks exercise matched and mismatched
+combinations of model end time and forcing series length: a matched 512-day
+run, a 512-day run whose 1-day forcing is exhausted early (deliberate
+failure), and a 1-day run that stops well before its 512-day forcing ends.
+
+The field names `forcing_file` and `variables_names_map` are borrowed from
+NextGen BMI configuration, but MIAOW does not implement NextGen's
+`uses_forcing_file` semantics. In MIAOW, supplying this forcing dictionary
+always enables MIAOW-managed external forcing for that task.
 
 ### Dynamically linking BMI models
 
@@ -293,7 +307,6 @@ these errors, print the message, and exit with status `1`.
 
 - Distributed runs are not currently supported.
 - Target workloads are embarrassingly parallel tasks without inter-task communication.
-- BMI-provided forcing supports only one variable currently.
 - Windows is not supported and there is no plan to add such support.
 
 ## Authors and funding

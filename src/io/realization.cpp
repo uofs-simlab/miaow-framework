@@ -3,6 +3,8 @@
 #include "io/internal.hpp"
 
 #include <filesystem>
+#include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -27,6 +29,16 @@ constexpr std::string_view realization_path_error_prefix =
 [[noreturn]] void throw_realization_path_error(const std::string& message) {
     throw std::runtime_error(
         std::string(realization_path_error_prefix) + message);
+}
+
+std::string make_subdomain_context(const std::string& subdomain_id) {
+    return "root key 'subdomains' entry '" + subdomain_id + "'";
+}
+
+std::string make_subdomain_field_context(const std::string& subdomain_id,
+                                         std::string_view field_name) {
+    return make_subdomain_context(subdomain_id) + " key '" +
+           std::string(field_name) + "'";
 }
 
 std::filesystem::path normalize_realization_path(
@@ -89,6 +101,7 @@ std::filesystem::path resolve_input_path(const std::filesystem::path& base_direc
                                          const std::string& raw_path,
                                          const std::string& field_name,
                                          const std::string& subdomain_id) {
+    // Realization-relative inputs stay portable when examples move together
     std::filesystem::path resolved_path = std::filesystem::path(raw_path);
     if (resolved_path.is_relative()) {
         resolved_path = base_directory / resolved_path;
@@ -109,6 +122,89 @@ std::filesystem::path resolve_input_path(const std::filesystem::path& base_direc
     return resolved_path;
 }
 
+std::string require_resolved_input_path(const caf::json_object& object,
+                                        const std::filesystem::path& base_directory,
+                                        const std::string& field_name,
+                                        const std::string& subdomain_id) {
+    const std::string field_context =
+        make_subdomain_context(subdomain_id);
+    const std::string raw_path =
+        require_non_empty_string(object, field_name, field_context);
+    return resolve_input_path(base_directory, raw_path, field_name, subdomain_id)
+        .string();
+}
+
+std::optional<std::string> parse_optional_resolved_input_path(
+    const caf::json_object& object,
+    const std::filesystem::path& base_directory,
+    const std::string& field_name,
+    const std::string& subdomain_id) {
+    const caf::json_value value = object.value(field_name);
+    if (value.is_undefined()) {
+        return std::nullopt;
+    }
+
+    const std::string field_context =
+        make_subdomain_field_context(subdomain_id, field_name);
+    if (!value.is_string()) {
+        throw_realization_config_error(field_context + " must be a string");
+    }
+
+    const std::string raw_path = io::trim(std::string(value.to_string()));
+    if (raw_path.empty()) {
+        throw_realization_config_error(
+            field_context + " must be a non-empty string");
+    }
+
+    // Optional forcing paths follow the same realization-relative resolution
+    return resolve_input_path(base_directory, raw_path, field_name, subdomain_id)
+        .string();
+}
+
+std::map<std::string, std::string> parse_variables_names_map(
+    const caf::json_object& subdomain_object,
+    const std::string& subdomain_id) {
+    // The map is optional, but any provided entry must be fully typed and named
+    const caf::json_value variables_names_map_value =
+        subdomain_object.value("variables_names_map");
+    if (variables_names_map_value.is_undefined()) {
+        return {};
+    }
+
+    const std::string map_context =
+        make_subdomain_field_context(subdomain_id, "variables_names_map");
+    const caf::json_object variables_names_map_object = require_object_value(
+        variables_names_map_value, map_context);
+    if (variables_names_map_object.empty()) {
+        throw_realization_config_error(
+            map_context + " must not be empty");
+    }
+
+    std::map<std::string, std::string> variables_names_map;
+    for (const auto [raw_bmi_input, csv_header_value] : variables_names_map_object) {
+        const std::string bmi_input = io::trim(std::string(raw_bmi_input));
+        if (bmi_input.empty()) {
+            throw_realization_config_error(
+                map_context + " contains an empty BMI input name");
+        }
+        if (!csv_header_value.is_string()) {
+            throw_realization_config_error(
+                map_context + " entry '" + bmi_input + "' must be a string");
+        }
+
+        const std::string csv_header =
+            io::trim(std::string(csv_header_value.to_string()));
+        if (csv_header.empty()) {
+            throw_realization_config_error(
+                map_context + " entry '" + bmi_input +
+                "' must be a non-empty string");
+        }
+
+        variables_names_map.emplace(bmi_input, csv_header);
+    }
+    return variables_names_map;
+}
+
 std::vector<RealizationSubdomain> parse_subdomains(
     const caf::json_object& root,
     const std::filesystem::path& base_directory) {
@@ -124,26 +220,33 @@ std::vector<RealizationSubdomain> parse_subdomains(
     std::vector<RealizationSubdomain> subdomains;
     subdomains.reserve(subdomains_object.size());
     for (const auto [raw_subdomain_id, subdomain_value] : subdomains_object) {
-        const std::string subdomain_id =
-            io::trim(std::string(raw_subdomain_id));
+        const std::string subdomain_id = io::trim(std::string(raw_subdomain_id));
         if (subdomain_id.empty()) {
             throw_realization_config_error(
                 "root key 'subdomains' contains an empty subdomain ID key");
         }
 
+        const std::string subdomain_context =
+            make_subdomain_context(subdomain_id);
         const caf::json_object subdomain_object = require_object_value(
-            subdomain_value,
-            "root key 'subdomains' entry '" + subdomain_id + "'");
-
-        const std::string config_path = require_non_empty_string(
-            subdomain_object, "config",
-            "root key 'subdomains' entry '" + subdomain_id + "'");
+            subdomain_value, subdomain_context);
 
         RealizationSubdomain subdomain;
         subdomain.subdomain_id_ = subdomain_id;
-        subdomain.config_path_ =
-            resolve_input_path(base_directory, config_path, "config", subdomain_id)
-                .string();
+        subdomain.config_path_ = require_resolved_input_path(
+            subdomain_object, base_directory, "config", subdomain_id);
+        // Forcing metadata is optional and only affects MIAOW-managed forcing
+        subdomain.forcing_file_ = parse_optional_resolved_input_path(
+            subdomain_object, base_directory, "forcing_file", subdomain_id);
+        subdomain.variables_names_map_ =
+            parse_variables_names_map(subdomain_object, subdomain_id);
+        if (!subdomain.forcing_file_.has_value() &&
+            !subdomain.variables_names_map_.empty()) {
+            // A map without a file leaves no source of values to apply
+            throw_realization_config_error(
+                make_subdomain_field_context(subdomain_id, "variables_names_map") +
+                " requires key 'forcing_file'");
+        }
         subdomains.push_back(std::move(subdomain));
     }
 
