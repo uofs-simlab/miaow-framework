@@ -39,6 +39,7 @@ int main(int argc, char* argv[]) {
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId noah_owp =
         registry.add<miaow::BmiSimulationUnit<miaow::DynamicFortranBmi>>(
+            miaow::BmiExecution::in_subprocess,
             plugin_path);
     miaow::Runtime runtime(registry, runtime_options);
 

@@ -1,0 +1,66 @@
+&timing
+  dt                 = 3600.0
+  startdate          = "200401010100"
+  enddate            = "200401032300"
+  forcing_filename   = "./data/forcings/cat-585_forcing.csv"
+  output_filename    = "./output/cat-585.nc"
+/
+
+&parameters
+  parameter_dir      = "./data/parameters/"
+  general_table      = "GENPARM.TBL"
+  soil_table         = "SOILPARM.TBL"
+  noahowp_table      = "MPTABLE.TBL"
+  soil_class_name    = "STAS"
+  veg_class_name     = "MODIFIED_IGBP_MODIS_NOAH"
+/
+
+&location
+  lat                = 51.69735452431643
+  lon                = -116.32111377225176
+  terrain_slope      = 0.01
+  azimuth            = 0.0
+/
+
+&forcing
+  ZREF               = 10.0
+  rain_snow_thresh   = 1.0
+/
+
+&model_options
+  precip_phase_option               = 1
+  snow_albedo_option                = 1
+  dynamic_veg_option                = 4
+  runoff_option                     = 3
+  drainage_option                   = 8
+  frozen_soil_option                = 1
+  dynamic_vic_option                = 1
+  radiative_transfer_option         = 3
+  sfc_drag_coeff_option             = 1
+  canopy_stom_resist_option         = 1
+  crop_model_option                 = 0
+  snowsoil_temp_time_option         = 3
+  soil_temp_boundary_option         = 2
+  supercooled_water_option          = 1
+  stomatal_resistance_option        = 1
+  evap_srfc_resistance_option       = 4
+  subsurface_option                 = 2
+/
+
+&structure
+ isltyp           = 3
+ nsoil            = 4
+ nsnow            = 3
+ nveg             = 20
+ vegtyp           = 10
+ croptype         = 0
+ sfctyp           = 1
+ soilcolor        = 4
+/
+
+&initial_values
+ dzsnso    =  0.0,  0.0,  0.0,  0.1,  0.3,  0.6,  1.0
+ sice      =  0.0,  0.0,  0.0,  0.0
+ sh2o      =  0.300,  0.300,  0.300,  0.300
+ zwt       =  -2.0
+/

@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,26 @@ namespace miaow {
 
 namespace {
 
+// The forcing is provided as a double; convert to BMI model type if necessary
+void set_forcing_value(bmi_api::Bmi& model,
+                       const std::string& name,
+                       double raw_value) {
+    const std::string type = model.GetVarType(name);
+    if (type == "double") { // leave as double if the model expects double
+        model.SetValue(name, &raw_value);
+        return;
+    }
+    if (type == "float") { // convert to float if the model expects float
+        float value = static_cast<float>(raw_value);
+        model.SetValue(name, &value);
+        return;
+    }
+    throw std::runtime_error("BMI forcing error: unsupported BMI variable type '" +
+                             type + "' for input variable '" + name + "'");
+}
+
+// Contains the main model execution loop, which advances the model and forcing (if any) in
+// lockstep and writes BMI output variables to CSV streams at each step
 void run_model(
     bmi_api::Bmi& model, // BMI model, init'd with model config file in execute_bmi_model
     const caf::config_value::dictionary* forcing_config,
@@ -44,7 +65,7 @@ void run_model(
             for (const std::string& forcing_var : forcing_vars) {
                 double forcing_value = 0.0;
                 forcing_model->GetValue(forcing_var, &forcing_value);
-                model.SetValue(forcing_var, &forcing_value);
+                set_forcing_value(model, forcing_var, forcing_value);
             }
             forcing_model->Update(); // advance the forcing model to the next time step
         }
@@ -60,6 +81,7 @@ void run_model(
         }
     }
 
+    // Finalize the forcing model if it exists
     if (forcing_model) {
         forcing_model->Finalize();
     }

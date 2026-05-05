@@ -137,9 +137,7 @@ set(noah_owp_plugin_sources
 #   NGEN_ACTIVE         - enables BMI-side hooks in bmi_noahowp.f90 (required)
 #   NGEN_OUTPUT_ACTIVE  - compiles out the internal NetCDF output writer so
 #                         MIAOW's BMI GetValue pipeline is the sole output path
-#   NGEN_FORCING_ACTIVE - left OFF so Noah-OWP reads forcing from its own
-#                         NetCDF forcing file (the Bondville example relies on
-#                         this). Define it to drive forcing via BMI SetValue.
+#   NGEN_FORCING_ACTIVE - drives forcing through BMI SetValue
 miaow_add_dynamic_bmi_plugin(
     PLUGIN_TARGET miaow_noah_owp_plugin
     SOURCES ${noah_owp_plugin_sources}
@@ -148,7 +146,7 @@ miaow_add_dynamic_bmi_plugin(
         "${noah_owp_source_dir}/driver"
         "${noah_owp_source_dir}/bmi"
         "${NOAH_OWP_NETCDF_INCLUDE_DIR}"
-    COMPILE_DEFINITIONS NGEN_ACTIVE NGEN_OUTPUT_ACTIVE
+    COMPILE_DEFINITIONS NGEN_ACTIVE NGEN_OUTPUT_ACTIVE NGEN_FORCING_ACTIVE
     COMPILE_OPTIONS
         $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:-cpp>
         $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:-ffree-form>
@@ -205,7 +203,7 @@ if(BUILD_TESTING)
     set_tests_properties(miaow_example_04_noah_owp_parse PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION
-            "Parsed realization with 1 subdomain\\(s\\)(.|\\n)*Loaded Noah-OWP BMI plugin: .*libsurfacebmi(.|\\n)*\\[0\\] succeeded: BMI workflow complete"
+            "Parsed realization with 3 subdomain\\(s\\)(.|\\n)*Loaded Noah-OWP BMI plugin: .*libsurfacebmi(.|\\n)*\\[0\\] succeeded: BMI workflow complete"
     )
 
     add_test(

@@ -1,102 +1,102 @@
 # MIAOW BMI forcing preprocessing
 
-This folder contains a narrow converter for model-ready NetCDF forcing files
-that have already been remapped to basin or catchment averages.
+This folder contains the SYMFLUENCE-based preprocessing entrypoint used to
+stage Noah-OWP runtime inputs for MIAOW.
 
-The script writes one CSV per feature for MIAOW's BMI forcing path and can
-optionally emit a config-only `realization.json` stub for MIAOW examples that
-construct one task per subdomain.
-
-It supports two output schemas:
-- `bmi`: canonical BMI column names for framework-driven forcing
-- `native-aorc`: native AORC-style columns matching files such as
-  `cat87_01Dec2015.csv`
+The script runs the supported SYMFLUENCE NGEN preprocessing steps, selects a
+small deterministic catchment subset, and copies the generated Noah inputs,
+forcing CSVs, and parameter tables into a MIAOW runtime directory.
 
 ## Environment setup
 
 Assume commands are run from the repository root.
 
+Use Python 3.12 for the preprocessing environment. SYMFLUENCE `0.8.2`
+supports `>=3.11,<3.14`, while newer system Python versions may be outside
+that range.
+
 ```bash
-python3 -m venv scripts/preprocessing/.venv
+/opt/homebrew/bin/python3.12 -m venv scripts/preprocessing/.venv
 scripts/preprocessing/.venv/bin/pip install -r scripts/preprocessing/requirements.txt
+```
+
+Verify that `symfluence` resolves from the preprocessing venv:
+
+```bash
+scripts/preprocessing/.venv/bin/python -c "import pathlib, symfluence, sys; print(sys.prefix); print(pathlib.Path(symfluence.__file__).resolve())"
+```
+
+The printed module path should live under
+`scripts/preprocessing/.venv/lib/python3.12/site-packages/`.
+
+SYMFLUENCE expects these host libraries to be available:
+
+- `GDAL`
+- `NetCDF-C`
+- `HDF5`
+- `PROJ`
+- `GEOS`
+
+Useful checks:
+
+```bash
+gdalinfo --version
+nc-config --version
+```
+
+If the venv cannot import `osgeo`, install GDAL Python bindings matching the
+host GDAL library into the venv. For Homebrew GDAL `3.12.0`, use:
+
+```bash
+scripts/preprocessing/.venv/bin/pip install GDAL==3.12.0.post1
+```
+
+If `symfluence` import or NetCDF I/O fails with an HDF5 warning or
+`NetCDF: HDF error`, rebuild `h5py` and `netCDF4` against the same Homebrew
+libraries:
+
+```bash
+HDF5_DIR=/opt/homebrew/opt/hdf5 \
+  scripts/preprocessing/.venv/bin/pip install --force-reinstall --no-binary=h5py h5py
+USE_NCCONFIG=1 \
+NETCDF4_DIR=/opt/homebrew/opt/netcdf \
+HDF5_DIR=/opt/homebrew/opt/hdf5 \
+  scripts/preprocessing/.venv/bin/pip install --force-reinstall --no-binary=netCDF4 netCDF4
 ```
 
 ## Usage
 
-Convert model-ready NetCDF forcing into canonical BMI-style CSV headers:
+Stage the default Bow smoke subset into the Noah-OWP example runtime tree:
 
 ```bash
-./scripts/preprocessing/.venv/bin/python ./scripts/preprocessing/netcdf_to_per_feature_csv.py \
-  /path/to/model_ready_forcing \
-  --output-dir /tmp/miaow_preprocessed_forcing \
-  --realization-path /tmp/miaow_preprocessed_forcing/realization.json
+./scripts/preprocessing/.venv/bin/python ./scripts/preprocessing/stage_symfluence_noah_owp_inputs.py \
+  --config ./scripts/preprocessing/example_symfluence_bow_02b_smoke.yaml
 ```
 
-Convert the same forcing into native AORC-style CSVs for model-owned parsers:
+Use `--force` to rerun the selected SYMFLUENCE steps. Use `--target-dir` and
+`--realization-path` to stage the generated inputs into another compatible
+MIAOW Noah-OWP runtime tree.
 
-```bash
-./scripts/preprocessing/.venv/bin/python ./scripts/preprocessing/netcdf_to_per_feature_csv.py \
-  /path/to/model_ready_forcing \
-  --output-dir /tmp/miaow_preprocessed_native_forcing \
-  --output-schema native-aorc
-```
+The script writes:
 
-## Variable translation table
-
-`netcdf_to_per_feature_csv.py` mirrors the broader forcing translation used in
-SYMFLUENCE. In SYMFLUENCE, the authoritative implementations live in
-`symfluence.data.utils.variable_utils.VariableStandardizer`,
-`symfluence.data.preprocessing.dataset_handlers.*`, and
-`symfluence.models.ngen.preprocessor._write_csv_forcing_files()`.
-
-The table below records the input-name aliases that this script recognizes
-before normalizing them to canonical internal BMI variables.
-
-| Physical quantity | AORC | NextGen forcing | SUMMA | BMI CSV header |
-| --- | --- | --- | --- | --- |
-| Time | `time` | `Time` | `time` | `time` |
-| Precipitation rate | `APCP_surface` | `RAINRATE` | `pptrate` | `atmosphere_water__liquid_equivalent_precipitation_rate` |
-| Air temperature | `TMP_2maboveground` | `T2D` | `airtemp` | `land_surface_air__temperature` |
-| Specific humidity | `SPFH_2maboveground` | `Q2D` | `spechum` | `atmosphere_air_water~vapor__specific_humidity` |
-| Surface pressure | `PRES_surface` | `PSFC` | `airpres` | `land_surface_air__pressure` |
-| Downwelling shortwave radiation | `DSWRF_surface` | `SWDOWN` | `SWRadAtm` | `land_surface_radiation~incoming~shortwave__energy_flux` |
-| Downwelling longwave radiation | `DLWRF_surface` | `LWDOWN` | `LWRadAtm` | `land_surface_radiation~incoming~longwave__energy_flux` |
-| Eastward wind component | `UGRD_10maboveground` | `U2D` | `windspd_u` | `land_surface_wind__x_component_of_velocity` |
-| Northward wind component | `VGRD_10maboveground` | `V2D` | `windspd_v` | `land_surface_wind__y_component_of_velocity` |
-| Scalar wind speed | derived from vector wind if needed | no direct standard column | `windspd` | no direct BMI header; the script synthesizes x/y components as `U=wind_speed`, `V=0` when only scalar wind is available |
-
-Notes:
-- The current implementation accepts the SUMMA, AORC-style, and NWM/NextGen
-  shorthand variable names shown above when the data is already in model-ready
-  units.
-- `--output-schema bmi` writes canonical BMI column names.
-- `--output-schema native-aorc` writes
-  `time,APCP_surface,DLWRF_surface,DSWRF_surface,PRES_surface,SPFH_2maboveground,TMP_2maboveground,UGRD_10maboveground,VGRD_10maboveground,precip_rate`.
-- In `native-aorc` mode, `APCP_surface` is derived as the per-timestep
-  accumulation from the internal precipitation rate, while `precip_rate`
-  remains the rate value.
-- Raw AORC precipitation and provider-specific forcing products may require
-  unit or rate conversion before they match the model-ready SUMMA/NextGen
-  columns listed here.
+- `data/configs/cat-*.input`
+- `data/forcings/*_forcing.csv`
+- `data/parameters/*`
+- `realization.json`
 
 ## Behaviour
 
-- Reads all `*.nc` files in the input directory and concatenates them along
-  `time`
-- Normalizes SUMMA, AORC-style, and NWM/NextGen shorthand forcing names into
-  BMI forcing variable names
-- Synthesizes wind components from scalar `windspd` as `U=wind_speed`, `V=0`
-  unless `--no-assume-westerly-wind` is given
-- Detects feature IDs from `hruId`, `ids`, `feature_id`, or the feature
-  coordinate itself
-- Writes one CSV per feature using `{feature_id}.csv` by default in either
-  `bmi` or `native-aorc` format
-- Optionally writes a config-only `realization.json` stub keyed by feature ID
+- Runs the supported SYMFLUENCE NGEN preprocessing steps
+- Requires `HYDROLOGICAL_MODEL: NGEN`
+- Requires `NGEN_MODULES_SELECTED: NOAH,PET,CFE`
+- Selects generated `cat-*.input` files by numeric catchment ID
+- Copies matching `*_forcing.csv` files and Noah parameter tables
+- Rewrites staged Noah path fields for the target runtime directory
+- Writes a realization file with `config`, `forcing_file`, and
+  `variables_names_map` entries per subdomain
 
 ## Limitations
 
-- Input data must already be spatially remapped and time-aligned
-- The input timestep must be uniform
-- The current converter expects the Noah-OWP forcing set:
-  precipitation, temperature, humidity, pressure, shortwave, longwave, and
-  wind
+- The script consumes SYMFLUENCE's generated Noah inputs and forcing CSVs
+- Regenerating Bow data remains a manual preprocessing step
+- The staged target must use the same runtime layout as the Noah-OWP example

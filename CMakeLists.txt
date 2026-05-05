@@ -109,6 +109,7 @@ add_library(miaow STATIC
     src/bmi/dynamic.cpp
     src/bmi/forcing.cpp
     src/bmi/output.cpp
+    src/bmi/subprocess.cpp
     src/core/actors.cpp
     src/core/runtime.cpp
     src/io/cli.cpp
@@ -135,6 +136,21 @@ target_link_libraries(miaow
         ${MIAOW_CAF_IO_TARGET}
         iso_c_bmi
         ${CMAKE_DL_LIBS}
+)
+
+set(MIAOW_BMI_RUNNER_PATH
+    "${PROJECT_BINARY_DIR}/miaow_bmi_runner${CMAKE_EXECUTABLE_SUFFIX}")
+target_compile_definitions(miaow PRIVATE
+    MIAOW_BMI_RUNNER_PATH="${MIAOW_BMI_RUNNER_PATH}"
+)
+
+add_executable(miaow_bmi_runner
+    src/bmi/runner.cpp
+)
+target_compile_features(miaow_bmi_runner PRIVATE cxx_std_17)
+target_link_libraries(miaow_bmi_runner PRIVATE miaow)
+set_target_properties(miaow_bmi_runner PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
 )
 
 option(BUILD_EXAMPLES "Build example programs" ON)

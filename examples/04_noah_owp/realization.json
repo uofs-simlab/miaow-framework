@@ -1,7 +1,46 @@
 {
   "subdomains": {
-    "bondville": {
-      "config": "./data/configs/bondville_namelist.input"
+    "cat-552": {
+      "config": "./data/configs/cat-552.input",
+      "forcing_file": "./data/forcings/cat-552_forcing.csv",
+      "variables_names_map": {
+        "SFCPRS": "land_surface_air__pressure",
+        "SFCTMP": "land_surface_air__temperature",
+        "SOLDN": "land_surface_radiation~incoming~shortwave__energy_flux",
+        "LWDN": "land_surface_radiation~incoming~longwave__energy_flux",
+        "UU": "land_surface_wind__x_component_of_velocity",
+        "VV": "land_surface_wind__y_component_of_velocity",
+        "Q2": "atmosphere_air_water~vapor__specific_humidity",
+        "PRCPNONC": "atmosphere_water__liquid_equivalent_precipitation_rate"
+      }
+    },
+    "cat-562": {
+      "config": "./data/configs/cat-562.input",
+      "forcing_file": "./data/forcings/cat-562_forcing.csv",
+      "variables_names_map": {
+        "SFCPRS": "land_surface_air__pressure",
+        "SFCTMP": "land_surface_air__temperature",
+        "SOLDN": "land_surface_radiation~incoming~shortwave__energy_flux",
+        "LWDN": "land_surface_radiation~incoming~longwave__energy_flux",
+        "UU": "land_surface_wind__x_component_of_velocity",
+        "VV": "land_surface_wind__y_component_of_velocity",
+        "Q2": "atmosphere_air_water~vapor__specific_humidity",
+        "PRCPNONC": "atmosphere_water__liquid_equivalent_precipitation_rate"
+      }
+    },
+    "cat-585": {
+      "config": "./data/configs/cat-585.input",
+      "forcing_file": "./data/forcings/cat-585_forcing.csv",
+      "variables_names_map": {
+        "SFCPRS": "land_surface_air__pressure",
+        "SFCTMP": "land_surface_air__temperature",
+        "SOLDN": "land_surface_radiation~incoming~shortwave__energy_flux",
+        "LWDN": "land_surface_radiation~incoming~longwave__energy_flux",
+        "UU": "land_surface_wind__x_component_of_velocity",
+        "VV": "land_surface_wind__y_component_of_velocity",
+        "Q2": "atmosphere_air_water~vapor__specific_humidity",
+        "PRCPNONC": "atmosphere_water__liquid_equivalent_precipitation_rate"
+      }
     }
   }
 }
