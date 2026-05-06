@@ -14,8 +14,7 @@ set(MIAOW_BOOST_VERSION "1.86.0" CACHE STRING "Boost version for FetchContent")
 set_property(CACHE MIAOW_BOOST_PROVIDER PROPERTY STRINGS auto system fetch)
 set(MIAOW_CAF_PROVIDER "auto" CACHE STRING "CAF provider: auto, system, fetch")
 set_property(CACHE MIAOW_CAF_PROVIDER PROPERTY STRINGS auto system fetch)
-set(MIAOW_CAF_VERSION "1.1.0" CACHE STRING "Minimum CAF version for system find_package")
-set(MIAOW_CAF_GIT_TAG "1.1.0" CACHE STRING "CAF git tag or commit to fetch")
+set(MIAOW_CAF_VERSION "1.1.0" CACHE STRING "CAF version")
 set(MIAOW_DEFAULT_MODEL_BASE_DIR "${PROJECT_SOURCE_DIR}/third_party" CACHE PATH
     "Default base directory containing external model source trees")
 set(MIAOW_ISO_C_FORTRAN_BMI_ROOT "" CACHE PATH
@@ -112,11 +111,11 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
     set(CAF_BUILD_BENCHMARKS OFF CACHE BOOL "Disable CAF benchmarks" FORCE)
     set(CAF_ENABLE_BENCHMARKS OFF CACHE BOOL "Disable CAF benchmarks" FORCE)
     set(CAF_BUILD_TOOLS OFF CACHE BOOL "Disable CAF tools" FORCE)
-    message(STATUS "CAF not found. Fetching CAF ${MIAOW_CAF_GIT_TAG}...")
+    message(STATUS "CAF not found. Fetching CAF ${MIAOW_CAF_VERSION}...")
     FetchContent_Declare(
         caf
         GIT_REPOSITORY https://github.com/actor-framework/actor-framework.git
-        GIT_TAG ${MIAOW_CAF_GIT_TAG}
+        GIT_TAG ${MIAOW_CAF_VERSION}
     )
     FetchContent_MakeAvailable(caf)
     miaow_set_caf_targets()

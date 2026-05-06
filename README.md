@@ -268,8 +268,7 @@ Top-level CMake options:
 | `-DMIAOW_BOOST_PROVIDER` | `system` | Boost provider: `system`, `fetch`, or `auto` |
 | `-DMIAOW_BOOST_VERSION` | `1.86.0` | Boost version used by the `FetchContent` fallback |
 | `-DMIAOW_CAF_PROVIDER` | `auto` | CAF provider: `system`, `fetch`, or `auto` |
-| `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version when using system CAF |
-| `-DMIAOW_CAF_GIT_TAG` | `1.1.0` | CAF tag/commit for `FetchContent` |
+| `-DMIAOW_CAF_VERSION` | `1.1.0` | CAF version used by `find_package` and `FetchContent` |
 | `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
 | `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Optional explicit path to a valid local [`NOAA-OWP/iso_c_fortran_bmi`](https://github.com/NOAA-OWP/iso_c_fortran_bmi) checkout; when empty, CMake looks for `iso_c_fortran_bmi` in `${MIAOW_DEFAULT_MODEL_BASE_DIR}/` and fetches into that location if missing |
 

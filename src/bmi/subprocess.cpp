@@ -21,9 +21,8 @@
 
 #define BOOST_PROCESS_USE_STD_FS
 #include <boost/asio/io_context.hpp>
-#include <boost/process/execute.hpp>
-#include <boost/process/process.hpp>
-#include <boost/process/stdio.hpp>
+#include <boost/process/v2/process.hpp>
+#include <boost/process/v2/stdio.hpp>
 #include <caf/json.hpp>
 
 namespace miaow::bmi {
@@ -228,16 +227,16 @@ TaskResult run_subprocess_task(const Task& task,
 
     // Create the child process and redirect stdout and stderr to specified paths
     boost::asio::io_context io_context;
-    boost::process::process child_process(
+    boost::process::v2::process child_process(
         io_context,
         subprocess_path,
         args,
-        boost::process::process_stdio{{},
-                                      paths.stdout_path_,
-                                      paths.stderr_path_});
+        boost::process::v2::process_stdio{{},
+                                          paths.stdout_path_,
+                                          paths.stderr_path_});
 
     // Execute the child process and wait for it to complete
-    const int status = boost::process::execute(std::move(child_process));
+    const int status = child_process.wait();
 
     // If the subprocess wrote a result file, parse it into the task result contract
     if (std::filesystem::exists(paths.result_path_)) {
