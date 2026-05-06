@@ -12,11 +12,8 @@ reality by using actor-based asynchronous orchestration so tasks run when they
 are ready, maximizing utilization across available resources.
 
 MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html),
-uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) for
-actor orchestration,
-[Boost.Process](https://www.boost.org/doc/libs/release/doc/html/process.html)
-for subprocess execution, and integrates with the
-[Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
+uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its actor orchestration backend, and employs the
+[Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) for Earth system model integration.
 
 
 ## Quick start
