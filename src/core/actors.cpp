@@ -27,17 +27,6 @@ void mark_job_result_failed(JobResult& job_result, const std::string& message) {
     }
 }
 
-TaskResult make_failed_task_result(TaskId task_id,
-                                   SimulationUnitId simulation_unit_id,
-                                   const std::string& message) {
-    TaskResult task_result;
-    task_result.task_id_ = task_id;
-    task_result.simulation_unit_id_ = simulation_unit_id;
-    task_result.status_ = TaskStatus::failed;
-    task_result.message_ = message;
-    return task_result;
-}
-
 void canonicalize_task_result(TaskResult& task_result,
                               const Task& task,
                               TaskId task_id,
@@ -70,8 +59,8 @@ static void complete_job_if_all_tasks_finished(
     // All tasks are complete: deliver final results, clear the promise, and stop actor
     state->diagnostics_.task_times_s_ = state->task_times_s_;
     state->diagnostics_.total_time_s_ = std::chrono::duration<double>(
-                                         std::chrono::steady_clock::now() - state->job_start_time_)
-                                         .count();
+        std::chrono::steady_clock::now() - state->job_start_time_)
+            .count();
     state->response_promise_->deliver(JobResult{state->task_results_, state->diagnostics_});
     state->response_promise_.reset();
     self->quit();
@@ -129,16 +118,17 @@ static void dispatch_tasks(caf::event_based_actor* self,
 
         // Request one task execution from one simulation_unit actor
         self->mail(caf::get_atom_v, state->tasks_.at(task_id))
-            .request(state->workers_.at(worker_id), state->runtime_options_.task_request_timeout_)
+            .request(state->workers_.at(worker_id),
+                     state->runtime_options_.task_request_timeout_)
             .then(
                 [self, state, worker_id, task_id](TaskResult task_result) {
                     complete_task(self, state, worker_id, task_id, std::move(task_result));
                 },
                 [self, state, worker_id, task_id](const caf::error& err) {
-                    const TaskResult failed_task_result = make_failed_task_result(
-                        static_cast<TaskId>(task_id),
-                        state->tasks_.at(task_id).simulation_unit_id_,
-                        std::string("CAF error: ") + caf::to_string(err));
+                    const TaskResult failed_task_result = miaow::make_failed_task_result(
+                        state->tasks_.at(task_id),
+                        caf::to_string(err),
+                        "CAF error");
                     complete_task(self,
                                   state,
                                   worker_id,
@@ -171,7 +161,8 @@ caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
             if (!simulation_unit_executor) {
                 return caf::make_error(
                     caf::sec::runtime_error,
-                    "unknown SimulationUnitId: " + std::to_string(task.simulation_unit_id_));
+                    "unknown SimulationUnitId: " +
+                        std::to_string(task.simulation_unit_id_));
             }
 
             // If valid simulation unit, execute its behaviour and return the result
@@ -275,14 +266,19 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
                      task_simulation_unit_ids](const caf::error& err) {
                         JobResult job_result;
                         job_result.task_results_.resize(task_count);
-                        for (std::size_t task_index = 0; task_index < task_count; ++task_index) {
-                            TaskResult task_result;
-                            task_result.task_id_ = static_cast<TaskId>(task_index);
-                            task_result.simulation_unit_id_ =
+                        for (std::size_t task_index = 0;
+                             task_index < task_count;
+                             ++task_index) {
+                            Task task;
+                            task.simulation_unit_id_ =
                                 task_simulation_unit_ids.at(task_index);
-                            task_result.status_ = TaskStatus::failed;
-                            task_result.message_ = std::string("CAF error: ") + caf::to_string(err);
-                            job_result.task_results_.at(task_index) = std::move(task_result);
+                            TaskResult task_result = make_failed_task_result(
+                                task,
+                                caf::to_string(err),
+                                "CAF error");
+                            task_result.task_id_ = static_cast<TaskId>(task_index);
+                            job_result.task_results_.at(task_index) =
+                                std::move(task_result);
                         }
                         job_result.diagnostics_.task_times_s_.assign(task_count, 0.0);
 

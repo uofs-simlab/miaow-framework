@@ -259,12 +259,27 @@ namespace miaow {
 caf::config_value make_forcing_config(
     const std::string& forcing_file,
     const std::map<std::string, std::string>& variables_names_map) {
+    if (io::trim(forcing_file).empty()) {
+        throw std::runtime_error(
+            "Forcing config error: forcing_file must be a non-empty string");
+    }
+
     caf::config_value::dictionary forcing_config;
     forcing_config.insert("forcing_file", forcing_file);
 
     if (!variables_names_map.empty()) {
         caf::config_value::dictionary forcing_names_map;
         for (const auto& [input_name, csv_header] : variables_names_map) {
+            if (io::trim(input_name).empty()) {
+                throw std::runtime_error(
+                    "Forcing config error: variables_names_map contains an "
+                    "empty BMI input variable name");
+            }
+            if (io::trim(csv_header).empty()) {
+                throw std::runtime_error(
+                    "Forcing config error: variables_names_map entry '" +
+                    input_name + "' must be a non-empty string");
+            }
             forcing_names_map.insert(input_name, csv_header);
         }
         forcing_config.insert("variables_names_map", std::move(forcing_names_map));

@@ -8,6 +8,7 @@
 
 #include <caf/config_value.hpp>
 
+#include "miaow.hpp"
 #include "third_party/bmi/bmi.hxx"
 
 namespace miaow::bmi {
@@ -32,5 +33,8 @@ std::vector<OutputVariable> open_output_vars(
 
 // Write one timestep row to a variable CSV stream
 void write_output_step(::bmi::Bmi& model, OutputVariable& variable, double time);
+
+// Run the BMI subprocess executable
+int run_subprocess_cli(int argc, char* argv[]);
 
 } // namespace miaow::bmi

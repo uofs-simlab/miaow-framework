@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <future>
 #include <initializer_list>
@@ -154,6 +155,48 @@ struct TaskResult {
 };
 
 /**
+ * @brief Build a failed task result for a task.
+ * @param prefix Optional diagnostic prefix prepended as `<prefix>: `.
+ */
+inline TaskResult make_failed_task_result(const Task& task,
+                                          const std::string& message,
+                                          const std::string& prefix = "") {
+    const std::size_t prefix_end = message.find(": ");
+    const bool message_has_error_prefix =
+        prefix_end != std::string::npos &&
+        message.substr(0, prefix_end).find("error") != std::string::npos;
+
+    TaskResult task_result;
+    task_result.simulation_unit_id_ = task.simulation_unit_id_;
+    task_result.status_ = TaskStatus::failed;
+    task_result.message_ = prefix.empty() || message_has_error_prefix
+        ? message
+        : prefix + ": " + message;
+    return task_result;
+}
+
+/**
+ * @brief Build a failed task result from a captured exception.
+ */
+inline TaskResult make_failed_task_result(const Task& task,
+                                          std::exception_ptr exception,
+                                          const std::string& prefix = "") {
+    if (!exception) {
+        return make_failed_task_result(task, "unknown exception", prefix);
+    }
+
+    try {
+        std::rethrow_exception(exception);
+    } catch (const std::exception& caught_exception) {
+        return make_failed_task_result(task, caught_exception.what(), prefix);
+    } catch (...) {
+        return make_failed_task_result(task, "unknown exception", prefix);
+    }
+
+    return make_failed_task_result(task, "unknown exception", prefix);
+}
+
+/**
  * @brief Base class for model-specific simulation units.
  *
  * Runtime dispatch occurs through subclasses overriding execute().
@@ -168,6 +211,7 @@ public:
      * @return Structured result for this execution.
      */
     virtual TaskResult execute(const Task& task) = 0;
+
 };
 
 /**
@@ -218,15 +262,6 @@ public:
                         return std::make_unique<SimulationUnitType>(args...);
                     }, stored_constructor_args);
 
-                // If we failed to create a valid simulation unit, return an error message
-                if (!simulation_unit) {
-                    TaskResult task_result;
-                    task_result.simulation_unit_id_ = task.simulation_unit_id_;
-                    task_result.status_ = TaskStatus::failed;
-                    task_result.message_ = "SimulationUnit error: failed to create simulation unit";
-                    return task_result;
-                }
-
                 // Execute the simulation unit with the given task and return the result
                 return simulation_unit->execute(task);
             };
@@ -251,7 +286,8 @@ public:
      */
     const SimulationUnitExecutor* find_executor(SimulationUnitId simulation_unit_id) const {
         const std::unordered_map<SimulationUnitId, SimulationUnitExecutor>::const_iterator
-            simulation_unit_entry = simulation_unit_executors_by_id_.find(simulation_unit_id);
+            simulation_unit_entry =
+                simulation_unit_executors_by_id_.find(simulation_unit_id);
         if (simulation_unit_entry == simulation_unit_executors_by_id_.end()) {
             return nullptr;
         }

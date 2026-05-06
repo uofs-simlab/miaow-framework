@@ -6,14 +6,23 @@
   <img src="docs/images/miaow_logo.svg" alt="MIAOW logo" width="360">
 </p>
 
-Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
+Managing concurrent numerical simulation tasks with dynamic workloads and
+heterogeneous hardware can feel like herding cats. **MIAOW** embraces that
+reality by using actor-based asynchronous orchestration so tasks run when they
+are ready, maximizing utilization across available resources.
 
-MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/), and integrates with the [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
+MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html),
+uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) for
+actor orchestration,
+[Boost.Process](https://www.boost.org/doc/libs/release/doc/html/process.html)
+for subprocess execution, and integrates with the
+[Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/).
 
 
 ## Quick start
 
-From the repository root, using [CMake](https://cmake.org/) (requires C++ and Fortran compilers):
+From the repository root, using [CMake](https://cmake.org/) (requires C++ and
+Fortran compilers plus Boost):
 
 ```sh
 cmake -S . -B build
@@ -75,7 +84,8 @@ Key types in `include/miaow.hpp`:
 
 - `SimulationUnit`: abstract model-agnostic execution interface
 - `SimulationUnitRegistry`: registers units and returns `SimulationUnitId`
-- `Task`: carries `simulation_unit_id_`, positional `args_`, and runtime-set `task_output_dir_`
+- `Task`: carries `simulation_unit_id_`, positional `args_`, and runtime-set
+  `task_output_dir_`
 - `TaskResult`: per-task status, message, artifact paths, and runtime
 - `Runtime`: submits jobs and returns non-blocking `JobHandle`
 - `JobResult`: aggregate of `TaskResult` values plus diagnostics
@@ -102,8 +112,8 @@ src/
     dynamic.cpp          # DynamicBmi adapter for C++/Fortran plugins
     forcing.cpp          # streaming external BMI forcing CSV reader and coupling logic
     output.cpp           # per-step BMI output-variable CSV writers
-    runner.cpp           # helper executable for subprocess BMI execution
-    subprocess.cpp       # parent-process subprocess launch and result handling
+    subprocess.cpp       # dynamic BMI subprocess protocol and launcher
+    subprocess_main.cpp  # subprocess executable entry point for dynamic BMI tasks
     internal.hpp         # BMI-private forcing and output helper declarations
 
   io/
@@ -128,11 +138,13 @@ examples/
 - Core internals: `miaow::core`
 - BMI internals: `miaow::bmi`
 - Internal I/O helpers: `miaow::io`
-- External [BMI C++ API](https://github.com/csdms/bmi-cxx/tree/master) alias in `miaow_bmi.hpp`: `miaow::bmi_api = ::bmi`
+- External [BMI C++ API](https://github.com/csdms/bmi-cxx/tree/master) alias:
+  `miaow::bmi_api = ::bmi`
 
 ## Basic Model Interface (BMI) integration
 
-MIAOW implements `BmiSimulationUnit<BmiModelType>`, which wraps a complete BMI lifecycle per task:
+MIAOW implements `BmiSimulationUnit<BmiModelType>`, which wraps a complete BMI
+lifecycle per task:
 
 1. `Initialize(config_path)`
 2. zero or more `Update()` calls
@@ -144,7 +156,7 @@ config). The same forcing fields may also appear in realization-driven
 subdomain entries. In forcing mode, MIAOW reads a CSV forcing file and applies
 one or more mapped values to BMI input variables before each `Update()` step.
 
-Each example specifies task inputs in its `main.cpp`. 
+Each example specifies task inputs in its `main.cpp`.
 Shared helpers in `miaow_io.hpp` can build forcing dictionaries with
 `make_forcing_config(...)` and generate repeated hourly forcing CSVs with
 `write_repeated_hourly_forcing_csv(...)`.
@@ -187,33 +199,40 @@ plugin to MIAOW's C++ BMI interface. The plugin path is supplied at runtime and
 is passed directly to the platform dynamic loader. The plugin backend is
 explicit in the model type:
 
-- `miaow::DynamicCppBmi` (alias for `miaow::DynamicBmi<DynamicBmiBackend::cpp>`) 
-  loads a C++ plugin that exports `register_bmi(bmi::Bmi**)` and 
+- `miaow::DynamicCppBmi` (alias for `miaow::DynamicBmi<DynamicBmiBackend::cpp>`)
+  loads a C++ plugin that exports `register_bmi(bmi::Bmi**)` and
   `unregister_bmi(bmi::Bmi**)`.
-- `miaow::DynamicFortranBmi` (alias for 
-  `miaow::DynamicBmi<DynamicBmiBackend::fortran>`) loads a Fortran plugin that exports
-  `register_bmi(void**)` for the linked
+- `miaow::DynamicFortranBmi` (alias for
+  `miaow::DynamicBmi<DynamicBmiBackend::fortran>`) loads a Fortran plugin that
+  exports `register_bmi(void**)` for the linked
   [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
   A Fortran `unregister_bmi(void**)` symbol is used when present.
 
-Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as statically linked
-C++ BMI models. For example, if `plugin_path` is the path to a C++ BMI plugin, one can 
-register the simulation unit in MIAOW as follows:
+Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as
+statically linked C++ BMI models:
+
 ```cpp
 const miaow::SimulationUnitId my_dynamic_bmi_model =
     registry.add<miaow::BmiSimulationUnit<miaow::DynamicCppBmi>>(
         plugin_path);
 ```
-Dynamic BMI models can also run each task in a subprocess by passing
-`miaow::BmiExecution::in_subprocess` before the plugin path. This is useful for
-plugins that are not thread safe (e.g., those whose implementation relies on process-global
-state). Subprocess mode currently applies to dynamic BMI models:
+
+Dynamic BMI models can also run tasks in a subprocess by selecting subprocess
+execution at registration:
+
 ```cpp
 const miaow::SimulationUnitId my_isolated_bmi_model =
     registry.add<miaow::BmiSimulationUnit<miaow::DynamicFortranBmi>>(
-        miaow::BmiExecution::in_subprocess,
-        plugin_path);
+        plugin_path,
+        miaow::BmiExecutionMode::subprocess);
 ```
+
+Subprocess mode is limited to dynamic BMI models. The parent writes a JSON spec,
+launches the CMake-configured `miaow_subprocess` executable with
+Boost.Process, and reads a text result file. If the result file is missing,
+the parent includes the captured stderr output in a failed `TaskResult`.
+Set `MIAOW_SUBPROCESS_PATH` to override the executable path at runtime.
+
 Dynamic C++ and Fortran loading are exercised together in the
 `03_dynamic_bmi` example, which prints the resolved C++ and Fortran plugin
 library paths before running both models in one job.
@@ -221,7 +240,8 @@ library paths before running both models in one job.
 ## Diagnostics and artifacts
 
 `Runtime::submit_job(...)` returns a non-blocking `JobHandle`; `get()` yields a
-`JobResult` with per-task results and runtime diagnostics. If `RuntimeOptions::output_root_` (or CLI `--output_root`) is set, MIAOW writes:
+`JobResult` with per-task results and runtime diagnostics. If
+`RuntimeOptions::output_root_` (or CLI `--output_root`) is set, MIAOW writes:
 
 ```text
 <output_root>/
@@ -231,11 +251,12 @@ library paths before running both models in one job.
       └─ task_<task_id>/
 ```
 
-Each task receives `Task::task_output_dir_` for artifact output. In BMI runs,
-one CSV file per BMI output variable is written into `task_output_dir_`.
-Subprocess BMI tasks also write `bmi_subprocess_spec.json`,
-`bmi_subprocess_result.txt`, `bmi_subprocess_stdout.txt`, and
-`bmi_subprocess_stderr.txt` in the task directory.
+Each task receives `Task::task_output_dir_` for artifact output. BMI tasks
+write one CSV file per output variable there. Subprocess BMI tasks also write
+`bmi_subprocess_spec.json`, `bmi_subprocess_result.txt`,
+`bmi_subprocess_stdout.txt`, and `bmi_subprocess_stderr.txt`. When no task
+output directory is assigned, these subprocess control files use a temporary
+directory instead.
 
 ## Build options
 
@@ -244,32 +265,45 @@ Top-level CMake options:
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-DBUILD_EXAMPLES` | `ON` | Build all example programs |
-| `-DMIAOW_USE_SYSTEM_CAF` | `ON` | Prefer a system-installed CAF via `find_package` |
-| `-DMIAOW_FETCH_CAF` | `ON` | Fetch CAF with `FetchContent` if not found |
+| `-DMIAOW_BOOST_PROVIDER` | `system` | Boost provider: `system`, `fetch`, or `auto` |
+| `-DMIAOW_BOOST_VERSION` | `1.86.0` | Boost version used by the `FetchContent` fallback |
+| `-DMIAOW_CAF_PROVIDER` | `auto` | CAF provider: `system`, `fetch`, or `auto` |
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | Minimum CAF version when using system CAF |
 | `-DMIAOW_CAF_GIT_TAG` | `1.1.0` | CAF tag/commit for `FetchContent` |
 | `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
 | `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Optional explicit path to a valid local [`NOAA-OWP/iso_c_fortran_bmi`](https://github.com/NOAA-OWP/iso_c_fortran_bmi) checkout; when empty, CMake looks for `iso_c_fortran_bmi` in `${MIAOW_DEFAULT_MODEL_BASE_DIR}/` and fetches into that location if missing |
 
+Provider values are interpreted as follows:
+
+- `system`: require `find_package(...)` to provide the dependency
+- `fetch`: skip `find_package(...)` and use `FetchContent`
+- `auto`: try `find_package(...)`, then use `FetchContent` if not found
+
 For [Conan](https://conan.io/)-based CI-style setup:
 
 ```sh
 conan install . --output-folder=build/conan --build=missing
-cmake -S . -B build -DMIAOW_FETCH_CAF=OFF
+cmake -S . -B build \
+  -DMIAOW_BOOST_PROVIDER=system \
+  -DMIAOW_CAF_PROVIDER=system
 cmake --build build --config Release
 ```
 
 ## Examples
 
-The following examples are provided to illustrate the functionality of MIAOW, and should be run from the corresponding example's top-level `examples/<example_name>` directory:
+Run examples from their own `examples/<example_name>` directory:
 
-- `examples/00_hello`: minimal orchestration example with asynchronous job submission and diagnostics printing
-- `examples/01_heat`: basic BMI integration using the [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
-- `examples/02_soil_freeze_thaw`: many-task [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with per-task forcing, including matched, short, and long forcing cases
-- `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
-- `examples/04_noah_owp`: Noah-OWP-Modular run using a realization-driven
-  Bow River smoke workflow with one MIAOW task per catchment. The plugin is
-  compiled with `NGEN_ACTIVE`, `NGEN_OUTPUT_ACTIVE`, and
+- `examples/00_hello`: minimal orchestration and diagnostics output
+- `examples/01_heat`: BMI integration using the
+  [CSDMS heat example](https://github.com/csdms/bmi-example-cxx)
+- `examples/02_soil_freeze_thaw`: many-task
+  [SoilFreezeThaw](https://github.com/NOAA-OWP/SoilFreezeThaw) workflow with
+  per-task forcing, including matched, short, and long forcing cases
+- `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration
+  using the CSDMS heat examples
+- `examples/04_noah_owp`: Noah-OWP-Modular run using a dynamic Fortran BMI
+  subprocess and one realization-driven MIAOW task per catchment. The plugin
+  is compiled with `NGEN_ACTIVE`, `NGEN_OUTPUT_ACTIVE`, and
   `NGEN_FORCING_ACTIVE` defined so Noah-OWP receives forcing through MIAOW's
   BMI `SetValue` path and writes outputs through MIAOW's BMI `GetValue`
   pipeline when `--output_root` is set.
@@ -280,7 +314,8 @@ The Noah-OWP example uses staged SYMFLUENCE-generated Bow inputs by default:
 from the repository root with:
 
 ```sh
-./scripts/preprocessing/.venv/bin/python ./scripts/preprocessing/stage_symfluence_noah_owp_inputs.py \
+./scripts/preprocessing/.venv/bin/python \
+  ./scripts/preprocessing/stage_symfluence_noah_owp_inputs.py \
   --config ./scripts/preprocessing/example_symfluence_bow_02b_smoke.yaml
 ```
 
@@ -298,7 +333,8 @@ examples/<example_name>/
 
 ### Configuring model examples independently
 
-When configuring from an example directory or another project, the following flags are relevant:
+When configuring from an example directory or another project, these flags are
+relevant:
 
 | Flag | Default | Description |
 | --- | --- | --- |

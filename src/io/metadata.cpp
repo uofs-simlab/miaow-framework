@@ -1,12 +1,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
-#include <stdexcept>
 #include <string>
 #include <vector>
-
-#include <caf/json.hpp>
 
 #include "io/internal.hpp"
 
@@ -90,27 +86,8 @@ void write_job_metadata(std::uint64_t run_id,
         ("job_" + std::to_string(job_id));
     std::filesystem::create_directories(job_directory);
 
-    std::ofstream metadata_file(job_directory / "job_metadata.json");
-    if (!metadata_file.is_open()) {
-        throw std::ios_base::failure("Failed to open job_metadata.json for writing");
-    }
-    metadata_file.exceptions(std::ios::failbit | std::ios::badbit);
-
     JobMetadata metadata = make_job_metadata(run_id, job_id, job_result);
-
-    caf::json_builder builder;
-    builder.skip_object_type_annotation(true);
-    builder.skip_empty_fields(false);
-    if (!builder.apply(metadata)) {
-        throw std::runtime_error("Failed to serialize job metadata: " +
-                                 caf::to_string(builder.get_error()));
-    }
-
-    const caf::json_value json_value = builder.seal();
-    std::string json_text;
-    json_value.print_to(json_text, 2);
-    metadata_file << json_text << "\n";
-    metadata_file.flush();
+    write_json_file(job_directory / "job_metadata.json", metadata, false);
 }
 
 } // namespace miaow::io

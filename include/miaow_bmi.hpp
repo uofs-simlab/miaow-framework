@@ -22,19 +22,19 @@ namespace bmi_api = ::bmi;
 TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task);
 
 /**
- * @brief Process boundary used for BMI task execution.
- */
-enum class BmiExecution {
-    in_process,
-    in_subprocess,
-};
-
-/**
  * @brief Backend interface exposed by a dynamically loaded BMI plugin.
  */
 enum class DynamicBmiBackend {
     cpp,
     fortran,
+};
+
+/**
+ * @brief Process isolation mode for dynamically loaded BMI models.
+ */
+enum class BmiExecutionMode {
+    in_process,
+    subprocess,
 };
 
 template <DynamicBmiBackend Backend>
@@ -251,72 +251,70 @@ public:
             };
     }
 
-    /**
-     * @brief Store BMI execution mode and constructor arguments.
-     * @param execution Process boundary used for each BMI task.
-     * @param constructor_args Arguments forwarded to the BMI model constructor.
-     */
-    template <class... ConstructorArgs>
-    BmiSimulationUnit(BmiExecution execution, ConstructorArgs... constructor_args)
-        : BmiSimulationUnit(constructor_args...) {
-        execution_ = execution;
-        capture_dynamic_plugin_path(constructor_args...);
-    }
-
     TaskResult execute(const Task& task) override {
-        if (execution_ == BmiExecution::in_subprocess) {
-            if constexpr (std::is_same_v<BmiModelType, DynamicCppBmi>) {
-                return execute_dynamic_bmi_model_in_subprocess(
-                    DynamicBmiBackend::cpp,
-                    dynamic_plugin_path_,
-                    task);
-            } else if constexpr (std::is_same_v<BmiModelType, DynamicFortranBmi>) {
-                return execute_dynamic_bmi_model_in_subprocess(
-                    DynamicBmiBackend::fortran,
-                    dynamic_plugin_path_,
-                    task);
-            } else {
-                TaskResult task_result;
-                task_result.simulation_unit_id_ = task.simulation_unit_id_;
-                task_result.status_ = TaskStatus::failed;
-                task_result.message_ =
-                    "BMI error: subprocess execution requires a dynamic BMI model";
-                return task_result;
-            }
-        }
-
         try {
             std::unique_ptr<BmiModelType> bmi_model = model_factory_();
             return execute_bmi_model(*bmi_model, task);
-        } catch (const std::exception& exception) {
-            TaskResult task_result;
-            task_result.simulation_unit_id_ = task.simulation_unit_id_;
-            task_result.status_ = TaskStatus::failed;
-            task_result.message_ = std::string("BMI error: ") + exception.what();
-            return task_result;
         } catch (...) {
-            TaskResult task_result;
-            task_result.simulation_unit_id_ = task.simulation_unit_id_;
-            task_result.status_ = TaskStatus::failed;
-            task_result.message_ = "BMI error: unknown exception";
-            return task_result;
+            return make_failed_task_result(
+                task,
+                std::current_exception(),
+                "BMI error");
         }
     }
 
 private:
-    void capture_dynamic_plugin_path() {
+    std::function<std::unique_ptr<BmiModelType>()> model_factory_;
+};
+
+/**
+ * @brief Simulation unit for a dynamically loaded BMI model.
+ *
+ * Owns the plugin path explicitly so subprocess execution can pass it to the
+ * subprocess executable without loading the plugin in the parent process.
+ */
+template <DynamicBmiBackend Backend>
+class BmiSimulationUnit<DynamicBmi<Backend>> : public SimulationUnit {
+public:
+    explicit BmiSimulationUnit(
+        std::string plugin_path,
+        BmiExecutionMode execution_mode = BmiExecutionMode::in_process)
+        : plugin_path_(std::move(plugin_path)),
+          execution_mode_(execution_mode) {
     }
 
-    template <class First, class... Rest>
-    void capture_dynamic_plugin_path(const First& first, const Rest&...) {
-        if constexpr (std::is_convertible_v<First, std::string>) {
-            dynamic_plugin_path_ = std::string(first);
+    TaskResult execute(const Task& task) override {
+        const char* error_prefix = execution_mode_ == BmiExecutionMode::subprocess
+            ? "BMI subprocess error"
+            : "BMI error";
+
+        try {
+            // Option to execute in subprocess. This will launch the configured subprocess
+            // executable and pass the plugin path and task config through a file-based
+            // contract. The subprocess will construct the model, and execute it, and then 
+            // return the result through another file-based contract.
+            if (execution_mode_ == BmiExecutionMode::subprocess) {
+                return execute_dynamic_bmi_model_in_subprocess(
+                    Backend, plugin_path_, task);
+            }
+
+            // If user does not choose to execute in subprocess, default to in-process 
+            // execution, which constructs the model from the plugin path right here, and 
+            // calls execute_bmi_model directly.
+            DynamicBmi<Backend> bmi_model(plugin_path_);
+            return execute_bmi_model(bmi_model, task);
+        } catch (...) {
+            // If something did not go as planned, make a failed task result
+            return make_failed_task_result(
+                task,
+                std::current_exception(),
+                error_prefix);
         }
     }
 
-    BmiExecution execution_{BmiExecution::in_process};
-    std::string dynamic_plugin_path_;
-    std::function<std::unique_ptr<BmiModelType>()> model_factory_;
+private:
+    std::string plugin_path_;
+    BmiExecutionMode execution_mode_;
 };
 
 } // namespace miaow

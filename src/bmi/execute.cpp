@@ -2,7 +2,6 @@
 
 #include <exception>
 #include <memory>
-#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -100,6 +99,33 @@ std::string format_bmi_error_message(const std::string& error_message) {
     return std::string("BMI error: ") + error_message;
 }
 
+// Convert a captured exception into the BMI task result message
+std::string format_bmi_error_message(std::exception_ptr exception) {
+    if (!exception) {
+        return "BMI error: unknown exception";
+    }
+
+    try {
+        std::rethrow_exception(exception);
+    } catch (const std::exception& caught_exception) {
+        return format_bmi_error_message(caught_exception.what());
+    } catch (...) {
+        return "BMI error: unknown exception";
+    }
+}
+
+// Preserve finalize diagnostics when cleanup after a failure also fails
+std::string finalize_error_message(bmi_api::Bmi& model) {
+    try {
+        model.Finalize();
+    } catch (const std::exception& finalize_exception) {
+        return std::string(" | BMI finalize error: ") + finalize_exception.what();
+    } catch (...) {
+        return " | BMI finalize error: unknown exception";
+    }
+    return "";
+}
+
 } // namespace
 
 TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
@@ -107,17 +133,12 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
     task_result.simulation_unit_id_ = task.simulation_unit_id_;
 
     if (task.args_.empty()) {
-        task_result.status_ = TaskStatus::failed;
-        task_result.message_ = "BMI error: missing config path in task specification";
-        return task_result;
+        throw std::runtime_error("missing config path in task specification");
     }
 
     const std::string* config_file = caf::get_if<std::string>(&task.args_.front());
     if (!config_file) {
-        task_result.status_ = TaskStatus::failed;
-        task_result.message_ =
-            "BMI error: first task argument must be a config path string";
-        return task_result;
+        throw std::runtime_error("first task argument must be a config path string");
     }
 
     const caf::config_value::dictionary* forcing_config = nullptr;
@@ -126,11 +147,9 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
         forcing_config =
             caf::get_if<caf::config_value::dictionary>(&task.args_.at(1));
         if (!forcing_config) {
-            task_result.status_ = TaskStatus::failed;
-            task_result.message_ =
+            throw std::runtime_error(
                 "Forcing config error: second task argument must be a forcing "
-                "dictionary";
-            return task_result;
+                "dictionary");
         }
     }
 
@@ -138,57 +157,26 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
     std::size_t update_steps = 0;
 
     try {
+        // The model handles reading the config file
         model.Initialize(*config_file);
         needs_finalize = true;
 
+        // MIAOW applies the forcing and advances the model in lockstep
         run_model(model, forcing_config, task.task_output_dir_, update_steps);
 
+        // Finalize the model after successful completion of the update loop
         needs_finalize = false;
         model.Finalize();
-    } catch (const std::exception& exception) {
-        const std::string base_message = format_bmi_error_message(exception.what()) +
-            " (updates: " + std::to_string(update_steps) + ")";
-        if (needs_finalize) {
-            needs_finalize = false;
-            try {
-                model.Finalize();
-            } catch (const std::exception& finalize_exception) {
-                task_result.status_ = TaskStatus::failed;
-                task_result.message_ = base_message +
-                    " | BMI finalize error: " + finalize_exception.what();
-                return task_result;
-            } catch (...) {
-                task_result.status_ = TaskStatus::failed;
-                task_result.message_ = base_message +
-                    " | BMI finalize error: unknown exception";
-                return task_result;
-            }
-        }
-        task_result.status_ = TaskStatus::failed;
-        task_result.message_ = base_message;
-        return task_result;
+
+    // Handle exceptions thrown during model initialization, update, or finalization
     } catch (...) {
-        const std::string base_message = std::string("BMI error: unknown exception") +
+        std::string failure_message =
+            format_bmi_error_message(std::current_exception()) +
             " (updates: " + std::to_string(update_steps) + ")";
         if (needs_finalize) {
-            needs_finalize = false;
-            try {
-                model.Finalize();
-            } catch (const std::exception& finalize_exception) {
-                task_result.status_ = TaskStatus::failed;
-                task_result.message_ = base_message +
-                    " | BMI finalize error: " + finalize_exception.what();
-                return task_result;
-            } catch (...) {
-                task_result.status_ = TaskStatus::failed;
-                task_result.message_ = base_message +
-                    " | BMI finalize error: unknown exception";
-                return task_result;
-            }
+            failure_message += finalize_error_message(model);
         }
-        task_result.status_ = TaskStatus::failed;
-        task_result.message_ = base_message;
-        return task_result;
+        throw std::runtime_error(failure_message);
     }
 
     std::ostringstream message;

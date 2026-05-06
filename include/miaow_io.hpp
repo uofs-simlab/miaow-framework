@@ -72,6 +72,8 @@ std::string write_repeated_hourly_forcing_csv(const std::string& source_path,
  *
  * `variables_names_map` is optional. When omitted, forcing falls back to
  * identity mapping between BMI input names and CSV headers.
+ *
+ * Throws if `forcing_file` or any explicit mapping entry is empty.
  */
 caf::config_value make_forcing_config(
     const std::string& forcing_file,

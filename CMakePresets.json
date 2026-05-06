@@ -8,8 +8,8 @@
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "MIAOW_USE_SYSTEM_CAF": "ON",
-        "MIAOW_FETCH_CAF": "ON",
+        "MIAOW_BOOST_PROVIDER": "system",
+        "MIAOW_CAF_PROVIDER": "auto",
         "CMAKE_BUILD_TYPE": "Debug"
       }
     }

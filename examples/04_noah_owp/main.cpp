@@ -39,8 +39,8 @@ int main(int argc, char* argv[]) {
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId noah_owp =
         registry.add<miaow::BmiSimulationUnit<miaow::DynamicFortranBmi>>(
-            miaow::BmiExecution::in_subprocess,
-            plugin_path);
+            plugin_path,
+            miaow::BmiExecutionMode::subprocess);
     miaow::Runtime runtime(registry, runtime_options);
 
     // Build one task per realization subdomain with the subdomain config as the first

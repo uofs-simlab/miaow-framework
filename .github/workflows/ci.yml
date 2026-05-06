@@ -43,7 +43,11 @@ jobs:
         run: conan profile detect --force
 
       - name: Install Dependencies
-        run: conan install . --output-folder=build/conan --build=missing -s build_type=Release
+        run: >
+          conan install .
+          --output-folder=build/conan
+          --build=missing
+          -s build_type=Release
 
       - name: Configure
         run: >
@@ -51,8 +55,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_EXAMPLES=ON
           -DCMAKE_TOOLCHAIN_FILE=build/conan/conan_toolchain.cmake
-          -DMIAOW_USE_SYSTEM_CAF=ON
-          -DMIAOW_FETCH_CAF=OFF
+          -DMIAOW_BOOST_PROVIDER=system
+          -DMIAOW_CAF_PROVIDER=system
 
       - name: Build
         run: cmake --build build --parallel

@@ -9,14 +9,66 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(CTest)
 
-option(MIAOW_USE_SYSTEM_CAF "Prefer a system-installed CAF" ON)
-option(MIAOW_FETCH_CAF "Fetch CAF if not found" ON)
+set(MIAOW_BOOST_PROVIDER "system" CACHE STRING "Boost provider: auto, system, fetch")
+set(MIAOW_BOOST_VERSION "1.86.0" CACHE STRING "Boost version for FetchContent")
+set_property(CACHE MIAOW_BOOST_PROVIDER PROPERTY STRINGS auto system fetch)
+set(MIAOW_CAF_PROVIDER "auto" CACHE STRING "CAF provider: auto, system, fetch")
+set_property(CACHE MIAOW_CAF_PROVIDER PROPERTY STRINGS auto system fetch)
 set(MIAOW_CAF_VERSION "1.1.0" CACHE STRING "Minimum CAF version for system find_package")
 set(MIAOW_CAF_GIT_TAG "1.1.0" CACHE STRING "CAF git tag or commit to fetch")
 set(MIAOW_DEFAULT_MODEL_BASE_DIR "${PROJECT_SOURCE_DIR}/third_party" CACHE PATH
     "Default base directory containing external model source trees")
 set(MIAOW_ISO_C_FORTRAN_BMI_ROOT "" CACHE PATH
     "Path to a local NOAA-OWP/iso_c_fortran_bmi checkout")
+
+function(miaow_validate_provider provider_name)
+    set(valid_providers auto system fetch)
+    set(provider_value "${${provider_name}}")
+    if(NOT provider_value IN_LIST valid_providers)
+        message(FATAL_ERROR
+            "${provider_name} must be one of: auto, system, fetch")
+    endif()
+endfunction()
+
+miaow_validate_provider(MIAOW_BOOST_PROVIDER)
+miaow_validate_provider(MIAOW_CAF_PROVIDER)
+
+if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
+    find_package(Boost CONFIG QUIET COMPONENTS process)
+    if(NOT TARGET Boost::process)
+        find_package(Boost QUIET COMPONENTS process)
+    endif()
+endif()
+
+if(NOT TARGET Boost::process)
+    if(MIAOW_BOOST_PROVIDER STREQUAL "system")
+        message(FATAL_ERROR
+            "Boost.Process not found. Use Conan, install Boost, or set "
+            "MIAOW_BOOST_PROVIDER to auto or fetch.")
+    endif()
+
+    include(FetchContent)
+    set(BOOST_INCLUDE_LIBRARIES process CACHE STRING
+        "Boost libraries included by FetchContent" FORCE)
+    set(BOOST_ENABLE_CMAKE ON CACHE BOOL "Enable Boost CMake support" FORCE)
+    set(miaow_boost_release_url
+        "https://github.com/boostorg/boost/releases/download")
+    set(miaow_boost_cmake_archive
+        "boost-${MIAOW_BOOST_VERSION}-cmake.tar.gz")
+    string(CONCAT miaow_boost_url
+        "${miaow_boost_release_url}/boost-${MIAOW_BOOST_VERSION}"
+        "/${miaow_boost_cmake_archive}")
+    message(STATUS "Boost.Process not found. Fetching Boost ${MIAOW_BOOST_VERSION}...")
+    FetchContent_Declare(
+        boost
+        URL ${miaow_boost_url}
+    )
+    FetchContent_MakeAvailable(boost)
+endif()
+
+if(NOT TARGET Boost::process)
+    message(FATAL_ERROR "Boost did not provide the expected Boost::process target.")
+endif()
 
 set(MIAOW_CAF_CORE_TARGET "")
 set(MIAOW_CAF_IO_TARGET "")
@@ -34,7 +86,7 @@ function(miaow_set_caf_targets)
     endif()
 endfunction()
 
-if(MIAOW_USE_SYSTEM_CAF)
+if(NOT MIAOW_CAF_PROVIDER STREQUAL "fetch")
     find_package(CAF ${MIAOW_CAF_VERSION} QUIET COMPONENTS core io)
     miaow_set_caf_targets()
     if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
@@ -44,8 +96,10 @@ if(MIAOW_USE_SYSTEM_CAF)
 endif()
 
 if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
-    if(NOT MIAOW_FETCH_CAF)
-        message(FATAL_ERROR "CAF not found via find_package. Install CAF or enable MIAOW_FETCH_CAF.")
+    if(MIAOW_CAF_PROVIDER STREQUAL "system")
+        message(FATAL_ERROR
+            "CAF not found. Use Conan, install CAF, or set MIAOW_CAF_PROVIDER "
+            "to auto or fetch.")
     endif()
 
     include(FetchContent)
@@ -136,20 +190,25 @@ target_link_libraries(miaow
         ${MIAOW_CAF_IO_TARGET}
         iso_c_bmi
         ${CMAKE_DL_LIBS}
+    PRIVATE
+        Boost::process
 )
 
-set(MIAOW_BMI_RUNNER_PATH
-    "${PROJECT_BINARY_DIR}/miaow_bmi_runner${CMAKE_EXECUTABLE_SUFFIX}")
-target_compile_definitions(miaow PRIVATE
-    MIAOW_BMI_RUNNER_PATH="${MIAOW_BMI_RUNNER_PATH}"
+set(MIAOW_SUBPROCESS_PATH
+    "${PROJECT_BINARY_DIR}/miaow_subprocess${CMAKE_EXECUTABLE_SUFFIX}")
+set_source_files_properties(src/bmi/subprocess.cpp PROPERTIES
+    COMPILE_DEFINITIONS "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\""
 )
 
-add_executable(miaow_bmi_runner
-    src/bmi/runner.cpp
+add_executable(miaow_subprocess
+    src/bmi/subprocess_main.cpp
 )
-target_compile_features(miaow_bmi_runner PRIVATE cxx_std_17)
-target_link_libraries(miaow_bmi_runner PRIVATE miaow)
-set_target_properties(miaow_bmi_runner PROPERTIES
+target_compile_features(miaow_subprocess PRIVATE cxx_std_17)
+target_include_directories(miaow_subprocess PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+)
+target_link_libraries(miaow_subprocess PRIVATE miaow)
+set_target_properties(miaow_subprocess PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
 )
 
