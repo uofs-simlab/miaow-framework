@@ -1,6 +1,7 @@
 # MIAOW: Model-Independent Actor Orchestration Workflows for Scientific Computing
 
 [![CI](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://tjbmontoya.com/miaow-framework/)
 
 <p align="center">
   <img src="docs/images/miaow_logo.svg" alt="MIAOW logo" width="360">
@@ -40,6 +41,29 @@ cd ../03_dynamic_bmi
 cd ../04_noah_owp
 ./miaow_noah_owp --realization data/realization_config.json --output_root ./output
 ```
+
+## Documentation
+
+Generated API documentation uses Doxygen for C++ extraction and Sphinx with
+Breathe for HTML rendering. Doxygen must be installed separately and available
+on `PATH`.
+
+Build the docs from a dedicated Python environment:
+
+```sh
+python3 -m venv docs/.venv
+docs/.venv/bin/pip install -r docs/requirements.txt
+rm -rf docs/_build/html docs/_build/doctrees
+docs/.venv/bin/sphinx-build -b html -d docs/_build/doctrees docs docs/_build/html
+```
+
+The generated HTML entry point is `docs/_build/html/index.html`.
+
+Documentation is deployed from GitHub Actions to
+`https://tjbmontoya.com/miaow-framework/` using a base64-encoded SSH deploy key
+stored in the `DOCUMENTER_KEY` repository secret. The matching public key must
+have write access to the separate deployment repository
+`tristanmontoya/miaow-framework`.
 
 ## Orchestration model
 

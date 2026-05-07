@@ -63,9 +63,11 @@ Makefile
 .claude/
 .cache/
 
-# Markdown files other than README.md
-**/*.md
-!README.md
+# Local agent instructions
+AGENTS.md
+
+# Local credentials
+miaow_docs_deploy_key*
 
 # Any directory starting with underscore
 _*/
@@ -78,5 +80,6 @@ _*/
 # Python cache files
 __pycache__/
 *.pyc
+docs/.venv/
 scripts/visualization/.venv/
 scripts/preprocessing/.venv/

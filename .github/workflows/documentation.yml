@@ -1,0 +1,96 @@
+name: Documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - ".zenodo.json"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths-ignore:
+      - ".zenodo.json"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-documentation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen
+
+      - name: Install documentation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r docs/requirements.txt
+
+      - name: Build documentation
+        run: |
+          rm -rf docs/_build/html docs/_build/doctrees
+          sphinx-build -b html -W --keep-going \
+              -d docs/_build/doctrees \
+              docs \
+              docs/_build/html
+          touch docs/_build/html/.nojekyll
+
+      - name: Deploy to tjbmontoya.com
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+          DEPLOY_REPO: git@github.com:tristanmontoya/miaow-framework.git
+          DEPLOY_BRANCH: gh-pages
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DOCUMENTER_KEY:-}" ]; then
+              echo "DOCUMENTER_KEY is required for documentation deployment."
+              exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          echo "$DOCUMENTER_KEY" | base64 --decode > ~/.ssh/documenter
+          chmod 600 ~/.ssh/documenter
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/documenter -o IdentitiesOnly=yes'
+
+          if git ls-remote --exit-code --heads "$DEPLOY_REPO" "$DEPLOY_BRANCH"; then
+              git clone --branch "$DEPLOY_BRANCH" --depth 1 "$DEPLOY_REPO" deployed-site
+          else
+              mkdir deployed-site
+              cd deployed-site
+              git init
+              git remote add origin "$DEPLOY_REPO"
+              git checkout -b "$DEPLOY_BRANCH"
+              cd ..
+          fi
+
+          find deployed-site -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R docs/_build/html/. deployed-site/
+
+          cd deployed-site
+          git config user.name "MIAOW documentation"
+          git config user.email "documentation@miaow.invalid"
+
+          git add --all
+          if git diff --cached --quiet; then
+              echo "No documentation changes to deploy."
+              exit 0
+          fi
+
+          git commit -m "deploy MIAOW documentation"
+          git push origin "HEAD:${DEPLOY_BRANCH}"
