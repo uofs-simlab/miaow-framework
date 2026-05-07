@@ -63,7 +63,8 @@ endif()
 
 if(NOT EXISTS "${fortran_heat_model_root}/heat/heat.f90")
     message(FATAL_ERROR
-        "MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT must point to a csdms/bmi-example-fortran checkout")
+        "MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT must point to a "
+        "csdms/bmi-example-fortran checkout")
 endif()
 
 miaow_provision_example_extern_link(
@@ -82,7 +83,7 @@ miaow_add_dynamic_bmi_plugin(
     SOURCES
         "${cxx_heat_model_root}/heat/heat.cxx"
         "${cxx_heat_model_root}/heat/bmi_heat.cxx"
-        register_bmi_heat.cpp
+        create_destroy_bmi_heat.cpp
     INCLUDE_DIRS
         "${cxx_heat_model_root}/heat"
     USE_MIAOW_BMI_INCLUDE

@@ -1,0 +1,56 @@
+{
+  "global": {
+    "formulations": [
+      {
+        "name": "bmi_multi",
+        "params": {
+          "model_type_name": "bmi_multi_noahowp_cfe",
+          "init_config": "",
+          "allow_exceed_end_time": true,
+          "main_output_variable": "Q_OUT",
+          "modules": [
+            {
+              "name": "bmi_fortran",
+              "params": {
+                "model_type_name": "bmi_fortran_noahowp",
+                "library_file": "plugins/libsurfacebmi",
+                "forcing_file": "",
+                "init_config": "configs/{{id}}.input",
+                "allow_exceed_end_time": true,
+                "main_output_variable": "QINSUR",
+                "variables_names_map": {
+                  "PRCPNONC": "atmosphere_water__liquid_equivalent_precipitation_rate",
+                  "Q2": "atmosphere_air_water~vapor__specific_humidity",
+                  "SFCTMP": "land_surface_air__temperature",
+                  "UU": "land_surface_wind__x_component_of_velocity",
+                  "VV": "land_surface_wind__y_component_of_velocity",
+                  "LWDN": "land_surface_radiation~incoming~longwave__energy_flux",
+                  "SOLDN": "land_surface_radiation~incoming~shortwave__energy_flux",
+                  "SFCPRS": "land_surface_air__pressure"
+                },
+                "output_variables": [
+                  "QINSUR",
+                  "EVAPOTRANS",
+                  "ETRAN",
+                  "ECAN",
+                  "QSEVA"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "forcing": {
+      "path": "forcings",
+      "provider": "CsvPerFeature",
+      "file_pattern": ".*{{id}}_forcing.*\\.csv"
+    }
+  },
+  "time": {
+    "start_time": "2004-01-01 01:00:00",
+    "end_time": "2004-01-03 23:00:00",
+    "output_interval": 3600
+  },
+  "output_root": "../output"
+}

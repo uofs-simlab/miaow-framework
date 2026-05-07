@@ -3,9 +3,10 @@
 This folder contains the SYMFLUENCE-based preprocessing entrypoint used to
 stage Noah-OWP runtime inputs for MIAOW.
 
-The script runs the supported SYMFLUENCE NGEN preprocessing steps, selects a
-small deterministic catchment subset, and copies the generated Noah inputs,
-forcing CSVs, and parameter tables into a MIAOW runtime directory.
+The script runs the supported Noah-only SYMFLUENCE NGEN preprocessing steps,
+selects a small deterministic catchment subset, and copies the generated Noah
+inputs, forcing CSVs, parameter tables, and Fortran BMI realization into a
+MIAOW runtime directory.
 
 ## Environment setup
 
@@ -82,18 +83,20 @@ The script writes:
 - `data/configs/cat-*.input`
 - `data/forcings/*_forcing.csv`
 - `data/parameters/*`
-- `realization.json`
+- `data/realization_config.json`
+- `data/catchments.geojson`
 
 ## Behaviour
 
 - Runs the supported SYMFLUENCE NGEN preprocessing steps
 - Requires `HYDROLOGICAL_MODEL: NGEN`
-- Requires `NGEN_MODULES_SELECTED: NOAH,PET,CFE`
+- Requires `NGEN_MODULES_SELECTED: NOAH`
+- Requires `NGEN_MODULES_TO_CALIBRATE: NOAH`
 - Selects generated `cat-*.input` files by numeric catchment ID
 - Copies matching `*_forcing.csv` files and Noah parameter tables
+- Writes a reduced SYMFLUENCE catchments GeoJSON for the selected catchments
 - Rewrites staged Noah path fields for the target runtime directory
-- Writes a realization file with `config`, `forcing_file`, and
-  `variables_names_map` entries per subdomain
+- Writes a relocatable copy of SYMFLUENCE's native NGEN realization format
 
 ## Limitations
 

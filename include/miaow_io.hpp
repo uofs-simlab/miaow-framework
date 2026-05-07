@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <map>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -80,38 +79,35 @@ caf::config_value make_forcing_config(
     const std::map<std::string, std::string>& variables_names_map = {});
 
 /**
- * @brief One subdomain entry from a NextGen-style realization file.
+ * @brief One feature entry from a realization file.
  *
- * The current contract stores the subdomain identifier, a resolved model
- * config path, and optional MIAOW-managed forcing metadata.
+ * SYMFLUENCE realizations are expanded into one Fortran BMI task input per
+ * catchment. Realization-driven C++ BMI modules are not supported yet.
  */
-struct RealizationSubdomain {
-    std::string subdomain_id_;
-    std::string config_path_;
-    std::optional<std::string> forcing_file_;
+struct RealizationFeature {
+    std::string library_file_;
+    std::string init_config_path_;
+    std::string forcing_file_;
     std::map<std::string, std::string> variables_names_map_;
 };
 
 /**
- * @brief Parsed realization used to build one task per subdomain.
+ * @brief Parsed realization used to build one task per feature.
  *
- * The JSON shape follows the NextGen realization convention of a top-level
- * `subdomains` object keyed by subdomain ID. Each subdomain requires a
- * `config` string path and may optionally include `forcing_file` plus an
- * optional `variables_names_map`.
+ * The supported realization format is SYMFLUENCE's global NGEN realization
+ * with one `bmi_fortran` module and `CsvPerFeature` forcing.
  */
 struct RealizationConfig {
-    std::string realization_path_;
-    std::vector<RealizationSubdomain> subdomains_;
+    std::string output_root_;
+    std::vector<RealizationFeature> features_;
 };
 
 /**
- * @brief Read and validate a NextGen-style realization file.
+ * @brief Read a SYMFLUENCE NGEN realization file.
  *
- * Relative subdomain input paths are resolved against the realization file's
- * parent directory. The parser fails if the JSON is malformed, `subdomains`
- * is missing or empty, any referenced path does not exist, or
- * `variables_names_map` is present without `forcing_file`.
+ * Relative paths are resolved against the realization file's parent directory.
+ * The parser expands sibling `catchments.geojson` features into realization
+ * feature tasks.
  */
 RealizationConfig read_realization_config(const std::string& realization_path);
 

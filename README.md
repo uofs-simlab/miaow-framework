@@ -38,7 +38,7 @@ cd ../02_soil_freeze_thaw
 cd ../03_dynamic_bmi
 ./miaow_dynamic_bmi --output_root ./output --max_workers 2
 cd ../04_noah_owp
-./miaow_noah_owp --realization realization.json --output_root ./output
+./miaow_noah_owp --realization data/realization_config.json --output_root ./output
 ```
 
 ## Orchestration model
@@ -109,8 +109,10 @@ src/
     dynamic.cpp          # DynamicBmi adapter for C++/Fortran plugins
     forcing.cpp          # streaming external BMI forcing CSV reader and coupling logic
     output.cpp           # per-step BMI output-variable CSV writers
-    subprocess.cpp       # dynamic BMI subprocess protocol and launcher
-    subprocess_main.cpp  # subprocess executable entry point for dynamic BMI tasks
+    realization.cpp      # BMI realization task and registration helpers
+    subprocess/
+      caller.cpp         # parent-side dynamic BMI subprocess launcher
+      runner.cpp         # dynamic BMI subprocess executable entry point
     internal.hpp         # BMI-private forcing and output helper declarations
 
   io/
@@ -150,11 +152,16 @@ lifecycle per task:
 Optional forcing is supported through a second task argument (`args[1]`) that
 stores a structured forcing dictionary (recall that `args[0]` is the model
 config). The same forcing fields may also appear in realization-driven
-subdomain entries. In forcing mode, MIAOW reads a CSV forcing file and applies
-one or more mapped values to BMI input variables before each `Update()` step.
+SYMFLUENCE entries. In forcing mode, MIAOW reads a CSV forcing file and
+applies one or more mapped values to BMI input variables before each
+`Update()` step.
 
-Each example specifies task inputs in its `main.cpp`.
-Shared helpers in `miaow_io.hpp` can build forcing dictionaries with
+Direct examples specify task inputs in their `main.cpp` files.
+Realization-driven BMI examples use `build_bmi_realization_tasks(...)` to
+register dynamic Fortran BMI units and build one task per realized catchment.
+Realization-driven C++ BMI modules are not supported yet; dynamic C++ BMI is
+available through direct task registration. Shared helpers in `miaow_io.hpp`
+can build forcing dictionaries with
 `make_forcing_config(...)` and generate repeated hourly forcing CSVs with
 `write_repeated_hourly_forcing_csv(...)`.
 
@@ -184,10 +191,9 @@ combinations of model end time and forcing series length: a matched 512-day
 run, a 512-day run whose 1-day forcing is exhausted early (deliberate
 failure), and a 1-day run that stops well before its 512-day forcing ends.
 
-The field names `forcing_file` and `variables_names_map` are borrowed from
-NextGen BMI configuration, but MIAOW does not implement NextGen's
-`uses_forcing_file` semantics. In MIAOW, supplying this forcing dictionary
-always enables MIAOW-managed external forcing for that task.
+In SYMFLUENCE NGEN realization files, `CsvPerFeature` forcing enables
+MIAOW-managed CSV forcing for each catchment. BMI-managed forcing is still
+available for direct task definitions that only pass the model init config.
 
 ### Dynamically linking BMI models
 
@@ -197,8 +203,8 @@ is passed directly to the platform dynamic loader. The plugin backend is
 explicit in the model type:
 
 - `miaow::DynamicCppBmi` (alias for `miaow::DynamicBmi<DynamicBmiBackend::cpp>`)
-  loads a C++ plugin that exports `register_bmi(bmi::Bmi**)` and
-  `unregister_bmi(bmi::Bmi**)`.
+  loads a C++ plugin that exports `bmi_model_create()` and
+  `bmi_model_destroy(...)`.
 - `miaow::DynamicFortranBmi` (alias for
   `miaow::DynamicBmi<DynamicBmiBackend::fortran>`) loads a Fortran plugin that
   exports `register_bmi(void**)` for the linked
@@ -298,16 +304,17 @@ Run examples from their own `examples/<example_name>` directory:
 - `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration
   using the CSDMS heat examples
 - `examples/04_noah_owp`: Noah-OWP-Modular run using a dynamic Fortran BMI
-  subprocess and one realization-driven MIAOW task per catchment. The plugin
-  is compiled with `NGEN_ACTIVE`, `NGEN_OUTPUT_ACTIVE`, and
-  `NGEN_FORCING_ACTIVE` defined so Noah-OWP receives forcing through MIAOW's
-  BMI `SetValue` path and writes outputs through MIAOW's BMI `GetValue`
-  pipeline when `--output_root` is set.
+  subprocess and one MIAOW task per staged SYMFLUENCE catchment. The plugin is
+  compiled with `NGEN_ACTIVE`, `NGEN_OUTPUT_ACTIVE`, and `NGEN_FORCING_ACTIVE`
+  defined so Noah-OWP receives forcing through MIAOW's BMI `SetValue` path and
+  writes outputs through MIAOW's BMI `GetValue` pipeline when `--output_root`
+  is set.
 
 The Noah-OWP example uses staged SYMFLUENCE-generated Bow inputs by default:
 `data/configs/cat-*.input`, `data/forcings/*_forcing.csv`,
-`data/parameters/*`, and `realization.json`. Regenerate that fixture manually
-from the repository root with:
+`data/parameters/*`, `data/catchments.geojson`, and
+`data/realization_config.json`. Regenerate that fixture manually from the
+repository root with:
 
 ```sh
 ./scripts/preprocessing/.venv/bin/python \
@@ -359,7 +366,7 @@ All examples accept the following runtime command-line options:
 | `--task_request_timeout` | `5` | Timeout for task requests sent to worker actors (seconds) |
 | `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
 | `--output_root` | `""` | Root directory path for runtime-managed output folders (disabled by default) |
-| `--realization` | `realization.json` | Realization file path (used only in `04_noah_owp`) |
+| `--realization` | `data/realization_config.json` | Noah realization path |
 
 Public CLI parsers throw `std::runtime_error` for unrecognized arguments,
 missing option values, and invalid option values. Example executables catch

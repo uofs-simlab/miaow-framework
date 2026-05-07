@@ -14,9 +14,10 @@
 
 namespace miaow {
 
-// To avoid confusion with the miaow::bmi namespace, we alias the third-party BMI API 
-// namespace here
+// Avoid confusion with the miaow::bmi namespace
 namespace bmi_api = ::bmi;
+
+struct RealizationConfig;
 
 // Public bridge from header template code to compiled BMI execution logic
 TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task);
@@ -43,8 +44,8 @@ class DynamicBmi;
 /**
  * @brief C++ BMI model backed by a dynamically loaded C++ BMI plugin.
  *
- * The plugin must export `register_bmi(bmi::Bmi**)` and
- * `unregister_bmi(bmi::Bmi**)`.
+ * The plugin must export `bmi_model_create()` and `bmi_model_destroy(...)`.
+ * These symbols may be renamed through constructor arguments.
  */
 template <>
 class DynamicBmi<DynamicBmiBackend::cpp> : public bmi_api::Bmi {
@@ -53,7 +54,10 @@ public:
      * @brief Open a dynamic C++ BMI plugin from an explicit filesystem path.
      * @param plugin_path Path passed directly to the platform dynamic loader.
      */
-    explicit DynamicBmi(std::string plugin_path);
+    explicit DynamicBmi(
+        std::string plugin_path,
+        std::string create_function = "bmi_model_create",
+        std::string destroy_function = "bmi_model_destroy");
 
     DynamicBmi(const DynamicBmi&) = delete;
     DynamicBmi& operator=(const DynamicBmi&) = delete;
@@ -204,7 +208,17 @@ using DynamicFortranBmi = DynamicBmi<DynamicBmiBackend::fortran>;
 TaskResult execute_dynamic_bmi_model_in_subprocess(
     DynamicBmiBackend backend,
     const std::string& plugin_path,
-    const Task& task);
+    const Task& task,
+    const std::string& create_function = "bmi_model_create",
+    const std::string& destroy_function = "bmi_model_destroy");
+
+/**
+ * @brief Register dynamic Fortran BMI units and build realization feature tasks.
+ */
+std::vector<Task> build_bmi_realization_tasks(
+    const RealizationConfig& realization,
+    SimulationUnitRegistry& registry,
+    BmiExecutionMode execution_mode = BmiExecutionMode::subprocess);
 
 /**
  * @brief Simulation unit that runs a complete BMI model lifecycle.
@@ -283,28 +297,47 @@ public:
           execution_mode_(execution_mode) {
     }
 
+    template <DynamicBmiBackend B = Backend,
+              typename = std::enable_if_t<B == DynamicBmiBackend::cpp>>
+    explicit BmiSimulationUnit(
+        std::string plugin_path,
+        std::string create_function,
+        std::string destroy_function,
+        BmiExecutionMode execution_mode = BmiExecutionMode::in_process)
+        : plugin_path_(std::move(plugin_path)),
+          cpp_create_function_(std::move(create_function)),
+          cpp_destroy_function_(std::move(destroy_function)),
+          execution_mode_(execution_mode) {
+    }
+
     TaskResult execute(const Task& task) override {
         const char* error_prefix = execution_mode_ == BmiExecutionMode::subprocess
             ? "BMI subprocess error"
             : "BMI error";
 
         try {
-            // Option to execute in subprocess. This will launch the configured subprocess
-            // executable and pass the plugin path and task config through a file-based
-            // contract. The subprocess will construct the model, and execute it, and then 
-            // return the result through another file-based contract.
+            // Subprocess mode loads plugins only inside the worker process
             if (execution_mode_ == BmiExecutionMode::subprocess) {
                 return execute_dynamic_bmi_model_in_subprocess(
-                    Backend, plugin_path_, task);
+                    Backend,
+                    plugin_path_,
+                    task,
+                    cpp_create_function_,
+                    cpp_destroy_function_);
             }
 
-            // If user does not choose to execute in subprocess, default to in-process 
-            // execution, which constructs the model from the plugin path right here, and 
-            // calls execute_bmi_model directly.
-            DynamicBmi<Backend> bmi_model(plugin_path_);
-            return execute_bmi_model(bmi_model, task);
+            // In-process mode constructs the model in this process
+            if constexpr (Backend == DynamicBmiBackend::cpp) {
+                DynamicBmi<Backend> bmi_model(
+                    plugin_path_,
+                    cpp_create_function_,
+                    cpp_destroy_function_);
+                return execute_bmi_model(bmi_model, task);
+            } else {
+                DynamicBmi<Backend> bmi_model(plugin_path_);
+                return execute_bmi_model(bmi_model, task);
+            }
         } catch (...) {
-            // If something did not go as planned, make a failed task result
             return make_failed_task_result(
                 task,
                 std::current_exception(),
@@ -314,6 +347,8 @@ public:
 
 private:
     std::string plugin_path_;
+    std::string cpp_create_function_{"bmi_model_create"};
+    std::string cpp_destroy_function_{"bmi_model_destroy"};
     BmiExecutionMode execution_mode_;
 };
 

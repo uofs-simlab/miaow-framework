@@ -453,8 +453,7 @@ public:
      * @param simulation_unit_registry Registry mapping simulation_unit_id to executor.
      * @param options Runtime scheduling and timeout options.
      */
-    Runtime(const SimulationUnitRegistry& simulation_unit_registry,
-            RuntimeOptions options);
+    Runtime(const SimulationUnitRegistry& simulation_unit_registry, RuntimeOptions options);
 
     /**
      * @brief Submit one task as an asynchronous job.

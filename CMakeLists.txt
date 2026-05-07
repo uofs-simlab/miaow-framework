@@ -162,7 +162,8 @@ add_library(miaow STATIC
     src/bmi/dynamic.cpp
     src/bmi/forcing.cpp
     src/bmi/output.cpp
-    src/bmi/subprocess.cpp
+    src/bmi/realization.cpp
+    src/bmi/subprocess/caller.cpp
     src/core/actors.cpp
     src/core/runtime.cpp
     src/io/cli.cpp
@@ -195,12 +196,12 @@ target_link_libraries(miaow
 
 set(MIAOW_SUBPROCESS_PATH
     "${PROJECT_BINARY_DIR}/miaow_subprocess${CMAKE_EXECUTABLE_SUFFIX}")
-set_source_files_properties(src/bmi/subprocess.cpp PROPERTIES
+set_source_files_properties(src/bmi/subprocess/caller.cpp PROPERTIES
     COMPILE_DEFINITIONS "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\""
 )
 
 add_executable(miaow_subprocess
-    src/bmi/subprocess_main.cpp
+    src/bmi/subprocess/runner.cpp
 )
 target_compile_features(miaow_subprocess PRIVATE cxx_std_17)
 target_include_directories(miaow_subprocess PRIVATE

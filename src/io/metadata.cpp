@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "io/internal.hpp"
@@ -44,32 +45,6 @@ bool inspect(Inspector& f, JobMetadata& x) {
                               f.field("tasks", x.tasks_));
 }
 
-TaskRecord make_task_record(const TaskResult& task_result) {
-    TaskRecord task_record;
-    task_record.task_id_ = task_result.task_id_;
-    task_record.simulation_unit_id_ = task_result.simulation_unit_id_;
-    task_record.status_ = miaow::task_status_to_string(task_result.status_);
-    task_record.message_ = task_result.message_;
-    task_record.run_time_s_ = task_result.run_time_s_;
-    task_record.artifact_paths_ = task_result.artifact_paths_;
-    return task_record;
-}
-
-JobMetadata make_job_metadata(std::uint64_t run_id,
-                              JobId job_id,
-                              const JobResult& job_result) {
-    JobMetadata job_metadata;
-    job_metadata.run_id_ = run_id;
-    job_metadata.job_id_ = job_id;
-    job_metadata.diagnostics_ = job_result.diagnostics_;
-    job_metadata.tasks_.reserve(job_result.task_results_.size());
-
-    for (const TaskResult& task_result : job_result.task_results_) {
-        job_metadata.tasks_.push_back(make_task_record(task_result));
-    }
-    return job_metadata;
-}
-
 } // namespace
 
 void write_job_metadata(std::uint64_t run_id,
@@ -86,7 +61,23 @@ void write_job_metadata(std::uint64_t run_id,
         ("job_" + std::to_string(job_id));
     std::filesystem::create_directories(job_directory);
 
-    JobMetadata metadata = make_job_metadata(run_id, job_id, job_result);
+    // Build task metadata directly from the completed job result
+    JobMetadata metadata;
+    metadata.run_id_ = run_id;
+    metadata.job_id_ = job_id;
+    metadata.diagnostics_ = job_result.diagnostics_;
+    metadata.tasks_.reserve(job_result.task_results_.size());
+    for (const TaskResult& task_result : job_result.task_results_) {
+        TaskRecord task_record;
+        task_record.task_id_ = task_result.task_id_;
+        task_record.simulation_unit_id_ = task_result.simulation_unit_id_;
+        task_record.status_ = miaow::task_status_to_string(task_result.status_);
+        task_record.message_ = task_result.message_;
+        task_record.run_time_s_ = task_result.run_time_s_;
+        task_record.artifact_paths_ = task_result.artifact_paths_;
+        metadata.tasks_.push_back(std::move(task_record));
+    }
+
     write_json_file(job_directory / "job_metadata.json", metadata, false);
 }
 

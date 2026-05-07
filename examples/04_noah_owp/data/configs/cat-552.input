@@ -2,7 +2,7 @@
   dt                 = 3600.0
   startdate          = "200401010100"
   enddate            = "200401032300"
-  forcing_filename   = "./data/forcings/cat-552_forcing.csv"
+  forcing_filename   = "BMI"
   output_filename    = "./output/cat-552.nc"
 /
 

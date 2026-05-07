@@ -114,18 +114,6 @@ std::string format_bmi_error_message(std::exception_ptr exception) {
     }
 }
 
-// Preserve finalize diagnostics when cleanup after a failure also fails
-std::string finalize_error_message(bmi_api::Bmi& model) {
-    try {
-        model.Finalize();
-    } catch (const std::exception& finalize_exception) {
-        return std::string(" | BMI finalize error: ") + finalize_exception.what();
-    } catch (...) {
-        return " | BMI finalize error: unknown exception";
-    }
-    return "";
-}
-
 } // namespace
 
 TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
@@ -174,7 +162,16 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
             format_bmi_error_message(std::current_exception()) +
             " (updates: " + std::to_string(update_steps) + ")";
         if (needs_finalize) {
-            failure_message += finalize_error_message(model);
+            // Preserve finalize diagnostics when cleanup after a failure also fails
+            try {
+                model.Finalize();
+            } catch (const std::exception& finalize_exception) {
+                failure_message +=
+                    std::string(" | BMI finalize error: ") +
+                    finalize_exception.what();
+            } catch (...) {
+                failure_message += " | BMI finalize error: unknown exception";
+            }
         }
         throw std::runtime_error(failure_message);
     }

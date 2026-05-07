@@ -98,31 +98,6 @@ BmiStringBuffer make_bmi_string(const std::string& value,
     return buffer;
 }
 
-std::string to_lower(std::string value) {
-    std::transform(
-        value.begin(),
-        value.end(),
-        value.begin(),
-        [](unsigned char character) -> char {
-            return static_cast<char>(std::tolower(character));
-        });
-    return value;
-}
-
-std::string normalize_var_type(const std::string& raw_type) {
-    const std::string type = to_lower(raw_type);
-    if (type == "real" || type == "float") {
-        return "float";
-    }
-    if (type == "integer" || type == "int") {
-        return "int";
-    }
-    if (type == "double" || type == "float64") {
-        return "double";
-    }
-    return raw_type;
-}
-
 std::vector<std::string> read_var_names(void** model_handle,
                                         int count,
                                         BmiNamesFunction read_names,
@@ -216,27 +191,45 @@ private:
 
 // Implementation of DynamicBmi for the C++ dynamic plugin backend
 struct DynamicBmi<DynamicBmiBackend::cpp>::State {
-    using RegisterBmiFunction = int (*)(bmi_api::Bmi**);
-    using UnregisterBmiFunction = int (*)(bmi_api::Bmi**);
+    using CreateBmiFunction = bmi_api::Bmi* (*)();
+    using DestroyBmiFunction = void (*)(bmi_api::Bmi*);
 
-    explicit State(std::string plugin_path)
-        : library_(std::move(plugin_path), "BMI dynamic C++ plugin error: ") {
-        void* register_symbol = library_.resolve_required_symbol("register_bmi");
-        register_bmi_ = reinterpret_cast<RegisterBmiFunction>(register_symbol);
-
-        void* unregister_symbol =
-            library_.resolve_required_symbol("unregister_bmi");
-        unregister_bmi_ =
-            reinterpret_cast<UnregisterBmiFunction>(unregister_symbol);
-
-        check_bmi_status(register_bmi_(&model_), "register_bmi");
-        if (model_ == nullptr) {
-            throw std::runtime_error(
-                "BMI dynamic C++ plugin error: register_bmi returned null model");
-        }
+    State(std::string plugin_path,
+          std::string create_function,
+          std::string destroy_function)
+        : plugin_path_(std::move(plugin_path)),
+          create_function_(std::move(create_function)),
+          destroy_function_(std::move(destroy_function)),
+          library_(plugin_path_, "BMI dynamic C++ plugin error: ") {
+        load_create_destroy();
     }
 
     ~State() {
+        cleanup_model();
+    }
+
+    void load_create_destroy() {
+        if (create_function_.empty() || destroy_function_.empty()) {
+            throw std::runtime_error(
+                "BMI dynamic C++ plugin error: create/destroy symbol is empty");
+        }
+
+        void* create_symbol =
+            library_.resolve_required_symbol(create_function_);
+        create_bmi_ = reinterpret_cast<CreateBmiFunction>(create_symbol);
+
+        void* destroy_symbol =
+            library_.resolve_required_symbol(destroy_function_);
+        destroy_bmi_ = reinterpret_cast<DestroyBmiFunction>(destroy_symbol);
+
+        model_ = create_bmi_();
+        if (model_ == nullptr) {
+            throw std::runtime_error(
+                "BMI dynamic C++ plugin error: create function returned null model");
+        }
+    }
+
+    void cleanup_model() {
         if (model_ == nullptr) {
             return;
         }
@@ -247,19 +240,29 @@ struct DynamicBmi<DynamicBmiBackend::cpp>::State {
             }
             initialized_ = false;
         }
-        (void)unregister_bmi_(&model_);
+
+        destroy_bmi_(model_);
         model_ = nullptr;
     }
 
+    std::string plugin_path_;
+    std::string create_function_;
+    std::string destroy_function_;
     DynamicLibrary library_;
     bmi_api::Bmi* model_{nullptr};
-    RegisterBmiFunction register_bmi_{nullptr};
-    UnregisterBmiFunction unregister_bmi_{nullptr};
+    CreateBmiFunction create_bmi_{nullptr};
+    DestroyBmiFunction destroy_bmi_{nullptr};
     bool initialized_{false};
 };
 
-DynamicBmi<DynamicBmiBackend::cpp>::DynamicBmi(std::string plugin_path)
-    : state_(std::make_unique<State>(std::move(plugin_path))) {
+DynamicBmi<DynamicBmiBackend::cpp>::DynamicBmi(
+    std::string plugin_path,
+    std::string create_function,
+    std::string destroy_function)
+    : state_(std::make_unique<State>(
+          std::move(plugin_path),
+          std::move(create_function),
+          std::move(destroy_function))) {
 }
 
 DynamicBmi<DynamicBmiBackend::cpp>::~DynamicBmi() = default;
@@ -604,7 +607,26 @@ std::string DynamicBmi<DynamicBmiBackend::fortran>::GetVarType(
     check_bmi_status(
         get_var_type(&state_->model_handle_, name_buffer.data(), type.data()),
         "get_var_type");
-    return normalize_var_type(type.data());
+
+    // Normalize common Fortran BMI type names to C++ BMI type names
+    const std::string raw_type = type.data();
+    std::string normalized_type = raw_type;
+    std::transform(normalized_type.begin(),
+                   normalized_type.end(),
+                   normalized_type.begin(),
+                   [](unsigned char character) -> char {
+                       return static_cast<char>(std::tolower(character));
+                   });
+    if (normalized_type == "real" || normalized_type == "float") {
+        return "float";
+    }
+    if (normalized_type == "integer" || normalized_type == "int") {
+        return "int";
+    }
+    if (normalized_type == "double" || normalized_type == "float64") {
+        return "double";
+    }
+    return raw_type;
 }
 
 std::string DynamicBmi<DynamicBmiBackend::fortran>::GetVarUnits(

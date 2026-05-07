@@ -64,8 +64,6 @@ std::vector<double> read_csv_numeric_column(const std::string& csv_path,
 
 std::string format_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
 
-std::string format_task_results(const JobResult& job_result);
-
 void write_job_metadata(std::uint64_t run_id,
                         JobId job_id,
                         const RuntimeOptions& runtime_options,

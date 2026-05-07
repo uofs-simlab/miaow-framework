@@ -38,16 +38,6 @@ std::string format_diagnostics(const JobDiagnostics& diagnostics,
     return output.str();
 }
 
-std::string format_task_results(const JobResult& job_result) {
-    std::ostringstream output;
-    for (const TaskResult& task_result : job_result.task_results_) {
-        output << "[" << task_result.task_id_ << "] "
-               << task_status_to_string(task_result.status_) << ": "
-               << task_result.message_ << "\n";
-    }
-    return output.str();
-}
-
 } // namespace io
 
 void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id) {
@@ -55,7 +45,11 @@ void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id) {
 }
 
 void print_task_results(const JobResult& job_result) {
-    std::cout << io::format_task_results(job_result);
+    for (const TaskResult& task_result : job_result.task_results_) {
+        std::cout << "[" << task_result.task_id_ << "] "
+                  << task_status_to_string(task_result.status_) << ": "
+                  << task_result.message_ << "\n";
+    }
 }
 
 bool all_tasks_succeeded(const JobResult& job_result) {

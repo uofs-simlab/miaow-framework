@@ -41,14 +41,6 @@ static std::filesystem::path job_directory_path(const RuntimeOptions& runtime_op
            ("job_" + std::to_string(job_id));
 }
 
-static std::filesystem::path task_directory_path(const RuntimeOptions& runtime_options,
-                                                 std::uint64_t run_id,
-                                                 JobId job_id,
-                                                 TaskId task_id) {
-    return job_directory_path(runtime_options, run_id, job_id) /
-           ("task_" + std::to_string(task_id));
-}
-
 static void assign_task_output_directories(std::vector<Task>& tasks,
                                            const RuntimeOptions& runtime_options,
                                            std::uint64_t run_id,
@@ -66,11 +58,9 @@ static void assign_task_output_directories(std::vector<Task>& tasks,
 
     for (std::size_t task_index = 0; task_index < tasks.size(); ++task_index) {
         Task& task = tasks.at(task_index);
-        const std::filesystem::path task_directory = task_directory_path(
-            runtime_options,
-            run_id,
-            job_id,
-            static_cast<TaskId>(task_index));
+        const std::filesystem::path task_directory =
+            job_directory_path(runtime_options, run_id, job_id) /
+            ("task_" + std::to_string(static_cast<TaskId>(task_index)));
         task.task_output_dir_ = task_directory.string();
         std::filesystem::create_directories(task_directory);
     }
@@ -89,15 +79,6 @@ static void initialize_caf_once() {
         caf::init_global_meta_objects<caf::id_block::core_module>();
         caf::init_global_meta_objects<caf::id_block::miaow_module>();
     });
-}
-
-// Validate that the simulation unit registry is not empty before starting the runtime
-// Otherwise, there are no simulation units to run any tasks!
-static void validate_simulation_unit_registry(
-    const SimulationUnitRegistry& simulation_unit_registry) {
-    if (simulation_unit_registry.empty()) {
-        throw std::invalid_argument("Runtime requires at least one SimulationUnit");
-    }
 }
 
 // Validate that all task simulation unit IDs are known before starting the job
@@ -157,15 +138,18 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry)
 }
 
 // Construct a Runtime with one shared actor system and orchestrator
-Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry, RuntimeOptions options)
+Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
+                 RuntimeOptions options)
     : simulation_unit_registry_(
           std::make_shared<const SimulationUnitRegistry>(simulation_unit_registry)),
       runtime_options_(std::move(options)) {
     // initialize CAF global meta objects exactly once in a thread-safe way
     initialize_caf_once();
 
-    // Validate that the simulation unit registry is not empty before starting the runtime
-    validate_simulation_unit_registry(*simulation_unit_registry_);
+    // Require registered units before starting the runtime
+    if (simulation_unit_registry_->empty()) {
+        throw std::invalid_argument("Runtime requires at least one SimulationUnit");
+    }
     run_id_ = next_run_id.fetch_add(1, std::memory_order_relaxed);
 
     // Keep one actor system and one shared orchestrator for this Runtime

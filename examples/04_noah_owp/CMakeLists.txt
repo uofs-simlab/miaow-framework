@@ -39,7 +39,8 @@ endif()
 if(NOT EXISTS "${noah_owp_source_dir}/bmi/bmi_noahowp.f90")
     if(noah_owp_model_root_override)
         message(FATAL_ERROR
-            "MIAOW_NOAH_OWP_MODEL_ROOT must point to a NOAA-OWP/noah-owp-modular source tree")
+            "MIAOW_NOAH_OWP_MODEL_ROOT must point to a "
+            "NOAA-OWP/noah-owp-modular source tree")
     else()
         message(FATAL_ERROR
             "Fetched NOAA-OWP/noah-owp-modular source tree is missing bmi/bmi_noahowp.f90")
@@ -161,6 +162,20 @@ miaow_add_dynamic_bmi_plugin(
     OUTPUT_NAME surfacebmi
 )
 
+# Keep realization library paths stable across build directories
+set(noah_owp_realization_plugin_dir "${CMAKE_CURRENT_LIST_DIR}/data/plugins")
+set(noah_owp_realization_plugin_link
+    "${noah_owp_realization_plugin_dir}/libsurfacebmi")
+add_custom_command(TARGET miaow_noah_owp_plugin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${noah_owp_realization_plugin_dir}"
+    COMMAND ${CMAKE_COMMAND} -E remove -f
+            "${noah_owp_realization_plugin_link}"
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+            "$<TARGET_FILE:miaow_noah_owp_plugin>"
+            "${noah_owp_realization_plugin_link}"
+)
+
 add_executable(${EXECUTABLE_TARGET}
     main.cpp
 )
@@ -196,14 +211,17 @@ if(BUILD_TESTING)
     )
 
     add_test(
-        NAME miaow_example_04_noah_owp_parse
+        NAME miaow_example_04_noah_owp_run
         COMMAND
             $<TARGET_FILE:${EXECUTABLE_TARGET}>
     )
-    set_tests_properties(miaow_example_04_noah_owp_parse PROPERTIES
+    string(CONCAT noah_owp_run_regex
+        "Parsed realization with 3 feature\\(s\\)(.|\\n)*"
+        "\\[0\\] succeeded: BMI workflow complete"
+    )
+    set_tests_properties(miaow_example_04_noah_owp_run PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION
-            "Parsed realization with 3 subdomain\\(s\\)(.|\\n)*Loaded Noah-OWP BMI plugin: .*libsurfacebmi(.|\\n)*\\[0\\] succeeded: BMI workflow complete"
+        PASS_REGULAR_EXPRESSION "${noah_owp_run_regex}"
     )
 
     add_test(

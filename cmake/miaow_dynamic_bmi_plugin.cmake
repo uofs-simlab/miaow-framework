@@ -21,10 +21,9 @@ include(CMakeParseArguments)
 #   - LINK_ISO_C_BMI: link the NOAA-OWP iso_c_bmi bridge library
 #   - USE_MIAOW_BMI_INCLUDE: add miaow's vendored BMI C++ headers
 #
-# For C++ plugins, the shared library typically exports `register_bmi` and
-# `unregister_bmi` for a concrete `bmi::Bmi` implementation. For Fortran
-# plugins, the shared library provides `register_bmi(void**)`, while the linked
-# iso_c_bmi library supplies the procedural BMI entry points such as
+# C++ plugins export `bmi_model_create` and `bmi_model_destroy` for a concrete
+# `bmi::Bmi` implementation. Fortran plugins provide `register_bmi(void**)`,
+# while the linked iso_c_bmi library supplies procedural BMI entry points such as
 # `initialize` and `finalize`.
 function(miaow_add_dynamic_bmi_plugin)
     set(options LINK_ISO_C_BMI USE_MIAOW_BMI_INCLUDE)
