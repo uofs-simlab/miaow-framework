@@ -38,5 +38,8 @@ breathe_default_project = "MIAOW"
 breathe_domain_by_extension = {"hpp": "cpp"}
 breathe_default_members = ("members",)
 
-html_title = "MIAOW API documentation"
+html_title = "MIAOW documentation"
 html_logo = "images/miaow_logo.svg"
+html_theme_options = {
+    "font_size": "14px",
+}

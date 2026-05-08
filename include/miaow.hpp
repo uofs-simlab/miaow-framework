@@ -135,9 +135,6 @@ inline std::string task_status_to_string(TaskStatus status) {
 
 /**
  * @brief Structured result payload returned for one `Task` execution.
- *
- * @see [`Task`](@ref miaow::Task)
- * @see `TaskStatus`
  */
 struct TaskResult {
     // `TaskId` within the submitted job
@@ -165,8 +162,6 @@ struct TaskResult {
  * @param message Failure message for the result.
  * @param prefix Optional diagnostic prefix prepended as `<prefix>: `.
  * @return Failed `TaskResult` with the task `SimulationUnitId`.
- *
- * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 inline TaskResult make_failed_task_result(const Task& task,
                                           const std::string& message,
@@ -191,8 +186,6 @@ inline TaskResult make_failed_task_result(const Task& task,
  * @param exception Captured exception used to build the failure message.
  * @param prefix Optional diagnostic prefix prepended as `<prefix>: `.
  * @return Failed `TaskResult` with the task `SimulationUnitId`.
- *
- * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 inline TaskResult make_failed_task_result(const Task& task,
                                           std::exception_ptr exception,
@@ -216,8 +209,6 @@ inline TaskResult make_failed_task_result(const Task& task,
  * @brief Base class for model-specific simulation units.
  *
  * `Runtime` dispatch occurs through subclasses overriding `execute()`.
- *
- * @see [`Runtime`](@ref miaow::Runtime)
  */
 class SimulationUnit {
 public:
@@ -227,9 +218,6 @@ public:
      * @brief Execute the simulation unit for a single task.
      * @param task Generic `Task` arguments.
      * @return Structured `TaskResult` for this execution.
-     *
-     * @see [`Task`](@ref miaow::Task)
-     * @see [`TaskResult`](@ref miaow::TaskResult)
      */
     virtual TaskResult execute(const Task& task) = 0;
 
@@ -239,9 +227,6 @@ public:
  * @brief Callable behaviour used by each `simulation_unit_actor`.
  *
  * The executor receives generic task arguments and returns a structured result.
- *
- * @see [`Task`](@ref miaow::Task)
- * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 using SimulationUnitExecutor = std::function<TaskResult(const Task& task)>;
 
@@ -249,8 +234,6 @@ using SimulationUnitExecutor = std::function<TaskResult(const Task& task)>;
  * @brief Registry for simulation unit executors.
  *
  * Tracks `simulation_unit_id -> executor` for runtime task routing.
- *
- * @see `SimulationUnitExecutor`
  */
 class SimulationUnitRegistry {
 public:
@@ -309,8 +292,6 @@ public:
      * @brief Look up executor for a simulation unit ID.
      * @param simulation_unit_id Registered ID to resolve.
      * @return Pointer to executor, or null when ID is unknown.
-     *
-     * @see `SimulationUnitExecutor`
      */
     const SimulationUnitExecutor* find_executor(SimulationUnitId simulation_unit_id) const {
         const std::unordered_map<SimulationUnitId, SimulationUnitExecutor>::const_iterator
@@ -332,8 +313,6 @@ private:
  * @brief Runtime options for model-independent orchestration behaviour.
  *
  * Solver-specific options should be passed in `Task` arguments.
- *
- * @see [`Task`](@ref miaow::Task)
  */
 struct RuntimeOptions {
     // Maximum number of worker actors that may run concurrently
@@ -389,9 +368,6 @@ struct JobDiagnostics {
 
 /**
  * @brief Result payload returned when awaiting a `Runtime::submit_job()` handle
- *
- * @see [`Runtime`](@ref miaow::Runtime)
- * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 struct JobResult {
     // Structured result for each task in input order
@@ -405,8 +381,6 @@ struct JobResult {
  * @brief Handle for a submitted asynchronous job.
  *
  * Call `get()` to wait for completion and retrieve the final result.
- *
- * @see [`JobResult`](@ref miaow::JobResult)
  */
 using JobHandle = std::future<JobResult>;
 
@@ -418,8 +392,6 @@ using JobHandle = std::future<JobResult>;
  *
  * Each submitted `JobId` maps to the promise that will be fulfilled by the
  * orchestrator actor when that job finishes.
- *
- * @see [`JobResult`](@ref miaow::JobResult)
  */
 using PendingJobs = std::unordered_map<JobId, std::promise<JobResult>>;
 

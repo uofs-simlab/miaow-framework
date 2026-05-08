@@ -14,17 +14,12 @@ namespace miaow {
  * @brief Print diagnostics to stdout.
  * @param diagnostics `JobDiagnostics` payload to print.
  * @param job_id `JobId` included in the printed header.
- *
- * @see [`JobDiagnostics`](@ref miaow::JobDiagnostics)
  */
 void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
 
 /**
  * @brief Print all `TaskResult`s in a job to stdout.
  * @param job_result `JobResult` payload containing task results to print.
- *
- * @see [`JobResult`](@ref miaow::JobResult)
- * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 void print_task_results(const JobResult& job_result);
 
@@ -32,9 +27,6 @@ void print_task_results(const JobResult& job_result);
  * @brief Return true when every `TaskResult` in a job succeeded.
  * @param job_result `JobResult` payload to inspect.
  * @return true when every task status is `TaskStatus::succeeded`.
- *
- * @see [`JobResult`](@ref miaow::JobResult)
- * @see `TaskStatus`
  */
 bool all_tasks_succeeded(const JobResult& job_result);
 
@@ -69,8 +61,6 @@ bool ensure_expected_run_dir(const std::string& executable_name,
  * @param runtime_options `RuntimeOptions` updated from parsed arguments.
  * @throws std::runtime_error if an argument is unrecognized, missing a value,
  * or has an invalid value.
- *
- * @see [`RuntimeOptions`](@ref miaow::RuntimeOptions)
  */
 void parse_runtime_cli_options(int argc,
                                char* argv[],

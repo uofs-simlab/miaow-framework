@@ -23,8 +23,6 @@ namespace bmi_api = ::bmi;
  *
  * NextGen-style realizations are expanded into one Fortran BMI `Task` input
  * per catchment. Realization-driven C++ BMI modules are not supported yet.
- *
- * @see [`RealizationConfig`](@ref miaow::RealizationConfig)
  */
 struct RealizationFeature {
     // Dynamic Fortran BMI library path for this feature
@@ -45,8 +43,6 @@ struct RealizationFeature {
  *
  * The supported realization format is a NextGen-style global realization
  * with one `bmi_fortran` module and `CsvPerFeature` forcing.
- *
- * @see `build_bmi_realization_tasks()`
  */
 struct RealizationConfig {
     // Root directory for realization-driven runtime output
@@ -80,9 +76,6 @@ struct RealizationConfig {
  * @return Structured `TaskResult` for the BMI task execution.
  * @throws std::runtime_error if the task specification, forcing setup, or BMI
  * model lifecycle fails.
- *
- * @see [`Task`](@ref miaow::Task)
- * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task);
 
@@ -110,8 +103,6 @@ class DynamicBmi;
  *
  * The plugin must export `bmi_model_create()` and `bmi_model_destroy(...)`.
  * These symbols may be renamed through constructor arguments.
- *
- * @see `DynamicBmiBackend`
  */
 template <>
 class DynamicBmi<DynamicBmiBackend::cpp> : public bmi_api::Bmi {
@@ -195,8 +186,6 @@ private:
  * The plugin must export `register_bmi(void**)` for the linked NOAA-OWP
  * procedural BMI bridge. If the plugin exports `unregister_bmi(void**)`, MIAOW
  * calls it after BMI finalization.
- *
- * @see `DynamicBmiBackend`
  */
 template <>
 class DynamicBmi<DynamicBmiBackend::fortran> : public bmi_api::Bmi {
@@ -293,9 +282,6 @@ using DynamicFortranBmi = DynamicBmi<DynamicBmiBackend::fortran>;
  * setup fails.
  * @throws std::filesystem::filesystem_error if subprocess control paths cannot
  * be resolved or created.
- *
- * @see `DynamicBmiBackend`
- * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 TaskResult execute_dynamic_bmi_model_in_subprocess(
     DynamicBmiBackend backend,
@@ -311,9 +297,6 @@ TaskResult execute_dynamic_bmi_model_in_subprocess(
  * @param execution_mode Process isolation mode used by each dynamic BMI task.
  * @return `Task`s ready to submit through `Runtime::submit_job()`.
  * @throws std::runtime_error if a feature contains invalid forcing task inputs.
- *
- * @see [`RealizationConfig`](@ref miaow::RealizationConfig)
- * @see [`Runtime`](@ref miaow::Runtime)
  */
 std::vector<Task> build_bmi_realization_tasks(
     const RealizationConfig& realization,
@@ -324,8 +307,6 @@ std::vector<Task> build_bmi_realization_tasks(
  * @brief Simulation unit that runs a complete BMI model lifecycle.
  *
  * @tparam BmiModelType BMI model type derived from `bmi_api::Bmi`.
- *
- * @see [`SimulationUnit`](@ref miaow::SimulationUnit)
  */
 template <class BmiModelType>
 class BmiSimulationUnit : public SimulationUnit {
@@ -394,8 +375,6 @@ private:
  *
  * Owns the plugin path explicitly so subprocess execution can pass it to the
  * subprocess executable without loading the plugin in the parent process.
- *
- * @see [`DynamicBmi`](@ref miaow::DynamicBmi)
  */
 template <DynamicBmiBackend Backend>
 class BmiSimulationUnit<DynamicBmi<Backend>> : public SimulationUnit {

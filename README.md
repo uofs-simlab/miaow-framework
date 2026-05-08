@@ -46,11 +46,11 @@ cd ../04_noah_owp
 
 ## Documentation
 
-Generated API documentation uses Doxygen for C++ extraction and Sphinx with
-Breathe for HTML rendering. Doxygen must be installed separately and available
+Generated API documentation uses [Doxygen](https://www.doxygen.nl/) for C++ docstring extraction and [Sphinx](https://www.sphinx-doc.org/) with
+[Breathe](https://www.breathe-doc.org/) for HTML rendering. Doxygen must be installed separately and available
 on `PATH`.
 
-Build the docs from a dedicated Python environment:
+You can build the docs locally from a dedicated Python environment:
 
 ```sh
 python3 -m venv docs/.venv
