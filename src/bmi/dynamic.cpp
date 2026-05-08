@@ -4,7 +4,6 @@
 #include <array>
 #include <cctype>
 #include <dlfcn.h>
-#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -77,6 +76,9 @@ namespace {
 
 constexpr int bmi_success = 0;
 constexpr int max_bmi_string_length = 2048;
+constexpr const char* cpp_plugin_error_prefix = "BMI dynamic C++ plugin error: ";
+constexpr const char* fortran_plugin_error_prefix =
+    "BMI dynamic Fortran plugin error: ";
 
 using BmiStringBuffer = std::array<char, max_bmi_string_length>;
 using BmiNamesFunction = int (*)(void**, char**);
@@ -126,100 +128,79 @@ std::vector<std::string> read_var_names(void** model_handle,
     return names;
 }
 
-// RAII wrapper for dlopen handles with symbol resolution and error handling
-class DynamicLibrary {
-public:
-    DynamicLibrary(std::string plugin_path, std::string error_prefix)
-        : plugin_path_(std::move(plugin_path)),
-          error_prefix_(std::move(error_prefix)) {
-        if (plugin_path_.empty()) {
-            throw std::runtime_error(error_prefix_ + "plugin path is empty");
-        }
-
-        handle_ = dlopen(plugin_path_.c_str(), RTLD_NOW | RTLD_LOCAL);
-        if (handle_ == nullptr) {
-            const char* error = dlerror();
-            const std::string detail =
-                error == nullptr ? "unknown loader error" : error;
-            throw std::runtime_error(
-                error_prefix_ + "unable to load plugin '" + plugin_path_ +
-                "': " + detail);
-        }
+void* open_dynamic_library(const std::string& plugin_path,
+                           const std::string& error_prefix) {
+    if (plugin_path.empty()) {
+        throw std::runtime_error(error_prefix + "plugin path is empty");
     }
 
-    DynamicLibrary(const DynamicLibrary&) = delete;
-    DynamicLibrary& operator=(const DynamicLibrary&) = delete;
-
-    ~DynamicLibrary() {
-        if (handle_ != nullptr) {
-            (void)dlclose(handle_);
-            handle_ = nullptr;
-        }
-    }
-
-    void* resolve_required_symbol(const std::string& symbol_name) const {
-        void* symbol = resolve_symbol(symbol_name);
-        if (symbol == nullptr) {
-            throw std::runtime_error(
-                error_prefix_ + "unable to resolve symbol '" + symbol_name +
-                "': symbol not found");
-        }
-        return symbol;
-    }
-
-    void* resolve_optional_symbol(const std::string& symbol_name) const {
-        return resolve_symbol(symbol_name);
-    }
-
-private:
-    void* resolve_symbol(const std::string& symbol_name) const {
-        dlerror();
-        void* symbol = dlsym(handle_, symbol_name.c_str());
+    void* handle = dlopen(plugin_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (handle == nullptr) {
         const char* error = dlerror();
-        if (error != nullptr) {
-            return nullptr;
-        }
-        return symbol;
+        const std::string detail =
+            error == nullptr ? "unknown loader error" : error;
+        throw std::runtime_error(
+            error_prefix + "unable to load plugin '" + plugin_path + "': " +
+            detail);
     }
+    return handle;
+}
 
-    std::string plugin_path_;
-    std::string error_prefix_;
-    void* handle_{nullptr};
-};
+void close_dynamic_library(void*& library_handle) {
+    if (library_handle != nullptr) {
+        (void)dlclose(library_handle);
+        library_handle = nullptr;
+    }
+}
+
+void* resolve_dynamic_symbol(void* library_handle,
+                             const std::string& symbol_name) {
+    dlerror();
+    void* symbol = dlsym(library_handle, symbol_name.c_str());
+    const char* error = dlerror();
+    if (error != nullptr) {
+        return nullptr;
+    }
+    return symbol;
+}
+
+void* resolve_required_dynamic_symbol(void* library_handle,
+                                      const std::string& symbol_name,
+                                      const std::string& error_prefix) {
+    void* symbol = resolve_dynamic_symbol(library_handle, symbol_name);
+    if (symbol == nullptr) {
+        throw std::runtime_error(
+            error_prefix + "unable to resolve symbol '" + symbol_name +
+            "': symbol not found");
+    }
+    return symbol;
+}
 
 } // namespace
 
 // Implementation of DynamicBmi for the C++ dynamic plugin backend
-struct DynamicBmi<DynamicBmiBackend::cpp>::State {
-    using CreateBmiFunction = bmi_api::Bmi* (*)();
-    using DestroyBmiFunction = void (*)(bmi_api::Bmi*);
-
-    State(std::string plugin_path,
-          std::string create_function,
-          std::string destroy_function)
-        : plugin_path_(std::move(plugin_path)),
-          create_function_(std::move(create_function)),
-          destroy_function_(std::move(destroy_function)),
-          library_(plugin_path_, "BMI dynamic C++ plugin error: ") {
-        load_create_destroy();
+DynamicBmi<DynamicBmiBackend::cpp>::DynamicBmi(
+    std::string plugin_path,
+    std::string create_function,
+    std::string destroy_function) {
+    if (create_function.empty() || destroy_function.empty()) {
+        throw std::runtime_error(
+            "BMI dynamic C++ plugin error: create/destroy symbol is empty");
     }
 
-    ~State() {
-        cleanup_model();
-    }
+    library_handle_ = open_dynamic_library(plugin_path, cpp_plugin_error_prefix);
 
-    void load_create_destroy() {
-        if (create_function_.empty() || destroy_function_.empty()) {
-            throw std::runtime_error(
-                "BMI dynamic C++ plugin error: create/destroy symbol is empty");
-        }
-
-        void* create_symbol =
-            library_.resolve_required_symbol(create_function_);
+    try {
+        void* create_symbol = resolve_required_dynamic_symbol(
+            library_handle_,
+            create_function,
+            cpp_plugin_error_prefix);
         create_bmi_ = reinterpret_cast<CreateBmiFunction>(create_symbol);
 
-        void* destroy_symbol =
-            library_.resolve_required_symbol(destroy_function_);
+        void* destroy_symbol = resolve_required_dynamic_symbol(
+            library_handle_,
+            destroy_function,
+            cpp_plugin_error_prefix);
         destroy_bmi_ = reinterpret_cast<DestroyBmiFunction>(destroy_symbol);
 
         model_ = create_bmi_();
@@ -227,140 +208,128 @@ struct DynamicBmi<DynamicBmiBackend::cpp>::State {
             throw std::runtime_error(
                 "BMI dynamic C++ plugin error: create function returned null model");
         }
+    } catch (...) {
+        cleanup_model();
+        close_dynamic_library(library_handle_);
+        throw;
     }
-
-    void cleanup_model() {
-        if (model_ == nullptr) {
-            return;
-        }
-        if (initialized_) {
-            try {
-                model_->Finalize();
-            } catch (...) {
-            }
-            initialized_ = false;
-        }
-
-        destroy_bmi_(model_);
-        model_ = nullptr;
-    }
-
-    std::string plugin_path_;
-    std::string create_function_;
-    std::string destroy_function_;
-    DynamicLibrary library_;
-    bmi_api::Bmi* model_{nullptr};
-    CreateBmiFunction create_bmi_{nullptr};
-    DestroyBmiFunction destroy_bmi_{nullptr};
-    bool initialized_{false};
-};
-
-DynamicBmi<DynamicBmiBackend::cpp>::DynamicBmi(
-    std::string plugin_path,
-    std::string create_function,
-    std::string destroy_function)
-    : state_(std::make_unique<State>(
-          std::move(plugin_path),
-          std::move(create_function),
-          std::move(destroy_function))) {
 }
 
-DynamicBmi<DynamicBmiBackend::cpp>::~DynamicBmi() = default;
+DynamicBmi<DynamicBmiBackend::cpp>::~DynamicBmi() {
+    cleanup_model();
+    close_dynamic_library(library_handle_);
+}
+
+void DynamicBmi<DynamicBmiBackend::cpp>::cleanup_model() {
+    if (model_ == nullptr) {
+        return;
+    }
+    if (initialized_) {
+        try {
+            model_->Finalize();
+        } catch (...) {
+        }
+        initialized_ = false;
+    }
+
+    destroy_bmi_(model_);
+    model_ = nullptr;
+}
 
 void DynamicBmi<DynamicBmiBackend::cpp>::Initialize(std::string config_file) {
-    state_->model_->Initialize(std::move(config_file));
-    state_->initialized_ = true;
+    model_->Initialize(std::move(config_file));
+    initialized_ = true;
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::Update() {
-    state_->model_->Update();
+    model_->Update();
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::UpdateUntil(double time) {
-    state_->model_->UpdateUntil(time);
+    model_->UpdateUntil(time);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::Finalize() {
-    state_->model_->Finalize();
-    state_->initialized_ = false;
+    model_->Finalize();
+    initialized_ = false;
 }
 
 std::string DynamicBmi<DynamicBmiBackend::cpp>::GetComponentName() {
-    return state_->model_->GetComponentName();
+    return model_->GetComponentName();
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetInputItemCount() {
-    return state_->model_->GetInputItemCount();
+    return model_->GetInputItemCount();
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetOutputItemCount() {
-    return state_->model_->GetOutputItemCount();
+    return model_->GetOutputItemCount();
 }
 
 std::vector<std::string>
 DynamicBmi<DynamicBmiBackend::cpp>::GetInputVarNames() {
-    return state_->model_->GetInputVarNames();
+    return model_->GetInputVarNames();
 }
 
 std::vector<std::string>
 DynamicBmi<DynamicBmiBackend::cpp>::GetOutputVarNames() {
-    return state_->model_->GetOutputVarNames();
+    return model_->GetOutputVarNames();
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetVarGrid(std::string name) {
-    return state_->model_->GetVarGrid(std::move(name));
+    return model_->GetVarGrid(std::move(name));
 }
 
 std::string DynamicBmi<DynamicBmiBackend::cpp>::GetVarType(
     std::string name) {
-    return state_->model_->GetVarType(std::move(name));
+    return model_->GetVarType(std::move(name));
 }
 
 std::string DynamicBmi<DynamicBmiBackend::cpp>::GetVarUnits(
     std::string name) {
-    return state_->model_->GetVarUnits(std::move(name));
+    return model_->GetVarUnits(std::move(name));
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetVarItemsize(std::string name) {
-    return state_->model_->GetVarItemsize(std::move(name));
+    return model_->GetVarItemsize(std::move(name));
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetVarNbytes(std::string name) {
-    return state_->model_->GetVarNbytes(std::move(name));
+    return model_->GetVarNbytes(std::move(name));
 }
 
 std::string DynamicBmi<DynamicBmiBackend::cpp>::GetVarLocation(
     std::string name) {
-    return state_->model_->GetVarLocation(std::move(name));
+    return model_->GetVarLocation(std::move(name));
 }
 
 double DynamicBmi<DynamicBmiBackend::cpp>::GetCurrentTime() {
-    return state_->model_->GetCurrentTime();
+    return model_->GetCurrentTime();
 }
 
 double DynamicBmi<DynamicBmiBackend::cpp>::GetStartTime() {
-    return state_->model_->GetStartTime();
+    return model_->GetStartTime();
 }
 
 double DynamicBmi<DynamicBmiBackend::cpp>::GetEndTime() {
-    return state_->model_->GetEndTime();
+    return model_->GetEndTime();
 }
 
 std::string DynamicBmi<DynamicBmiBackend::cpp>::GetTimeUnits() {
-    return state_->model_->GetTimeUnits();
+    return model_->GetTimeUnits();
 }
 
 double DynamicBmi<DynamicBmiBackend::cpp>::GetTimeStep() {
-    return state_->model_->GetTimeStep();
+    return model_->GetTimeStep();
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetValue(std::string name,
                                                        void* dest) {
-    state_->model_->GetValue(std::move(name), dest);
+    model_->GetValue(std::move(name), dest);
 }
 
 void* DynamicBmi<DynamicBmiBackend::cpp>::GetValuePtr(std::string name) {
-    return state_->model_->GetValuePtr(std::move(name));
+    return model_->GetValuePtr(std::move(name));
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetValueAtIndices(
@@ -368,12 +337,12 @@ void DynamicBmi<DynamicBmiBackend::cpp>::GetValueAtIndices(
     void* dest,
     int* inds,
     int count) {
-    state_->model_->GetValueAtIndices(std::move(name), dest, inds, count);
+    model_->GetValueAtIndices(std::move(name), dest, inds, count);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::SetValue(std::string name,
                                                        void* src) {
-    state_->model_->SetValue(std::move(name), src);
+    model_->SetValue(std::move(name), src);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::SetValueAtIndices(
@@ -381,203 +350,196 @@ void DynamicBmi<DynamicBmiBackend::cpp>::SetValueAtIndices(
     int* inds,
     int count,
     void* src) {
-    state_->model_->SetValueAtIndices(std::move(name), inds, count, src);
+    model_->SetValueAtIndices(std::move(name), inds, count, src);
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetGridRank(const int grid) {
-    return state_->model_->GetGridRank(grid);
+    return model_->GetGridRank(grid);
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetGridSize(const int grid) {
-    return state_->model_->GetGridSize(grid);
+    return model_->GetGridSize(grid);
 }
 
 std::string DynamicBmi<DynamicBmiBackend::cpp>::GetGridType(
     const int grid) {
-    return state_->model_->GetGridType(grid);
+    return model_->GetGridType(grid);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridShape(const int grid,
                                                            int* shape) {
-    state_->model_->GetGridShape(grid, shape);
+    model_->GetGridShape(grid, shape);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridSpacing(const int grid,
                                                              double* spacing) {
-    state_->model_->GetGridSpacing(grid, spacing);
+    model_->GetGridSpacing(grid, spacing);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridOrigin(const int grid,
                                                             double* origin) {
-    state_->model_->GetGridOrigin(grid, origin);
+    model_->GetGridOrigin(grid, origin);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridX(const int grid,
                                                        double* x) {
-    state_->model_->GetGridX(grid, x);
+    model_->GetGridX(grid, x);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridY(const int grid,
                                                        double* y) {
-    state_->model_->GetGridY(grid, y);
+    model_->GetGridY(grid, y);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridZ(const int grid,
                                                        double* z) {
-    state_->model_->GetGridZ(grid, z);
+    model_->GetGridZ(grid, z);
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetGridNodeCount(const int grid) {
-    return state_->model_->GetGridNodeCount(grid);
+    return model_->GetGridNodeCount(grid);
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetGridEdgeCount(const int grid) {
-    return state_->model_->GetGridEdgeCount(grid);
+    return model_->GetGridEdgeCount(grid);
 }
 
 int DynamicBmi<DynamicBmiBackend::cpp>::GetGridFaceCount(const int grid) {
-    return state_->model_->GetGridFaceCount(grid);
+    return model_->GetGridFaceCount(grid);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridEdgeNodes(
     const int grid,
     int* edge_nodes) {
-    state_->model_->GetGridEdgeNodes(grid, edge_nodes);
+    model_->GetGridEdgeNodes(grid, edge_nodes);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridFaceEdges(
     const int grid,
     int* face_edges) {
-    state_->model_->GetGridFaceEdges(grid, face_edges);
+    model_->GetGridFaceEdges(grid, face_edges);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridFaceNodes(
     const int grid,
     int* face_nodes) {
-    state_->model_->GetGridFaceNodes(grid, face_nodes);
+    model_->GetGridFaceNodes(grid, face_nodes);
 }
 
 void DynamicBmi<DynamicBmiBackend::cpp>::GetGridNodesPerFace(
     const int grid,
     int* nodes_per_face) {
-    state_->model_->GetGridNodesPerFace(grid, nodes_per_face);
+    model_->GetGridNodesPerFace(grid, nodes_per_face);
 }
 
 // Implementation of DynamicBmi for the Fortran dynamic plugin backend
-struct DynamicBmi<DynamicBmiBackend::fortran>::State {
-    using RegisterBmiFunction = int (*)(void**);
-    using UnregisterBmiFunction = int (*)(void**);
-
-    explicit State(std::string plugin_path)
-        : library_(std::move(plugin_path), "BMI dynamic Fortran plugin error: ") {
-        void* register_symbol = library_.resolve_required_symbol("register_bmi");
+DynamicBmi<DynamicBmiBackend::fortran>::DynamicBmi(
+    std::string plugin_path)
+    : library_handle_(
+          open_dynamic_library(plugin_path, fortran_plugin_error_prefix)) {
+    try {
+        void* register_symbol = resolve_required_dynamic_symbol(
+            library_handle_,
+            "register_bmi",
+            fortran_plugin_error_prefix);
         register_bmi_ = reinterpret_cast<RegisterBmiFunction>(register_symbol);
 
-        void* unregister_symbol = library_.resolve_optional_symbol("unregister_bmi");
+        void* unregister_symbol =
+            resolve_dynamic_symbol(library_handle_, "unregister_bmi");
         if (unregister_symbol != nullptr) {
             unregister_bmi_ =
                 reinterpret_cast<UnregisterBmiFunction>(unregister_symbol);
         }
+    } catch (...) {
+        close_dynamic_library(library_handle_);
+        throw;
     }
-
-    ~State() {
-        cleanup_model();
-    }
-
-    void finalize_model() {
-        if (model_handle_ != nullptr && initialized_) {
-            check_bmi_status(finalize(&model_handle_), "finalize");
-            initialized_ = false;
-        }
-    }
-
-    void unregister_model() {
-        if (model_handle_ == nullptr) {
-            return;
-        }
-        if (unregister_bmi_ != nullptr) {
-            (void)unregister_bmi_(&model_handle_);
-        }
-        model_handle_ = nullptr;
-    }
-
-    void cleanup_model() {
-        if (model_handle_ == nullptr) {
-            return;
-        }
-        if (initialized_) {
-            (void)finalize(&model_handle_);
-            initialized_ = false;
-        }
-        unregister_model();
-    }
-
-    DynamicLibrary library_;
-    void* model_handle_{nullptr};
-    RegisterBmiFunction register_bmi_{nullptr};
-    UnregisterBmiFunction unregister_bmi_{nullptr};
-    bool initialized_{false};
-};
-
-DynamicBmi<DynamicBmiBackend::fortran>::DynamicBmi(
-    std::string plugin_path)
-    : state_(std::make_unique<State>(std::move(plugin_path))) {
 }
 
-DynamicBmi<DynamicBmiBackend::fortran>::~DynamicBmi() = default;
+DynamicBmi<DynamicBmiBackend::fortran>::~DynamicBmi() {
+    cleanup_model();
+    close_dynamic_library(library_handle_);
+}
+
+void DynamicBmi<DynamicBmiBackend::fortran>::finalize_model() {
+    if (model_handle_ != nullptr && initialized_) {
+        check_bmi_status(finalize(&model_handle_), "finalize");
+        initialized_ = false;
+    }
+}
+
+void DynamicBmi<DynamicBmiBackend::fortran>::unregister_model() {
+    if (model_handle_ == nullptr) {
+        return;
+    }
+    if (unregister_bmi_ != nullptr) {
+        (void)unregister_bmi_(&model_handle_);
+    }
+    model_handle_ = nullptr;
+}
+
+void DynamicBmi<DynamicBmiBackend::fortran>::cleanup_model() {
+    if (model_handle_ == nullptr) {
+        return;
+    }
+    if (initialized_) {
+        (void)finalize(&model_handle_);
+        initialized_ = false;
+    }
+    unregister_model();
+}
 
 void DynamicBmi<DynamicBmiBackend::fortran>::Initialize(
     std::string config_file) {
-    if (state_->model_handle_ == nullptr) {
-        check_bmi_status(state_->register_bmi_(&state_->model_handle_),
-                         "register_bmi");
+    if (model_handle_ == nullptr) {
+        check_bmi_status(register_bmi_(&model_handle_), "register_bmi");
     }
 
     BmiStringBuffer config_file_buffer =
         make_bmi_string(config_file, "BMI config path");
     check_bmi_status(
-        initialize(&state_->model_handle_, config_file_buffer.data()),
+        initialize(&model_handle_, config_file_buffer.data()),
         "initialize");
-    state_->initialized_ = true;
+    initialized_ = true;
 }
 
 void DynamicBmi<DynamicBmiBackend::fortran>::Update() {
-    check_bmi_status(update(&state_->model_handle_), "update");
+    check_bmi_status(update(&model_handle_), "update");
 }
 
 void DynamicBmi<DynamicBmiBackend::fortran>::UpdateUntil(double time) {
-    check_bmi_status(update_until(&state_->model_handle_, &time), "update_until");
+    check_bmi_status(update_until(&model_handle_, &time), "update_until");
 }
 
 void DynamicBmi<DynamicBmiBackend::fortran>::Finalize() {
-    state_->finalize_model();
-    state_->unregister_model();
+    finalize_model();
+    unregister_model();
 }
 
 std::string DynamicBmi<DynamicBmiBackend::fortran>::GetComponentName() {
     BmiStringBuffer name{};
-    check_bmi_status(get_component_name(&state_->model_handle_, name.data()),
+    check_bmi_status(get_component_name(&model_handle_, name.data()),
                      "get_component_name");
     return name.data();
 }
 
 int DynamicBmi<DynamicBmiBackend::fortran>::GetInputItemCount() {
     int count = 0;
-    check_bmi_status(get_input_item_count(&state_->model_handle_, &count),
+    check_bmi_status(get_input_item_count(&model_handle_, &count),
                      "get_input_item_count");
     return count;
 }
 
 int DynamicBmi<DynamicBmiBackend::fortran>::GetOutputItemCount() {
     int count = 0;
-    check_bmi_status(get_output_item_count(&state_->model_handle_, &count),
+    check_bmi_status(get_output_item_count(&model_handle_, &count),
                      "get_output_item_count");
     return count;
 }
 
 std::vector<std::string>
 DynamicBmi<DynamicBmiBackend::fortran>::GetInputVarNames() {
-    return read_var_names(&state_->model_handle_,
+    return read_var_names(&model_handle_,
                           GetInputItemCount(),
                           get_input_var_names,
                           "get_input_var_names");
@@ -585,7 +547,7 @@ DynamicBmi<DynamicBmiBackend::fortran>::GetInputVarNames() {
 
 std::vector<std::string>
 DynamicBmi<DynamicBmiBackend::fortran>::GetOutputVarNames() {
-    return read_var_names(&state_->model_handle_,
+    return read_var_names(&model_handle_,
                           GetOutputItemCount(),
                           get_output_var_names,
                           "get_output_var_names");
@@ -595,7 +557,7 @@ int DynamicBmi<DynamicBmiBackend::fortran>::GetVarGrid(std::string name) {
     int grid = 0;
     BmiStringBuffer name_buffer = make_bmi_string(name, "BMI variable name");
     check_bmi_status(
-        get_var_grid(&state_->model_handle_, name_buffer.data(), &grid),
+        get_var_grid(&model_handle_, name_buffer.data(), &grid),
         "get_var_grid");
     return grid;
 }
@@ -605,7 +567,7 @@ std::string DynamicBmi<DynamicBmiBackend::fortran>::GetVarType(
     BmiStringBuffer name_buffer = make_bmi_string(name, "BMI variable name");
     BmiStringBuffer type{};
     check_bmi_status(
-        get_var_type(&state_->model_handle_, name_buffer.data(), type.data()),
+        get_var_type(&model_handle_, name_buffer.data(), type.data()),
         "get_var_type");
 
     // Normalize common Fortran BMI type names to C++ BMI type names
@@ -634,7 +596,7 @@ std::string DynamicBmi<DynamicBmiBackend::fortran>::GetVarUnits(
     BmiStringBuffer name_buffer = make_bmi_string(name, "BMI variable name");
     BmiStringBuffer units{};
     check_bmi_status(
-        get_var_units(&state_->model_handle_, name_buffer.data(), units.data()),
+        get_var_units(&model_handle_, name_buffer.data(), units.data()),
         "get_var_units");
     return units.data();
 }
@@ -644,7 +606,7 @@ int DynamicBmi<DynamicBmiBackend::fortran>::GetVarItemsize(
     int size = 0;
     BmiStringBuffer name_buffer = make_bmi_string(name, "BMI variable name");
     check_bmi_status(
-        get_var_itemsize(&state_->model_handle_, name_buffer.data(), &size),
+        get_var_itemsize(&model_handle_, name_buffer.data(), &size),
         "get_var_itemsize");
     return size;
 }
@@ -654,7 +616,7 @@ int DynamicBmi<DynamicBmiBackend::fortran>::GetVarNbytes(
     int nbytes = 0;
     BmiStringBuffer name_buffer = make_bmi_string(name, "BMI variable name");
     check_bmi_status(
-        get_var_nbytes(&state_->model_handle_, name_buffer.data(), &nbytes),
+        get_var_nbytes(&model_handle_, name_buffer.data(), &nbytes),
         "get_var_nbytes");
     return nbytes;
 }
@@ -665,42 +627,42 @@ std::string DynamicBmi<DynamicBmiBackend::fortran>::GetVarLocation(
     BmiStringBuffer location{};
     check_bmi_status(
         get_var_location(
-            &state_->model_handle_, name_buffer.data(), location.data()),
+            &model_handle_, name_buffer.data(), location.data()),
         "get_var_location");
     return location.data();
 }
 
 double DynamicBmi<DynamicBmiBackend::fortran>::GetCurrentTime() {
     double time = 0.0;
-    check_bmi_status(get_current_time(&state_->model_handle_, &time),
+    check_bmi_status(get_current_time(&model_handle_, &time),
                      "get_current_time");
     return time;
 }
 
 double DynamicBmi<DynamicBmiBackend::fortran>::GetStartTime() {
     double time = 0.0;
-    check_bmi_status(get_start_time(&state_->model_handle_, &time),
+    check_bmi_status(get_start_time(&model_handle_, &time),
                      "get_start_time");
     return time;
 }
 
 double DynamicBmi<DynamicBmiBackend::fortran>::GetEndTime() {
     double time = 0.0;
-    check_bmi_status(get_end_time(&state_->model_handle_, &time),
+    check_bmi_status(get_end_time(&model_handle_, &time),
                      "get_end_time");
     return time;
 }
 
 std::string DynamicBmi<DynamicBmiBackend::fortran>::GetTimeUnits() {
     BmiStringBuffer units{};
-    check_bmi_status(get_time_units(&state_->model_handle_, units.data()),
+    check_bmi_status(get_time_units(&model_handle_, units.data()),
                      "get_time_units");
     return units.data();
 }
 
 double DynamicBmi<DynamicBmiBackend::fortran>::GetTimeStep() {
     double time_step = 0.0;
-    check_bmi_status(get_time_step(&state_->model_handle_, &time_step),
+    check_bmi_status(get_time_step(&model_handle_, &time_step),
                      "get_time_step");
     return time_step;
 }
@@ -712,14 +674,14 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetValue(std::string name,
     if (type == "int") {
         check_bmi_status(
             get_value_int(
-                &state_->model_handle_, name_buffer.data(), static_cast<int*>(dest)),
+                &model_handle_, name_buffer.data(), static_cast<int*>(dest)),
             "get_value_int");
         return;
     }
     if (type == "float") {
         check_bmi_status(
             get_value_float(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 static_cast<float*>(dest)),
             "get_value_float");
@@ -728,7 +690,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetValue(std::string name,
     if (type == "double") {
         check_bmi_status(
             get_value_double(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 static_cast<double*>(dest)),
             "get_value_double");
@@ -745,21 +707,21 @@ void* DynamicBmi<DynamicBmiBackend::fortran>::GetValuePtr(
     if (type == "int") {
         check_bmi_status(
             get_value_ptr_int(
-                &state_->model_handle_, name_buffer.data(), &value_ptr),
+                &model_handle_, name_buffer.data(), &value_ptr),
             "get_value_ptr_int");
         return value_ptr;
     }
     if (type == "float") {
         check_bmi_status(
             get_value_ptr_float(
-                &state_->model_handle_, name_buffer.data(), &value_ptr),
+                &model_handle_, name_buffer.data(), &value_ptr),
             "get_value_ptr_float");
         return value_ptr;
     }
     if (type == "double") {
         check_bmi_status(
             get_value_ptr_double(
-                &state_->model_handle_, name_buffer.data(), &value_ptr),
+                &model_handle_, name_buffer.data(), &value_ptr),
             "get_value_ptr_double");
         return value_ptr;
     }
@@ -777,7 +739,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetValueAtIndices(
     if (type == "int") {
         check_bmi_status(
             get_value_at_indices_int(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 static_cast<int*>(dest),
                 inds),
@@ -787,7 +749,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetValueAtIndices(
     if (type == "float") {
         check_bmi_status(
             get_value_at_indices_float(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 static_cast<float*>(dest),
                 inds),
@@ -797,7 +759,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetValueAtIndices(
     if (type == "double") {
         check_bmi_status(
             get_value_at_indices_double(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 static_cast<double*>(dest),
                 inds),
@@ -814,14 +776,14 @@ void DynamicBmi<DynamicBmiBackend::fortran>::SetValue(std::string name,
     if (type == "int") {
         check_bmi_status(
             set_value_int(
-                &state_->model_handle_, name_buffer.data(), static_cast<int*>(src)),
+                &model_handle_, name_buffer.data(), static_cast<int*>(src)),
             "set_value_int");
         return;
     }
     if (type == "float") {
         check_bmi_status(
             set_value_float(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 static_cast<float*>(src)),
             "set_value_float");
@@ -830,7 +792,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::SetValue(std::string name,
     if (type == "double") {
         check_bmi_status(
             set_value_double(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 static_cast<double*>(src)),
             "set_value_double");
@@ -850,7 +812,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::SetValueAtIndices(
     if (type == "int") {
         check_bmi_status(
             set_value_at_indices_int(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 inds,
                 static_cast<int*>(src)),
@@ -860,7 +822,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::SetValueAtIndices(
     if (type == "float") {
         check_bmi_status(
             set_value_at_indices_float(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 inds,
                 static_cast<float*>(src)),
@@ -870,7 +832,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::SetValueAtIndices(
     if (type == "double") {
         check_bmi_status(
             set_value_at_indices_double(
-                &state_->model_handle_,
+                &model_handle_,
                 name_buffer.data(),
                 inds,
                 static_cast<double*>(src)),
@@ -883,7 +845,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::SetValueAtIndices(
 int DynamicBmi<DynamicBmiBackend::fortran>::GetGridRank(const int grid) {
     int mutable_grid = grid;
     int rank = 0;
-    check_bmi_status(get_grid_rank(&state_->model_handle_, &mutable_grid, &rank),
+    check_bmi_status(get_grid_rank(&model_handle_, &mutable_grid, &rank),
                      "get_grid_rank");
     return rank;
 }
@@ -891,7 +853,7 @@ int DynamicBmi<DynamicBmiBackend::fortran>::GetGridRank(const int grid) {
 int DynamicBmi<DynamicBmiBackend::fortran>::GetGridSize(const int grid) {
     int mutable_grid = grid;
     int size = 0;
-    check_bmi_status(get_grid_size(&state_->model_handle_, &mutable_grid, &size),
+    check_bmi_status(get_grid_size(&model_handle_, &mutable_grid, &size),
                      "get_grid_size");
     return size;
 }
@@ -901,7 +863,7 @@ std::string DynamicBmi<DynamicBmiBackend::fortran>::GetGridType(
     int mutable_grid = grid;
     BmiStringBuffer type{};
     check_bmi_status(
-        get_grid_type(&state_->model_handle_, &mutable_grid, type.data()),
+        get_grid_type(&model_handle_, &mutable_grid, type.data()),
         "get_grid_type");
     return type.data();
 }
@@ -911,7 +873,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetGridShape(
     int* shape) {
     int mutable_grid = grid;
     check_bmi_status(
-        get_grid_shape(&state_->model_handle_, &mutable_grid, shape),
+        get_grid_shape(&model_handle_, &mutable_grid, shape),
         "get_grid_shape");
 }
 
@@ -920,7 +882,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetGridSpacing(
     double* spacing) {
     int mutable_grid = grid;
     check_bmi_status(
-        get_grid_spacing(&state_->model_handle_, &mutable_grid, spacing),
+        get_grid_spacing(&model_handle_, &mutable_grid, spacing),
         "get_grid_spacing");
 }
 
@@ -929,28 +891,28 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetGridOrigin(
     double* origin) {
     int mutable_grid = grid;
     check_bmi_status(
-        get_grid_origin(&state_->model_handle_, &mutable_grid, origin),
+        get_grid_origin(&model_handle_, &mutable_grid, origin),
         "get_grid_origin");
 }
 
 void DynamicBmi<DynamicBmiBackend::fortran>::GetGridX(const int grid,
                                                            double* x) {
     int mutable_grid = grid;
-    check_bmi_status(get_grid_x(&state_->model_handle_, &mutable_grid, x),
+    check_bmi_status(get_grid_x(&model_handle_, &mutable_grid, x),
                      "get_grid_x");
 }
 
 void DynamicBmi<DynamicBmiBackend::fortran>::GetGridY(const int grid,
                                                            double* y) {
     int mutable_grid = grid;
-    check_bmi_status(get_grid_y(&state_->model_handle_, &mutable_grid, y),
+    check_bmi_status(get_grid_y(&model_handle_, &mutable_grid, y),
                      "get_grid_y");
 }
 
 void DynamicBmi<DynamicBmiBackend::fortran>::GetGridZ(const int grid,
                                                            double* z) {
     int mutable_grid = grid;
-    check_bmi_status(get_grid_z(&state_->model_handle_, &mutable_grid, z),
+    check_bmi_status(get_grid_z(&model_handle_, &mutable_grid, z),
                      "get_grid_z");
 }
 
@@ -959,7 +921,7 @@ int DynamicBmi<DynamicBmiBackend::fortran>::GetGridNodeCount(
     int mutable_grid = grid;
     int count = 0;
     check_bmi_status(
-        get_grid_node_count(&state_->model_handle_, &mutable_grid, &count),
+        get_grid_node_count(&model_handle_, &mutable_grid, &count),
         "get_grid_node_count");
     return count;
 }
@@ -969,7 +931,7 @@ int DynamicBmi<DynamicBmiBackend::fortran>::GetGridEdgeCount(
     int mutable_grid = grid;
     int count = 0;
     check_bmi_status(
-        get_grid_edge_count(&state_->model_handle_, &mutable_grid, &count),
+        get_grid_edge_count(&model_handle_, &mutable_grid, &count),
         "get_grid_edge_count");
     return count;
 }
@@ -979,7 +941,7 @@ int DynamicBmi<DynamicBmiBackend::fortran>::GetGridFaceCount(
     int mutable_grid = grid;
     int count = 0;
     check_bmi_status(
-        get_grid_face_count(&state_->model_handle_, &mutable_grid, &count),
+        get_grid_face_count(&model_handle_, &mutable_grid, &count),
         "get_grid_face_count");
     return count;
 }
@@ -989,7 +951,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetGridEdgeNodes(
     int* edge_nodes) {
     int mutable_grid = grid;
     check_bmi_status(
-        get_grid_edge_nodes(&state_->model_handle_, &mutable_grid, edge_nodes),
+        get_grid_edge_nodes(&model_handle_, &mutable_grid, edge_nodes),
         "get_grid_edge_nodes");
 }
 
@@ -998,7 +960,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetGridFaceEdges(
     int* face_edges) {
     int mutable_grid = grid;
     check_bmi_status(
-        get_grid_face_edges(&state_->model_handle_, &mutable_grid, face_edges),
+        get_grid_face_edges(&model_handle_, &mutable_grid, face_edges),
         "get_grid_face_edges");
 }
 
@@ -1007,7 +969,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetGridFaceNodes(
     int* face_nodes) {
     int mutable_grid = grid;
     check_bmi_status(
-        get_grid_face_nodes(&state_->model_handle_, &mutable_grid, face_nodes),
+        get_grid_face_nodes(&model_handle_, &mutable_grid, face_nodes),
         "get_grid_face_nodes");
 }
 
@@ -1017,7 +979,7 @@ void DynamicBmi<DynamicBmiBackend::fortran>::GetGridNodesPerFace(
     int mutable_grid = grid;
     check_bmi_status(
         get_grid_nodes_per_face(
-            &state_->model_handle_, &mutable_grid, nodes_per_face),
+            &model_handle_, &mutable_grid, nodes_per_face),
         "get_grid_nodes_per_face");
 }
 

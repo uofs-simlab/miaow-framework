@@ -96,7 +96,7 @@ The script writes:
 - Copies matching `*_forcing.csv` files and Noah parameter tables
 - Writes a reduced SYMFLUENCE catchments GeoJSON for the selected catchments
 - Rewrites staged Noah path fields for the target runtime directory
-- Writes a relocatable copy of SYMFLUENCE's native NGEN realization format
+- Writes a relocatable copy of the NextGen-style realization format
 
 ## Limitations
 

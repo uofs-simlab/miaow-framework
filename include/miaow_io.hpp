@@ -81,7 +81,7 @@ caf::config_value make_forcing_config(
 /**
  * @brief One feature entry from a realization file.
  *
- * SYMFLUENCE realizations are expanded into one Fortran BMI task input per
+ * NextGen-style realizations are expanded into one Fortran BMI task input per
  * catchment. Realization-driven C++ BMI modules are not supported yet.
  */
 struct RealizationFeature {
@@ -94,7 +94,7 @@ struct RealizationFeature {
 /**
  * @brief Parsed realization used to build one task per feature.
  *
- * The supported realization format is SYMFLUENCE's global NGEN realization
+ * The supported realization format is a NextGen-style global realization
  * with one `bmi_fortran` module and `CsvPerFeature` forcing.
  */
 struct RealizationConfig {
@@ -103,7 +103,7 @@ struct RealizationConfig {
 };
 
 /**
- * @brief Read a SYMFLUENCE NGEN realization file.
+ * @brief Read a NextGen-style realization file.
  *
  * Relative paths are resolved against the realization file's parent directory.
  * The parser expands sibling `catchments.geojson` features into realization

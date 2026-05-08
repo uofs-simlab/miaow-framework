@@ -18,11 +18,11 @@ void set_forcing_value(bmi_api::Bmi& model,
                        const std::string& name,
                        double raw_value) {
     const std::string type = model.GetVarType(name);
-    if (type == "double") { // leave as double if the model expects double
+    if (type == "double") {
         model.SetValue(name, &raw_value);
         return;
     }
-    if (type == "float") { // convert to float if the model expects float
+    if (type == "float") {
         float value = static_cast<float>(raw_value);
         model.SetValue(name, &value);
         return;
@@ -31,13 +31,12 @@ void set_forcing_value(bmi_api::Bmi& model,
                              type + "' for input variable '" + name + "'");
 }
 
-// Contains the main model execution loop, which advances the model and forcing (if any) in
-// lockstep and writes BMI output variables to CSV streams at each step
+// Advance the model and forcing in lockstep and write output variables to CSV streams
 void run_model(
-    bmi_api::Bmi& model, // BMI model, init'd with model config file in execute_bmi_model
+    bmi_api::Bmi& model,
     const caf::config_value::dictionary* forcing_config,
     const std::string& task_output_dir,
-    std::size_t& update_steps /* diagnostic to determine number of update steps */) {
+    std::size_t& update_steps) {
 
     // Build the forcing source once so the update loop only moves scalar values
     std::unique_ptr<bmi_api::Bmi> forcing_model;
@@ -57,7 +56,7 @@ void run_model(
     const double end_time = model.GetEndTime();
     update_steps = 0;
 
-    // Main execution loop: update the model and forcing until the end time is reached
+    // Main iteration loop: update the model and forcing until the end time is reached
     while (model.GetCurrentTime() < end_time) {
         if (forcing_model) {
             // If there is forcing, apply to each variable requested by the model
@@ -66,7 +65,8 @@ void run_model(
                 forcing_model->GetValue(forcing_var, &forcing_value);
                 set_forcing_value(model, forcing_var, forcing_value);
             }
-            forcing_model->Update(); // advance the forcing model to the next time step
+            // Advance the forcing model to the next time step
+            forcing_model->Update();
         }
 
         // Call the model update function and increment the update step counter
@@ -124,6 +124,7 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
         throw std::runtime_error("missing config path in task specification");
     }
 
+    // Require the first task argument to be the BMI config path
     const std::string* config_file = caf::get_if<std::string>(&task.args_.front());
     if (!config_file) {
         throw std::runtime_error("first task argument must be a config path string");
@@ -144,6 +145,7 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
     bool needs_finalize = false;
     std::size_t update_steps = 0;
 
+    // Main execution workflow
     try {
         // The model handles reading the config file
         model.Initialize(*config_file);
@@ -161,8 +163,9 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
         std::string failure_message =
             format_bmi_error_message(std::current_exception()) +
             " (updates: " + std::to_string(update_steps) + ")";
+
+        // Try to finalize a model that failed after successful initialization
         if (needs_finalize) {
-            // Preserve finalize diagnostics when cleanup after a failure also fails
             try {
                 model.Finalize();
             } catch (const std::exception& finalize_exception) {

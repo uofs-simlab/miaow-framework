@@ -117,8 +117,16 @@ public:
     void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
 
 private:
-    struct State;
-    std::unique_ptr<State> state_;
+    using CreateBmiFunction = bmi_api::Bmi* (*)();
+    using DestroyBmiFunction = void (*)(bmi_api::Bmi*);
+
+    void cleanup_model();
+
+    void* library_handle_{nullptr};
+    bmi_api::Bmi* model_{nullptr};
+    CreateBmiFunction create_bmi_{nullptr};
+    DestroyBmiFunction destroy_bmi_{nullptr};
+    bool initialized_{false};
 };
 
 /**
@@ -195,8 +203,18 @@ public:
     void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
 
 private:
-    struct State;
-    std::unique_ptr<State> state_;
+    using RegisterBmiFunction = int (*)(void**);
+    using UnregisterBmiFunction = int (*)(void**);
+
+    void finalize_model();
+    void unregister_model();
+    void cleanup_model();
+
+    void* library_handle_{nullptr};
+    void* model_handle_{nullptr};
+    RegisterBmiFunction register_bmi_{nullptr};
+    UnregisterBmiFunction unregister_bmi_{nullptr};
+    bool initialized_{false};
 };
 
 using DynamicCppBmi = DynamicBmi<DynamicBmiBackend::cpp>;

@@ -1,7 +1,9 @@
 # MIAOW: Model-Independent Actor Orchestration Workflows for Scientific Computing
 
 [![CI](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml)
-[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://tjbmontoya.com/miaow-framework/)
+<a href="https://tjbmontoya.com/miaow-framework/">
+  <img alt="Documentation" src="https://img.shields.io/badge/docs-latest-blue.svg">
+</a>
 
 <p align="center">
   <img src="docs/images/miaow_logo.svg" alt="MIAOW logo" width="360">
@@ -176,7 +178,7 @@ lifecycle per task:
 Optional forcing is supported through a second task argument (`args[1]`) that
 stores a structured forcing dictionary (recall that `args[0]` is the model
 config). The same forcing fields may also appear in realization-driven
-SYMFLUENCE entries. In forcing mode, MIAOW reads a CSV forcing file and
+NextGen-style entries. In forcing mode, MIAOW reads a CSV forcing file and
 applies one or more mapped values to BMI input variables before each
 `Update()` step.
 
@@ -215,7 +217,7 @@ combinations of model end time and forcing series length: a matched 512-day
 run, a 512-day run whose 1-day forcing is exhausted early (deliberate
 failure), and a 1-day run that stops well before its 512-day forcing ends.
 
-In SYMFLUENCE NGEN realization files, `CsvPerFeature` forcing enables
+In NextGen-style realization files, `CsvPerFeature` forcing enables
 MIAOW-managed CSV forcing for each catchment. BMI-managed forcing is still
 available for direct task definitions that only pass the model init config.
 
@@ -328,13 +330,13 @@ Run examples from their own `examples/<example_name>` directory:
 - `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration
   using the CSDMS heat examples
 - `examples/04_noah_owp`: Noah-OWP-Modular run using a dynamic Fortran BMI
-  subprocess and one MIAOW task per staged SYMFLUENCE catchment. The plugin is
-  compiled with `NGEN_ACTIVE`, `NGEN_OUTPUT_ACTIVE`, and `NGEN_FORCING_ACTIVE`
-  defined so Noah-OWP receives forcing through MIAOW's BMI `SetValue` path and
-  writes outputs through MIAOW's BMI `GetValue` pipeline when `--output_root`
-  is set.
+  subprocess and one MIAOW task per staged catchment described by a
+  NextGen-style realization. The plugin is compiled with `NGEN_ACTIVE`,
+  `NGEN_OUTPUT_ACTIVE`, and `NGEN_FORCING_ACTIVE` defined so Noah-OWP receives
+  forcing through MIAOW's BMI `SetValue` path and writes outputs through
+  MIAOW's BMI `GetValue` pipeline when `--output_root` is set.
 
-The Noah-OWP example uses staged SYMFLUENCE-generated Bow inputs by default:
+The Noah-OWP example uses staged Bow inputs by default:
 `data/configs/cat-*.input`, `data/forcings/*_forcing.csv`,
 `data/parameters/*`, `data/catchments.geojson`, and
 `data/realization_config.json`. Regenerate that fixture manually from the
