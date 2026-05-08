@@ -99,6 +99,10 @@ Simulation units
    :project: MIAOW
    :members:
 
+.. doxygenclass:: miaow::BmiSimulationUnit< DynamicBmi< Backend > >
+   :project: MIAOW
+   :members:
+
 .. doxygenfunction:: miaow::execute_dynamic_bmi_model_in_subprocess
    :project: MIAOW
 
