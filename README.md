@@ -59,13 +59,8 @@ rm -rf docs/_build/html docs/_build/doctrees
 docs/.venv/bin/sphinx-build -b html -d docs/_build/doctrees docs docs/_build/html
 ```
 
-The generated HTML entry point is `docs/_build/html/index.html`.
-
-Documentation is deployed from GitHub Actions to
-`https://tjbmontoya.com/miaow-framework/` using a base64-encoded SSH deploy key
-stored in the `DOCUMENTER_KEY` repository secret. The matching public key must
-have write access to the separate deployment repository
-`tristanmontoya/miaow-framework`.
+The generated HTML entry point is `docs/_build/html/index.html`. Currently, the documentation is deployed from GitHub Actions to
+`https://tjbmontoya.com/miaow-framework/`.
 
 ## Orchestration model
 

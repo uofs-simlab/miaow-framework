@@ -24,7 +24,7 @@ namespace bmi_api = ::bmi;
  * NextGen-style realizations are expanded into one Fortran BMI `Task` input
  * per catchment. Realization-driven C++ BMI modules are not supported yet.
  *
- * @see [`RealizationConfig`](@ref RealizationConfig)
+ * @see [`RealizationConfig`](@ref miaow::RealizationConfig)
  */
 struct RealizationFeature {
     // Dynamic Fortran BMI library path for this feature
@@ -46,7 +46,7 @@ struct RealizationFeature {
  * The supported realization format is a NextGen-style global realization
  * with one `bmi_fortran` module and `CsvPerFeature` forcing.
  *
- * @see [`build_bmi_realization_tasks()`](@ref build_bmi_realization_tasks)
+ * @see `build_bmi_realization_tasks()`
  */
 struct RealizationConfig {
     // Root directory for realization-driven runtime output
@@ -65,9 +65,9 @@ struct RealizationConfig {
      * realization feature `Task`s.
      *
      * @param realization_path Path to a NextGen-style realization file.
-     * @throws `std::runtime_error` if the realization is malformed or references
+     * @throws std::runtime_error if the realization is malformed or references
      * missing or unusable files.
-     * @throws `std::filesystem::filesystem_error` if a referenced path cannot be
+     * @throws std::filesystem::filesystem_error if a referenced path cannot be
      * resolved or inspected.
      */
     explicit RealizationConfig(const std::string& realization_path);
@@ -78,11 +78,11 @@ struct RealizationConfig {
  * @param model BMI-compatible model object to initialize and execute.
  * @param task `Task` input containing model config, forcing, and output paths.
  * @return Structured `TaskResult` for the BMI task execution.
- * @throws `std::runtime_error` if the task specification, forcing setup, or BMI
+ * @throws std::runtime_error if the task specification, forcing setup, or BMI
  * model lifecycle fails.
  *
- * @see [`Task`](@ref Task)
- * @see [`TaskResult`](@ref TaskResult)
+ * @see [`Task`](@ref miaow::Task)
+ * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task);
 
@@ -111,7 +111,7 @@ class DynamicBmi;
  * The plugin must export `bmi_model_create()` and `bmi_model_destroy(...)`.
  * These symbols may be renamed through constructor arguments.
  *
- * @see [`DynamicBmiBackend`](@ref DynamicBmiBackend)
+ * @see `DynamicBmiBackend`
  */
 template <>
 class DynamicBmi<DynamicBmiBackend::cpp> : public bmi_api::Bmi {
@@ -121,7 +121,7 @@ public:
      * @param plugin_path Path passed directly to the platform dynamic loader.
      * @param create_function Exported function used to create the BMI model.
      * @param destroy_function Exported function used to destroy the BMI model.
-     * @throws `std::runtime_error` if the plugin path or required symbols are
+     * @throws std::runtime_error if the plugin path or required symbols are
      * invalid, or if model creation fails.
      */
     explicit DynamicBmi(
@@ -196,7 +196,7 @@ private:
  * procedural BMI bridge. If the plugin exports `unregister_bmi(void**)`, MIAOW
  * calls it after BMI finalization.
  *
- * @see [`DynamicBmiBackend`](@ref DynamicBmiBackend)
+ * @see `DynamicBmiBackend`
  */
 template <>
 class DynamicBmi<DynamicBmiBackend::fortran> : public bmi_api::Bmi {
@@ -204,7 +204,7 @@ public:
     /**
      * @brief Open a dynamic Fortran BMI plugin from an explicit filesystem path.
      * @param plugin_path Path passed directly to the platform dynamic loader.
-     * @throws `std::runtime_error` if the plugin path is invalid or `register_bmi`
+     * @throws std::runtime_error if the plugin path is invalid or `register_bmi`
      * cannot be resolved.
      */
     explicit DynamicBmi(std::string plugin_path);
@@ -289,13 +289,13 @@ using DynamicFortranBmi = DynamicBmi<DynamicBmiBackend::fortran>;
  * @param create_function C++ plugin function used to create the BMI model.
  * @param destroy_function C++ plugin function used to destroy the BMI model.
  * @return Structured `TaskResult` for the subprocess BMI task execution.
- * @throws `std::runtime_error` if the task specification or subprocess execution
+ * @throws std::runtime_error if the task specification or subprocess execution
  * setup fails.
- * @throws `std::filesystem::filesystem_error` if subprocess control paths cannot
+ * @throws std::filesystem::filesystem_error if subprocess control paths cannot
  * be resolved or created.
  *
- * @see [`DynamicBmiBackend`](@ref DynamicBmiBackend)
- * @see [`TaskResult`](@ref TaskResult)
+ * @see `DynamicBmiBackend`
+ * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 TaskResult execute_dynamic_bmi_model_in_subprocess(
     DynamicBmiBackend backend,
@@ -310,10 +310,10 @@ TaskResult execute_dynamic_bmi_model_in_subprocess(
  * @param registry Registry receiving one unit per unique BMI library path.
  * @param execution_mode Process isolation mode used by each dynamic BMI task.
  * @return `Task`s ready to submit through `Runtime::submit_job()`.
- * @throws `std::runtime_error` if a feature contains invalid forcing task inputs.
+ * @throws std::runtime_error if a feature contains invalid forcing task inputs.
  *
- * @see [`RealizationConfig`](@ref RealizationConfig)
- * @see [`Runtime`](@ref Runtime)
+ * @see [`RealizationConfig`](@ref miaow::RealizationConfig)
+ * @see [`Runtime`](@ref miaow::Runtime)
  */
 std::vector<Task> build_bmi_realization_tasks(
     const RealizationConfig& realization,
@@ -325,7 +325,7 @@ std::vector<Task> build_bmi_realization_tasks(
  *
  * @tparam BmiModelType BMI model type derived from `bmi_api::Bmi`.
  *
- * @see [`SimulationUnit`](@ref SimulationUnit)
+ * @see [`SimulationUnit`](@ref miaow::SimulationUnit)
  */
 template <class BmiModelType>
 class BmiSimulationUnit : public SimulationUnit {
@@ -395,7 +395,7 @@ private:
  * Owns the plugin path explicitly so subprocess execution can pass it to the
  * subprocess executable without loading the plugin in the parent process.
  *
- * @see [`DynamicBmi`](@ref DynamicBmi)
+ * @see [`DynamicBmi`](@ref miaow::DynamicBmi)
  */
 template <DynamicBmiBackend Backend>
 class BmiSimulationUnit<DynamicBmi<Backend>> : public SimulationUnit {

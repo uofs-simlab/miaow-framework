@@ -136,8 +136,8 @@ inline std::string task_status_to_string(TaskStatus status) {
 /**
  * @brief Structured result payload returned for one `Task` execution.
  *
- * @see [`Task`](@ref Task)
- * @see [`TaskStatus`](@ref TaskStatus)
+ * @see [`Task`](@ref miaow::Task)
+ * @see `TaskStatus`
  */
 struct TaskResult {
     // `TaskId` within the submitted job
@@ -166,7 +166,7 @@ struct TaskResult {
  * @param prefix Optional diagnostic prefix prepended as `<prefix>: `.
  * @return Failed `TaskResult` with the task `SimulationUnitId`.
  *
- * @see [`TaskResult`](@ref TaskResult)
+ * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 inline TaskResult make_failed_task_result(const Task& task,
                                           const std::string& message,
@@ -192,7 +192,7 @@ inline TaskResult make_failed_task_result(const Task& task,
  * @param prefix Optional diagnostic prefix prepended as `<prefix>: `.
  * @return Failed `TaskResult` with the task `SimulationUnitId`.
  *
- * @see [`TaskResult`](@ref TaskResult)
+ * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 inline TaskResult make_failed_task_result(const Task& task,
                                           std::exception_ptr exception,
@@ -217,7 +217,7 @@ inline TaskResult make_failed_task_result(const Task& task,
  *
  * `Runtime` dispatch occurs through subclasses overriding `execute()`.
  *
- * @see [`Runtime`](@ref Runtime)
+ * @see [`Runtime`](@ref miaow::Runtime)
  */
 class SimulationUnit {
 public:
@@ -228,8 +228,8 @@ public:
      * @param task Generic `Task` arguments.
      * @return Structured `TaskResult` for this execution.
      *
-     * @see [`Task`](@ref Task)
-     * @see [`TaskResult`](@ref TaskResult)
+     * @see [`Task`](@ref miaow::Task)
+     * @see [`TaskResult`](@ref miaow::TaskResult)
      */
     virtual TaskResult execute(const Task& task) = 0;
 
@@ -240,8 +240,8 @@ public:
  *
  * The executor receives generic task arguments and returns a structured result.
  *
- * @see [`Task`](@ref Task)
- * @see [`TaskResult`](@ref TaskResult)
+ * @see [`Task`](@ref miaow::Task)
+ * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 using SimulationUnitExecutor = std::function<TaskResult(const Task& task)>;
 
@@ -250,7 +250,7 @@ using SimulationUnitExecutor = std::function<TaskResult(const Task& task)>;
  *
  * Tracks `simulation_unit_id -> executor` for runtime task routing.
  *
- * @see [`SimulationUnitExecutor`](@ref SimulationUnitExecutor)
+ * @see `SimulationUnitExecutor`
  */
 class SimulationUnitRegistry {
 public:
@@ -310,7 +310,7 @@ public:
      * @param simulation_unit_id Registered ID to resolve.
      * @return Pointer to executor, or null when ID is unknown.
      *
-     * @see [`SimulationUnitExecutor`](@ref SimulationUnitExecutor)
+     * @see `SimulationUnitExecutor`
      */
     const SimulationUnitExecutor* find_executor(SimulationUnitId simulation_unit_id) const {
         const std::unordered_map<SimulationUnitId, SimulationUnitExecutor>::const_iterator
@@ -333,7 +333,7 @@ private:
  *
  * Solver-specific options should be passed in `Task` arguments.
  *
- * @see [`Task`](@ref Task)
+ * @see [`Task`](@ref miaow::Task)
  */
 struct RuntimeOptions {
     // Maximum number of worker actors that may run concurrently
@@ -390,8 +390,8 @@ struct JobDiagnostics {
 /**
  * @brief Result payload returned when awaiting a `Runtime::submit_job()` handle
  *
- * @see [`Runtime`](@ref Runtime)
- * @see [`TaskResult`](@ref TaskResult)
+ * @see [`Runtime`](@ref miaow::Runtime)
+ * @see [`TaskResult`](@ref miaow::TaskResult)
  */
 struct JobResult {
     // Structured result for each task in input order
@@ -406,7 +406,7 @@ struct JobResult {
  *
  * Call `get()` to wait for completion and retrieve the final result.
  *
- * @see [`JobResult`](@ref JobResult)
+ * @see [`JobResult`](@ref miaow::JobResult)
  */
 using JobHandle = std::future<JobResult>;
 
@@ -419,7 +419,7 @@ using JobHandle = std::future<JobResult>;
  * Each submitted `JobId` maps to the promise that will be fulfilled by the
  * orchestrator actor when that job finishes.
  *
- * @see [`JobResult`](@ref JobResult)
+ * @see [`JobResult`](@ref miaow::JobResult)
  */
 using PendingJobs = std::unordered_map<JobId, std::promise<JobResult>>;
 
@@ -517,7 +517,7 @@ public:
     /**
      * @brief Construct `Runtime` from a registry with default options.
      * @param simulation_unit_registry Registry mapping `simulation_unit_id` to executor.
-     * @throws `std::invalid_argument` if `simulation_unit_registry` is empty.
+     * @throws std::invalid_argument if `simulation_unit_registry` is empty.
      */
     Runtime(const SimulationUnitRegistry& simulation_unit_registry);
 
@@ -525,7 +525,7 @@ public:
      * @brief Construct `Runtime` from a registry and options.
      * @param simulation_unit_registry Registry mapping `simulation_unit_id` to executor.
      * @param options `Runtime` scheduling and timeout options.
-     * @throws `std::invalid_argument` if `simulation_unit_registry` is empty.
+     * @throws std::invalid_argument if `simulation_unit_registry` is empty.
      */
     Runtime(const SimulationUnitRegistry& simulation_unit_registry, RuntimeOptions options);
 
@@ -533,7 +533,7 @@ public:
      * @brief Submit one `Task` as an asynchronous job.
      * @param task Generic `Task` arguments.
      * @return `JobHandle` for collecting task messages and diagnostics.
-     * @throws `std::filesystem::filesystem_error` if runtime output directories
+     * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */
     JobHandle submit_job(const Task& task) const;
@@ -545,7 +545,7 @@ public:
      * tasks so the caller keeps ownership unchanged.
      * @param tasks Generic `Task` arguments.
      * @return `JobHandle` for collecting task messages and diagnostics.
-     * @throws `std::filesystem::filesystem_error` if runtime output directories
+     * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */
     JobHandle submit_job(const std::vector<Task>& tasks) const;
@@ -557,7 +557,7 @@ public:
      * transfers task ownership into `Runtime` to avoid an extra copy.
      * @param tasks Generic `Task` arguments.
      * @return `JobHandle` for collecting task messages and diagnostics.
-     * @throws `std::filesystem::filesystem_error` if runtime output directories
+     * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */
     JobHandle submit_job(std::vector<Task>&& tasks) const;
