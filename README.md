@@ -121,8 +121,8 @@ For BMI models, use `miaow::BmiSimulationUnit<BmiModelType>` from
 ```text
 include/
   miaow.hpp              # public runtime/task API
-  miaow_bmi.hpp          # BMI simulation-unit wrapper/BMI-facing contracts
-  miaow_io.hpp           # public I/O, diagnostics, realization, and CLI API
+  miaow_bmi.hpp          # BMI simulation-unit wrapper and realization contracts
+  miaow_io.hpp           # public I/O, diagnostics, and CLI API
 
 src/
   core/
@@ -135,7 +135,7 @@ src/
     dynamic.cpp          # DynamicBmi adapter for C++/Fortran plugins
     forcing.cpp          # streaming external BMI forcing CSV reader and coupling logic
     output.cpp           # per-step BMI output-variable CSV writers
-    realization.cpp      # BMI realization task and registration helpers
+    realization.cpp      # BMI realization parsing, task, and registration helpers
     subprocess/
       caller.cpp         # parent-side dynamic BMI subprocess launcher
       runner.cpp         # dynamic BMI subprocess executable entry point
@@ -146,7 +146,6 @@ src/
     csv.cpp              # CSV parsing plus shared forcing helper utilities
     diagnostics.cpp      # diagnostics formatting and printing helpers
     metadata.cpp         # runtime metadata output writing
-    realization.cpp      # realization JSON parsing
     internal.hpp         # IO-private declarations and helpers
 
 examples/
@@ -183,11 +182,11 @@ applies one or more mapped values to BMI input variables before each
 `Update()` step.
 
 Direct examples specify task inputs in their `main.cpp` files.
-Realization-driven BMI examples use `build_bmi_realization_tasks(...)` to
-register dynamic Fortran BMI units and build one task per realized catchment.
-Realization-driven C++ BMI modules are not supported yet; dynamic C++ BMI is
-available through direct task registration. Shared helpers in `miaow_io.hpp`
-can build forcing dictionaries with
+Realization-driven BMI examples use `RealizationConfig(path)` and
+`build_bmi_realization_tasks(...)` to register dynamic Fortran BMI units and
+build one task per realized catchment. Realization-driven C++ BMI modules are
+not supported yet; dynamic C++ BMI is available through direct task
+registration. Shared helpers in `miaow_io.hpp` can build forcing dictionaries with
 `make_forcing_config(...)` and generate repeated hourly forcing CSVs with
 `write_repeated_hourly_forcing_csv(...)`.
 

@@ -113,9 +113,6 @@ Realization workflows
    :project: MIAOW
    :members:
 
-.. doxygenfunction:: miaow::read_realization_config
-   :project: MIAOW
-
 .. doxygenfunction:: miaow::build_bmi_realization_tasks
    :project: MIAOW
 

@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <map>
 #include <string>
-#include <vector>
 
 #include <caf/config_value.hpp>
 
@@ -13,16 +12,29 @@ namespace miaow {
 
 /**
  * @brief Print diagnostics to stdout.
+ * @param diagnostics `JobDiagnostics` payload to print.
+ * @param job_id `JobId` included in the printed header.
+ *
+ * @see [`JobDiagnostics`](@ref JobDiagnostics)
  */
 void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
 
 /**
- * @brief Print all task results in a job to stdout.
+ * @brief Print all `TaskResult`s in a job to stdout.
+ * @param job_result `JobResult` payload containing task results to print.
+ *
+ * @see [`JobResult`](@ref JobResult)
+ * @see [`TaskResult`](@ref TaskResult)
  */
 void print_task_results(const JobResult& job_result);
 
 /**
- * @brief Return true when every task result in a job succeeded.
+ * @brief Return true when every `TaskResult` in a job succeeded.
+ * @param job_result `JobResult` payload to inspect.
+ * @return true when every task status is `TaskStatus::succeeded`.
+ *
+ * @see [`JobResult`](@ref JobResult)
+ * @see [`TaskStatus`](@ref TaskStatus)
  */
 bool all_tasks_succeeded(const JobResult& job_result);
 
@@ -32,7 +44,11 @@ bool all_tasks_succeeded(const JobResult& job_result);
  * On mismatch, prints an actionable error message with the expected and current
  * directories and a suggested `cd` command.
  *
+ * @param executable_name Executable name included in diagnostic output.
+ * @param expected_run_dir Required current working directory.
  * @return true when the current directory matches `expected_run_dir`, false otherwise.
+ * @throws `std::filesystem::filesystem_error` if the current working directory
+ * cannot be resolved.
  */
 bool ensure_expected_run_dir(const std::string& executable_name,
                              const std::string& expected_run_dir);
@@ -48,8 +64,13 @@ bool ensure_expected_run_dir(const std::string& executable_name,
  * - `--realization <path>` (used by realization-driven workflows; left empty
  *   when absent so callers may substitute their own default)
  *
- * @throws std::runtime_error if an argument is unrecognized, missing a value,
+ * @param argc Number of CLI arguments.
+ * @param argv CLI argument vector.
+ * @param runtime_options `RuntimeOptions` updated from parsed arguments.
+ * @throws `std::runtime_error` if an argument is unrecognized, missing a value,
  * or has an invalid value.
+ *
+ * @see [`RuntimeOptions`](@ref RuntimeOptions)
  */
 void parse_runtime_cli_options(int argc,
                                char* argv[],
@@ -61,6 +82,15 @@ void parse_runtime_cli_options(int argc,
  * The source CSV must define its timestamp in the first column, followed by
  * one or more data columns. The generated file is written under the system
  * temporary directory using `output_filename`.
+ *
+ * @param source_path Source CSV path.
+ * @param output_filename Filename used under the system temporary directory.
+ * @param total_rows Number of rows to write to the generated forcing CSV.
+ * @return Filesystem path to the generated forcing CSV.
+ * @throws `std::runtime_error` if the source CSV is missing, malformed, or
+ * cannot be written to the generated output path.
+ * @throws `std::filesystem::filesystem_error` if the temporary output path
+ * cannot be resolved.
  */
 std::string write_repeated_hourly_forcing_csv(const std::string& source_path,
                                               const std::string& output_filename,
@@ -72,43 +102,14 @@ std::string write_repeated_hourly_forcing_csv(const std::string& source_path,
  * `variables_names_map` is optional. When omitted, forcing falls back to
  * identity mapping between BMI input names and CSV headers.
  *
- * Throws if `forcing_file` or any explicit mapping entry is empty.
+ * @param forcing_file Path to the forcing CSV file.
+ * @param variables_names_map Mapping from BMI input variable names to CSV headers.
+ * @return Structured `caf::config_value` forcing payload for BMI tasks.
+ * @throws `std::runtime_error` if `forcing_file` or any explicit mapping entry
+ * is empty.
  */
 caf::config_value make_forcing_config(
     const std::string& forcing_file,
     const std::map<std::string, std::string>& variables_names_map = {});
-
-/**
- * @brief One feature entry from a realization file.
- *
- * NextGen-style realizations are expanded into one Fortran BMI task input per
- * catchment. Realization-driven C++ BMI modules are not supported yet.
- */
-struct RealizationFeature {
-    std::string library_file_;
-    std::string init_config_path_;
-    std::string forcing_file_;
-    std::map<std::string, std::string> variables_names_map_;
-};
-
-/**
- * @brief Parsed realization used to build one task per feature.
- *
- * The supported realization format is a NextGen-style global realization
- * with one `bmi_fortran` module and `CsvPerFeature` forcing.
- */
-struct RealizationConfig {
-    std::string output_root_;
-    std::vector<RealizationFeature> features_;
-};
-
-/**
- * @brief Read a NextGen-style realization file.
- *
- * Relative paths are resolved against the realization file's parent directory.
- * The parser expands sibling `catchments.geojson` features into realization
- * feature tasks.
- */
-RealizationConfig read_realization_config(const std::string& realization_path);
 
 } // namespace miaow

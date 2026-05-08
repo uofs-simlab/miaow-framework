@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
         const std::string realization_path = runtime_options.realization_path_.empty()
             ? std::string("data/realization_config.json")
             : runtime_options.realization_path_;
-        realization = miaow::read_realization_config(realization_path);
+        realization = miaow::RealizationConfig(realization_path);
         if (runtime_options.output_root_.empty() &&
             !realization.output_root_.empty()) {
             runtime_options.output_root_ = realization.output_root_;
