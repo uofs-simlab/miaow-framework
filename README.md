@@ -60,7 +60,7 @@ docs/.venv/bin/sphinx-build -b html -d docs/_build/doctrees docs docs/_build/htm
 ```
 
 The generated HTML entry point is `docs/_build/html/index.html`. Currently, the documentation is deployed from GitHub Actions to
-`https://tjbmontoya.com/miaow-framework/`.
+[https://tjbmontoya.com/miaow-framework/](https://tjbmontoya.com/miaow-framework/).
 
 ## Orchestration model
 
