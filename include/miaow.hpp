@@ -8,6 +8,7 @@
 #include <functional>
 #include <future>
 #include <initializer_list>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -40,6 +41,11 @@ using TaskId = std::uint64_t;
 using JobId = std::uint64_t;
 
 /**
+ * @brief Descriptive task metadata preserved for reporting and postprocessing.
+ */
+using TaskMetadata = std::map<std::string, std::string>;
+
+/**
  * @brief Generic task input specification.
  *
  * Arguments are positional and interpreted by the concrete `SimulationUnit`.
@@ -53,6 +59,9 @@ struct Task {
 
     // Directory injected by `Runtime` where this task should write output artifacts
     std::string task_output_dir_;
+
+    // Metadata preserves labels used by reporting and postprocessing tools
+    TaskMetadata metadata_;
 
     Task() = default;
 
@@ -134,16 +143,26 @@ inline std::string task_status_to_string(TaskStatus status) {
 }
 
 /**
- * @brief Structured result payload returned for one `Task` execution.
+ * @brief Simulation-unit result payload returned for one `Task` execution.
  */
 struct TaskResult {
-    // `TaskId` within the submitted job
-    TaskId task_id_{0};
+    TaskResult() = default;
 
-    // `SimulationUnitId` that executed this task
-    SimulationUnitId simulation_unit_id_{0};
+    /**
+     * @brief Construct a task result from status, message, and artifact paths.
+     * @param status Terminal status for this task execution.
+     * @param message Message interpreted by `status` as output or failure detail.
+     * @param artifact_paths Relative paths to artifacts under `task_output_dir_`.
+     */
+    TaskResult(TaskStatus status,
+               std::string message,
+               std::vector<std::string> artifact_paths = {})
+        : status_{status},
+          message_{std::move(message)},
+          artifact_paths_{std::move(artifact_paths)} {
+    }
 
-    // `TaskStatus` state for this task
+    // Simulation-unit status for this task execution
     TaskStatus status_{TaskStatus::failed};
 
     // Message interpreted by `status_` as output or failure detail
@@ -151,58 +170,124 @@ struct TaskResult {
 
     // Relative paths to task artifacts produced under `task_output_dir_`
     std::vector<std::string> artifact_paths_;
+};
+
+/**
+ * @brief Runtime-owned record for one completed task.
+ */
+struct TaskRecord {
+    TaskRecord() = default;
+
+    /**
+     * @brief Construct a completed task record from task input and terminal result.
+     * @param task Submitted task whose metadata and simulation unit ID are copied.
+     * @param task_id `TaskId` within the submitted job.
+     * @param result Terminal simulation unit result for this task.
+     * @param run_time_s Wall-clock runtime for this task in seconds.
+     */
+    TaskRecord(const Task& task,
+               TaskId task_id,
+               TaskResult result,
+               double run_time_s)
+        : task_id_{task_id},
+          simulation_unit_id_{task.simulation_unit_id_},
+          metadata_{task.metadata_},
+          result_{std::move(result)},
+          run_time_s_{run_time_s} {
+    }
+
+    // `TaskId` within the submitted job
+    TaskId task_id_{0};
+
+    // `SimulationUnitId` that executed this task
+    SimulationUnitId simulation_unit_id_{0};
+
+    // Metadata copied from the submitted task
+    TaskMetadata metadata_;
+
+    // Simulation-unit result for this task
+    TaskResult result_;
 
     // Wall-clock runtime for this task in seconds
     double run_time_s_{0.0};
 };
 
 /**
- * @brief Build a failed `TaskResult` for a `Task`.
- * @param task `Task` that failed.
+ * @brief Runtime-owned record returned for one submitted job.
+ */
+struct JobRecord {
+    JobRecord() = default;
+
+    /**
+     * @brief Construct a final job record from job IDs, task records, and runtime.
+     * @param run_id Runtime identifier for this `Runtime` instance.
+     * @param job_id `JobId` assigned to this submitted job.
+     * @param tasks Task records in submitted task order.
+     * @param run_time_s Wall-clock runtime for this job in seconds.
+     */
+    JobRecord(std::uint64_t run_id,
+              JobId job_id,
+              std::vector<TaskRecord> tasks = {},
+              double run_time_s = 0.0)
+        : run_id_{run_id},
+          job_id_{job_id},
+          tasks_{std::move(tasks)},
+          run_time_s_{run_time_s} {
+    }
+
+    // Runtime identifier for this `Runtime` instance
+    std::uint64_t run_id_{0};
+
+    // `JobId` assigned to this submitted job
+    JobId job_id_{0};
+
+    // Task records in submitted task order
+    std::vector<TaskRecord> tasks_;
+
+    // Wall-clock runtime for this job in seconds
+    double run_time_s_{0.0};
+};
+
+/**
+ * @brief Build a failed `TaskResult` from a message.
  * @param message Failure message for the result.
  * @param prefix Optional diagnostic prefix prepended as `<prefix>: `.
- * @return Failed `TaskResult` with the task `SimulationUnitId`.
+ * @return Failed `TaskResult`.
  */
-inline TaskResult make_failed_task_result(const Task& task,
-                                          const std::string& message,
+inline TaskResult make_failed_task_result(const std::string& message,
                                           const std::string& prefix = "") {
     const std::size_t prefix_end = message.find(": ");
     const bool message_has_error_prefix =
         prefix_end != std::string::npos &&
         message.substr(0, prefix_end).find("error") != std::string::npos;
 
-    TaskResult task_result;
-    task_result.simulation_unit_id_ = task.simulation_unit_id_;
-    task_result.status_ = TaskStatus::failed;
-    task_result.message_ = prefix.empty() || message_has_error_prefix
+    std::string result_message = prefix.empty() || message_has_error_prefix
         ? message
         : prefix + ": " + message;
-    return task_result;
+    return TaskResult{TaskStatus::failed, std::move(result_message)};
 }
 
 /**
  * @brief Build a failed `TaskResult` from a captured exception.
- * @param task `Task` that failed.
  * @param exception Captured exception used to build the failure message.
  * @param prefix Optional diagnostic prefix prepended as `<prefix>: `.
- * @return Failed `TaskResult` with the task `SimulationUnitId`.
+ * @return Failed `TaskResult`.
  */
-inline TaskResult make_failed_task_result(const Task& task,
-                                          std::exception_ptr exception,
+inline TaskResult make_failed_task_result(std::exception_ptr exception,
                                           const std::string& prefix = "") {
     if (!exception) {
-        return make_failed_task_result(task, "unknown exception", prefix);
+        return make_failed_task_result("unknown exception", prefix);
     }
 
     try {
         std::rethrow_exception(exception);
     } catch (const std::exception& caught_exception) {
-        return make_failed_task_result(task, caught_exception.what(), prefix);
+        return make_failed_task_result(caught_exception.what(), prefix);
     } catch (...) {
-        return make_failed_task_result(task, "unknown exception", prefix);
+        return make_failed_task_result("unknown exception", prefix);
     }
 
-    return make_failed_task_result(task, "unknown exception", prefix);
+    return make_failed_task_result("unknown exception", prefix);
 }
 
 /**
@@ -356,44 +441,22 @@ struct RuntimeOptions {
 };
 
 /**
- * @brief Job timing diagnostics
- */
-struct JobDiagnostics {
-    // Total wall-clock runtime for the full job in seconds
-    double total_time_s_{0.0};
-
-    // Wall-clock duration for each task by task ID in seconds
-    std::vector<double> task_times_s_;
-};
-
-/**
- * @brief Result payload returned when awaiting a `Runtime::submit_job()` handle
- */
-struct JobResult {
-    // Structured result for each task in input order
-    std::vector<TaskResult> task_results_;
-
-    // Timing diagnostics for this job run
-    JobDiagnostics diagnostics_;
-};
-
-/**
  * @brief Handle for a submitted asynchronous job.
  *
  * Call `get()` to wait for completion and retrieve the final result.
  */
-using JobHandle = std::future<JobResult>;
+using JobHandle = std::future<JobRecord>;
 
 /**
  * @brief Runtime-owned registry of in-progress jobs.
  *
  * This is effectively a dictionary/hash map:
- * `job_id -> promise_for_that_job_result`.
+ * `job_id -> promise_for_that_job_record`.
  *
  * Each submitted `JobId` maps to the promise that will be fulfilled by the
  * orchestrator actor when that job finishes.
  */
-using PendingJobs = std::unordered_map<JobId, std::promise<JobResult>>;
+using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
 
 /**
  * @brief Serialize or deserialize a `Task` for CAF actor messaging.
@@ -408,7 +471,8 @@ bool inspect(Inspector& inspector, Task& task) {
     return inspector.object(task).fields(
         inspector.field("simulation_unit_id", task.simulation_unit_id_),
         inspector.field("args", task.args_),
-        inspector.field("task_output_dir", task.task_output_dir_));
+        inspector.field("task_output_dir", task.task_output_dir_),
+        inspector.field("metadata", task.metadata_));
 }
 
 /**
@@ -420,13 +484,15 @@ bool inspect(Inspector& inspector, Task& task) {
  */
 template <class Inspector>
 bool inspect(Inspector& inspector, TaskStatus& task_status) {
-    // Defines how CAF serializes/deserializes `TaskStatus` for actor messaging
-    std::uint8_t status_value = static_cast<std::uint8_t>(task_status);
+    // Task status serializes as a stable string in actor messages and JSON
+    std::string status_value = task_status_to_string(task_status);
     const bool inspected = inspector.apply(status_value);
     if (!inspected) {
         return false;
     }
-    task_status = static_cast<TaskStatus>(status_value);
+    task_status = status_value == "succeeded"
+        ? TaskStatus::succeeded
+        : TaskStatus::failed;
     return true;
 }
 
@@ -441,48 +507,51 @@ template <class Inspector>
 bool inspect(Inspector& inspector, TaskResult& task_result) {
     // Defines how CAF serializes/deserializes `TaskResult` for actor messaging
     return inspector.object(task_result).fields(
-        inspector.field("task_id", task_result.task_id_),
-        inspector.field("simulation_unit_id", task_result.simulation_unit_id_),
         inspector.field("status", task_result.status_),
         inspector.field("message", task_result.message_),
-        inspector.field("artifact_paths", task_result.artifact_paths_),
-        inspector.field("run_time_s", task_result.run_time_s_));
+        inspector.field("artifact_paths", task_result.artifact_paths_));
 }
 
 /**
- * @brief Serialize or deserialize `JobDiagnostics` for CAF actor messaging.
+ * @brief Serialize or deserialize a `TaskRecord` for CAF actor messaging.
  * @tparam Inspector CAF inspector type.
  * @param inspector Inspector driving serialization or deserialization.
- * @param diagnostics Job diagnostics payload to inspect.
+ * @param task_record `TaskRecord` payload to inspect.
  * @return true when all fields were inspected successfully.
  */
 template <class Inspector>
-bool inspect(Inspector& inspector, JobDiagnostics& diagnostics) {
-    // Defines how CAF serializes/deserializes `JobDiagnostics` for actor messaging
-    return inspector.object(diagnostics).fields(
-        inspector.field("total_time_s", diagnostics.total_time_s_),
-        inspector.field("task_times_s", diagnostics.task_times_s_));
+bool inspect(Inspector& inspector, TaskRecord& task_record) {
+    // Defines how CAF serializes/deserializes `TaskRecord` for actor messaging
+    return inspector.object(task_record).fields(
+        inspector.field("task_id", task_record.task_id_),
+        inspector.field("simulation_unit_id", task_record.simulation_unit_id_),
+        inspector.field("metadata", task_record.metadata_),
+        inspector.field("result", task_record.result_),
+        inspector.field("run_time_s", task_record.run_time_s_));
 }
 
 /**
- * @brief Serialize or deserialize a `JobResult` for CAF actor messaging.
+ * @brief Serialize or deserialize a `JobRecord` for CAF actor messaging.
  * @tparam Inspector CAF inspector type.
  * @param inspector Inspector driving serialization or deserialization.
- * @param job_result Job result payload to inspect.
+ * @param job_record `JobRecord` payload to inspect.
  * @return true when all fields were inspected successfully.
  */
 template <class Inspector>
-bool inspect(Inspector& inspector, JobResult& job_result) {
-    // Defines how CAF serializes/deserializes `JobResult` for actor messaging
-    return inspector.object(job_result).fields(
-        inspector.field("task_results", job_result.task_results_),
-        inspector.field("diagnostics", job_result.diagnostics_));
+bool inspect(Inspector& inspector, JobRecord& job_record) {
+    // Defines how CAF serializes/deserializes `JobRecord` for actor messaging
+    return inspector.object(job_record).fields(
+        inspector.field("run_id", job_record.run_id_),
+        inspector.field("job_id", job_record.job_id_),
+        inspector.field("tasks", job_record.tasks_),
+        inspector.field("run_time_s", job_record.run_time_s_));
 }
 
 /**
  * @brief Actor runtime for orchestrating simulation `Task`s.
  *
  * The runtime is model-agnostic and thread-safe.
+ * Tasks with unknown `SimulationUnitId` values fail individually.
  */
 class Runtime {
 public:
@@ -503,8 +572,10 @@ public:
 
     /**
      * @brief Submit one `Task` as an asynchronous job.
+     *
+     * The returned handle may rethrow if final `job_record.json` output fails.
      * @param task Generic `Task` arguments.
-     * @return `JobHandle` for collecting task messages and diagnostics.
+     * @return `JobHandle` for retrieving the final `JobRecord`.
      * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */
@@ -515,8 +586,9 @@ public:
      *
      * This `const&` overload accepts caller-owned vectors (lvalues) and copies
      * tasks so the caller keeps ownership unchanged.
+     * The returned handle may rethrow if final `job_record.json` output fails.
      * @param tasks Generic `Task` arguments.
-     * @return `JobHandle` for collecting task messages and diagnostics.
+     * @return `JobHandle` for retrieving the final `JobRecord`.
      * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */
@@ -527,8 +599,9 @@ public:
      *
      * This `&&` overload accepts rvalues (temporaries or `std::move(...)`) and
      * transfers task ownership into `Runtime` to avoid an extra copy.
+     * The returned handle may rethrow if final `job_record.json` output fails.
      * @param tasks Generic `Task` arguments.
-     * @return `JobHandle` for collecting task messages and diagnostics.
+     * @return `JobHandle` for retrieving the final `JobRecord`.
      * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */

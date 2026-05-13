@@ -404,6 +404,7 @@ RealizationConfig::RealizationConfig(const std::string& realization_path) {
             "global forcing file_pattern");
 
         RealizationFeature feature;
+        feature.feature_id_ = catchment_id;
         feature.library_file_ = library_file;
         feature.init_config_path_ = require_existing_file(
             resolve_path(base_directory, init_config),
@@ -432,14 +433,23 @@ std::vector<Task> build_bmi_realization_tasks(const RealizationConfig& realizati
         const SimulationUnitId unit_id = unit_ids.at(feature.library_file_);
 
         // MIAOW-managed CSV forcing is passed as the second BMI task argument
-        tasks.push_back(Task(
+        Task task(
             unit_id,
             std::vector<caf::config_value>{
                 caf::config_value{feature.init_config_path_},
                 make_forcing_config(
                     feature.forcing_file_,
                     feature.variables_names_map_),
-            }));
+        });
+
+        // Feature metadata provides the hydrofabric join key for map outputs
+        task.metadata_["feature_id"] = feature.feature_id_;
+        task.metadata_["feature_type"] = "catchment";
+        task.metadata_["hydrofabric_layer"] = "divides";
+        task.metadata_["hydrofabric_id_field"] = "id";
+        task.metadata_["config_path"] = feature.init_config_path_;
+        task.metadata_["forcing_file"] = feature.forcing_file_;
+        tasks.push_back(task);
     }
 
     return tasks;

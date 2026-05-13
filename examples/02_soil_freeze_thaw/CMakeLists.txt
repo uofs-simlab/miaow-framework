@@ -105,7 +105,7 @@ if(BUILD_TESTING)
     )
 
     # Drives the example with --output_root and validates the on-disk
-    # run/job/task metadata layout via a shared CMake script.
+    # run/job/task record layout via a shared CMake script.
     set(soil_freeze_thaw_layout_cli_args
         --output_root
         "${CMAKE_CURRENT_LIST_DIR}/output"
@@ -116,20 +116,29 @@ if(BUILD_TESTING)
         --job_request_timeout
         600
     )
-    list(JOIN soil_freeze_thaw_layout_cli_args ";" soil_freeze_thaw_layout_cli_args_serialized)
+    list(JOIN soil_freeze_thaw_layout_cli_args ";"
+        soil_freeze_thaw_layout_cli_args_serialized)
+    set(soil_freeze_thaw_expected_job_record_snippets
+        "\"label\""
+        "\"matched-duration\""
+        "\"soil_temperature_profile.csv\""
+    )
+    list(JOIN soil_freeze_thaw_expected_job_record_snippets ";"
+        soil_freeze_thaw_job_record_snippets_arg)
 
     add_test(
-        NAME miaow_example_02_soil_freeze_thaw_metadata_layout
+        NAME miaow_example_02_soil_freeze_thaw_job_record_layout
         COMMAND
             ${CMAKE_COMMAND}
             -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
             -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
             "-DEXECUTABLE_ARGS=${soil_freeze_thaw_layout_cli_args_serialized}"
+            "-DEXPECTED_METADATA_SNIPPETS=${soil_freeze_thaw_job_record_snippets_arg}"
             -P
-            ${MIAOW_ROOT}/cmake/check_metadata_layout.cmake
+            ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
     )
-    set_tests_properties(miaow_example_02_soil_freeze_thaw_metadata_layout PROPERTIES
+    set_tests_properties(miaow_example_02_soil_freeze_thaw_job_record_layout PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         RESOURCE_LOCK miaow_example_02_soil_freeze_thaw_output
     )

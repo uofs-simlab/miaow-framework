@@ -25,6 +25,9 @@ namespace bmi_api = ::bmi;
  * per catchment. Realization-driven C++ BMI modules are not supported yet.
  */
 struct RealizationFeature {
+    // Hydrofabric feature identifier used as the postprocessing join key
+    std::string feature_id_;
+
     // Dynamic Fortran BMI library path for this feature
     std::string library_file_;
 
@@ -360,7 +363,6 @@ public:
             return execute_bmi_model(*bmi_model, task);
         } catch (...) {
             return make_failed_task_result(
-                task,
                 std::current_exception(),
                 "BMI error");
         }
@@ -446,7 +448,6 @@ public:
             }
         } catch (...) {
             return make_failed_task_result(
-                task,
                 std::current_exception(),
                 error_prefix);
         }

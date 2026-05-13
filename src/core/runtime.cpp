@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <future>
 #include <mutex>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -66,10 +65,10 @@ static void assign_task_output_directories(std::vector<Task>& tasks,
     }
 }
 
-// Return a ready JobHandle for empty-task submissions
-static JobHandle make_ready_job_handle(JobResult result) {
-    std::promise<JobResult> promise;
-    promise.set_value(std::move(result));
+// Return a ready JobHandle for submissions that do not enter the actor runtime
+static JobHandle make_ready_job_handle(JobRecord record) {
+    std::promise<JobRecord> promise;
+    promise.set_value(std::move(record));
     return promise.get_future();
 }
 
@@ -79,57 +78,6 @@ static void initialize_caf_once() {
         caf::init_global_meta_objects<caf::id_block::core_module>();
         caf::init_global_meta_objects<caf::id_block::miaow_module>();
     });
-}
-
-// Validate that all task simulation unit IDs are known before starting the job
-static std::optional<JobResult> validate_task_simulation_unit_ids(
-    const std::vector<Task>& tasks,
-    const SimulationUnitRegistry& simulation_unit_registry) {
-    // Track which tasks have valid simulation unit IDs
-    std::vector<bool> task_has_valid_simulation_unit_id(tasks.size(), false);
-    bool has_unknown_simulation_unit_id = false; // does any task have unknown id?
-
-    for (std::size_t task_id = 0; task_id < tasks.size(); ++task_id) {
-        const Task& task = tasks.at(task_id);
-        const SimulationUnitExecutor* simulation_unit_executor =
-            simulation_unit_registry.find_executor(task.simulation_unit_id_);
-        if (!simulation_unit_executor) {
-            has_unknown_simulation_unit_id = true;
-            continue;
-        }
-        task_has_valid_simulation_unit_id.at(task_id) = true;
-    }
-
-    if (!has_unknown_simulation_unit_id) {
-        return std::nullopt;
-    }
-
-    // Create a JobResult with error messages for tasks with unknown simulation unit IDs
-    JobResult job_result;
-    job_result.task_results_.resize(tasks.size());
-    for (std::size_t task_id = 0; task_id < tasks.size(); ++task_id) {
-        TaskResult task_result;
-        task_result.task_id_ = static_cast<TaskId>(task_id);
-        task_result.simulation_unit_id_ = tasks.at(task_id).simulation_unit_id_;
-        task_result.status_ = TaskStatus::failed;
-
-        if (task_has_valid_simulation_unit_id.at(task_id)) {
-            task_result.message_ =
-                "Task " + std::to_string(task_id) + " failed: job submission rejected "
-                "because another task references an unknown SimulationUnitId";
-            job_result.task_results_.at(task_id) = std::move(task_result);
-            continue;
-        }
-
-        task_result.message_ =
-            "Task " + std::to_string(task_id) + " failed: unknown SimulationUnitId " +
-            std::to_string(tasks.at(task_id).simulation_unit_id_) +
-            " detected at job submission";
-        job_result.task_results_.at(task_id) = std::move(task_result);
-    }
-
-    job_result.diagnostics_.task_times_s_.assign(tasks.size(), 0.0);
-    return job_result;
 }
 
 // Construct a Runtime with default runtime options
@@ -177,26 +125,17 @@ JobHandle Runtime::submit_job(const std::vector<Task>& tasks) const {
 
 // `&&` move path: rvalue input transfers ownership into the Runtime message path
 JobHandle Runtime::submit_job(std::vector<Task>&& tasks) const {
-    JobResult job_result;
+    const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
     // If there are no tasks, return a ready future with an empty result immediately
     if (tasks.empty()) {
-        return make_ready_job_handle(std::move(job_result));
+        return make_ready_job_handle(JobRecord{run_id_, job_id});
     }
 
-    // Reject invalid simulation unit IDs before creating actors for this job
-    std::optional<JobResult> invalid_submission_result =
-        validate_task_simulation_unit_ids(tasks, *simulation_unit_registry_);
-    if (invalid_submission_result.has_value()) {
-        return make_ready_job_handle(std::move(invalid_submission_result.value()));
-    }
-
-    // Generate a unique job ID for this request
-    const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
     assign_task_output_directories(tasks, runtime_options_, run_id_, job_id);
 
     // Create a promise/future pair for this submitted job
-    std::promise<JobResult> promise;
+    std::promise<JobRecord> promise;
 
     JobHandle job = promise.get_future();
     {

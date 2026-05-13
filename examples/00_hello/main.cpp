@@ -26,16 +26,11 @@ public:
      * @return Structured task result with status and message.
      */
     miaow::TaskResult execute(const miaow::Task& task) override {
-        miaow::TaskResult task_result;
         const std::string* message = task.string_arg(0);
         if (message == nullptr) {
-            task_result.status_ = miaow::TaskStatus::failed;
-            task_result.message_ = "missing message";
-            return task_result;
+            return miaow::TaskResult{miaow::TaskStatus::failed, "missing message"};
         }
-        task_result.status_ = miaow::TaskStatus::succeeded;
-        task_result.message_ = *message;
-        return task_result;
+        return miaow::TaskResult{miaow::TaskStatus::succeeded, *message};
     }
 };
 
@@ -72,18 +67,18 @@ int main(int argc, char* argv[]) {
     // Submit tasks as two separate jobs and wait for results
     miaow::JobHandle first_job = runtime.submit_job(first_job_tasks);
     miaow::JobHandle second_job = runtime.submit_job(second_job_tasks);
-    const miaow::JobResult first_job_result = first_job.get();
-    const miaow::JobResult second_job_result = second_job.get();
+    const miaow::JobRecord first_job_record = first_job.get();
+    const miaow::JobRecord second_job_record = second_job.get();
 
     // Print per-task status and message in completion order
-    miaow::print_task_results(first_job_result);
-    miaow::print_task_results(second_job_result);
+    miaow::print_task_results(first_job_record);
+    miaow::print_task_results(second_job_record);
 
     // Print timing diagnostics for each job run
-    miaow::print_diagnostics(first_job_result.diagnostics_, 0);
-    miaow::print_diagnostics(second_job_result.diagnostics_, 1);
+    miaow::print_diagnostics(first_job_record);
+    miaow::print_diagnostics(second_job_record);
 
     // Return 1 if any task failed, or 0 if all tasks succeeded
-    return miaow::all_tasks_succeeded(first_job_result) &&
-            miaow::all_tasks_succeeded(second_job_result) ? 0 : 1;
+    return miaow::all_tasks_succeeded(first_job_record) &&
+            miaow::all_tasks_succeeded(second_job_record) ? 0 : 1;
 }

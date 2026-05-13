@@ -6,6 +6,7 @@
 
 #include <exception>
 #include <iostream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -53,7 +54,7 @@ int main(int argc, char* argv[]) {
     //   0: 512-day model, 512-day forcing (exact match)
     //   1: 512-day model, 1-day forcing (forcing exhausts before end time)
     //   2: 1-day model, 512-day forcing (model stops before forcing ends)
-    const std::vector<miaow::Task> tasks{
+    std::vector<miaow::Task> tasks{
         {soil_freeze_thaw,
          std::vector<caf::config_value>{
              caf::config_value{config_512_days},
@@ -71,16 +72,27 @@ int main(int argc, char* argv[]) {
          }},
     };
 
+    // Task metadata records case labels and input provenance
+    tasks[0].metadata_["label"] = "matched-duration";
+    tasks[0].metadata_["config_path"] = config_512_days;
+    tasks[0].metadata_["forcing_file"] = forcing_512_days;
+    tasks[1].metadata_["label"] = "short-forcing";
+    tasks[1].metadata_["config_path"] = config_512_days;
+    tasks[1].metadata_["forcing_file"] = forcing_1_day;
+    tasks[2].metadata_["label"] = "long-forcing";
+    tasks[2].metadata_["config_path"] = config_1_day;
+    tasks[2].metadata_["forcing_file"] = forcing_512_days;
+
     // Submit tasks and wait for results
     miaow::JobHandle job = runtime.submit_job(tasks);
-    const miaow::JobResult job_result = job.get();
+    const miaow::JobRecord job_record = job.get();
 
     // Print per-task status and message in completion order
-    miaow::print_task_results(job_result);
+    miaow::print_task_results(job_record);
 
     // Print timing diagnostics for this job run
-    miaow::print_diagnostics(job_result.diagnostics_);
+    miaow::print_diagnostics(job_record);
 
     // Return 1 if any task failed, or 0 if all tasks succeeded
-    return miaow::all_tasks_succeeded(job_result) ? 0 : 1;
+    return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
 }

@@ -16,6 +16,9 @@ Identifiers and task status
 .. doxygentypedef:: miaow::JobId
    :project: MIAOW
 
+.. doxygentypedef:: miaow::TaskMetadata
+   :project: MIAOW
+
 .. doxygenenum:: miaow::TaskStatus
    :project: MIAOW
 
@@ -33,11 +36,11 @@ Task and job data
    :project: MIAOW
    :members:
 
-.. doxygenstruct:: miaow::JobDiagnostics
+.. doxygenstruct:: miaow::TaskRecord
    :project: MIAOW
    :members:
 
-.. doxygenstruct:: miaow::JobResult
+.. doxygenstruct:: miaow::JobRecord
    :project: MIAOW
    :members:
 

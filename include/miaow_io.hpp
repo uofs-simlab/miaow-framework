@@ -12,23 +12,22 @@ namespace miaow {
 
 /**
  * @brief Print diagnostics to stdout.
- * @param diagnostics `JobDiagnostics` payload to print.
- * @param job_id `JobId` included in the printed header.
+ * @param job_record `JobRecord` payload containing task and job timings.
  */
-void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
+void print_diagnostics(const JobRecord& job_record);
 
 /**
- * @brief Print all `TaskResult`s in a job to stdout.
- * @param job_result `JobResult` payload containing task results to print.
+ * @brief Print all task results in a job to stdout.
+ * @param job_record `JobRecord` payload containing task records to print.
  */
-void print_task_results(const JobResult& job_result);
+void print_task_results(const JobRecord& job_record);
 
 /**
- * @brief Return true when every `TaskResult` in a job succeeded.
- * @param job_result `JobResult` payload to inspect.
+ * @brief Return true when every task result in a job succeeded.
+ * @param job_record `JobRecord` payload to inspect.
  * @return true when every task status is `TaskStatus::succeeded`.
  */
-bool all_tasks_succeeded(const JobResult& job_result);
+bool all_tasks_succeeded(const JobRecord& job_record);
 
 /**
  * @brief Validate that an example is running from its required working directory.

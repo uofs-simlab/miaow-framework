@@ -5,6 +5,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "bmi/internal.hpp"
@@ -36,7 +37,8 @@ void run_model(
     bmi_api::Bmi& model,
     const caf::config_value::dictionary* forcing_config,
     const std::string& task_output_dir,
-    std::size_t& update_steps) {
+    std::size_t& update_steps,
+    std::vector<std::string>& artifact_paths) {
 
     // Build the forcing source once so the update loop only moves scalar values
     std::unique_ptr<bmi_api::Bmi> forcing_model;
@@ -50,6 +52,11 @@ void run_model(
     std::vector<bmi::OutputVariable> output_vars;
     if (!task_output_dir.empty()) {
         output_vars = bmi::open_output_vars(model, task_output_dir);
+        // Artifact paths are relative to the task output directory
+        artifact_paths.reserve(output_vars.size());
+        for (const bmi::OutputVariable& output_var : output_vars) {
+            artifact_paths.push_back(output_var.name_ + ".csv");
+        }
     }
 
     // Get the model end time for update loop condition and initialize update step counter
@@ -117,9 +124,6 @@ std::string format_bmi_error_message(std::exception_ptr exception) {
 } // namespace
 
 TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
-    TaskResult task_result;
-    task_result.simulation_unit_id_ = task.simulation_unit_id_;
-
     if (task.args_.empty()) {
         throw std::runtime_error("missing config path in task specification");
     }
@@ -144,6 +148,7 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
 
     bool needs_finalize = false;
     std::size_t update_steps = 0;
+    std::vector<std::string> artifact_paths;
 
     // Main execution workflow
     try {
@@ -152,7 +157,11 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
         needs_finalize = true;
 
         // MIAOW applies the forcing and advances the model in lockstep
-        run_model(model, forcing_config, task.task_output_dir_, update_steps);
+        run_model(model,
+                  forcing_config,
+                  task.task_output_dir_,
+                  update_steps,
+                  artifact_paths);
 
         // Finalize the model after successful completion of the update loop
         needs_finalize = false;
@@ -181,9 +190,7 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
 
     std::ostringstream message;
     message << "BMI workflow complete (updates: " << update_steps << ")";
-    task_result.status_ = TaskStatus::succeeded;
-    task_result.message_ = message.str();
-    return task_result;
+    return TaskResult{TaskStatus::succeeded, message.str(), std::move(artifact_paths)};
 }
 
 } // namespace miaow

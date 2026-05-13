@@ -13,31 +13,6 @@
 
 namespace miaow::core {
 
-namespace {
-
-void mark_job_result_failed(JobResult& job_result, const std::string& message) {
-    const std::string metadata_error_message = "Metadata error: " + message;
-    for (TaskResult& task_result : job_result.task_results_) {
-        task_result.status_ = TaskStatus::failed;
-        if (task_result.message_.empty()) {
-            task_result.message_ = metadata_error_message;
-            continue;
-        }
-        task_result.message_ += " | " + metadata_error_message;
-    }
-}
-
-void canonicalize_task_result(TaskResult& task_result,
-                              const Task& task,
-                              TaskId task_id,
-                              double run_time_s) {
-    task_result.task_id_ = task_id;
-    task_result.simulation_unit_id_ = task.simulation_unit_id_;
-    task_result.run_time_s_ = run_time_s;
-}
-
-} // namespace
-
 static void dispatch_tasks(caf::event_based_actor* self,
                            const std::shared_ptr<JobState>& state);
 
@@ -56,12 +31,24 @@ static void complete_job_if_all_tasks_finished(
         return;
     }
 
-    // All tasks are complete: deliver final results, clear the promise, and stop actor
-    state->diagnostics_.task_times_s_ = state->task_times_s_;
-    state->diagnostics_.total_time_s_ = std::chrono::duration<double>(
+    // Keep task records in submitted task order even when workers finish out of order
+    std::vector<TaskRecord> task_records = std::move(state->completed_task_records_);
+    std::sort(task_records.begin(),
+              task_records.end(),
+              [](const TaskRecord& left, const TaskRecord& right) {
+                  return left.task_id_ < right.task_id_;
+              });
+
+    // All tasks are complete: build the final record and stop the job actor
+    const double job_run_time_s = std::chrono::duration<double>(
         std::chrono::steady_clock::now() - state->job_start_time_)
             .count();
-    state->response_promise_->deliver(JobResult{state->task_results_, state->diagnostics_});
+    JobRecord job_record{state->run_id_,
+                         state->job_id_,
+                         std::move(task_records),
+                         job_run_time_s};
+
+    state->response_promise_->deliver(std::move(job_record));
     state->response_promise_.reset();
     self->quit();
 }
@@ -84,14 +71,13 @@ static void complete_task(caf::event_based_actor* self,
                                        std::chrono::steady_clock::now() -
                                        state->task_start_times_.at(task_id))
                                        .count();
-    state->task_times_s_.at(task_id) = task_run_time_s;
 
-    // Runtime owns canonical identifiers and timing for task results
-    canonicalize_task_result(task_result,
-                             state->tasks_.at(task_id),
-                             static_cast<TaskId>(task_id),
-                             task_run_time_s);
-    state->task_results_.at(task_id) = std::move(task_result);
+    // Runtime creates a task record only after the task has completed
+    state->completed_task_records_.push_back(
+        TaskRecord{state->tasks_.at(task_id),
+                   static_cast<TaskId>(task_id),
+                   std::move(task_result),
+                   task_run_time_s});
 
     // Dispatch more tasks if there are any left, now that a worker slot is free
     dispatch_tasks(self, state);
@@ -126,7 +112,6 @@ static void dispatch_tasks(caf::event_based_actor* self,
                 },
                 [self, state, worker_id, task_id](const caf::error& err) {
                     const TaskResult failed_task_result = miaow::make_failed_task_result(
-                        state->tasks_.at(task_id),
                         caf::to_string(err),
                         "CAF error");
                     complete_task(self,
@@ -180,20 +165,25 @@ caf::behavior simulation_unit_actor(caf::event_based_actor* /*self*/,
 
 // Per-job supervisor that owns simulation_unit actors
 caf::behavior job_actor(caf::event_based_actor* self,
+                        std::uint64_t run_id,
+                        JobId job_id,
                         std::vector<Task> tasks,
                         RuntimeOptions runtime_options,
                         std::shared_ptr<const SimulationUnitRegistry>
                             simulation_unit_registry) {
     // JobState holds all mutable state variables for the job actor
     const std::shared_ptr<JobState> state = std::make_shared<JobState>();
+    state->run_id_ = run_id;
+    state->job_id_ = job_id;
     state->runtime_options_ = std::move(runtime_options);
     state->tasks_ = std::move(tasks);
     state->job_start_time_ = std::chrono::steady_clock::now();
 
-    // Initialize one default result entry per task
-    state->task_results_.resize(state->tasks_.size());
+    // Completed task records are appended as workers return terminal results
+    state->completed_task_records_.reserve(state->tasks_.size());
+
+    // Task start times are filled when each task is dispatched
     state->task_start_times_.assign(state->tasks_.size(), state->job_start_time_);
-    state->task_times_s_.assign(state->tasks_.size(), 0.0);
 
     // If max_workers > number of tasks, set worker_count to the number of tasks
     const std::size_t worker_count =
@@ -211,14 +201,14 @@ caf::behavior job_actor(caf::event_based_actor* self,
 
     return {
         // Start dispatching tasks when orchestrator requests this job
-        [=](caf::get_atom) -> caf::result<JobResult> {
+        [=](caf::get_atom) -> caf::result<JobRecord> {
             if (state->response_promise_.has_value()) {
                 return caf::make_error(caf::sec::runtime_error,
                                        "job_actor only accepts one get_atom request");
             }
 
             // Keep handler non-blocking while workers execute
-            state->response_promise_ = self->make_response_promise<JobResult>();
+            state->response_promise_ = self->make_response_promise<JobRecord>();
 
             dispatch_tasks(self, state);
             return *state->response_promise_;
@@ -237,63 +227,56 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
     return {
         // Job submission event
         [=](caf::get_atom, JobId job_id, std::vector<Task> tasks) {
-            const std::size_t task_count = tasks.size();
-            std::vector<SimulationUnitId> task_simulation_unit_ids;
-            task_simulation_unit_ids.reserve(task_count);
-            for (const Task& task : tasks) {
-                task_simulation_unit_ids.push_back(task.simulation_unit_id_);
-            }
             const caf::actor orchestrator = self;
 
             // Spawn one job actor for this request
             caf::actor job = self->spawn(job_actor,
-                                         std::move(tasks),
+                                         run_id,
+                                         job_id,
+                                         tasks,
                                          runtime_options,
                                          simulation_unit_registry);
 
-            // Forward a request to the per-job actor and wait for one JobResult reply
+            // Forward a request to the per-job actor and wait for one JobRecord reply
             self->mail(caf::get_atom_v).request(job, runtime_options.job_request_timeout_)
                 .then(
                     // Forward successful completion back into this actor
-                    [orchestrator, job_id](const JobResult& job_result) {
-                        caf::anon_mail(caf::put_atom_v, job_id, job_result)
+                    [orchestrator, job_id](const JobRecord& job_record) {
+                        caf::anon_mail(caf::put_atom_v, job_id, job_record)
                             .send(orchestrator);
                     },
-                    // Convert timeout or error into a failed JobResult
+                    // Convert timeout or error into a failed JobRecord
                     [orchestrator,
                      job_id,
-                     task_count,
-                     task_simulation_unit_ids](const caf::error& err) {
-                        JobResult job_result;
-                        job_result.task_results_.resize(task_count);
+                     run_id,
+                     tasks](const caf::error& err) {
+                        std::vector<TaskRecord> task_records;
+                        task_records.reserve(tasks.size());
                         for (std::size_t task_index = 0;
-                             task_index < task_count;
+                             task_index < tasks.size();
                              ++task_index) {
-                            Task task;
-                            task.simulation_unit_id_ =
-                                task_simulation_unit_ids.at(task_index);
                             TaskResult task_result = make_failed_task_result(
-                                task,
                                 caf::to_string(err),
                                 "CAF error");
-                            task_result.task_id_ = static_cast<TaskId>(task_index);
-                            job_result.task_results_.at(task_index) =
-                                std::move(task_result);
+                            task_records.push_back(
+                                TaskRecord{tasks.at(task_index),
+                                           static_cast<TaskId>(task_index),
+                                           std::move(task_result),
+                                           0.0});
                         }
-                        job_result.diagnostics_.task_times_s_.assign(task_count, 0.0);
+                        JobRecord job_record{run_id, job_id, std::move(task_records)};
 
-                        caf::anon_mail(caf::put_atom_v, job_id, std::move(job_result))
+                        caf::anon_mail(caf::put_atom_v, job_id, std::move(job_record))
                             .send(orchestrator);
                     });
         },
         // Resolve Runtime promise for this completed job and mark its future ready
         [pending_jobs_mutex,
          pending_jobs,
-         runtime_options,
-         run_id](caf::put_atom,
-                 JobId job_id,
-                 JobResult job_result) mutable {
-            std::promise<JobResult> promise;
+         runtime_options](caf::put_atom,
+                          JobId job_id,
+                          JobRecord job_record) mutable {
+            std::promise<JobRecord> promise;
             {
                 std::lock_guard<std::mutex> lock(*pending_jobs_mutex);
                 PendingJobs::iterator pending_job_entry = pending_jobs->find(job_id);
@@ -305,13 +288,13 @@ caf::behavior orchestrator_actor(caf::event_based_actor* self,
             } // mutex unlocks automatically here
 
             try {
-                io::write_job_metadata(run_id, job_id, runtime_options, job_result);
-            } catch (const std::exception& err) {
-                mark_job_result_failed(job_result, err.what());
+                io::write_job_record(runtime_options, job_record);
             } catch (...) {
-                mark_job_result_failed(job_result, "unknown metadata write failure");
+                // Output record failures are reported without changing task status
+                promise.set_exception(std::current_exception());
+                return;
             }
-            promise.set_value(std::move(job_result));
+            promise.set_value(std::move(job_record));
         }
     };
 }

@@ -1,10 +1,10 @@
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
 #include "bmi/internal.hpp"
+#include "io/internal.hpp"
 
 #include <exception>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <map>
 #include <stdexcept>
@@ -45,17 +45,10 @@ std::filesystem::path parse_subprocess_spec_path(int argc, char* argv[]) {
     return std::filesystem::absolute(spec_path).lexically_normal();
 }
 
-// Write the minimal result contract consumed by the parent process
+// Write the complete result contract consumed by the parent process
 void write_subprocess_result(const std::filesystem::path& result_path,
                              const TaskResult& task_result) {
-    std::ofstream output(result_path);
-    if (!output.is_open()) {
-        throw std::runtime_error("unable to open result file '" +
-                                 result_path.string() + "'");
-    }
-
-    output << task_status_to_string(task_result.status_) << "\n"
-           << task_result.message_ << "\n";
+    io::write_json_file(result_path, task_result, false);
 }
 
 // Write child-process setup failures through the diagnostic stderr file
@@ -190,7 +183,6 @@ int main(int argc, char* argv[]) {
         } catch (...) {
             // Exceptions cannot propagate through the subprocess boundary
             task_result = miaow::make_failed_task_result(
-                miaow::Task{},
                 std::current_exception(),
                 "BMI error");
         }

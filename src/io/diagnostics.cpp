@@ -11,26 +11,25 @@ namespace miaow {
 
 namespace io {
 
-std::string format_diagnostics(const JobDiagnostics& diagnostics,
-                               JobId job_id) {
+std::string format_diagnostics(const JobRecord& job_record) {
     double sum_task_times = 0.0;
-    for (double task_time : diagnostics.task_times_s_) {
-        sum_task_times += task_time;
+    for (const TaskRecord& task_record : job_record.tasks_) {
+        sum_task_times += task_record.run_time_s_;
     }
 
-    const double total_time = diagnostics.total_time_s_;
+    const double total_time = job_record.run_time_s_;
     const double concurrency = total_time > 0.0 ? (sum_task_times / total_time) : 0.0;
 
     std::ostringstream output;
     output << "\n=== MIAOW Job Diagnostics ===\n";
-    output << "job_id: " << job_id << "\n";
+    output << "job_id: " << job_record.job_id_ << "\n";
     output << std::fixed << std::setprecision(6);
     output << "total_time: " << total_time << "\n";
     output << "concurrency: " << concurrency << "\n";
     output << "task_times:\n";
-    for (std::size_t task_id = 0; task_id < diagnostics.task_times_s_.size(); ++task_id) {
-        output << "  [" << task_id << "] "
-               << std::setw(10) << diagnostics.task_times_s_.at(task_id)
+    for (const TaskRecord& task_record : job_record.tasks_) {
+        output << "  [" << task_record.task_id_ << "] "
+               << std::setw(10) << task_record.run_time_s_
                << "\n";
     }
     output << "=============================\n";
@@ -40,21 +39,21 @@ std::string format_diagnostics(const JobDiagnostics& diagnostics,
 
 } // namespace io
 
-void print_diagnostics(const JobDiagnostics& diagnostics, JobId job_id) {
-    std::cout << io::format_diagnostics(diagnostics, job_id);
+void print_diagnostics(const JobRecord& job_record) {
+    std::cout << io::format_diagnostics(job_record);
 }
 
-void print_task_results(const JobResult& job_result) {
-    for (const TaskResult& task_result : job_result.task_results_) {
-        std::cout << "[" << task_result.task_id_ << "] "
-                  << task_status_to_string(task_result.status_) << ": "
-                  << task_result.message_ << "\n";
+void print_task_results(const JobRecord& job_record) {
+    for (const TaskRecord& task_record : job_record.tasks_) {
+        std::cout << "[" << task_record.task_id_ << "] "
+                  << task_status_to_string(task_record.result_.status_) << ": "
+                  << task_record.result_.message_ << "\n";
     }
 }
 
-bool all_tasks_succeeded(const JobResult& job_result) {
-    for (const TaskResult& task_result : job_result.task_results_) {
-        if (task_result.status_ != TaskStatus::succeeded) {
+bool all_tasks_succeeded(const JobRecord& job_record) {
+    for (const TaskRecord& task_record : job_record.tasks_) {
+        if (task_record.result_.status_ != TaskStatus::succeeded) {
             return false;
         }
     }

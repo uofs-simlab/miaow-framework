@@ -31,7 +31,7 @@ if(BUILD_TESTING)
     )
 
     # Drives the example with --output_root and validates the on-disk
-    # run/job/task metadata layout via a shared CMake script.
+    # run/job/task record layout via a shared CMake script.
     set(hello_layout_cli_args
         --output_root
         "${CMAKE_CURRENT_LIST_DIR}/output"
@@ -39,7 +39,7 @@ if(BUILD_TESTING)
     list(JOIN hello_layout_cli_args ";" hello_layout_cli_args_serialized)
 
     add_test(
-        NAME miaow_example_00_hello_metadata_layout
+        NAME miaow_example_00_hello_job_record_layout
         COMMAND
             ${CMAKE_COMMAND}
             -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
@@ -47,9 +47,9 @@ if(BUILD_TESTING)
             -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
             "-DEXECUTABLE_ARGS=${hello_layout_cli_args_serialized}"
             -P
-            ${MIAOW_ROOT}/cmake/check_metadata_layout.cmake
+            ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
     )
-    set_tests_properties(miaow_example_00_hello_metadata_layout PROPERTIES
+    set_tests_properties(miaow_example_00_hello_job_record_layout PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
     )
 endif()

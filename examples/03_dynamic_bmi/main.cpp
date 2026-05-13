@@ -56,14 +56,14 @@ int main(int argc, char* argv[]) {
 
     // Submit tasks and wait for results
     miaow::JobHandle job = runtime.submit_job(tasks);
-    const miaow::JobResult job_result = job.get();
+    const miaow::JobRecord job_record = job.get();
 
     // Print per-task status and message in completion order
-    miaow::print_task_results(job_result);
+    miaow::print_task_results(job_record);
 
     // Print timing diagnostics for this job run
-    miaow::print_diagnostics(job_result.diagnostics_);
+    miaow::print_diagnostics(job_record);
 
     // Return 1 if any task failed, or 0 if all tasks succeeded
-    return miaow::all_tasks_succeeded(job_result) ? 0 : 1;
+    return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
 }

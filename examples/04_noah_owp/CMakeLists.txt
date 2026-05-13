@@ -224,6 +224,30 @@ if(BUILD_TESTING)
         PASS_REGULAR_EXPRESSION "${noah_owp_run_regex}"
     )
 
+    set(noah_owp_expected_job_record_snippets
+        "\"feature_id\""
+        "\"hydrofabric_layer\""
+        "\"hydrofabric_id_field\""
+    )
+    list(JOIN noah_owp_expected_job_record_snippets ";"
+        noah_owp_job_record_snippets_arg)
+
+    add_test(
+        NAME miaow_example_04_noah_owp_job_record_layout
+        COMMAND
+            ${CMAKE_COMMAND}
+            -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
+            -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
+            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
+            "-DEXPECTED_METADATA_SNIPPETS=${noah_owp_job_record_snippets_arg}"
+            -P
+            ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
+    )
+    set_tests_properties(miaow_example_04_noah_owp_job_record_layout PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+        RESOURCE_LOCK miaow_example_04_noah_owp_output
+    )
+
     add_test(
         NAME miaow_example_04_noah_owp_wrong_cwd
         COMMAND

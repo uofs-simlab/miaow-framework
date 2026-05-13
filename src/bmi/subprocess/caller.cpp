@@ -9,7 +9,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -20,6 +19,7 @@
 #include <boost/process/v2/process.hpp>
 #include <boost/process/v2/stdio.hpp>
 #include <caf/config_value.hpp>
+#include <caf/json.hpp>
 
 namespace miaow {
 
@@ -94,31 +94,22 @@ std::string read_file_prefix(const std::filesystem::path& path,
     return text;
 }
 
-// Convert the subprocess text result into the parent task result contract
-TaskResult read_subprocess_result(const Task& task,
-                                  const std::filesystem::path& result_path) {
-    std::ifstream input(result_path);
-    if (!input.is_open()) {
-        throw std::runtime_error("subprocess did not write a result file");
-    }
-
-    std::string status;
-    std::getline(input, status);
-
-    std::ostringstream message_stream;
-    message_stream << input.rdbuf();
-    std::string message = message_stream.str();
-    while (!message.empty() &&
-           (message.back() == '\n' || message.back() == '\r')) {
-        message.pop_back();
+// Convert the subprocess JSON result into the parent task result contract
+TaskResult read_subprocess_result(const std::filesystem::path& result_path) {
+    caf::json_reader reader;
+    if (!reader.load_file(result_path.string())) {
+        throw std::runtime_error("failed to parse subprocess result file '" +
+                                 result_path.string() + "': " +
+                                 caf::to_string(reader.get_error()));
     }
 
     TaskResult task_result;
-    task_result.simulation_unit_id_ = task.simulation_unit_id_;
-    task_result.status_ = status == "succeeded"
-        ? TaskStatus::succeeded
-        : TaskStatus::failed;
-    task_result.message_ = std::move(message);
+    if (!reader.apply(task_result)) {
+        throw std::runtime_error("failed to read subprocess result file '" +
+                                 result_path.string() + "': " +
+                                 caf::to_string(reader.get_error()));
+    }
+
     return task_result;
 }
 
@@ -156,7 +147,7 @@ TaskResult execute_subprocess_task(const Task& task,
 
     // If the subprocess wrote a result file, parse it into the task result contract
     if (std::filesystem::exists(paths.result_path_)) {
-        return read_subprocess_result(task, paths.result_path_);
+        return read_subprocess_result(paths.result_path_);
     }
 
     // If the subprocess did not write a result file, capture stderr and rethrow

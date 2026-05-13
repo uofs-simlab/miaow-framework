@@ -169,7 +169,7 @@ add_library(miaow STATIC
     src/io/cli.cpp
     src/io/csv.cpp
     src/io/diagnostics.cpp
-    src/io/metadata.cpp
+    src/io/job_record.cpp
 )
 
 target_include_directories(miaow

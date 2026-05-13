@@ -62,11 +62,9 @@ std::string format_timestamp_seconds(std::int64_t seconds_since_epoch,
 std::vector<double> read_csv_numeric_column(const std::string& csv_path,
                                             const std::string& column_name);
 
-std::string format_diagnostics(const JobDiagnostics& diagnostics, JobId job_id = 0);
+std::string format_diagnostics(const JobRecord& job_record);
 
-void write_job_metadata(std::uint64_t run_id,
-                        JobId job_id,
-                        const RuntimeOptions& runtime_options,
-                        const JobResult& job_result);
+void write_job_record(const RuntimeOptions& runtime_options,
+                      const JobRecord& job_record);
 
 } // namespace miaow::io
