@@ -57,8 +57,11 @@ struct Task {
     // Generic arguments for this task to pass into `SimulationUnit::execute(args)`
     std::vector<caf::config_value> args_;
 
-    // Directory injected by `Runtime` where this task should write output artifacts
+    // Directory injected by `Runtime` where this task should write artifacts
     std::string task_output_dir_;
+
+    // File stem injected by `Runtime` for task-specific output artifacts
+    std::string task_output_name_;
 
     // Metadata preserves labels used by reporting and postprocessing tools
     TaskMetadata metadata_;
@@ -152,7 +155,7 @@ struct TaskResult {
      * @brief Construct a task result from status, message, and artifact paths.
      * @param status Terminal status for this task execution.
      * @param message Message interpreted by `status` as output or failure detail.
-     * @param artifact_paths Relative paths to artifacts under `task_output_dir_`.
+     * @param artifact_paths Relative paths to artifacts under the job directory.
      */
     TaskResult(TaskStatus status,
                std::string message,
@@ -168,7 +171,7 @@ struct TaskResult {
     // Message interpreted by `status_` as output or failure detail
     std::string message_;
 
-    // Relative paths to task artifacts produced under `task_output_dir_`
+    // Relative paths to task artifacts produced under the job directory
     std::vector<std::string> artifact_paths_;
 };
 
@@ -409,7 +412,7 @@ struct RuntimeOptions {
     // Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
     std::chrono::milliseconds job_request_timeout_;
 
-    // Root output directory where run/job/task artifact folders are created
+    // Root output directory where run/job artifact folders are created
     // When empty (the default), no output directories or files are written
     std::string output_root_;
 
@@ -422,7 +425,7 @@ struct RuntimeOptions {
      * @param workers Desired worker count. Values of zero are clamped to one.
      * @param task_timeout Timeout used for one simulation task request.
      * @param job_timeout Timeout used for whole-job requests.
-     * @param output_root Root directory for runtime-managed `Task` output folders.
+     * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      * @param realization_path Path to a realization file. Empty string (default)
      *                   lets realization-driven callers fall back to their own default.
@@ -472,6 +475,7 @@ bool inspect(Inspector& inspector, Task& task) {
         inspector.field("simulation_unit_id", task.simulation_unit_id_),
         inspector.field("args", task.args_),
         inspector.field("task_output_dir", task.task_output_dir_),
+        inspector.field("task_output_name", task.task_output_name_),
         inspector.field("metadata", task.metadata_));
 }
 
@@ -618,7 +622,7 @@ private:
     std::uint64_t run_id_{0};
 
     // Monotonic counter for generating unique `JobId`s for each submitted job
-    mutable std::atomic<JobId> next_job_id_{1};
+    mutable std::atomic<JobId> next_job_id_{0};
 
     // Mutex to protect access to the `pending_jobs_` dictionary
     mutable std::mutex pending_jobs_mutex_;

@@ -104,8 +104,7 @@ if(BUILD_TESTING)
             600
     )
 
-    # Drives the example with --output_root and validates the on-disk
-    # run/job/task record layout via a shared CMake script.
+    # Drives the example with --output_root and validates the on-disk layout
     set(soil_freeze_thaw_layout_cli_args
         --output_root
         "${CMAKE_CURRENT_LIST_DIR}/output"
@@ -121,10 +120,16 @@ if(BUILD_TESTING)
     set(soil_freeze_thaw_expected_job_record_snippets
         "\"label\""
         "\"matched-duration\""
-        "\"soil_temperature_profile.csv\""
+        "\"results/task_0.csv\""
     )
     list(JOIN soil_freeze_thaw_expected_job_record_snippets ";"
         soil_freeze_thaw_job_record_snippets_arg)
+    set(soil_freeze_thaw_expected_result_paths
+        "results/task_0.csv"
+        "results/task_2.csv"
+    )
+    list(JOIN soil_freeze_thaw_expected_result_paths ";"
+        soil_freeze_thaw_result_paths_arg)
 
     add_test(
         NAME miaow_example_02_soil_freeze_thaw_job_record_layout
@@ -135,6 +140,7 @@ if(BUILD_TESTING)
             -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
             "-DEXECUTABLE_ARGS=${soil_freeze_thaw_layout_cli_args_serialized}"
             "-DEXPECTED_METADATA_SNIPPETS=${soil_freeze_thaw_job_record_snippets_arg}"
+            "-DEXPECTED_RESULT_PATHS=${soil_freeze_thaw_result_paths_arg}"
             -P
             ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
     )

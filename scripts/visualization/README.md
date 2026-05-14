@@ -8,10 +8,11 @@ This folder contains lightweight plotting tools for MIAOW BMI output CSVs.
 (`BmiSimulationUnit`) and validates this schema:
 
 - header starts with `time`
-- remaining columns are exactly `val_0,val_1,...,val_N` in order
+- remaining columns are BMI output variable names or indexed variable names
 - one row per `Update()` step
 
-If the header does not match this pattern, the script exits with an error.
+Scalar output variables use their BMI variable name as the column header.
+Vector output variables use `<variable_name>_<item_index>` columns.
 
 ## Environment setup
 
@@ -41,7 +42,7 @@ Dependencies are intentionally minimal and unpinned for low maintenance.
 
 ```bash
 ./scripts/visualization/.venv/bin/python ./scripts/visualization/animate_bmi_csv.py \
-  /tmp/miaow_vis_demo/run_1/job_1/task_0/plate_surface__temperature.csv \
+  /tmp/miaow_vis_demo/run_0/job_0/results/task_0.csv \
   --output-dir /tmp/miaow_vis_demo/videos \
   --stride 1 \
   --fps 12 \
@@ -51,20 +52,20 @@ Dependencies are intentionally minimal and unpinned for low maintenance.
 If your run/job/task IDs differ, locate CSV files with:
 
 ```bash
-find /tmp/miaow_vis_demo -path '*/task_*/*.csv' | sort
+find /tmp/miaow_vis_demo -path '*/results/*.csv' | sort
 ```
 
 3. Open the generated file:
 
 ```text
-/tmp/miaow_vis_demo/videos/plate_surface__temperature.mp4
+/tmp/miaow_vis_demo/videos/task_0.mp4
 ```
 
 For long runs (e.g., SoilFreezeThaw), render directly with timestep stride:
 
 ```bash
 ./scripts/visualization/.venv/bin/python ./scripts/visualization/animate_bmi_csv.py \
-  ./examples/02_soil_freeze_thaw/output/run_1/job_1/task_0 \
+  ./examples/02_soil_freeze_thaw/output/run_0/job_0/results \
   --output-dir /tmp/miaow_soil_videos \
   --stride 96 \
   --fps 12 \

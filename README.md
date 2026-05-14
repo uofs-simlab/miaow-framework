@@ -105,7 +105,7 @@ Key types in `include/miaow.hpp`:
 - `SimulationUnitRegistry`: registers units and returns `SimulationUnitId`
 - `TaskMetadata`: string labels preserved for reporting and postprocessing
 - `Task`: carries `simulation_unit_id_`, positional `args_`, descriptive
-  `metadata_`, and runtime-set `task_output_dir_`
+  `metadata_`, and runtime-set output fields
 - `TaskResult`: simulation-unit status, message, and artifact paths
 - `TaskRecord`: runtime task ID, simulation unit ID, metadata, result, and runtime
 - `Runtime`: submits jobs and returns non-blocking `JobHandle`
@@ -132,7 +132,7 @@ src/
     execute.cpp          # BMI lifecycle execution bridge and update loop
     dynamic.cpp          # DynamicBmi adapter for C++/Fortran plugins
     forcing.cpp          # streaming external BMI forcing CSV reader and coupling logic
-    output.cpp           # per-step BMI output-variable CSV writers
+    output.cpp           # task-level BMI output CSV writer
     realization.cpp      # BMI realization parsing, task, and registration helpers
     subprocess/
       caller.cpp         # parent-side dynamic BMI subprocess launcher
@@ -256,8 +256,8 @@ const miaow::SimulationUnitId my_isolated_bmi_model =
 Subprocess mode is limited to dynamic BMI models. The parent writes a JSON spec,
 launches the CMake-configured `miaow_subprocess` executable with
 Boost.Process, and reads a serialized JSON `TaskResult` from
-`bmi_subprocess_result.txt`. If the result file is missing, the parent includes
-the captured stderr output in a failed `TaskResult`. Set
+`bmi_subprocess_*_result.json`. If the result file is missing, the parent
+includes the captured stderr output in a failed `TaskResult`. Set
 `MIAOW_SUBPROCESS_PATH` to override the executable path at runtime.
 
 Dynamic C++ and Fortran loading are exercised together in the
@@ -277,17 +277,27 @@ not change task statuses. If
 └─ run_<run_id>/
    └─ job_<job_id>/
       ├─ job_record.json
-      └─ task_<task_id>/
+      └─ results/
+         └─ <feature_id or task_<task_id>>.csv
 ```
 
-Each task receives `Task::task_output_dir_` for artifact output. BMI tasks
-write one CSV file per output variable there and report those filenames in
-`TaskResult::artifact_paths_`. Artifact paths are relative to the task output
-directory; `job_record.json` records those paths under each task record's
-`result` field and records each task's descriptive `Task::metadata_`, but it
-does not embed artifact file contents. Subprocess BMI tasks also write
-`bmi_subprocess_spec.json`, `bmi_subprocess_result.txt`,
-`bmi_subprocess_stdout.txt`, and `bmi_subprocess_stderr.txt`. When no task
+Persisted run directories start at `run_0`. When an output root already
+contains run directories, the next run uses the largest existing run ID plus
+one.
+
+Each task receives `Task::task_output_dir_` for the job `results/` directory
+and `Task::task_output_name_` for task-specific artifact filenames. BMI tasks
+write one CSV file per task there, with BMI output variables as columns, and
+report job-relative filenames such as `results/cat-552.csv` in
+`TaskResult::artifact_paths_`. `job_record.json` records those paths under each
+task record's `result` field and records each task's descriptive
+`Task::metadata_`, but it does not embed artifact file contents. If a task has
+non-empty `metadata_["feature_id"]`, that value becomes the output file stem;
+otherwise the runtime uses `task_<task_id>`. Output stems must be unique within
+one job and cannot contain path separators. Subprocess BMI tasks also write
+task-specific `bmi_subprocess_*_spec.json`,
+`bmi_subprocess_*_result.json`, `bmi_subprocess_*_stdout.log`, and
+`bmi_subprocess_*_stderr.log` files beside `job_record.json`. When no task
 output directory is assigned, these subprocess control files use a temporary
 directory instead.
 

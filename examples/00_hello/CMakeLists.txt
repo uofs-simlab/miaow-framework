@@ -30,8 +30,7 @@ if(BUILD_TESTING)
         PASS_REGULAR_EXPRESSION "succeeded: hello(.|\\n)*succeeded: cats(.|\\n)*succeeded: hello again(.|\\n)*succeeded: more cats"
     )
 
-    # Drives the example with --output_root and validates the on-disk
-    # run/job/task record layout via a shared CMake script.
+    # Drives the example with --output_root and validates the on-disk layout
     set(hello_layout_cli_args
         --output_root
         "${CMAKE_CURRENT_LIST_DIR}/output"
@@ -45,6 +44,7 @@ if(BUILD_TESTING)
             -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
             -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
+            -DCHECK_SECOND_RUN=TRUE
             "-DEXECUTABLE_ARGS=${hello_layout_cli_args_serialized}"
             -P
             ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake

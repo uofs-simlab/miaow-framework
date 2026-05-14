@@ -1,10 +1,14 @@
+#include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <filesystem>
 #include <future>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -25,7 +29,7 @@
 namespace miaow {
 
 static std::once_flag caf_init_flag;
-static std::atomic<std::uint64_t> next_run_id{1};
+static std::atomic<std::uint64_t> next_run_id{0};
 
 static std::filesystem::path run_directory_path(const RuntimeOptions& runtime_options,
                                                 std::uint64_t run_id) {
@@ -33,11 +37,78 @@ static std::filesystem::path run_directory_path(const RuntimeOptions& runtime_op
            ("run_" + std::to_string(run_id));
 }
 
+static std::optional<std::uint64_t> parse_run_directory_id(
+    const std::string& directory_name) {
+    constexpr const char* run_prefix = "run_";
+    constexpr std::size_t run_prefix_size = 4;
+    if (directory_name.rfind(run_prefix, 0) != 0 ||
+        directory_name.size() == run_prefix_size) {
+        return std::nullopt;
+    }
+
+    std::uint64_t run_id = 0;
+    const char* run_id_begin = directory_name.data() + run_prefix_size;
+    const char* run_id_end = directory_name.data() + directory_name.size();
+    const std::from_chars_result result =
+        std::from_chars(run_id_begin, run_id_end, run_id);
+    if (result.ec != std::errc() || result.ptr != run_id_end) {
+        return std::nullopt;
+    }
+    return run_id;
+}
+
+static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
+    if (runtime_options.output_root_.empty()) {
+        return next_run_id.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    const std::filesystem::path output_root(runtime_options.output_root_);
+    std::filesystem::create_directories(output_root);
+
+    std::uint64_t max_run_id = 0;
+    bool found_run_id = false;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator(output_root)) {
+        const std::optional<std::uint64_t> run_id =
+            parse_run_directory_id(entry.path().filename().string());
+        if (!run_id.has_value()) {
+            continue;
+        }
+        max_run_id = found_run_id ? std::max(max_run_id, *run_id) : *run_id;
+        found_run_id = true;
+    }
+
+    // Claim the run directory in case another runtime creates one first
+    std::uint64_t run_id = found_run_id ? max_run_id + 1 : 0;
+    while (!std::filesystem::create_directory(
+        run_directory_path(runtime_options, run_id))) {
+        ++run_id;
+    }
+    return run_id;
+}
+
+// Get directory path for a job, which is a subdirectory of the run directory
 static std::filesystem::path job_directory_path(const RuntimeOptions& runtime_options,
                                                 std::uint64_t run_id,
                                                 JobId job_id) {
     return run_directory_path(runtime_options, run_id) /
            ("job_" + std::to_string(job_id));
+}
+
+// Get directory name for a task output, prioritizing "feature_id" metadata when available,
+// and falling back to "task_{task_id}" when not. The "feature_id" value is validated to
+// not contain path separators to prevent directory traversal issues.
+static std::string task_output_name(const Task& task, TaskId task_id) {
+    const TaskMetadata::const_iterator feature_id = task.metadata_.find("feature_id");
+    if (feature_id != task.metadata_.end() && !feature_id->second.empty()) {
+        if (feature_id->second.find('/') != std::string::npos ||
+            feature_id->second.find('\\') != std::string::npos) {
+            throw std::runtime_error(
+                "Output path error: feature_id must not contain path separators");
+        }
+        return feature_id->second;
+    }
+    return "task_" + std::to_string(task_id);
 }
 
 static void assign_task_output_directories(std::vector<Task>& tasks,
@@ -47,21 +118,33 @@ static void assign_task_output_directories(std::vector<Task>& tasks,
     if (runtime_options.output_root_.empty()) {
         for (Task& task : tasks) {
             task.task_output_dir_.clear();
+            task.task_output_name_.clear();
         }
         return;
     }
 
-    std::filesystem::create_directories(run_directory_path(runtime_options, run_id));
-    std::filesystem::create_directories(
-        job_directory_path(runtime_options, run_id, job_id));
+    const std::filesystem::path job_directory =
+        job_directory_path(runtime_options, run_id, job_id);
+    const std::filesystem::path results_directory = job_directory / "results";
+    std::filesystem::create_directories(results_directory);
+
+    // Track output stems so tasks do not overwrite each other
+    std::vector<std::string> assigned_output_names;
+    assigned_output_names.reserve(tasks.size());
 
     for (std::size_t task_index = 0; task_index < tasks.size(); ++task_index) {
         Task& task = tasks.at(task_index);
-        const std::filesystem::path task_directory =
-            job_directory_path(runtime_options, run_id, job_id) /
-            ("task_" + std::to_string(static_cast<TaskId>(task_index)));
-        task.task_output_dir_ = task_directory.string();
-        std::filesystem::create_directories(task_directory);
+        const TaskId task_id = static_cast<TaskId>(task_index);
+        task.task_output_dir_ = results_directory.string();
+        task.task_output_name_ = task_output_name(task, task_id);
+        if (std::find(assigned_output_names.begin(),
+                      assigned_output_names.end(),
+                      task.task_output_name_) != assigned_output_names.end()) {
+            throw std::runtime_error(
+                "Output path error: duplicate task output name '" +
+                task.task_output_name_ + "'");
+        }
+        assigned_output_names.push_back(task.task_output_name_);
     }
 }
 
@@ -98,7 +181,7 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
     if (simulation_unit_registry_->empty()) {
         throw std::invalid_argument("Runtime requires at least one SimulationUnit");
     }
-    run_id_ = next_run_id.fetch_add(1, std::memory_order_relaxed);
+    run_id_ = allocate_run_id(runtime_options_);
 
     // Keep one actor system and one shared orchestrator for this Runtime
     actor_system_config_ = std::make_shared<caf::actor_system_config>();

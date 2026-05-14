@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Render MP4 animations from MIAOW BMI CSV output files "
-            "(header: time,val_0,val_1,...)."
+            "(header starts with time)."
         )
     )
     parser.add_argument(
@@ -87,7 +87,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_bmi_csv(csv_path: Path, stride: int) -> tuple[np.ndarray, np.ndarray]:
+def load_bmi_csv(
+    csv_path: Path,
+    stride: int,
+) -> tuple[np.ndarray, list[str], np.ndarray]:
     if stride <= 0:
         raise ValueError("--stride must be > 0")
 
@@ -100,7 +103,7 @@ def load_bmi_csv(csv_path: Path, stride: int) -> tuple[np.ndarray, np.ndarray]:
     header = header_line.split(",")
     if len(header) < 2:
         raise ValueError(
-            f"Invalid BMI CSV header in {csv_path}: expected at least time,val_0"
+            f"Invalid BMI CSV header in {csv_path}: expected at least two columns"
         )
 
     if header[0] != "time":
@@ -108,14 +111,9 @@ def load_bmi_csv(csv_path: Path, stride: int) -> tuple[np.ndarray, np.ndarray]:
             f"Invalid BMI CSV header in {csv_path}: first column must be 'time'"
         )
 
-    value_column_count = len(header) - 1
-    for column_index, column_name in enumerate(header[1:]):
-        expected = f"val_{column_index}"
-        if column_name != expected:
-            raise ValueError(
-                "Invalid BMI CSV header in "
-                f"{csv_path}: expected '{expected}', got '{column_name}'"
-            )
+    value_column_names = header[1:]
+    if any(column_name == "" for column_name in value_column_names):
+        raise ValueError(f"Invalid BMI CSV header in {csv_path}: empty column name")
 
     matrix = np.loadtxt(
         csv_path,
@@ -127,7 +125,7 @@ def load_bmi_csv(csv_path: Path, stride: int) -> tuple[np.ndarray, np.ndarray]:
     if matrix.ndim == 1:
         matrix = matrix.reshape(1, -1)
 
-    if matrix.shape[1] != value_column_count + 1:
+    if matrix.shape[1] != len(value_column_names) + 1:
         raise ValueError(
             f"CSV {csv_path} data columns do not match its BMI header"
         )
@@ -140,7 +138,7 @@ def load_bmi_csv(csv_path: Path, stride: int) -> tuple[np.ndarray, np.ndarray]:
     if times.size == 0:
         raise ValueError(f"CSV {csv_path} contains no data rows")
 
-    return times, values
+    return times, value_column_names, values
 
 
 def compute_y_limits(values: np.ndarray) -> tuple[float, float]:
@@ -159,6 +157,7 @@ def render_animation(
     csv_path: Path,
     output_path: Path,
     times: np.ndarray,
+    value_column_names: Sequence[str],
     values: np.ndarray,
     fps: int,
     dpi: int,
@@ -187,9 +186,12 @@ def render_animation(
     else:
         axis.set_xlim(float(x_values[0]), float(x_values[-1]))
     axis.set_ylim(y_lower, y_upper)
-    axis.set_xlabel("BMI value index (val_i)")
+    axis.set_xlabel("BMI output column")
     axis.set_ylabel("Value")
     axis.grid(True, linewidth=0.4, alpha=0.4)
+    if len(value_column_names) <= 12:
+        axis.set_xticks(x_values)
+        axis.set_xticklabels(value_column_names, rotation=35, ha="right")
 
     line, = axis.plot(x_values, values[0, :], color="tab:blue", linewidth=1.5)
     title = axis.set_title(f"{csv_path.stem}: frame 1/{len(times)}")
@@ -254,7 +256,7 @@ def render_many(
     outputs: list[Path] = []
 
     for csv_path in csv_paths:
-        times, values = load_bmi_csv(csv_path, stride)
+        times, value_column_names, values = load_bmi_csv(csv_path, stride)
 
         output_path = output_dir / f"{csv_path.stem}.mp4"
         LOGGER.info(
@@ -265,7 +267,16 @@ def render_many(
             stride,
             values.shape[1],
         )
-        render_animation(csv_path, output_path, times, values, fps, dpi, ffmpeg_path)
+        render_animation(
+            csv_path,
+            output_path,
+            times,
+            value_column_names,
+            values,
+            fps,
+            dpi,
+            ffmpeg_path,
+        )
         outputs.append(output_path)
 
     return outputs

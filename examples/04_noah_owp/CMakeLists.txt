@@ -228,9 +228,17 @@ if(BUILD_TESTING)
         "\"feature_id\""
         "\"hydrofabric_layer\""
         "\"hydrofabric_id_field\""
+        "\"results/cat-552.csv\""
     )
     list(JOIN noah_owp_expected_job_record_snippets ";"
         noah_owp_job_record_snippets_arg)
+    set(noah_owp_expected_result_paths
+        "results/cat-552.csv"
+        "results/cat-562.csv"
+        "results/cat-585.csv"
+    )
+    list(JOIN noah_owp_expected_result_paths ";"
+        noah_owp_result_paths_arg)
 
     add_test(
         NAME miaow_example_04_noah_owp_job_record_layout
@@ -240,6 +248,7 @@ if(BUILD_TESTING)
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
             -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
             "-DEXPECTED_METADATA_SNIPPETS=${noah_owp_job_record_snippets_arg}"
+            "-DEXPECTED_RESULT_PATHS=${noah_owp_result_paths_arg}"
             -P
             ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
     )

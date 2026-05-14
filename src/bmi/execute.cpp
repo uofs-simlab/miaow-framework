@@ -32,11 +32,12 @@ void set_forcing_value(bmi_api::Bmi& model,
                              type + "' for input variable '" + name + "'");
 }
 
-// Advance the model and forcing in lockstep and write output variables to CSV streams
+// Advance the model and forcing in lockstep and write CSV output
 void run_model(
     bmi_api::Bmi& model,
     const caf::config_value::dictionary* forcing_config,
     const std::string& task_output_dir,
+    const std::string& task_output_name,
     std::size_t& update_steps,
     std::vector<std::string>& artifact_paths) {
 
@@ -48,15 +49,12 @@ void run_model(
         forcing_vars = forcing_model->GetOutputVarNames();
     }
 
-    // Open output streams for BMI output variables if an output directory is provided
-    std::vector<bmi::OutputVariable> output_vars;
+    // Open one CSV output file if an output directory exists
+    std::unique_ptr<bmi::OutputFile> output_file;
     if (!task_output_dir.empty()) {
-        output_vars = bmi::open_output_vars(model, task_output_dir);
-        // Artifact paths are relative to the task output directory
-        artifact_paths.reserve(output_vars.size());
-        for (const bmi::OutputVariable& output_var : output_vars) {
-            artifact_paths.push_back(output_var.name_ + ".csv");
-        }
+        output_file = std::make_unique<bmi::OutputFile>(
+            bmi::open_output_file(model, task_output_dir, task_output_name));
+        artifact_paths.push_back(output_file->artifact_path_);
     }
 
     // Get the model end time for update loop condition and initialize update step counter
@@ -80,10 +78,10 @@ void run_model(
         model.Update();
         ++update_steps;
 
-        // Get the current model time and write output variable values
+        // Get the current model time and write one output row
         const double current_time = model.GetCurrentTime();
-        for (bmi::OutputVariable& variable : output_vars) {
-            bmi::write_output_step(model, variable, current_time);
+        if (output_file) {
+            bmi::write_output_step(model, *output_file, current_time);
         }
     }
 
@@ -160,6 +158,7 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
         run_model(model,
                   forcing_config,
                   task.task_output_dir_,
+                  task.task_output_name_,
                   update_steps,
                   artifact_paths);
 

@@ -41,13 +41,14 @@ struct BmiSubprocessPaths {
     std::filesystem::path stderr_path_;
 };
 
-// Reuse the task output directory when the runtime has assigned one
+// Reuse the job directory when the runtime has assigned result output
 std::filesystem::path make_control_dir(const Task& task) {
     if (!task.task_output_dir_.empty()) {
-        const std::filesystem::path task_output_dir =
+        const std::filesystem::path results_directory =
             std::filesystem::absolute(task.task_output_dir_).lexically_normal();
-        std::filesystem::create_directories(task_output_dir);
-        return task_output_dir;
+        const std::filesystem::path job_directory = results_directory.parent_path();
+        std::filesystem::create_directories(job_directory);
+        return job_directory;
     }
 
     // Generate a unique temporary control directory when no output directory exists
@@ -68,15 +69,16 @@ std::filesystem::path make_control_dir(const Task& task) {
 // Create the task-local files used by one BMI subprocess execution
 BmiSubprocessPaths make_subprocess_paths(const Task& task) {
     const std::filesystem::path control_dir = make_control_dir(task);
+    const std::string output_name =
+        task.task_output_name_.empty() ? "task" : task.task_output_name_;
+    const std::string control_stem =
+        std::string(bmi::bmi_file_prefix) + "_" + output_name;
 
     BmiSubprocessPaths paths;
-    paths.spec_path_ =
-        control_dir / (std::string(bmi::bmi_file_prefix) + "_spec.json");
+    paths.spec_path_ = control_dir / (control_stem + "_spec.json");
     paths.result_path_ = bmi::make_subprocess_result_path(paths.spec_path_);
-    paths.stdout_path_ =
-        control_dir / (std::string(bmi::bmi_file_prefix) + "_stdout.txt");
-    paths.stderr_path_ =
-        control_dir / (std::string(bmi::bmi_file_prefix) + "_stderr.txt");
+    paths.stdout_path_ = control_dir / (control_stem + "_stdout.log");
+    paths.stderr_path_ = control_dir / (control_stem + "_stderr.log");
     return paths;
 }
 
@@ -123,8 +125,7 @@ std::string configured_subprocess_path() {
 }
 
 // Launch the subprocess executable using Boost.Process and wait for the result file
-TaskResult execute_subprocess_task(const Task& task,
-                                   const BmiSubprocessPaths& paths,
+TaskResult execute_subprocess_task(const BmiSubprocessPaths& paths,
                                    const std::string& subprocess_path) {
     // Specify command-line args to be passed to the subprocess executable
     const std::vector<std::string> args{
@@ -177,6 +178,7 @@ void write_subprocess_task(const std::filesystem::path& spec_path,
         : std::filesystem::absolute(task.task_output_dir_)
               .lexically_normal()
               .string();
+    subprocess_task.output_name_ = task.task_output_name_;
 
     if (backend == DynamicBmiBackend::cpp) {
         subprocess_task.cpp_create_function_ = cpp_create_function;
@@ -269,7 +271,7 @@ TaskResult execute_dynamic_bmi_model_in_subprocess(
                           *config_file,
                           task);
 
-    return execute_subprocess_task(task, paths, subprocess_path);
+    return execute_subprocess_task(paths, subprocess_path);
 }
 
 } // namespace miaow

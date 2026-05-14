@@ -94,6 +94,9 @@ void validate_subprocess_task(const bmi::BmiSubprocessTaskSpec& subprocess_task)
     const DynamicBmiBackend backend = parse_backend(subprocess_task.backend_);
     require_non_empty_task_string(subprocess_task.plugin_path_, "plugin_path");
     require_non_empty_task_string(subprocess_task.config_file_, "config");
+    if (!subprocess_task.output_dir_.empty()) {
+        require_non_empty_task_string(subprocess_task.output_name_, "output_name");
+    }
     if (backend == DynamicBmiBackend::cpp) {
         const std::string create_function =
             subprocess_task.cpp_create_function_.value_or(
@@ -156,6 +159,7 @@ int main(int argc, char* argv[]) {
             miaow::Task task;
             task.args_.emplace_back(subprocess_task.config_file_);
             task.task_output_dir_ = subprocess_task.output_dir_;
+            task.task_output_name_ = subprocess_task.output_name_;
             if (subprocess_task.forcing_file_) {
                 task.args_.push_back(
                     miaow::make_forcing_config_from_subprocess_task(
