@@ -61,8 +61,7 @@ struct RealizationConfig {
  * @throws std::runtime_error if required path or mapping entries are empty.
  */
 caf::config_value make_bmi_model_pipeline_config(
-    const std::string& init_config,
-    const std::string& forcing_file = "",
+    const std::string& init_config, const std::string& forcing_file = "",
     const std::map<std::string, std::string>& variables_names_map = {});
 
 /**
@@ -77,9 +76,8 @@ caf::config_value make_bmi_model_pipeline_config(
  * @return Structured `TaskResult` for the BMI task execution.
  * @throws std::runtime_error if the pipeline config or BMI lifecycle fails.
  */
-TaskResult execute_bmi_pipeline(
-    const Task& task,
-    std::unique_ptr<bmi_api::Bmi> supplied_model = nullptr);
+TaskResult execute_bmi_pipeline(const Task& task,
+                                std::unique_ptr<bmi_api::Bmi> supplied_model = nullptr);
 
 /**
  * @brief Backend interface exposed by a dynamically loaded BMI plugin.
@@ -113,21 +111,20 @@ inline bool from_string(std::string_view value, DynamicBmiBackend& backend) {
 
 inline bool from_integer(std::underlying_type_t<DynamicBmiBackend> value,
                          DynamicBmiBackend& backend) {
-    if (value == static_cast<std::underlying_type_t<DynamicBmiBackend>>(
-            DynamicBmiBackend::cpp)) {
+    if (value ==
+        static_cast<std::underlying_type_t<DynamicBmiBackend>>(DynamicBmiBackend::cpp)) {
         backend = DynamicBmiBackend::cpp;
         return true;
     }
     if (value == static_cast<std::underlying_type_t<DynamicBmiBackend>>(
-            DynamicBmiBackend::fortran)) {
+                     DynamicBmiBackend::fortran)) {
         backend = DynamicBmiBackend::fortran;
         return true;
     }
     return false;
 }
 
-template <class Inspector>
-bool inspect(Inspector& inspector, DynamicBmiBackend& backend) {
+template <class Inspector> bool inspect(Inspector& inspector, DynamicBmiBackend& backend) {
     return caf::default_enum_inspect(inspector, backend);
 }
 
@@ -139,8 +136,7 @@ enum class BmiExecutionMode {
     subprocess,
 };
 
-template <DynamicBmiBackend Backend>
-class DynamicBmi;
+template <DynamicBmiBackend Backend> class DynamicBmi;
 
 /**
  * @brief BMI model backed by a dynamically loaded C++ BMI plugin.
@@ -148,9 +144,8 @@ class DynamicBmi;
  * The plugin must export `bmi_model_create()` and `bmi_model_destroy(...)`.
  * These symbols may be renamed through constructor arguments.
  */
-template <>
-class DynamicBmi<DynamicBmiBackend::cpp> : public bmi_api::Bmi {
-public:
+template <> class DynamicBmi<DynamicBmiBackend::cpp> : public bmi_api::Bmi {
+  public:
     /**
      * @brief Open a dynamic C++ BMI plugin from an explicit filesystem path.
      * @param plugin_path Path passed directly to the platform dynamic loader.
@@ -159,10 +154,9 @@ public:
      * @throws std::runtime_error if the plugin path or required symbols are
      * invalid, or if model creation fails.
      */
-    explicit DynamicBmi(
-        std::string plugin_path,
-        std::string create_function = "bmi_model_create",
-        std::string destroy_function = "bmi_model_destroy");
+    explicit DynamicBmi(std::string plugin_path,
+                        std::string create_function = "bmi_model_create",
+                        std::string destroy_function = "bmi_model_destroy");
 
     DynamicBmi(const DynamicBmi&) = delete;
     DynamicBmi& operator=(const DynamicBmi&) = delete;
@@ -211,7 +205,7 @@ public:
     void GetGridFaceNodes(const int grid, int* face_nodes) override;
     void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
 
-private:
+  private:
     using CreateBmiFunction = bmi_api::Bmi* (*)();
     using DestroyBmiFunction = void (*)(bmi_api::Bmi*);
 
@@ -231,9 +225,8 @@ private:
  * procedural BMI bridge. If the plugin exports `unregister_bmi(void**)`, MIAOW
  * calls it after BMI finalization.
  */
-template <>
-class DynamicBmi<DynamicBmiBackend::fortran> : public bmi_api::Bmi {
-public:
+template <> class DynamicBmi<DynamicBmiBackend::fortran> : public bmi_api::Bmi {
+  public:
     /**
      * @brief Open a dynamic Fortran BMI plugin from an explicit filesystem path.
      * @param plugin_path Path passed directly to the platform dynamic loader.
@@ -289,7 +282,7 @@ public:
     void GetGridFaceNodes(const int grid, int* face_nodes) override;
     void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
 
-private:
+  private:
     using RegisterBmiFunction = int (*)(void**);
     using UnregisterBmiFunction = int (*)(void**);
 
@@ -328,9 +321,7 @@ using DynamicFortranBmi = DynamicBmi<DynamicBmiBackend::fortran>;
  * be resolved or created.
  */
 TaskResult execute_dynamic_bmi_model_in_subprocess(
-    DynamicBmiBackend backend,
-    const std::string& plugin_path,
-    const Task& task,
+    DynamicBmiBackend backend, const std::string& plugin_path, const Task& task,
     const std::string& create_function = "bmi_model_create",
     const std::string& destroy_function = "bmi_model_destroy");
 
@@ -342,16 +333,16 @@ TaskResult execute_dynamic_bmi_model_in_subprocess(
  * @return `Task`s ready to submit through `Runtime::submit_job()`.
  * @throws std::runtime_error if a feature contains invalid forcing task inputs.
  */
-std::vector<Task> build_bmi_realization_tasks(
-    const RealizationConfig& realization,
-    SimulationUnitRegistry& registry,
-    BmiExecutionMode execution_mode = BmiExecutionMode::in_process);
+std::vector<Task>
+build_bmi_realization_tasks(const RealizationConfig& realization,
+                            SimulationUnitRegistry& registry,
+                            BmiExecutionMode execution_mode = BmiExecutionMode::in_process);
 
 /**
  * @brief Simulation unit that executes `BmiPipeline` directly from pipeline configs.
  */
 class BmiPipelineSimulationUnit : public SimulationUnit {
-public:
+  public:
     /**
      * @brief Construct a BMI pipeline simulation unit.
      * @param execution_mode Process isolation mode. Only in-process execution is
@@ -359,8 +350,7 @@ public:
      */
     explicit BmiPipelineSimulationUnit(
         BmiExecutionMode execution_mode = BmiExecutionMode::in_process)
-        : execution_mode_(execution_mode) {
-    }
+        : execution_mode_(execution_mode) {}
 
     /**
      * @brief Execute a dynamic BMI pipeline config for one task.
@@ -369,7 +359,7 @@ public:
      */
     TaskResult execute(const Task& task) override;
 
-private:
+  private:
     BmiExecutionMode execution_mode_;
 };
 
@@ -378,9 +368,8 @@ private:
  *
  * @tparam BmiModelType BMI model type derived from `bmi_api::Bmi`.
  */
-template <class BmiModelType>
-class BmiSimulationUnit : public SimulationUnit {
-public:
+template <class BmiModelType> class BmiSimulationUnit : public SimulationUnit {
+  public:
     static_assert(std::is_base_of_v<bmi_api::Bmi, BmiModelType>,
                   "BmiModelType must derive from bmi::Bmi");
 
@@ -407,16 +396,15 @@ public:
 
         std::tuple<std::decay_t<ConstructorArgs>...> stored_constructor_args(
             std::move(constructor_args)...);
-        model_factory_ =
-            [stored_constructor_args = std::move(stored_constructor_args)]()
-                -> std::unique_ptr<BmiModelType> {
-                return std::apply(
-                    [](const std::decay_t<ConstructorArgs>&... args)
-                        -> std::unique_ptr<BmiModelType> {
-                        return std::make_unique<BmiModelType>(args...);
-                    },
-                    stored_constructor_args);
-            };
+        model_factory_ = [stored_constructor_args = std::move(
+                              stored_constructor_args)]() -> std::unique_ptr<BmiModelType> {
+            return std::apply(
+                [](const std::decay_t<ConstructorArgs>&... args)
+                    -> std::unique_ptr<BmiModelType> {
+                    return std::make_unique<BmiModelType>(args...);
+                },
+                stored_constructor_args);
+        };
     }
 
     /**
@@ -429,13 +417,11 @@ public:
             std::unique_ptr<BmiModelType> bmi_model = model_factory_();
             return execute_bmi_pipeline(task, std::move(bmi_model));
         } catch (...) {
-            return make_failed_task_result(
-                std::current_exception(),
-                "BMI error");
+            return make_failed_task_result(std::current_exception(), "BMI error");
         }
     }
 
-private:
+  private:
     std::function<std::unique_ptr<BmiModelType>()> model_factory_;
 };
 
@@ -447,18 +433,15 @@ private:
  */
 template <DynamicBmiBackend Backend>
 class BmiSimulationUnit<DynamicBmi<Backend>> : public SimulationUnit {
-public:
+  public:
     /**
      * @brief Construct a dynamic BMI simulation unit.
      * @param plugin_path Path passed to the dynamic loader.
      * @param execution_mode Process isolation mode used by each task.
      */
-    explicit BmiSimulationUnit(
-        std::string plugin_path,
-        BmiExecutionMode execution_mode = BmiExecutionMode::in_process)
-        : plugin_path_(std::move(plugin_path)),
-          execution_mode_(execution_mode) {
-    }
+    explicit BmiSimulationUnit(std::string plugin_path, BmiExecutionMode execution_mode =
+                                                            BmiExecutionMode::in_process)
+        : plugin_path_(std::move(plugin_path)), execution_mode_(execution_mode) {}
 
     /**
      * @brief Construct a dynamic C++ BMI simulation unit with custom symbols.
@@ -471,15 +454,12 @@ public:
     template <DynamicBmiBackend B = Backend,
               typename = std::enable_if_t<B == DynamicBmiBackend::cpp>>
     explicit BmiSimulationUnit(
-        std::string plugin_path,
-        std::string create_function,
-        std::string destroy_function,
+        std::string plugin_path, std::string create_function, std::string destroy_function,
         BmiExecutionMode execution_mode = BmiExecutionMode::in_process)
         : plugin_path_(std::move(plugin_path)),
           cpp_create_function_(std::move(create_function)),
           cpp_destroy_function_(std::move(destroy_function)),
-          execution_mode_(execution_mode) {
-    }
+          execution_mode_(execution_mode) {}
 
     /**
      * @brief Execute a dynamic BMI model for a single task.
@@ -488,27 +468,23 @@ public:
      */
     TaskResult execute(const Task& task) override {
         const char* error_prefix = execution_mode_ == BmiExecutionMode::subprocess
-            ? "BMI subprocess error"
-            : "BMI error";
+                                       ? "BMI subprocess error"
+                                       : "BMI error";
 
         try {
             // Subprocess mode loads plugins only inside the worker process
             if (execution_mode_ == BmiExecutionMode::subprocess) {
-                return execute_dynamic_bmi_model_in_subprocess(
-                    Backend,
-                    plugin_path_,
-                    task,
-                    cpp_create_function_,
-                    cpp_destroy_function_);
+                return execute_dynamic_bmi_model_in_subprocess(Backend, plugin_path_, task,
+                                                               cpp_create_function_,
+                                                               cpp_destroy_function_);
             }
 
             // In-process mode constructs the model in this process
             if constexpr (Backend == DynamicBmiBackend::cpp) {
                 std::unique_ptr<DynamicBmi<Backend>> bmi_model =
-                    std::make_unique<DynamicBmi<Backend>>(
-                    plugin_path_,
-                    cpp_create_function_,
-                    cpp_destroy_function_);
+                    std::make_unique<DynamicBmi<Backend>>(plugin_path_,
+                                                          cpp_create_function_,
+                                                          cpp_destroy_function_);
                 return execute_bmi_pipeline(task, std::move(bmi_model));
             } else {
                 std::unique_ptr<DynamicBmi<Backend>> bmi_model =
@@ -516,13 +492,11 @@ public:
                 return execute_bmi_pipeline(task, std::move(bmi_model));
             }
         } catch (...) {
-            return make_failed_task_result(
-                std::current_exception(),
-                error_prefix);
+            return make_failed_task_result(std::current_exception(), error_prefix);
         }
     }
 
-private:
+  private:
     std::string plugin_path_;
     std::string cpp_create_function_{"bmi_model_create"};
     std::string cpp_destroy_function_{"bmi_model_destroy"};

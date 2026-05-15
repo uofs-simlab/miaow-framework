@@ -18,8 +18,7 @@ namespace miaow {
 
 // Build the minimal pipeline config used for supplied bmi_model modules
 caf::config_value make_bmi_model_pipeline_config(
-    const std::string& init_config,
-    const std::string& forcing_file,
+    const std::string& init_config, const std::string& forcing_file,
     const std::map<std::string, std::string>& variables_names_map) {
     if (io::trim(init_config).empty()) {
         throw std::runtime_error(
@@ -33,8 +32,7 @@ caf::config_value make_bmi_model_pipeline_config(
 
     bmi::BmiPipelineConfig pipeline_config;
     pipeline_config.insert("global",
-                           bmi::make_bmi_multi_global_config(module_config,
-                                                             forcing_file));
+                           bmi::make_bmi_multi_global_config(module_config, forcing_file));
     return caf::config_value{std::move(pipeline_config)};
 }
 
@@ -45,8 +43,7 @@ namespace miaow::bmi {
 namespace {
 
 constexpr const char* bmi_pipeline_config_file_prefix = "realization";
-constexpr const char* bmi_pipeline_config_temp_dir_prefix =
-    "miaow_bmi_pipeline_config";
+constexpr const char* bmi_pipeline_config_temp_dir_prefix = "miaow_bmi_pipeline_config";
 
 std::atomic<unsigned long long> next_bmi_pipeline_config_file_id{0};
 
@@ -60,8 +57,7 @@ void add_variables_names_map_to_params(
 
     // Store variable maps only when the pipeline config needs explicit forcing names
     caf::config_value::dictionary map_value;
-    for (const std::pair<const std::string, std::string>& map_entry :
-         variables_names_map) {
+    for (const std::pair<const std::string, std::string>& map_entry : variables_names_map) {
         if (io::trim(map_entry.first).empty()) {
             throw std::runtime_error(
                 "BMI pipeline config error: variables_names_map contains an empty "
@@ -69,8 +65,8 @@ void add_variables_names_map_to_params(
         }
         if (io::trim(map_entry.second).empty()) {
             throw std::runtime_error(
-                "BMI pipeline config error: variables_names_map entry '" +
-                map_entry.first + "' must be a non-empty string");
+                "BMI pipeline config error: variables_names_map entry '" + map_entry.first +
+                "' must be a non-empty string");
         }
         map_value.insert(map_entry.first, map_entry.second);
     }
@@ -81,8 +77,7 @@ void add_variables_names_map_to_params(
 std::string bmi_pipeline_config_filename(const Task& task) {
     const std::string output_name =
         task.task_output_name_.empty() ? "task" : task.task_output_name_;
-    return std::string(bmi_pipeline_config_file_prefix) +
-           "_" + output_name + ".json";
+    return std::string(bmi_pipeline_config_file_prefix) + "_" + output_name + ".json";
 }
 
 // Generate a temporary pipeline config path when the task has no output directory
@@ -95,19 +90,16 @@ std::filesystem::path make_temporary_bmi_pipeline_config_path() {
         std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
     const std::filesystem::path directory =
         std::filesystem::temp_directory_path() /
-        (std::string(bmi_pipeline_config_temp_dir_prefix) + "_" +
-         std::to_string(stamp) + "_" + std::to_string(id));
+        (std::string(bmi_pipeline_config_temp_dir_prefix) + "_" + std::to_string(stamp) +
+         "_" + std::to_string(id));
     std::filesystem::create_directories(directory);
     return directory / (std::string(bmi_pipeline_config_file_prefix) + ".json");
 }
 
 // Write output values for one BMI variable into the current CSV row
 template <typename T>
-void write_var_values(
-    ::bmi::Bmi& model,
-    const std::string& name,
-    std::size_t n_items,
-    std::ofstream& output_stream) {
+void write_var_values(::bmi::Bmi& model, const std::string& name, std::size_t n_items,
+                      std::ofstream& output_stream) {
     std::vector<T> buffer(n_items);
     model.GetValue(name, buffer.data());
     for (const T& value : buffer) {
@@ -124,16 +116,12 @@ void write_var_values(
 // Parse the BMI pipeline config for a single module
 BmiModuleConfig::BmiModuleConfig(const caf::json_object& module,
                                  std::string_view error_prefix) {
-    name_ =
-        io::trim(std::string(module.value("name").to_string()));
+    name_ = io::trim(std::string(module.value("name").to_string()));
 
     const caf::json_object module_params = module.value("params").to_object();
-    config_file_ =
-        io::trim(std::string(module_params.value("init_config").to_string()));
+    config_file_ = io::trim(std::string(module_params.value("init_config").to_string()));
     variables_names_map_ =
-        io::parse_json_string_map(module_params,
-                                  "variables_names_map",
-                                  error_prefix);
+        io::parse_json_string_map(module_params, "variables_names_map", error_prefix);
 
     // Static BMI modules are self-contained and require no additional parameters
     if (name_ == "bmi_model") {
@@ -141,8 +129,7 @@ BmiModuleConfig::BmiModuleConfig(const caf::json_object& module,
     }
 
     // Otherwise, it's a dynamic module that requires a plugin library path
-    plugin_path_ =
-        io::trim(std::string(module_params.value("library_file").to_string()));
+    plugin_path_ = io::trim(std::string(module_params.value("library_file").to_string()));
 
     // Fortran backend
     if (name_ == "bmi_fortran") {
@@ -151,21 +138,15 @@ BmiModuleConfig::BmiModuleConfig(const caf::json_object& module,
     }
 
     // C++ backend
-    if (name_ == "bmi_c++" ||
-        name_ == "bmi_cpp" ||
-        name_.rfind("bmi_c++", 0) == 0 ||
+    if (name_ == "bmi_c++" || name_ == "bmi_cpp" || name_.rfind("bmi_c++", 0) == 0 ||
         name_.rfind("bmi_cpp", 0) == 0) {
         dynamic_backend_ = DynamicBmiBackend::cpp;
         cpp_create_function_ =
-            io::optional_json_string(module_params,
-                                     "cpp_create_function",
-                                     "bmi_model_create",
-                                     error_prefix);
+            io::optional_json_string(module_params, "cpp_create_function",
+                                     "bmi_model_create", error_prefix);
         cpp_destroy_function_ =
-            io::optional_json_string(module_params,
-                                     "cpp_destroy_function",
-                                     "bmi_model_destroy",
-                                     error_prefix);
+            io::optional_json_string(module_params, "cpp_destroy_function",
+                                     "bmi_model_destroy", error_prefix);
         return;
     }
 
@@ -173,24 +154,21 @@ BmiModuleConfig::BmiModuleConfig(const caf::json_object& module,
 }
 
 // Build the shared bmi_multi global block used by BMI pipeline configs
-caf::config_value::dictionary make_bmi_multi_global_config(
-    const BmiModuleConfig& module_config,
-    const std::string& forcing_file) {
+caf::config_value::dictionary
+make_bmi_multi_global_config(const BmiModuleConfig& module_config,
+                             const std::string& forcing_file) {
     caf::config_value::dictionary module_params;
     if (module_config.dynamic_backend_) {
         module_params.insert("library_file", module_config.plugin_path_);
     }
     module_params.insert("init_config", module_config.config_file_);
     if (module_config.cpp_create_function_) {
-        module_params.insert("cpp_create_function",
-                             *module_config.cpp_create_function_);
+        module_params.insert("cpp_create_function", *module_config.cpp_create_function_);
     }
     if (module_config.cpp_destroy_function_) {
-        module_params.insert("cpp_destroy_function",
-                             *module_config.cpp_destroy_function_);
+        module_params.insert("cpp_destroy_function", *module_config.cpp_destroy_function_);
     }
-    add_variables_names_map_to_params(module_params,
-                                      module_config.variables_names_map_);
+    add_variables_names_map_to_params(module_params, module_config.variables_names_map_);
 
     caf::config_value::dictionary module;
     module.insert("name", module_config.name_);
@@ -224,10 +202,8 @@ caf::config_value::dictionary make_bmi_multi_global_config(
 }
 
 // Read the BMI pipeline config JSON consumed by the BMI pipeline
-caf::json_object read_bmi_pipeline_config_file(
-    const std::filesystem::path& path) {
-    return io::read_json_object_file(path,
-                                     "BMI pipeline config root",
+caf::json_object read_bmi_pipeline_config_file(const std::filesystem::path& path) {
+    return io::read_json_object_file(path, "BMI pipeline config root",
                                      "unable to parse BMI pipeline config file",
                                      "BMI pipeline config error: ");
 }
@@ -256,10 +232,8 @@ void write_bmi_pipeline_config_file(const BmiPipelineConfig& pipeline_config,
 }
 
 // Open one CSV file that contains all BMI output variables
-OutputFile open_output_file(
-    ::bmi::Bmi& model,
-    const std::string& output_dir,
-    const std::string& output_name) {
+OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
+                            const std::string& output_name) {
     if (output_name.empty()) {
         throw std::runtime_error("BMI output error: task output name is empty");
     }
@@ -270,19 +244,18 @@ OutputFile open_output_file(
 
     const std::vector<std::string> var_names = model.GetOutputVarNames();
     OutputFile output_file;
-    output_file.artifact_path_ =
-        (output_directory.filename() / output_filename).string();
+    output_file.artifact_path_ = (output_directory.filename() / output_filename).string();
     output_file.variables_.reserve(var_names.size());
     output_file.stream_.open(output_path);
     if (!output_file.stream_.is_open()) {
-        throw std::runtime_error("unable to open BMI output file '" +
-                                 output_path.string() + "'");
+        throw std::runtime_error("unable to open BMI output file '" + output_path.string() +
+                                 "'");
     }
 
     output_file.stream_ << "time";
     for (const std::string& name : var_names) {
-        const std::size_t n_items = static_cast<std::size_t>(
-            model.GetVarNbytes(name) / model.GetVarItemsize(name));
+        const std::size_t n_items =
+            static_cast<std::size_t>(model.GetVarNbytes(name) / model.GetVarItemsize(name));
 
         if (n_items == 1) {
             output_file.stream_ << "," << name;
@@ -299,23 +272,22 @@ OutputFile open_output_file(
 
 // Write one timestep row to a BMI output CSV
 void write_output_step(::bmi::Bmi& model, OutputFile& output_file, double time) {
-    output_file.stream_
-        << std::setprecision(std::numeric_limits<double>::max_digits10) << time;
+    output_file.stream_ << std::setprecision(std::numeric_limits<double>::max_digits10)
+                        << time;
     for (const OutputVariable& variable : output_file.variables_) {
         const std::string type = model.GetVarType(variable.name_);
         if (type == "double") {
-            write_var_values<double>(
-                model, variable.name_, variable.n_items_, output_file.stream_);
+            write_var_values<double>(model, variable.name_, variable.n_items_,
+                                     output_file.stream_);
         } else if (type == "float") {
-            write_var_values<float>(
-                model, variable.name_, variable.n_items_, output_file.stream_);
+            write_var_values<float>(model, variable.name_, variable.n_items_,
+                                    output_file.stream_);
         } else if (type == "int") {
-            write_var_values<int>(
-                model, variable.name_, variable.n_items_, output_file.stream_);
+            write_var_values<int>(model, variable.name_, variable.n_items_,
+                                  output_file.stream_);
         } else {
-            throw std::runtime_error(
-                "unsupported BMI variable type '" + type + "' for variable '" +
-                variable.name_ + "'");
+            throw std::runtime_error("unsupported BMI variable type '" + type +
+                                     "' for variable '" + variable.name_ + "'");
         }
     }
     output_file.stream_ << "\n";

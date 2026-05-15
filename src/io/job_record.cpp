@@ -5,8 +5,7 @@
 
 namespace miaow::io {
 
-void write_job_record(const RuntimeOptions& runtime_options,
-                      const JobRecord& job_record) {
+void write_job_record(const RuntimeOptions& runtime_options, const JobRecord& job_record) {
     if (runtime_options.output_root_.empty()) {
         return;
     }

@@ -61,9 +61,7 @@ bool ensure_expected_run_dir(const std::string& executable_name,
  * @throws std::runtime_error if an argument is unrecognized, missing a value,
  * or has an invalid value.
  */
-void parse_runtime_cli_options(int argc,
-                               char* argv[],
-                               RuntimeOptions& runtime_options);
+void parse_runtime_cli_options(int argc, char* argv[], RuntimeOptions& runtime_options);
 
 /**
  * @brief Write a generated forcing CSV by repeating one hourly source cycle.
@@ -97,8 +95,8 @@ std::string write_repeated_hourly_forcing_csv(const std::string& source_path,
  * @throws std::runtime_error if `forcing_file` or any explicit mapping entry
  * is empty.
  */
-caf::config_value make_forcing_config(
-    const std::string& forcing_file,
-    const std::map<std::string, std::string>& variables_names_map = {});
+caf::config_value
+make_forcing_config(const std::string& forcing_file,
+                    const std::map<std::string, std::string>& variables_names_map = {});
 
 } // namespace miaow

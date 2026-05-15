@@ -1,0 +1,24 @@
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+ColumnLimit: 92
+IndentWidth: 4
+ContinuationIndentWidth: 4
+UseTab: Never
+
+BreakBeforeBraces: Attach
+AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+BinPackArguments: true
+BinPackParameters: true
+PenaltyBreakBeforeFirstCallParameter: 100
+PenaltyExcessCharacter: 1000
+
+Cpp11BracedListStyle: true
+SpaceBeforeParens: ControlStatements
+PointerAlignment: Left
+ReferenceAlignment: Left
+SortIncludes: false

@@ -66,8 +66,7 @@ std::filesystem::path make_control_dir(const Task& task) {
     return control_dir;
 }
 
-const bmi::BmiPipelineConfig&
-require_bmi_pipeline_config_argument(const Task& task) {
+const bmi::BmiPipelineConfig& require_bmi_pipeline_config_argument(const Task& task) {
     if (task.args_.size() != 1) {
         throw std::runtime_error(
             "subprocess BMI task must contain exactly one top-level BMI "
@@ -88,8 +87,7 @@ BmiSubprocessPaths make_subprocess_paths(const Task& task) {
     const std::filesystem::path control_dir = make_control_dir(task);
     const std::string output_name =
         task.task_output_name_.empty() ? "task" : task.task_output_name_;
-    const std::string control_stem =
-        std::string(bmi::bmi_file_prefix) + "_" + output_name;
+    const std::string control_stem = std::string(bmi::bmi_file_prefix) + "_" + output_name;
 
     BmiSubprocessPaths paths;
     paths.spec_path_ = control_dir / (control_stem + "_spec.json");
@@ -100,8 +98,7 @@ BmiSubprocessPaths make_subprocess_paths(const Task& task) {
 }
 
 // Include a bounded stderr prefix in parent-side failure messages
-std::string read_file_prefix(const std::filesystem::path& path,
-                             std::size_t max_chars) {
+std::string read_file_prefix(const std::filesystem::path& path, std::size_t max_chars) {
     std::ifstream input(path);
     if (!input.is_open()) {
         return "";
@@ -118,15 +115,15 @@ TaskResult read_subprocess_result(const std::filesystem::path& result_path) {
     caf::json_reader reader;
     if (!reader.load_file(result_path.string())) {
         throw std::runtime_error("failed to parse subprocess result file '" +
-                                 result_path.string() + "': " +
-                                 caf::to_string(reader.get_error()));
+                                 result_path.string() +
+                                 "': " + caf::to_string(reader.get_error()));
     }
 
     TaskResult task_result;
     if (!reader.apply(task_result)) {
         throw std::runtime_error("failed to read subprocess result file '" +
-                                 result_path.string() + "': " +
-                                 caf::to_string(reader.get_error()));
+                                 result_path.string() +
+                                 "': " + caf::to_string(reader.get_error()));
     }
 
     return task_result;
@@ -153,12 +150,8 @@ TaskResult execute_subprocess_task(const BmiSubprocessPaths& paths,
     // Create the child process and redirect stdout and stderr to specified paths
     boost::asio::io_context io_context;
     boost::process::v2::process child_process(
-        io_context,
-        subprocess_path,
-        args,
-        boost::process::v2::process_stdio{{},
-                                          paths.stdout_path_,
-                                          paths.stderr_path_});
+        io_context, subprocess_path, args,
+        boost::process::v2::process_stdio{{}, paths.stdout_path_, paths.stderr_path_});
 
     // Execute the child process and wait for it to complete
     const int status = child_process.wait();
@@ -179,21 +172,19 @@ TaskResult execute_subprocess_task(const BmiSubprocessPaths& paths,
 
 // Write the parent-to-subprocess BMI task payload
 void write_subprocess_task(const std::filesystem::path& spec_path,
-                           DynamicBmiBackend backend,
-                           const std::string& plugin_path,
+                           DynamicBmiBackend backend, const std::string& plugin_path,
                            const std::string& cpp_create_function,
                            const std::string& cpp_destroy_function,
-    const bmi::BmiPipelineConfig& pipeline_config,
-    const Task& task) {
+                           const bmi::BmiPipelineConfig& pipeline_config,
+                           const Task& task) {
     bmi::BmiSubprocessTaskSpec subprocess_task;
     subprocess_task.pipeline_config_ = pipeline_config;
     subprocess_task.module_.dynamic_backend_ = backend;
     subprocess_task.module_.plugin_path_ = plugin_path;
-    subprocess_task.output_dir_ = task.task_output_dir_.empty()
-        ? ""
-        : std::filesystem::absolute(task.task_output_dir_)
-              .lexically_normal()
-              .string();
+    subprocess_task.output_dir_ =
+        task.task_output_dir_.empty()
+            ? ""
+            : std::filesystem::absolute(task.task_output_dir_).lexically_normal().string();
     subprocess_task.output_name_ = task.task_output_name_;
 
     if (backend == DynamicBmiBackend::cpp) {
@@ -207,12 +198,11 @@ void write_subprocess_task(const std::filesystem::path& spec_path,
 } // namespace
 
 // Execute a dynamic BMI model in a subprocess and return the result
-TaskResult execute_dynamic_bmi_model_in_subprocess(
-    DynamicBmiBackend backend,
-    const std::string& plugin_path,
-    const Task& task,
-    const std::string& create_function,
-    const std::string& destroy_function) {
+TaskResult execute_dynamic_bmi_model_in_subprocess(DynamicBmiBackend backend,
+                                                   const std::string& plugin_path,
+                                                   const Task& task,
+                                                   const std::string& create_function,
+                                                   const std::string& destroy_function) {
     if (plugin_path.empty()) {
         throw std::runtime_error("dynamic BMI plugin path is empty");
     }
@@ -225,13 +215,8 @@ TaskResult execute_dynamic_bmi_model_in_subprocess(
     }
 
     const BmiSubprocessPaths paths = make_subprocess_paths(task);
-    write_subprocess_task(paths.spec_path_,
-                          backend,
-                          plugin_path,
-                          create_function,
-                          destroy_function,
-                          pipeline_config,
-                          task);
+    write_subprocess_task(paths.spec_path_, backend, plugin_path, create_function,
+                          destroy_function, pipeline_config, task);
 
     return execute_subprocess_task(paths, subprocess_path);
 }

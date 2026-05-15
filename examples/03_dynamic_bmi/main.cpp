@@ -38,8 +38,7 @@ int main(int argc, char* argv[]) {
     // Register dynamic C++ and Fortran BMI simulation units
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId cpp_heat =
-        registry.add<miaow::BmiSimulationUnit<miaow::DynamicCppBmi>>(
-            cpp_heat_plugin_path);
+        registry.add<miaow::BmiSimulationUnit<miaow::DynamicCppBmi>>(cpp_heat_plugin_path);
     const miaow::SimulationUnitId fortran_heat =
         registry.add<miaow::BmiSimulationUnit<miaow::DynamicFortranBmi>>(
             fortran_heat_plugin_path);

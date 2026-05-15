@@ -22,20 +22,19 @@ int main(int argc, char* argv[]) {
     miaow::RealizationConfig realization;
     try {
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
-        const std::string realization_path = runtime_options.realization_path_.empty()
-            ? std::string("data/realization_config.json")
-            : runtime_options.realization_path_;
+        const std::string realization_path =
+            runtime_options.realization_path_.empty()
+                ? std::string("data/realization_config.json")
+                : runtime_options.realization_path_;
         realization = miaow::RealizationConfig(realization_path);
-        if (runtime_options.output_root_.empty() &&
-            !realization.output_root_.empty()) {
+        if (runtime_options.output_root_.empty() && !realization.output_root_.empty()) {
             runtime_options.output_root_ = realization.output_root_;
         }
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";
         return 1;
     }
-    std::cout << "Parsed realization with "
-              << realization.feature_pipeline_configs_.size()
+    std::cout << "Parsed realization with " << realization.feature_pipeline_configs_.size()
               << " feature pipeline config(s)\n";
 
     // Register dynamic BMI units and build one task per feature

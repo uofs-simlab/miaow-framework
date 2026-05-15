@@ -19,14 +19,12 @@ namespace {
 
 // Config errors describe malformed realization content
 [[noreturn]] void throw_realization_config_error(const std::string& message) {
-    throw std::runtime_error(
-        std::string("Realization config error: ") + message);
+    throw std::runtime_error(std::string("Realization config error: ") + message);
 }
 
 // Path errors describe missing or unusable files referenced by valid JSON
 [[noreturn]] void throw_realization_path_error(const std::string& message) {
-    throw std::runtime_error(
-        std::string("Realization path error: ") + message);
+    throw std::runtime_error(std::string("Realization path error: ") + message);
 }
 
 // File paths in realizations are resolved against the realization directory
@@ -43,12 +41,12 @@ std::filesystem::path resolve_path(const std::filesystem::path& base_directory,
 std::string require_existing_file(const std::filesystem::path& path,
                                   const std::string& context) {
     if (!std::filesystem::exists(path)) {
-        throw_realization_path_error(
-            context + " path '" + path.string() + "' does not exist");
+        throw_realization_path_error(context + " path '" + path.string() +
+                                     "' does not exist");
     }
     if (!std::filesystem::is_regular_file(path)) {
-        throw_realization_path_error(
-            context + " path '" + path.string() + "' is not a regular file");
+        throw_realization_path_error(context + " path '" + path.string() +
+                                     "' is not a regular file");
     }
     return path.string();
 }
@@ -57,12 +55,12 @@ std::string require_existing_file(const std::filesystem::path& path,
 std::filesystem::path require_existing_directory(const std::filesystem::path& path,
                                                  const std::string& context) {
     if (!std::filesystem::exists(path)) {
-        throw_realization_path_error(
-            context + " path '" + path.string() + "' does not exist");
+        throw_realization_path_error(context + " path '" + path.string() +
+                                     "' does not exist");
     }
     if (!std::filesystem::is_directory(path)) {
-        throw_realization_path_error(
-            context + " path '" + path.string() + "' is not a directory");
+        throw_realization_path_error(context + " path '" + path.string() +
+                                     "' is not a directory");
     }
     return path;
 }
@@ -70,10 +68,8 @@ std::filesystem::path require_existing_directory(const std::filesystem::path& pa
 // CAF owns the JSON parser used by all realization configuration reads
 caf::json_object parse_json_file(const std::filesystem::path& path,
                                  const std::string& context) {
-    return io::read_json_object_file(path,
-                                      context,
-                                      "unable to parse JSON file",
-                                      "Realization config error: ");
+    return io::read_json_object_file(path, context, "unable to parse JSON file",
+                                     "Realization config error: ");
 }
 
 // Catchment IDs come from GeoJSON feature IDs or SYMFLUENCE id properties
@@ -86,13 +82,11 @@ std::vector<std::string> read_catchment_ids(const std::filesystem::path& path) {
         const caf::json_object feature = feature_value.to_object();
         caf::json_value id_value = feature.value("id");
         if (id_value.is_undefined()) {
-            const caf::json_object properties =
-                feature.value("properties").to_object();
+            const caf::json_object properties = feature.value("properties").to_object();
             id_value = properties.value("id");
         }
 
-        const std::string catchment_id =
-            io::trim(std::string(id_value.to_string()));
+        const std::string catchment_id = io::trim(std::string(id_value.to_string()));
         if (catchment_id.empty()) {
             throw_realization_config_error("catchment id must be non-empty");
         }
@@ -144,51 +138,45 @@ std::string match_forcing_file(const std::filesystem::path& forcing_directory,
     }
 
     if (matches.size() != 1) {
-        throw_realization_path_error(
-            "expected one forcing file for catchment '" + catchment_id +
-            "', found " + std::to_string(matches.size()));
+        throw_realization_path_error("expected one forcing file for catchment '" +
+                                     catchment_id + "', found " +
+                                     std::to_string(matches.size()));
     }
     return matches.front().string();
 }
 
 // The supported SYMFLUENCE realization contains one bmi_multi Fortran module
-bmi::BmiModuleConfig parse_fortran_module_config(
-    const caf::json_object& global_object) {
-    const caf::json_array formulations =
-        global_object.value("formulations").to_array();
+bmi::BmiModuleConfig parse_fortran_module_config(const caf::json_object& global_object) {
+    const caf::json_array formulations = global_object.value("formulations").to_array();
     if (formulations.size() != 1) {
         throw_realization_config_error("formulations must contain one entry");
     }
 
-    const caf::json_object formulation =
-        (*formulations.begin()).to_object();
+    const caf::json_object formulation = (*formulations.begin()).to_object();
     const std::string formulation_name =
         io::trim(std::string(formulation.value("name").to_string()));
     if (formulation_name != "bmi_multi") {
-        throw_realization_config_error(
-            "unsupported formulation '" + formulation_name + "'");
+        throw_realization_config_error("unsupported formulation '" + formulation_name +
+                                       "'");
     }
 
-    const caf::json_object bmi_multi_params =
-        formulation.value("params").to_object();
+    const caf::json_object bmi_multi_params = formulation.value("params").to_object();
     const caf::json_array modules = bmi_multi_params.value("modules").to_array();
     if (modules.size() != 1) {
         throw_realization_config_error("bmi_multi modules must contain one entry");
     }
 
-    bmi::BmiModuleConfig module_config(
-        (*modules.begin()).to_object(),
-        "Realization config error: ");
+    bmi::BmiModuleConfig module_config((*modules.begin()).to_object(),
+                                       "Realization config error: ");
     if (module_config.name_ != "bmi_fortran") {
-        throw_realization_config_error(
-            "unsupported module '" + module_config.name_ + "'");
+        throw_realization_config_error("unsupported module '" + module_config.name_ + "'");
     }
 
     return module_config;
 }
 
-std::string pipeline_config_feature_id(
-    const caf::config_value::dictionary& pipeline_config) {
+std::string
+pipeline_config_feature_id(const caf::config_value::dictionary& pipeline_config) {
     const caf::config_value::dictionary::const_iterator feature_it =
         pipeline_config.find("feature");
     if (feature_it == pipeline_config.end()) {
@@ -200,8 +188,7 @@ std::string pipeline_config_feature_id(
         throw_realization_config_error(
             "pipeline config key 'feature' must be a dictionary");
     }
-    const caf::config_value::dictionary::const_iterator id_it =
-        feature->find("id");
+    const caf::config_value::dictionary::const_iterator id_it = feature->find("id");
     if (id_it == feature->end()) {
         throw_realization_config_error("pipeline config feature is missing key 'id'");
     }
@@ -233,8 +220,7 @@ RealizationConfig::RealizationConfig(const std::string& realization_path) {
     const std::string provider =
         io::trim(std::string(forcing.value("provider").to_string()));
     if (provider != "CsvPerFeature") {
-        throw_realization_config_error(
-            "unsupported forcing provider '" + provider + "'");
+        throw_realization_config_error("unsupported forcing provider '" + provider + "'");
     }
 
     const std::string init_template = module_config.config_file_;
@@ -246,16 +232,13 @@ RealizationConfig::RealizationConfig(const std::string& realization_path) {
 
     const std::filesystem::path library_path =
         resolve_path(base_directory, module_config.plugin_path_);
-    module_config.plugin_path_ =
-        require_existing_file(library_path, "module library_file");
-    const std::filesystem::path forcing_directory = require_existing_directory(
-        resolve_path(base_directory, forcing_path_text),
-        "global forcing");
-    const std::filesystem::path catchments_path =
-        base_directory / "catchments.geojson";
+    module_config.plugin_path_ = require_existing_file(library_path, "module library_file");
+    const std::filesystem::path forcing_directory =
+        require_existing_directory(resolve_path(base_directory, forcing_path_text),
+                                   "global forcing");
+    const std::filesystem::path catchments_path = base_directory / "catchments.geojson";
     require_existing_file(catchments_path, "catchments");
-    const std::vector<std::string> catchment_ids =
-        read_catchment_ids(catchments_path);
+    const std::vector<std::string> catchment_ids = read_catchment_ids(catchments_path);
 
     const caf::json_value output_root_value = root.value("output_root");
     if (!output_root_value.is_undefined()) {
@@ -271,18 +254,15 @@ RealizationConfig::RealizationConfig(const std::string& realization_path) {
 
     feature_pipeline_configs_.reserve(catchment_ids.size());
     for (const std::string& catchment_id : catchment_ids) {
-        const std::string init_config = replace_id_template(
-            init_template,
-            catchment_id,
-            "module init_config");
-        const std::string forcing_pattern = replace_id_template(
-            forcing_pattern_template,
-            catchment_id,
-            "global forcing file_pattern");
+        const std::string init_config =
+            replace_id_template(init_template, catchment_id, "module init_config");
+        const std::string forcing_pattern =
+            replace_id_template(forcing_pattern_template, catchment_id,
+                                "global forcing file_pattern");
 
-        const std::string init_config_path = require_existing_file(
-            resolve_path(base_directory, init_config),
-            "module init_config");
+        const std::string init_config_path =
+            require_existing_file(resolve_path(base_directory, init_config),
+                                  "module init_config");
         const std::string forcing_file =
             match_forcing_file(forcing_directory, forcing_pattern, catchment_id);
 
@@ -297,10 +277,9 @@ RealizationConfig::RealizationConfig(const std::string& realization_path) {
 
         caf::config_value::dictionary pipeline_config;
         pipeline_config.insert("feature", std::move(feature));
-        pipeline_config.insert(
-            "global",
-            bmi::make_bmi_multi_global_config(task_module_config,
-                                              forcing_file));
+        pipeline_config.insert("global",
+                               bmi::make_bmi_multi_global_config(task_module_config,
+                                                                 forcing_file));
         feature_pipeline_configs_.push_back(std::move(pipeline_config));
     }
 }
@@ -318,12 +297,10 @@ std::vector<Task> build_bmi_realization_tasks(const RealizationConfig& realizati
     tasks.reserve(realization.feature_pipeline_configs_.size());
     for (const caf::config_value::dictionary& pipeline_config :
          realization.feature_pipeline_configs_) {
-        const std::string feature_id =
-            pipeline_config_feature_id(pipeline_config);
+        const std::string feature_id = pipeline_config_feature_id(pipeline_config);
 
         // Feature metadata provides the hydrofabric join key for map outputs
-        Task task(unit_id,
-                  caf::config_value{pipeline_config},
+        Task task(unit_id, caf::config_value{pipeline_config},
                   TaskMetadata{{"feature_id", feature_id},
                                {"feature_type", "catchment"},
                                {"hydrofabric_layer", "divides"},

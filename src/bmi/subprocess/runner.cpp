@@ -39,8 +39,7 @@ std::filesystem::path parse_subprocess_spec_path(int argc, char* argv[]) {
         const std::string arg = argv[index];
         if (arg == "--spec") {
             if (index + 1 >= argc) {
-                throw std::runtime_error(
-                    std::string("missing value for ") + argv[index]);
+                throw std::runtime_error(std::string("missing value for ") + argv[index]);
             }
             ++index;
             spec_path = argv[index];
@@ -63,16 +62,15 @@ void write_subprocess_result(const std::filesystem::path& result_path,
 
 // Write child-process setup failures through the diagnostic stderr file
 void write_subprocess_error(const std::string& message) {
-    std::cerr << bmi_subprocess_error_prefix
-              << ": subprocess setup error: " << message << "\n";
+    std::cerr << bmi_subprocess_error_prefix << ": subprocess setup error: " << message
+              << "\n";
 }
 
 // Require a non-empty task payload string except where empty is part of the contract
-void require_non_empty_task_string(const std::string& value,
-                                   const std::string& key) {
+void require_non_empty_task_string(const std::string& value, const std::string& key) {
     if (value.empty()) {
-        throw std::runtime_error(
-            "subprocess task key '" + key + "' must be a non-empty string");
+        throw std::runtime_error("subprocess task key '" + key +
+                                 "' must be a non-empty string");
     }
 }
 
@@ -92,33 +90,26 @@ void validate_subprocess_task(const bmi::BmiSubprocessTaskSpec& subprocess_task)
     }
     if (backend == DynamicBmiBackend::cpp) {
         const std::string create_function =
-            module_config.cpp_create_function_.value_or(
-                default_cpp_create_function);
+            module_config.cpp_create_function_.value_or(default_cpp_create_function);
         const std::string destroy_function =
-            module_config.cpp_destroy_function_.value_or(
-                default_cpp_destroy_function);
-        require_non_empty_task_string(
-            create_function, "cpp_create_function");
-        require_non_empty_task_string(
-            destroy_function, "cpp_destroy_function");
+            module_config.cpp_destroy_function_.value_or(default_cpp_destroy_function);
+        require_non_empty_task_string(create_function, "cpp_create_function");
+        require_non_empty_task_string(destroy_function, "cpp_destroy_function");
     }
 }
 
 // Read the parent-written JSON file into the subprocess task payload
-bmi::BmiSubprocessTaskSpec read_subprocess_task(
-    const std::filesystem::path& spec_path) {
+bmi::BmiSubprocessTaskSpec read_subprocess_task(const std::filesystem::path& spec_path) {
     caf::json_reader reader;
     if (!reader.load_file(spec_path.string())) {
-        throw std::runtime_error("failed to parse spec file '" +
-                                 spec_path.string() + "': " +
-                                 caf::to_string(reader.get_error()));
+        throw std::runtime_error("failed to parse spec file '" + spec_path.string() +
+                                 "': " + caf::to_string(reader.get_error()));
     }
 
     bmi::BmiSubprocessTaskSpec subprocess_task;
     if (!reader.apply(subprocess_task)) {
-        throw std::runtime_error("failed to read spec file '" +
-                                 spec_path.string() + "': " +
-                                 caf::to_string(reader.get_error()));
+        throw std::runtime_error("failed to read spec file '" + spec_path.string() +
+                                 "': " + caf::to_string(reader.get_error()));
     }
     validate_subprocess_task(subprocess_task);
     return subprocess_task;
@@ -152,15 +143,13 @@ int main(int argc, char* argv[]) {
             task_result = miaow::execute_bmi_pipeline(task, std::move(model));
         } catch (...) {
             // Exceptions cannot propagate through the subprocess boundary
-            task_result = miaow::make_failed_task_result(
-                std::current_exception(),
-                "BMI error");
+            task_result =
+                miaow::make_failed_task_result(std::current_exception(), "BMI error");
         }
 
         // Write the result file that the parent process will read
-        miaow::write_subprocess_result(
-            miaow::bmi::make_subprocess_result_path(spec_path),
-            task_result);
+        miaow::write_subprocess_result(miaow::bmi::make_subprocess_result_path(spec_path),
+                                       task_result);
         return 0;
     } catch (const std::exception& exception) {
         // The result-file contract may not be available at this point

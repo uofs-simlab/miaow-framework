@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "bmi_heat.hxx"  // defines the BmiHeat class that implements the BMI interface
+#include "bmi_heat.hxx" // defines the BmiHeat class that implements the BMI interface
 
 #include "miaow.hpp"     // Core MIAOW runtime API
 #include "miaow_bmi.hpp" // MIAOW API for running BMI models as simulation units
@@ -22,7 +22,7 @@
  * different tasks, such as data preprocessing, postprocessing, or running different models.
  */
 class HelloSimulationUnit : public miaow::SimulationUnit {
-public:
+  public:
     miaow::TaskResult execute(const miaow::Task& task) override {
         const std::string* message = task.string_arg(0);
         if (message == nullptr) {
@@ -50,8 +50,7 @@ int main(int argc, char* argv[]) {
     // Register simulation units and build runtime routing from the registry
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId hello = registry.add<HelloSimulationUnit>();
-    const miaow::SimulationUnitId heat =
-        registry.add<miaow::BmiSimulationUnit<BmiHeat>>();
+    const miaow::SimulationUnitId heat = registry.add<miaow::BmiSimulationUnit<BmiHeat>>();
     miaow::Runtime runtime(registry, runtime_options);
 
     // Get config file paths for this heat workload

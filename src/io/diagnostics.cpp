@@ -28,9 +28,8 @@ std::string format_diagnostics(const JobRecord& job_record) {
     output << "concurrency: " << concurrency << "\n";
     output << "task_times:\n";
     for (const TaskRecord& task_record : job_record.tasks_) {
-        output << "  [" << task_record.task_id_ << "] "
-               << std::setw(10) << task_record.run_time_s_
-               << "\n";
+        output << "  [" << task_record.task_id_ << "] " << std::setw(10)
+               << task_record.run_time_s_ << "\n";
     }
     output << "=============================\n";
 

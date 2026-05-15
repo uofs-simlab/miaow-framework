@@ -16,20 +16,17 @@ namespace miaow {
 namespace {
 
 // Validate the public task contract before touching files or BMI lifecycle
-const bmi::BmiPipelineConfig&
-require_bmi_pipeline_config_argument(const Task& task) {
+const bmi::BmiPipelineConfig& require_bmi_pipeline_config_argument(const Task& task) {
     if (task.args_.size() != 1) {
-        throw std::runtime_error(
-            "BMI pipeline config error: task must contain exactly one "
-            "top-level BMI pipeline config dictionary argument");
+        throw std::runtime_error("BMI pipeline config error: task must contain exactly one "
+                                 "top-level BMI pipeline config dictionary argument");
     }
 
     const bmi::BmiPipelineConfig* pipeline_config =
         caf::get_if<caf::config_value::dictionary>(&task.args_.front());
     if (pipeline_config == nullptr) {
-        throw std::runtime_error(
-            "BMI pipeline config error: first task argument must be a "
-            "top-level BMI pipeline config dictionary");
+        throw std::runtime_error("BMI pipeline config error: first task argument must be a "
+                                 "top-level BMI pipeline config dictionary");
     }
     return *pipeline_config;
 }
@@ -66,8 +63,7 @@ std::string format_bmi_error_message(std::exception_ptr exception) {
 }
 
 // Run the standard BMI lifecycle and collect runtime artifacts
-TaskResult execute_bmi_lifecycle(bmi_api::Bmi& model,
-                                 const std::string& config_path,
+TaskResult execute_bmi_lifecycle(bmi_api::Bmi& model, const std::string& config_path,
                                  const Task& task,
                                  std::vector<std::string> artifact_paths) {
     bool needs_finalize = false;
@@ -83,8 +79,7 @@ TaskResult execute_bmi_lifecycle(bmi_api::Bmi& model,
             std::unique_ptr<bmi::OutputFile> output_file;
             if (!task.task_output_dir_.empty()) {
                 output_file = std::make_unique<bmi::OutputFile>(
-                    bmi::open_output_file(model,
-                                          task.task_output_dir_,
+                    bmi::open_output_file(model, task.task_output_dir_,
                                           task.task_output_name_));
                 artifact_paths.push_back(output_file->artifact_path_);
             }
@@ -107,11 +102,10 @@ TaskResult execute_bmi_lifecycle(bmi_api::Bmi& model,
         needs_finalize = false;
         model.Finalize();
 
-    // Handle exceptions thrown during initialization, update, or finalization
+        // Handle exceptions thrown during initialization, update, or finalization
     } catch (...) {
-        std::string failure_message =
-            format_bmi_error_message(std::current_exception()) +
-            " (updates: " + std::to_string(update_steps) + ")";
+        std::string failure_message = format_bmi_error_message(std::current_exception()) +
+                                      " (updates: " + std::to_string(update_steps) + ")";
 
         // Try to finalize a model that failed after successful initialization
         if (needs_finalize) {
@@ -119,8 +113,7 @@ TaskResult execute_bmi_lifecycle(bmi_api::Bmi& model,
                 model.Finalize();
             } catch (const std::exception& finalize_exception) {
                 failure_message +=
-                    std::string(" | BMI finalize error: ") +
-                    finalize_exception.what();
+                    std::string(" | BMI finalize error: ") + finalize_exception.what();
             } catch (...) {
                 failure_message += " | BMI finalize error: unknown exception";
             }
@@ -135,9 +128,8 @@ TaskResult execute_bmi_lifecycle(bmi_api::Bmi& model,
 
 } // namespace
 
-TaskResult execute_bmi_pipeline(
-    const Task& task,
-    std::unique_ptr<bmi_api::Bmi> supplied_model) {
+TaskResult execute_bmi_pipeline(const Task& task,
+                                std::unique_ptr<bmi_api::Bmi> supplied_model) {
     // Read the top-level pipeline config argument from the task
     const bmi::BmiPipelineConfig& pipeline_config =
         require_bmi_pipeline_config_argument(task);
@@ -145,15 +137,12 @@ TaskResult execute_bmi_pipeline(
     // Persist the pipeline config because BMI Initialize accepts a file path
     const std::filesystem::path pipeline_config_path =
         bmi::bmi_pipeline_config_file_path(task);
-    std::vector<std::string> artifact_paths =
-        bmi::bmi_pipeline_config_artifact_paths(task);
+    std::vector<std::string> artifact_paths = bmi::bmi_pipeline_config_artifact_paths(task);
     bmi::write_bmi_pipeline_config_file(pipeline_config, pipeline_config_path);
 
     // Wrap the supplied model in the pipeline adapter and execute it as BMI
     bmi::BmiPipeline pipeline(std::move(supplied_model));
-    return execute_bmi_lifecycle(pipeline,
-                                 pipeline_config_path.string(),
-                                 task,
+    return execute_bmi_lifecycle(pipeline, pipeline_config_path.string(), task,
                                  std::move(artifact_paths));
 }
 
