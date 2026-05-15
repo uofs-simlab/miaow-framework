@@ -5,10 +5,13 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include <caf/default_enum_inspect.hpp>
 
 #include "miaow.hpp"
 #include "third_party/bmi/bmi.hxx"
@@ -17,29 +20,6 @@ namespace miaow {
 
 // Avoid confusion with the `miaow::bmi` namespace
 namespace bmi_api = ::bmi;
-
-/**
- * @brief One feature entry from a BMI realization file.
- *
- * NextGen-style realizations are expanded into one Fortran BMI `Task` input
- * per catchment. Realization-driven C++ BMI modules are not supported yet.
- */
-struct RealizationFeature {
-    // Hydrofabric feature identifier used as the postprocessing join key
-    std::string feature_id_;
-
-    // Dynamic Fortran BMI library path for this feature
-    std::string library_file_;
-
-    // BMI initialization config file path for this feature
-    std::string init_config_path_;
-
-    // Feature-specific forcing CSV file path
-    std::string forcing_file_;
-
-    // Mapping from BMI input variable names to forcing CSV column names
-    std::map<std::string, std::string> variables_names_map_;
-};
 
 /**
  * @brief Parsed BMI realization used to build one `Task` per feature.
@@ -51,8 +31,8 @@ struct RealizationConfig {
     // Root directory for realization-driven runtime output
     std::string output_root_;
 
-    // Feature entries expanded from the realization features (e.g., catchments)
-    std::vector<RealizationFeature> features_;
+    // Resolved single-feature top-level BMI pipeline configs
+    std::vector<caf::config_value::dictionary> feature_pipeline_configs_;
 
     RealizationConfig() = default;
 
@@ -73,14 +53,33 @@ struct RealizationConfig {
 };
 
 /**
- * @brief Execute a complete BMI model lifecycle for one task.
- * @param model BMI-compatible model object to initialize and execute.
- * @param task `Task` input containing model config, forcing, and output paths.
- * @return Structured `TaskResult` for the BMI task execution.
- * @throws std::runtime_error if the task specification, forcing setup, or BMI
- * model lifecycle fails.
+ * @brief Build a top-level BMI pipeline config for a supplied model.
+ * @param init_config BMI initialization config file path.
+ * @param forcing_file Optional CSV forcing file path.
+ * @param variables_names_map Optional BMI input to forcing CSV header map.
+ * @return Top-level `BmiPipeline` config dictionary wrapped as a `caf::config_value`.
+ * @throws std::runtime_error if required path or mapping entries are empty.
  */
-TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task);
+caf::config_value make_bmi_model_pipeline_config(
+    const std::string& init_config,
+    const std::string& forcing_file = "",
+    const std::map<std::string, std::string>& variables_names_map = {});
+
+/**
+ * @brief Execute one task through `BmiPipeline`.
+ *
+ * The first task argument must be the top-level BMI pipeline config dictionary
+ * consumed by `BmiPipeline::Initialize(...)`. A supplied model satisfies
+ * `bmi_model` modules in that config.
+ *
+ * @param task `Task` whose first argument is a top-level pipeline config.
+ * @param supplied_model Optional model used for `bmi_model` modules.
+ * @return Structured `TaskResult` for the BMI task execution.
+ * @throws std::runtime_error if the pipeline config or BMI lifecycle fails.
+ */
+TaskResult execute_bmi_pipeline(
+    const Task& task,
+    std::unique_ptr<bmi_api::Bmi> supplied_model = nullptr);
 
 /**
  * @brief Backend interface exposed by a dynamically loaded BMI plugin.
@@ -89,6 +88,48 @@ enum class DynamicBmiBackend {
     cpp,
     fortran,
 };
+
+inline std::string to_string(DynamicBmiBackend backend) {
+    switch (backend) {
+    case DynamicBmiBackend::cpp:
+        return "cpp";
+    case DynamicBmiBackend::fortran:
+        return "fortran";
+    }
+    return "unknown";
+}
+
+inline bool from_string(std::string_view value, DynamicBmiBackend& backend) {
+    if (value == "cpp") {
+        backend = DynamicBmiBackend::cpp;
+        return true;
+    }
+    if (value == "fortran") {
+        backend = DynamicBmiBackend::fortran;
+        return true;
+    }
+    return false;
+}
+
+inline bool from_integer(std::underlying_type_t<DynamicBmiBackend> value,
+                         DynamicBmiBackend& backend) {
+    if (value == static_cast<std::underlying_type_t<DynamicBmiBackend>>(
+            DynamicBmiBackend::cpp)) {
+        backend = DynamicBmiBackend::cpp;
+        return true;
+    }
+    if (value == static_cast<std::underlying_type_t<DynamicBmiBackend>>(
+            DynamicBmiBackend::fortran)) {
+        backend = DynamicBmiBackend::fortran;
+        return true;
+    }
+    return false;
+}
+
+template <class Inspector>
+bool inspect(Inspector& inspector, DynamicBmiBackend& backend) {
+    return caf::default_enum_inspect(inspector, backend);
+}
 
 /**
  * @brief Process isolation mode for dynamically loaded BMI models.
@@ -304,10 +345,36 @@ TaskResult execute_dynamic_bmi_model_in_subprocess(
 std::vector<Task> build_bmi_realization_tasks(
     const RealizationConfig& realization,
     SimulationUnitRegistry& registry,
-    BmiExecutionMode execution_mode = BmiExecutionMode::subprocess);
+    BmiExecutionMode execution_mode = BmiExecutionMode::in_process);
 
 /**
- * @brief Simulation unit that runs a complete BMI model lifecycle.
+ * @brief Simulation unit that executes `BmiPipeline` directly from pipeline configs.
+ */
+class BmiPipelineSimulationUnit : public SimulationUnit {
+public:
+    /**
+     * @brief Construct a BMI pipeline simulation unit.
+     * @param execution_mode Process isolation mode. Only in-process execution is
+     * supported for direct pipeline execution.
+     */
+    explicit BmiPipelineSimulationUnit(
+        BmiExecutionMode execution_mode = BmiExecutionMode::in_process)
+        : execution_mode_(execution_mode) {
+    }
+
+    /**
+     * @brief Execute a dynamic BMI pipeline config for one task.
+     * @param task `Task` whose first argument is a BMI pipeline config.
+     * @return Structured `TaskResult` for this BMI task execution.
+     */
+    TaskResult execute(const Task& task) override;
+
+private:
+    BmiExecutionMode execution_mode_;
+};
+
+/**
+ * @brief Simulation unit that runs a complete BMI pipeline lifecycle.
  *
  * @tparam BmiModelType BMI model type derived from `bmi_api::Bmi`.
  */
@@ -354,13 +421,13 @@ public:
 
     /**
      * @brief Execute a BMI model instance for a single task.
-     * @param task `Task` input containing model config, forcing, and output paths.
+     * @param task `Task` whose first argument is a BMI pipeline config.
      * @return Structured `TaskResult` for this BMI task execution.
      */
     TaskResult execute(const Task& task) override {
         try {
             std::unique_ptr<BmiModelType> bmi_model = model_factory_();
-            return execute_bmi_model(*bmi_model, task);
+            return execute_bmi_pipeline(task, std::move(bmi_model));
         } catch (...) {
             return make_failed_task_result(
                 std::current_exception(),
@@ -416,7 +483,7 @@ public:
 
     /**
      * @brief Execute a dynamic BMI model for a single task.
-     * @param task `Task` input containing model config, forcing, and output paths.
+     * @param task `Task` whose first argument is a BMI pipeline config.
      * @return Structured `TaskResult` for this dynamic BMI task execution.
      */
     TaskResult execute(const Task& task) override {
@@ -437,14 +504,16 @@ public:
 
             // In-process mode constructs the model in this process
             if constexpr (Backend == DynamicBmiBackend::cpp) {
-                DynamicBmi<Backend> bmi_model(
+                std::unique_ptr<DynamicBmi<Backend>> bmi_model =
+                    std::make_unique<DynamicBmi<Backend>>(
                     plugin_path_,
                     cpp_create_function_,
                     cpp_destroy_function_);
-                return execute_bmi_model(bmi_model, task);
+                return execute_bmi_pipeline(task, std::move(bmi_model));
             } else {
-                DynamicBmi<Backend> bmi_model(plugin_path_);
-                return execute_bmi_model(bmi_model, task);
+                std::unique_ptr<DynamicBmi<Backend>> bmi_model =
+                    std::make_unique<DynamicBmi<Backend>>(plugin_path_);
+                return execute_bmi_pipeline(task, std::move(bmi_model));
             }
         } catch (...) {
             return make_failed_task_result(

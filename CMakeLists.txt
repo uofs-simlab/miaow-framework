@@ -161,7 +161,8 @@ add_library(miaow STATIC
     src/bmi/execute.cpp
     src/bmi/dynamic.cpp
     src/bmi/forcing.cpp
-    src/bmi/output.cpp
+    src/bmi/io.cpp
+    src/bmi/pipeline.cpp
     src/bmi/realization.cpp
     src/bmi/subprocess/caller.cpp
     src/core/actors.cpp

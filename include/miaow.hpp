@@ -79,6 +79,20 @@ struct Task {
     }
 
     /**
+     * @brief Construct a `Task` from config values and descriptive metadata.
+     * @param task_simulation_unit_id `SimulationUnitId` for this task.
+     * @param task_args Positional arguments for this task.
+     * @param task_metadata Metadata preserved for reporting and postprocessing.
+     */
+    Task(SimulationUnitId task_simulation_unit_id,
+         std::vector<caf::config_value> task_args,
+         TaskMetadata task_metadata)
+        : simulation_unit_id_(task_simulation_unit_id),
+          args_(std::move(task_args)),
+          metadata_(std::move(task_metadata)) {
+    }
+
+    /**
      * @brief Construct a `Task` for a specific simulation unit from one config value.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single `caf::config_value` for this task.
@@ -86,6 +100,20 @@ struct Task {
     Task(SimulationUnitId task_simulation_unit_id, caf::config_value arg)
         : simulation_unit_id_(task_simulation_unit_id),
           args_{std::move(arg)} {
+    }
+
+    /**
+     * @brief Construct a `Task` from one config value and descriptive metadata.
+     * @param task_simulation_unit_id `SimulationUnitId` for this task.
+     * @param arg Single `caf::config_value` for this task.
+     * @param task_metadata Metadata preserved for reporting and postprocessing.
+     */
+    Task(SimulationUnitId task_simulation_unit_id,
+         caf::config_value arg,
+         TaskMetadata task_metadata)
+        : simulation_unit_id_(task_simulation_unit_id),
+          args_{std::move(arg)},
+          metadata_(std::move(task_metadata)) {
     }
 
     /**

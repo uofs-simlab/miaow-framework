@@ -95,7 +95,7 @@ Dynamic BMI types
 Simulation units
 ~~~~~~~~~~~~~~~~
 
-.. doxygenfunction:: miaow::execute_bmi_model
+.. doxygenfunction:: miaow::execute_bmi_pipeline
    :project: MIAOW
 
 .. doxygenclass:: miaow::BmiSimulationUnit

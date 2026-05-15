@@ -129,15 +129,16 @@ src/
     internal.hpp         # core-private actor declarations and JobState
 
   bmi/
-    execute.cpp          # BMI lifecycle execution bridge and update loop
+    execute.cpp          # BMI pipeline execution bridge
     dynamic.cpp          # DynamicBmi adapter for C++/Fortran plugins
-    forcing.cpp          # streaming external BMI forcing CSV reader and coupling logic
+    forcing.cpp          # streaming external BMI forcing CSV source
     output.cpp           # task-level BMI output CSV writer
+    pipeline.cpp         # ordered BMI module pipeline and coupling application
     realization.cpp      # BMI realization parsing, task, and registration helpers
     subprocess/
       caller.cpp         # parent-side dynamic BMI subprocess launcher
       runner.cpp         # dynamic BMI subprocess executable entry point
-    internal.hpp         # BMI-private forcing and output helper declarations
+    internal.hpp         # BMI-private subprocess, forcing, output, and pipeline types
 
   io/
     cli.cpp              # runtime command-line option parsing
@@ -165,37 +166,51 @@ examples/
 
 ## Basic Model Interface (BMI) integration
 
-MIAOW implements `BmiSimulationUnit<BmiModelType>`, which wraps a complete BMI
-lifecycle per task:
+MIAOW runs BMI work from top-level pipeline configs. A BMI task carries one
+argument:
+
+```text
+task.args_[0] = top-level BMI pipeline config dictionary
+```
+
+During execution, MIAOW writes that dictionary beside the task results as
+`realization_<task_output_name>.json` and passes that file path to
+`BmiPipeline::Initialize(...)`. With one model, the pipeline exposes that
+model's BMI surface:
 
 1. `Initialize(config_path)`
 2. zero or more `Update()` calls
 3. `Finalize()`
 
-Optional forcing is supported through a second task argument (`args[1]`) that
-stores a structured forcing dictionary (recall that `args[0]` is the model
-config). The same forcing fields may also appear in realization-driven
-NextGen-style entries. In forcing mode, MIAOW reads a CSV forcing file and
-applies one or more mapped values to BMI input variables before each
-`Update()` step.
+Direct static examples build pipeline configs with `make_bmi_model_pipeline_config(...)`.
+Those pipeline configs use a `bmi_model` module, which means "the BMI model
+supplied by `BmiSimulationUnit<T>`". Realization-driven BMI examples use
+`RealizationConfig(path)` to partition a global NextGen-style realization into
+one resolved dictionary per catchment. `build_bmi_realization_tasks(...)`
+registers one `BmiPipelineSimulationUnit` and builds one task per feature task
+config.
 
-Direct examples specify task inputs in their `main.cpp` files.
-Realization-driven BMI examples use `RealizationConfig(path)` and
-`build_bmi_realization_tasks(...)` to register dynamic Fortran BMI units and
-build one task per realized catchment. Realization-driven C++ BMI modules are
-not supported yet; dynamic C++ BMI is available through direct task
-registration. Shared helpers in `miaow_io.hpp` can build forcing dictionaries with
-`make_forcing_config(...)` and generate repeated hourly forcing CSVs with
-`write_repeated_hourly_forcing_csv(...)`.
+Forcing is represented in the pipeline config as `global.forcing`, then normalized
+into an internal `ForcingBmi` module. The forcing module is always appended
+after the realization module; when no forcing is configured, it is initialized
+with an empty config and acts as a no-op. With configured forcing, `ForcingBmi`
+reads a CSV file and exposes data columns as BMI outputs. `BmiPipeline` derives
+explicit scalar couplings from each module's `variables_names_map`, applies
+those couplings immediately before the target model updates, and advances the
+forcing source later in the same ordered update loop.
 
 ### Reading forcing data
 
-The forcing dictionary uses the following fields:
+The BMI pipeline config forcing object uses the following fields:
 
 | Key | Purpose |
 | --- | --- |
-| `forcing_file` | Path to the CSV forcing file |
-| `variables_names_map` | Optional `BMI input variable -> CSV header` map |
+| `provider` | `CsvFile` for resolved task-local forcing |
+| `file` | Path to the CSV forcing file |
+| `clock_module` | Module index that supplies timestep metadata |
+
+Each BMI module may include `variables_names_map` in its `params` object. The
+map is interpreted as `BMI input variable -> CSV header`.
 
 If `variables_names_map` is omitted, MIAOW derives a model-authoritative
 identity map from `GetInputVarNames()` and expects same-named CSV headers.
@@ -214,9 +229,9 @@ combinations of model end time and forcing series length: a matched 512-day
 run, a 512-day run whose 1-day forcing is exhausted early (deliberate
 failure), and a 1-day run that stops well before its 512-day forcing ends.
 
-In NextGen-style realization files, `CsvPerFeature` forcing enables
-MIAOW-managed CSV forcing for each catchment. BMI-managed forcing is still
-available for direct task definitions that only pass the model init config.
+In global NextGen-style realization files, `CsvPerFeature` forcing enables
+MIAOW-managed CSV forcing for each catchment. Partitioning resolves that global
+forcing entry to per-task `CsvFile` forcing.
 
 ### Dynamically linking BMI models
 
@@ -234,8 +249,9 @@ explicit in the model type:
   [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
   A Fortran `unregister_bmi(void**)` symbol is used when present.
 
-Dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as
-statically linked C++ BMI models:
+Direct dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as
+statically linked C++ BMI models. These tasks use `bmi_model` pipeline configs
+because the dynamic model is supplied by the registered simulation unit:
 
 ```cpp
 const miaow::SimulationUnitId my_dynamic_bmi_model =
@@ -253,11 +269,13 @@ const miaow::SimulationUnitId my_isolated_bmi_model =
         miaow::BmiExecutionMode::subprocess);
 ```
 
-Subprocess mode is limited to dynamic BMI models. The parent writes a JSON spec,
-launches the CMake-configured `miaow_subprocess` executable with
-Boost.Process, and reads a serialized JSON `TaskResult` from
-`bmi_subprocess_*_result.json`. If the result file is missing, the parent
-includes the captured stderr output in a failed `TaskResult`. Set
+Subprocess mode is limited to direct dynamic BMI tasks with one supplied
+`bmi_model` module. Multi-module `BmiPipelineSimulationUnit` pipeline configs run
+in-process for now. The parent writes a JSON spec, launches the CMake-configured
+`miaow_subprocess` executable with Boost.Process, and the subprocess uses the
+same BMI pipeline config execution path. The parent reads a serialized JSON
+`TaskResult` from `bmi_subprocess_*_result.json`. If the result file is missing,
+the parent includes the captured stderr output in a failed `TaskResult`. Set
 `MIAOW_SUBPROCESS_PATH` to override the executable path at runtime.
 
 Dynamic C++ and Fortran loading are exercised together in the
@@ -277,6 +295,7 @@ not change task statuses. If
 └─ run_<run_id>/
    └─ job_<job_id>/
       ├─ job_record.json
+      ├─ realization_<feature_id or task_<task_id>>.json
       └─ results/
          └─ <feature_id or task_<task_id>>.csv
 ```
@@ -287,10 +306,12 @@ one.
 
 Each task receives `Task::task_output_dir_` for the job `results/` directory
 and `Task::task_output_name_` for task-specific artifact filenames. BMI tasks
-write one CSV file per task there, with BMI output variables as columns, and
-report job-relative filenames such as `results/cat-552.csv` in
-`TaskResult::artifact_paths_`. `job_record.json` records those paths under each
-task record's `result` field and records each task's descriptive
+write the resolved BMI pipeline config in the job directory and one CSV file
+per task under `results/`, with BMI output variables as columns. They report
+job-relative filenames such as `realization_cat-552.json` and
+`results/cat-552.csv` in `TaskResult::artifact_paths_`. `job_record.json`
+records those paths under each task record's `result` field and records each
+task's descriptive
 `Task::metadata_`, but it does not embed artifact file contents. If a task has
 non-empty `metadata_["feature_id"]`, that value becomes the output file stem;
 otherwise the runtime uses `task_<task_id>`. Output stems must be unique within

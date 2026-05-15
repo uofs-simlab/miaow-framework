@@ -120,11 +120,14 @@ if(BUILD_TESTING)
     set(soil_freeze_thaw_expected_job_record_snippets
         "\"label\""
         "\"matched-duration\""
+        "\"realization_task_0.json\""
         "\"results/task_0.csv\""
     )
     list(JOIN soil_freeze_thaw_expected_job_record_snippets ";"
         soil_freeze_thaw_job_record_snippets_arg)
     set(soil_freeze_thaw_expected_result_paths
+        "realization_task_0.json"
+        "realization_task_2.json"
         "results/task_0.csv"
         "results/task_2.csv"
     )

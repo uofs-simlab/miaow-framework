@@ -8,7 +8,6 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
-#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -22,65 +21,16 @@ namespace miaow::bmi {
 
 namespace {
 
-using ForcingDictionary = caf::config_value::dictionary;
-// Target pairs are BMI input variable name -> CSV header name
-using ForcingTargets = std::vector<std::pair<std::string, std::string>>;
-
-struct MappedForcingColumn {
-    // BMI input variable supplied by this CSV column
-    std::string bmi_input_name_;
-    // CSV header selected by the mapping for the BMI input
-    std::string csv_header_;
-    // Zero-based CSV column index resolved from the header row
-    std::size_t csv_column_index_{0};
-};
-
-struct ForcingRow {
-    // Parsed timestamp from the time column
-    std::int64_t timestamp_seconds_{0};
-    // Physical one-based line number in the source CSV
-    std::size_t row_number_{0};
-    // Current row values in the same order as ForcingStreamState::mapped_columns_
-    std::vector<double> values_;
-};
-
-// Header metadata plus the current forcing row; no full time series is stored
-struct ForcingStreamState {
-    std::ifstream csv_stream_;
-    std::string time_column_name_;
-    std::size_t csv_time_column_index_{0};
-    std::vector<MappedForcingColumn> mapped_columns_;
-    ForcingRow current_row_;
-    std::size_t last_csv_row_number_{1};
-    double time_step_seconds_{0.0};
-};
-
-// Forcing config and target selection helpers
-
-std::string require_non_empty_string(const ForcingDictionary& forcing_config,
-                                     const std::string& key) {
-    const auto it = forcing_config.find(key);
-    if (it == forcing_config.end()) {
-        throw std::runtime_error(
-            "Forcing config error: missing key '" + key + "'");
-    }
-
-    const std::string* value = caf::get_if<std::string>(&it->second);
-    if (!value) {
-        throw std::runtime_error(
-            "Forcing config error: key '" + key + "' must be a string");
-    }
-
-    const std::string parsed = io::trim(*value);
-    if (parsed.empty()) {
-        throw std::runtime_error(
-            "Forcing config error: key '" + key + "' must be a non-empty string");
-    }
-    return parsed;
-}
+// Forcing path and target clock helpers
 
 std::filesystem::path resolve_forcing_path(const std::string& raw_path) {
-    std::filesystem::path forcing_path = std::filesystem::path(raw_path);
+    const std::string trimmed_path = io::trim(raw_path);
+    if (trimmed_path.empty()) {
+        throw std::runtime_error(
+            "Forcing config error: forcing file path must be a non-empty string");
+    }
+
+    std::filesystem::path forcing_path = std::filesystem::path(trimmed_path);
     if (forcing_path.is_relative()) {
         forcing_path = std::filesystem::current_path() / forcing_path;
     }
@@ -98,109 +48,6 @@ std::filesystem::path resolve_forcing_path(const std::string& raw_path) {
     }
 
     return forcing_path;
-}
-
-ForcingTargets build_explicit_targets(const ForcingDictionary& forcing_config) {
-    // Explicit mappings override identity mode and narrow the forced inputs
-    const auto it = forcing_config.find("variables_names_map");
-    if (it == forcing_config.end()) {
-        return {};
-    }
-
-    const ForcingDictionary* variables_names_map =
-        caf::get_if<ForcingDictionary>(&it->second);
-    if (!variables_names_map) {
-        throw std::runtime_error(
-            "Forcing config error: key 'variables_names_map' must be a "
-            "dictionary");
-    }
-    if (variables_names_map->empty()) {
-        throw std::runtime_error(
-            "Forcing config error: key 'variables_names_map' must not be empty");
-    }
-
-    ForcingTargets targets;
-    targets.reserve(variables_names_map->size());
-    for (const auto& [raw_input_name, header_value] : *variables_names_map) {
-        const std::string input_name = io::trim(raw_input_name);
-        if (input_name.empty()) {
-            throw std::runtime_error(
-                "Forcing config error: key 'variables_names_map' contains an "
-                "empty BMI input variable name");
-        }
-
-        const std::string* csv_header = caf::get_if<std::string>(&header_value);
-        if (!csv_header) {
-            throw std::runtime_error(
-                "Forcing config error: key 'variables_names_map' entry '" +
-                input_name + "' must be a string");
-        }
-
-        const std::string trimmed_header = io::trim(*csv_header);
-        if (trimmed_header.empty()) {
-            throw std::runtime_error(
-                "Forcing config error: key 'variables_names_map' entry '" +
-                input_name + "' must be a non-empty string");
-        }
-
-        targets.emplace_back(input_name, trimmed_header);
-    }
-    return targets;
-}
-
-ForcingTargets build_identity_targets(::bmi::Bmi& model) {
-    // Identity mode forces every BMI input from a same-named CSV header
-    const std::vector<std::string> input_vars = model.GetInputVarNames();
-    if (input_vars.empty()) {
-        throw std::runtime_error(
-            "BMI forcing error: identity variables_names_map requires at least "
-            "one BMI input variable");
-    }
-
-    ForcingTargets targets;
-    targets.reserve(input_vars.size());
-    for (const std::string& input_var : input_vars) {
-        const std::string trimmed_input = io::trim(input_var);
-        if (trimmed_input.empty()) {
-            throw std::runtime_error(
-                "BMI forcing error: identity variables_names_map encountered "
-                "an empty BMI input variable name");
-        }
-        targets.emplace_back(trimmed_input, trimmed_input);
-    }
-    return targets;
-}
-
-// BMI-side validation helpers
-
-void validate_driver_input(::bmi::Bmi& model, const std::string& var_name) {
-    const std::vector<std::string> input_vars = model.GetInputVarNames();
-    if (std::find(input_vars.begin(), input_vars.end(), var_name) ==
-        input_vars.end()) {
-        throw std::runtime_error(
-            "BMI forcing error: input variable '" + var_name + "' not found");
-    }
-
-    const std::string var_type = model.GetVarType(var_name);
-    int expected_n_bytes = 0;
-    if (var_type == "double") {
-        expected_n_bytes = static_cast<int>(sizeof(double));
-    } else if (var_type == "float") {
-        expected_n_bytes = static_cast<int>(sizeof(float));
-    } else {
-        throw std::runtime_error(
-            "BMI forcing error: input variable '" + var_name +
-            "' must have BMI type 'double' or 'float' but has '" +
-            var_type + "'");
-    }
-
-    const int n_bytes = model.GetVarNbytes(var_name);
-    if (n_bytes != expected_n_bytes) {
-        throw std::runtime_error(
-            "BMI forcing error: input variable '" + var_name +
-            "' must be scalar (" + std::to_string(expected_n_bytes) +
-            " bytes) but has " + std::to_string(n_bytes) + " byte(s)");
-    }
 }
 
 std::string to_lower_ascii(std::string value) {
@@ -298,46 +145,115 @@ double parse_numeric_value(const std::string& raw_value,
     }
 }
 
-bool read_next_row(std::ifstream& csv_stream,
-                   const std::string& time_column_name,
-                   std::size_t csv_time_column_index,
-                   const std::vector<MappedForcingColumn>& mapped_columns,
-                   std::size_t& last_csv_row_number,
-                   ForcingRow& row) {
+[[noreturn]] void throw_unsupported(const std::string& operation) {
+    throw std::runtime_error("ForcingBmi: " + operation + " not supported");
+}
+
+} // namespace
+
+ForcingBmi::ForcingBmi(::bmi::Bmi& clock_model)
+    : clock_model_(clock_model) {
+}
+
+void ForcingBmi::open_stream(const std::filesystem::path& forcing_path) {
+    csv_stream_.open(forcing_path);
+    if (!csv_stream_.is_open()) {
+        throw std::runtime_error(
+            "Forcing data error: unable to open CSV file '" +
+            forcing_path.string() + "'");
+    }
+
+    std::string header_line;
+    if (!std::getline(csv_stream_, header_line)) {
+        throw std::runtime_error(
+            "Forcing data error: CSV file '" + forcing_path.string() +
+            "' is missing a header row");
+    }
+
+    // Startup validation resolves time and forcing columns from the CSV header
+    const std::vector<std::string> headers = io::split_csv_line(header_line);
+    const std::vector<std::string>::const_iterator time_it = std::find_if(
+        headers.begin(),
+        headers.end(),
+        [](const std::string& header) {
+            return header == "time" || header == "Time";
+        });
+    if (time_it == headers.end()) {
+        throw std::runtime_error(
+            "Forcing data error: CSV file '" + forcing_path.string() +
+            "' must define a 'time' or 'Time' column");
+    }
+    csv_time_column_index_ = static_cast<std::size_t>(
+        std::distance(headers.begin(), time_it));
+    time_column_name_ = *time_it;
+
+    // Store every non-time CSV data column as a forcing BMI output
+    forcing_columns_.reserve(headers.size() - 1);
+    for (std::size_t column_index = 0; column_index < headers.size();
+         ++column_index) {
+        if (column_index == csv_time_column_index_) {
+            continue;
+        }
+
+        const std::string csv_header = io::trim(headers.at(column_index));
+        if (csv_header.empty()) {
+            throw std::runtime_error(
+                "Forcing data error: CSV file '" + forcing_path.string() +
+                "' contains an empty data column header");
+        }
+        forcing_columns_.push_back(ForcingColumn{csv_header, column_index});
+    }
+
+    if (forcing_columns_.empty()) {
+        throw std::runtime_error(
+            "Forcing data error: CSV file '" + forcing_path.string() +
+            "' must define at least one data column");
+    }
+
+    // Read the first data row now so GetValue can serve values before Update
+    if (!read_next_row(current_row_)) {
+        throw std::runtime_error(
+            "Forcing data error: CSV file '" + forcing_path.string() +
+            "' must contain at least one data row");
+    }
+}
+
+bool ForcingBmi::read_next_row(ForcingRow& row) {
     // Read until the next non-empty row so blank lines do not count as timesteps
     std::string row_line;
-    while (std::getline(csv_stream, row_line)) {
-        ++last_csv_row_number;
+    while (std::getline(csv_stream_, row_line)) {
+        ++last_csv_row_number_;
         if (io::trim(row_line).empty()) {
             continue;
         }
 
         const std::vector<std::string> cells = io::split_csv_line(row_line);
-        if (csv_time_column_index >= cells.size()) {
+        if (csv_time_column_index_ >= cells.size()) {
             throw std::runtime_error(
-                "Forcing data error: row " + std::to_string(last_csv_row_number) +
-                " is missing column '" + time_column_name + "'");
+                "Forcing data error: row " + std::to_string(last_csv_row_number_) +
+                " is missing column '" + time_column_name_ + "'");
         }
 
         row.timestamp_seconds_ = parse_timestamp_seconds(
-            cells.at(csv_time_column_index),
-            time_column_name,
-            last_csv_row_number);
-        row.row_number_ = last_csv_row_number;
-        // Preserve the mapped-column order so BMI names index directly into values_
+            cells.at(csv_time_column_index_),
+            time_column_name_,
+            last_csv_row_number_);
+        row.row_number_ = last_csv_row_number_;
+
+        // Preserve output column order so BMI names index directly into values_
         row.values_.clear();
-        row.values_.reserve(mapped_columns.size());
-        for (const MappedForcingColumn& column : mapped_columns) {
+        row.values_.reserve(forcing_columns_.size());
+        for (const ForcingColumn& column : forcing_columns_) {
             if (column.csv_column_index_ >= cells.size()) {
                 throw std::runtime_error(
                     "Forcing data error: row " +
-                    std::to_string(last_csv_row_number) +
+                    std::to_string(last_csv_row_number_) +
                     " is missing column '" + column.csv_header_ + "'");
             }
             row.values_.push_back(parse_numeric_value(
                 cells.at(column.csv_column_index_),
                 column.csv_header_,
-                last_csv_row_number));
+                last_csv_row_number_));
         }
         return true;
     }
@@ -345,339 +261,270 @@ bool read_next_row(std::ifstream& csv_stream,
     return false;
 }
 
-ForcingStreamState open_forcing_stream(
-    const std::filesystem::path& forcing_path,
-    const ForcingTargets& targets,
-    double time_step_seconds) {
-    ForcingStreamState state;
-    state.time_step_seconds_ = time_step_seconds;
-    state.csv_stream_.open(forcing_path);
-    if (!state.csv_stream_.is_open()) {
-        throw std::runtime_error(
-            "Forcing data error: unable to open CSV file '" +
-            forcing_path.string() + "'");
+void ForcingBmi::Initialize(std::string config_file) {
+    Finalize();
+
+    // Empty config means this forcing module is present but inactive
+    if (io::trim(config_file).empty()) {
+        return;
     }
 
-    std::string header_line;
-    if (!std::getline(state.csv_stream_, header_line)) {
-        throw std::runtime_error(
-            "Forcing data error: CSV file '" + forcing_path.string() +
-            "' is missing a header row");
-    }
+    // The config string for this internal module is the forcing CSV path
+    const std::filesystem::path forcing_path = resolve_forcing_path(config_file);
 
-    // Startup validation resolves all mapped columns from the CSV header
-    const std::vector<std::string> headers = io::split_csv_line(header_line);
-    const auto time_it = std::find(headers.begin(), headers.end(), "time");
-    if (time_it != headers.end()) {
-        state.csv_time_column_index_ = static_cast<std::size_t>(
-            std::distance(headers.begin(), time_it));
-        state.time_column_name_ = "time";
-    } else {
-        const auto upper_time_it = std::find(headers.begin(), headers.end(), "Time");
-        if (upper_time_it == headers.end()) {
-            throw std::runtime_error(
-                "Forcing data error: CSV file '" + forcing_path.string() +
-                "' must define a 'time' or 'Time' column");
-        }
-        state.csv_time_column_index_ = static_cast<std::size_t>(
-            std::distance(headers.begin(), upper_time_it));
-        state.time_column_name_ = "Time";
-    }
+    // The paired model clock defines the expected forcing timestep
+    time_step_seconds_ = get_model_time_step_seconds(clock_model_);
+    open_stream(forcing_path);
 
-    // Store the BMI output name, source header, and CSV index together
-    state.mapped_columns_.reserve(targets.size());
-    for (const auto& [input_name, csv_header] : targets) {
-        const auto header_it = std::find(headers.begin(),
-                                         headers.end(),
-                                         csv_header);
-        if (header_it == headers.end()) {
-            throw std::runtime_error(
-                "Forcing data error: column '" + csv_header +
-                "' not found in CSV header");
-        }
-        state.mapped_columns_.push_back(
-            MappedForcingColumn{
-                input_name,
-                csv_header,
-                static_cast<std::size_t>(
-                    std::distance(headers.begin(), header_it))});
-    }
-
-    // Read the first data row now so GetValue can serve values before Update
-    if (!read_next_row(state.csv_stream_,
-                       state.time_column_name_,
-                       state.csv_time_column_index_,
-                       state.mapped_columns_,
-                       state.last_csv_row_number_,
-                       state.current_row_)) {
-        throw std::runtime_error(
-            "Forcing data error: CSV file '" + forcing_path.string() +
-            "' must contain at least one data row");
-    }
-
-    return state;
+    // The first CSV data row is already loaded by open_stream
+    step_ = 0;
+    current_time_seconds_ = 0.0;
+    exhausted_ = false;
+    active_ = true;
 }
 
-// Minimal BMI adapter that streams mapped forcing rows
-
-[[noreturn]] void throw_unsupported(const std::string& operation) {
-    throw std::runtime_error("ForcingBmi: " + operation + " not supported");
-}
-
-class ForcingBmi : public ::bmi::Bmi {
-public:
-    explicit ForcingBmi(ForcingStreamState state)
-        : csv_stream_(std::move(state.csv_stream_)),
-          time_column_name_(std::move(state.time_column_name_)),
-          csv_time_column_index_(state.csv_time_column_index_),
-          mapped_columns_(std::move(state.mapped_columns_)),
-          current_row_(std::move(state.current_row_)),
-          last_csv_row_number_(state.last_csv_row_number_),
-          time_step_seconds_(state.time_step_seconds_) {
+void ForcingBmi::Update() {
+    if (!active_) {
+        return;
     }
 
-    void Initialize(std::string /*config_file*/) override {
-        throw_unsupported("Initialize");
-    }
-
-    void Update() override {
-        if (exhausted_) {
-            ++step_;
-            current_time_seconds_ += time_step_seconds_;
-            return;
-        }
-
-        // No lookahead: advancing the forcing BMI consumes exactly one CSV row
-        ForcingRow next_row;
-        if (!read_next_row(csv_stream_,
-                           time_column_name_,
-                           csv_time_column_index_,
-                           mapped_columns_,
-                           last_csv_row_number_,
-                           next_row)) {
-            exhausted_ = true;
-            ++step_;
-            current_time_seconds_ += time_step_seconds_;
-            return;
-        }
-
-        // Timestamp spacing is validated as rows stream in
-        const double delta_seconds = static_cast<double>(
-            next_row.timestamp_seconds_ - current_row_.timestamp_seconds_);
-        validate_time_step_delta(delta_seconds,
-                                 time_step_seconds_,
-                                 next_row.row_number_);
-        current_row_ = std::move(next_row);
+    if (exhausted_) {
         ++step_;
         current_time_seconds_ += time_step_seconds_;
+        return;
     }
 
-    void UpdateUntil(double /*time*/) override { throw_unsupported("UpdateUntil"); }
-
-    void Finalize() override {
-        mapped_columns_.clear();
-        current_row_.values_.clear();
-        if (csv_stream_.is_open()) {
-            csv_stream_.close();
-        }
-        step_ = 0;
-        current_time_seconds_ = 0.0;
+    // No lookahead: advancing the forcing BMI consumes exactly one CSV row
+    ForcingRow next_row;
+    if (!read_next_row(next_row)) {
         exhausted_ = true;
+        ++step_;
+        current_time_seconds_ += time_step_seconds_;
+        return;
     }
 
-    std::string GetComponentName() override { return "ForcingBmi"; }
-    int GetInputItemCount() override { return 0; }
-    int GetOutputItemCount() override {
-        return static_cast<int>(mapped_columns_.size());
+    // Timestamp spacing is validated as rows stream in
+    const double delta_seconds = static_cast<double>(
+        next_row.timestamp_seconds_ - current_row_.timestamp_seconds_);
+    validate_time_step_delta(delta_seconds,
+                             time_step_seconds_,
+                             next_row.row_number_);
+    current_row_ = std::move(next_row);
+    ++step_;
+    current_time_seconds_ += time_step_seconds_;
+}
+
+void ForcingBmi::UpdateUntil(double /*time*/) {
+    throw_unsupported("UpdateUntil");
+}
+
+void ForcingBmi::Finalize() {
+    // Reset all stream-derived state so Initialize can safely be called again
+    forcing_columns_.clear();
+    current_row_.values_.clear();
+    if (csv_stream_.is_open()) {
+        csv_stream_.close();
     }
-    std::vector<std::string> GetInputVarNames() override { return {}; }
-    std::vector<std::string> GetOutputVarNames() override {
-        std::vector<std::string> output_names;
-        output_names.reserve(mapped_columns_.size());
-        for (const MappedForcingColumn& column : mapped_columns_) {
-            output_names.push_back(column.bmi_input_name_);
+    time_column_name_.clear();
+    csv_time_column_index_ = 0;
+    last_csv_row_number_ = 1;
+    step_ = 0;
+    current_time_seconds_ = 0.0;
+    time_step_seconds_ = 0.0;
+    exhausted_ = true;
+    active_ = false;
+}
+
+std::string ForcingBmi::GetComponentName() {
+    return "ForcingBmi";
+}
+
+int ForcingBmi::GetInputItemCount() {
+    return 0;
+}
+
+int ForcingBmi::GetOutputItemCount() {
+    return static_cast<int>(forcing_columns_.size());
+}
+
+std::vector<std::string> ForcingBmi::GetInputVarNames() {
+    return {};
+}
+
+std::vector<std::string> ForcingBmi::GetOutputVarNames() {
+    std::vector<std::string> output_names;
+    output_names.reserve(forcing_columns_.size());
+    for (const ForcingColumn& column : forcing_columns_) {
+        output_names.push_back(column.csv_header_);
+    }
+    return output_names;
+}
+
+int ForcingBmi::GetVarGrid(std::string name) {
+    find_output_index(name);
+    return 0;
+}
+
+std::string ForcingBmi::GetVarType(std::string name) {
+    find_output_index(name);
+    return "double";
+}
+
+std::string ForcingBmi::GetVarUnits(std::string name) {
+    find_output_index(name);
+    return "";
+}
+
+int ForcingBmi::GetVarItemsize(std::string name) {
+    find_output_index(name);
+    return static_cast<int>(sizeof(double));
+}
+
+int ForcingBmi::GetVarNbytes(std::string name) {
+    find_output_index(name);
+    return static_cast<int>(sizeof(double));
+}
+
+std::string ForcingBmi::GetVarLocation(std::string name) {
+    find_output_index(name);
+    return "node";
+}
+
+double ForcingBmi::GetCurrentTime() {
+    return current_time_seconds_;
+}
+
+double ForcingBmi::GetStartTime() {
+    return 0.0;
+}
+
+double ForcingBmi::GetEndTime() {
+    // The end time is unknown without scanning the remaining CSV rows
+    return std::numeric_limits<double>::infinity();
+}
+
+std::string ForcingBmi::GetTimeUnits() {
+    return "s";
+}
+
+double ForcingBmi::GetTimeStep() {
+    return time_step_seconds_;
+}
+
+void ForcingBmi::GetValue(std::string name, void* dest) {
+    const std::size_t output_index = find_output_index(name);
+    if (exhausted_) {
+        throw std::runtime_error(
+            "Forcing alignment error: forcing series exhausted at step " +
+            std::to_string(step_));
+    }
+    *static_cast<double*>(dest) = current_row_.values_.at(output_index);
+}
+
+void* ForcingBmi::GetValuePtr(std::string /*name*/) {
+    throw_unsupported("GetValuePtr");
+}
+
+void ForcingBmi::GetValueAtIndices(std::string /*name*/,
+                                   void* /*dest*/,
+                                   int* /*inds*/,
+                                   int /*count*/) {
+    throw_unsupported("GetValueAtIndices");
+}
+
+void ForcingBmi::SetValue(std::string /*name*/, void* /*src*/) {
+    throw_unsupported("SetValue");
+}
+
+void ForcingBmi::SetValueAtIndices(std::string /*name*/,
+                                   int* /*inds*/,
+                                   int /*count*/,
+                                   void* /*src*/) {
+    throw_unsupported("SetValueAtIndices");
+}
+
+int ForcingBmi::GetGridRank(const int grid) {
+    check_grid_id(grid);
+    return 0;
+}
+
+int ForcingBmi::GetGridSize(const int grid) {
+    check_grid_id(grid);
+    return 1;
+}
+
+std::string ForcingBmi::GetGridType(const int grid) {
+    check_grid_id(grid);
+    return "scalar";
+}
+
+void ForcingBmi::GetGridShape(const int /*grid*/, int* /*shape*/) {
+    throw_unsupported("GetGridShape");
+}
+
+void ForcingBmi::GetGridSpacing(const int /*grid*/, double* /*spacing*/) {
+    throw_unsupported("GetGridSpacing");
+}
+
+void ForcingBmi::GetGridOrigin(const int /*grid*/, double* /*origin*/) {
+    throw_unsupported("GetGridOrigin");
+}
+
+void ForcingBmi::GetGridX(const int /*grid*/, double* /*x*/) {
+    throw_unsupported("GetGridX");
+}
+
+void ForcingBmi::GetGridY(const int /*grid*/, double* /*y*/) {
+    throw_unsupported("GetGridY");
+}
+
+void ForcingBmi::GetGridZ(const int /*grid*/, double* /*z*/) {
+    throw_unsupported("GetGridZ");
+}
+
+int ForcingBmi::GetGridNodeCount(const int /*grid*/) {
+    throw_unsupported("GetGridNodeCount");
+}
+
+int ForcingBmi::GetGridEdgeCount(const int /*grid*/) {
+    throw_unsupported("GetGridEdgeCount");
+}
+
+int ForcingBmi::GetGridFaceCount(const int /*grid*/) {
+    throw_unsupported("GetGridFaceCount");
+}
+
+void ForcingBmi::GetGridEdgeNodes(const int /*grid*/, int* /*edge_nodes*/) {
+    throw_unsupported("GetGridEdgeNodes");
+}
+
+void ForcingBmi::GetGridFaceEdges(const int /*grid*/, int* /*face_edges*/) {
+    throw_unsupported("GetGridFaceEdges");
+}
+
+void ForcingBmi::GetGridFaceNodes(const int /*grid*/, int* /*face_nodes*/) {
+    throw_unsupported("GetGridFaceNodes");
+}
+
+void ForcingBmi::GetGridNodesPerFace(const int /*grid*/,
+                                     int* /*nodes_per_face*/) {
+    throw_unsupported("GetGridNodesPerFace");
+}
+
+std::size_t ForcingBmi::find_output_index(const std::string& name) const {
+    for (std::size_t i = 0; i < forcing_columns_.size(); ++i) {
+        if (forcing_columns_[i].csv_header_ == name) {
+            return i;
         }
-        return output_names;
     }
+    throw std::runtime_error("ForcingBmi: unknown variable '" + name + "'");
+}
 
-    int GetVarGrid(std::string name) override {
-        find_output_index(name);
-        return 0;
+void ForcingBmi::check_grid_id(int grid) const {
+    if (grid != 0) {
+        throw std::runtime_error(
+            "ForcingBmi: unknown grid " + std::to_string(grid));
     }
-    std::string GetVarType(std::string name) override {
-        find_output_index(name);
-        return "double";
-    }
-    std::string GetVarUnits(std::string name) override {
-        find_output_index(name);
-        return "";
-    }
-    int GetVarItemsize(std::string name) override {
-        find_output_index(name);
-        return static_cast<int>(sizeof(double));
-    }
-    int GetVarNbytes(std::string name) override {
-        find_output_index(name);
-        return static_cast<int>(sizeof(double));
-    }
-    std::string GetVarLocation(std::string name) override {
-        find_output_index(name);
-        return "node";
-    }
-
-    double GetCurrentTime() override { return current_time_seconds_; }
-    double GetStartTime() override { return 0.0; }
-    double GetEndTime() override {
-        // The end time is unknown without scanning the remaining CSV rows
-        return std::numeric_limits<double>::infinity();
-    }
-    std::string GetTimeUnits() override { return "s"; }
-    double GetTimeStep() override { return time_step_seconds_; }
-
-    void GetValue(std::string name, void* dest) override {
-        const std::size_t output_index = find_output_index(name);
-        if (exhausted_) {
-            throw std::runtime_error(
-                "Forcing alignment error: forcing series exhausted at step " +
-                std::to_string(step_));
-        }
-        *static_cast<double*>(dest) = current_row_.values_.at(output_index);
-    }
-
-    void* GetValuePtr(std::string /*name*/) override {
-        throw_unsupported("GetValuePtr");
-    }
-    void GetValueAtIndices(std::string /*name*/, void* /*dest*/, int* /*inds*/,
-                           int /*count*/) override {
-        throw_unsupported("GetValueAtIndices");
-    }
-
-    void SetValue(std::string /*name*/, void* /*src*/) override {
-        throw_unsupported("SetValue");
-    }
-    void SetValueAtIndices(std::string /*name*/, int* /*inds*/, int /*count*/,
-                           void* /*src*/) override {
-        throw_unsupported("SetValueAtIndices");
-    }
-
-    int GetGridRank(const int grid) override {
-        check_grid_id(grid);
-        return 0;
-    }
-    int GetGridSize(const int grid) override {
-        check_grid_id(grid);
-        return 1;
-    }
-    std::string GetGridType(const int grid) override {
-        check_grid_id(grid);
-        return "scalar";
-    }
-
-    void GetGridShape(const int /*grid*/, int* /*shape*/) override {
-        throw_unsupported("GetGridShape");
-    }
-    void GetGridSpacing(const int /*grid*/, double* /*spacing*/) override {
-        throw_unsupported("GetGridSpacing");
-    }
-    void GetGridOrigin(const int /*grid*/, double* /*origin*/) override {
-        throw_unsupported("GetGridOrigin");
-    }
-    void GetGridX(const int /*grid*/, double* /*x*/) override {
-        throw_unsupported("GetGridX");
-    }
-    void GetGridY(const int /*grid*/, double* /*y*/) override {
-        throw_unsupported("GetGridY");
-    }
-    void GetGridZ(const int /*grid*/, double* /*z*/) override {
-        throw_unsupported("GetGridZ");
-    }
-    int GetGridNodeCount(const int /*grid*/) override {
-        throw_unsupported("GetGridNodeCount");
-    }
-    int GetGridEdgeCount(const int /*grid*/) override {
-        throw_unsupported("GetGridEdgeCount");
-    }
-    int GetGridFaceCount(const int /*grid*/) override {
-        throw_unsupported("GetGridFaceCount");
-    }
-    void GetGridEdgeNodes(const int /*grid*/, int* /*edge_nodes*/) override {
-        throw_unsupported("GetGridEdgeNodes");
-    }
-    void GetGridFaceEdges(const int /*grid*/, int* /*face_edges*/) override {
-        throw_unsupported("GetGridFaceEdges");
-    }
-    void GetGridFaceNodes(const int /*grid*/, int* /*face_nodes*/) override {
-        throw_unsupported("GetGridFaceNodes");
-    }
-    void GetGridNodesPerFace(const int /*grid*/,
-                             int* /*nodes_per_face*/) override {
-        throw_unsupported("GetGridNodesPerFace");
-    }
-
-private:
-    std::size_t find_output_index(const std::string& name) const {
-        for (std::size_t i = 0; i < mapped_columns_.size(); ++i) {
-            if (mapped_columns_[i].bmi_input_name_ == name) {
-                return i;
-            }
-        }
-        throw std::runtime_error("ForcingBmi: unknown variable '" + name + "'");
-    }
-
-    void check_grid_id(int grid) const {
-        if (grid != 0) {
-            throw std::runtime_error(
-                "ForcingBmi: unknown grid " + std::to_string(grid));
-        }
-    }
-
-    // Streaming CSV source positioned after the current forcing row
-    std::ifstream csv_stream_;
-    // Time column metadata from the CSV header
-    std::string time_column_name_;
-    std::size_t csv_time_column_index_{0};
-    // Mapped forcing columns exposed as BMI outputs in this order
-    std::vector<MappedForcingColumn> mapped_columns_;
-    // Current row exposed through GetValue until Update reads the next row
-    ForcingRow current_row_;
-    // Last physical CSV row number read from the stream
-    std::size_t last_csv_row_number_{1};
-    // Current timestep index returned by GetValue
-    std::size_t step_{0};
-    // Current forcing time exposed through the BMI clock methods
-    double current_time_seconds_{0.0};
-    // Expected forcing timestep from the model BMI clock
-    double time_step_seconds_{0.0};
-    // True after Update reaches the end of the forcing CSV
-    bool exhausted_{false};
-};
-
-} // namespace
-
-std::unique_ptr<::bmi::Bmi> make_forcing_bmi(
-    const caf::config_value::dictionary& forcing_config,
-    ::bmi::Bmi& model) {
-    const std::filesystem::path forcing_path =
-        resolve_forcing_path(require_non_empty_string(forcing_config,
-                                                      "forcing_file"));
-
-    // Prefer explicit mappings and fall back to identity mode only when absent
-    ForcingTargets forcing_targets = build_explicit_targets(forcing_config);
-    if (forcing_targets.empty()) {
-        forcing_targets = build_identity_targets(model);
-    }
-
-    for (const ForcingTargets::value_type& forcing_target : forcing_targets) {
-        // Check mapped BMI inputs before loading CSV data for them
-        validate_driver_input(model, forcing_target.first);
-    }
-
-    const double time_step_seconds = get_model_time_step_seconds(model);
-    ForcingStreamState forcing_state =
-        open_forcing_stream(forcing_path,
-                            forcing_targets,
-                            time_step_seconds);
-    return std::make_unique<ForcingBmi>(std::move(forcing_state));
 }
 
 } // namespace miaow::bmi

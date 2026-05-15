@@ -50,8 +50,8 @@ int main(int argc, char* argv[]) {
 
     // Run one C++ heat task and one Fortran heat task in the same job
     const std::vector<miaow::Task> tasks{
-        {cpp_heat, heat_config},
-        {fortran_heat, heat_config},
+        {cpp_heat, miaow::make_bmi_model_pipeline_config(heat_config)},
+        {fortran_heat, miaow::make_bmi_model_pipeline_config(heat_config)},
     };
 
     // Submit tasks and wait for results

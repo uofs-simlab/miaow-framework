@@ -35,8 +35,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::cout << "Parsed realization with "
-              << realization.features_.size()
-              << " feature(s)\n";
+              << realization.feature_pipeline_configs_.size()
+              << " feature pipeline config(s)\n";
 
     // Register dynamic BMI units and build one task per feature
     miaow::SimulationUnitRegistry registry;

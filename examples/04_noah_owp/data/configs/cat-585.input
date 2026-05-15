@@ -30,8 +30,8 @@
 &model_options
   precip_phase_option               = 1
   snow_albedo_option                = 1
-  dynamic_veg_option                = 4
-  runoff_option                     = 3
+  dynamic_veg_option                = 1
+  runoff_option                     = 8
   drainage_option                   = 8
   frozen_soil_option                = 1
   dynamic_vic_option                = 1
@@ -43,8 +43,8 @@
   soil_temp_boundary_option         = 2
   supercooled_water_option          = 1
   stomatal_resistance_option        = 1
-  evap_srfc_resistance_option       = 4
-  subsurface_option                 = 2
+  evap_srfc_resistance_option       = 1
+  subsurface_option                 = 1
 /
 
 &structure

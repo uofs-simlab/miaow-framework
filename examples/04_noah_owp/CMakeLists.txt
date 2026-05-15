@@ -216,7 +216,7 @@ if(BUILD_TESTING)
             $<TARGET_FILE:${EXECUTABLE_TARGET}>
     )
     string(CONCAT noah_owp_run_regex
-        "Parsed realization with 3 feature\\(s\\)(.|\\n)*"
+        "Parsed realization with 3 feature pipeline config\\(s\\)(.|\\n)*"
         "\\[0\\] succeeded: BMI workflow complete"
     )
     set_tests_properties(miaow_example_04_noah_owp_run PROPERTIES
@@ -228,11 +228,15 @@ if(BUILD_TESTING)
         "\"feature_id\""
         "\"hydrofabric_layer\""
         "\"hydrofabric_id_field\""
+        "\"realization_cat-552.json\""
         "\"results/cat-552.csv\""
     )
     list(JOIN noah_owp_expected_job_record_snippets ";"
         noah_owp_job_record_snippets_arg)
     set(noah_owp_expected_result_paths
+        "realization_cat-552.json"
+        "realization_cat-562.json"
+        "realization_cat-585.json"
         "results/cat-552.csv"
         "results/cat-562.csv"
         "results/cat-585.csv"

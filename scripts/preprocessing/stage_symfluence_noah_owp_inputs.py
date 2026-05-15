@@ -14,7 +14,7 @@ import logging
 import re
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,9 @@ DEFAULT_TARGET_DIR = PROJECT_ROOT / "examples" / "04_noah_owp"
 DEFAULT_REALIZATION_SUBPATH = Path("data") / "realization_config.json"
 STAGED_CATCHMENTS_NAME = "catchments.geojson"
 CAT_INPUT_PATTERN = re.compile(r"^cat-(\d+)\.input$")
+NAMELIST_KEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 CatchmentFiles = tuple[str, Path, Path]
+NoahModelOptionOverrides = dict[str, int]
 
 # `create_pour_point` is inserted at runtime for non-point domains
 SYMFLUENCE_STEPS = [
@@ -76,6 +78,54 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
+
+
+def load_noah_model_option_overrides(
+    config_path: Path,
+) -> NoahModelOptionOverrides:
+    """Load MIAOW-specific Noah model option overrides from the YAML config."""
+    try:
+        import yaml
+    except ImportError as exception:
+        raise RuntimeError("PyYAML is required to read MIAOW staging options.") from (
+            exception
+        )
+
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(config, Mapping):
+        raise RuntimeError(f"Expected YAML mapping in {config_path}")
+
+    staging_config = config.get("MIAOW_STAGING", {})
+    if staging_config is None:
+        return {}
+    if not isinstance(staging_config, Mapping):
+        raise RuntimeError("MIAOW_STAGING must be a mapping when provided.")
+
+    noah_overrides = staging_config.get("noah_overrides", {})
+    if noah_overrides is None:
+        return {}
+    if not isinstance(noah_overrides, Mapping):
+        raise RuntimeError("MIAOW_STAGING.noah_overrides must be a mapping.")
+
+    model_options = noah_overrides.get("model_options", {})
+    if model_options is None:
+        return {}
+    if not isinstance(model_options, Mapping):
+        raise RuntimeError(
+            "MIAOW_STAGING.noah_overrides.model_options must be a mapping."
+        )
+
+    overrides: NoahModelOptionOverrides = {}
+    for key, value in model_options.items():
+        key_text = str(key)
+        if not NAMELIST_KEY_PATTERN.match(key_text):
+            raise RuntimeError(f"Invalid Noah model option name: {key_text}")
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RuntimeError(
+                f"Noah model option {key_text} must be an integer value."
+            )
+        overrides[key_text] = value
+    return overrides
 
 
 def load_symfluence() -> tuple[type[Any], Callable[[Path, str], Path]]:
@@ -248,7 +298,11 @@ def replace_parameter_dir(source_dir: Path, target_dir: Path) -> None:
     shutil.copytree(source_dir, destination_dir)
 
 
-def rewrite_noah_input(path: Path, subdomain_id: str) -> None:
+def rewrite_noah_input(
+    path: Path,
+    subdomain_id: str,
+    model_option_overrides: NoahModelOptionOverrides,
+) -> None:
     """Rewrite generated Noah settings for the staged MIAOW runtime tree.
 
     SYMFLUENCE writes Noah inputs for its own project layout, so generated paths
@@ -256,11 +310,14 @@ def rewrite_noah_input(path: Path, subdomain_id: str) -> None:
     MIAOW's example data layout, and forcing comes from the BMI/NGEN driver
     instead of a direct Noah forcing file path.
     """
-    replacements = {
-        "parameter_dir": "./data/parameters/",
-        "forcing_filename": "BMI",
-        "output_filename": f"./output/{subdomain_id}.nc",
+    replacements: dict[str, str] = {
+        "parameter_dir": '"./data/parameters/"',
+        "forcing_filename": '"BMI"',
+        "output_filename": f'"./output/{subdomain_id}.nc"',
     }
+    replacements.update(
+        {key: str(value) for key, value in model_option_overrides.items()}
+    )
     found = {key: False for key in replacements}
     lines = []
 
@@ -269,7 +326,7 @@ def rewrite_noah_input(path: Path, subdomain_id: str) -> None:
             pattern = rf"^(\s*{re.escape(key)}\s*=\s*)([^!]*?)(\s*!.*)?(\n?)$"
             match = re.match(pattern, line)
             if match is not None:
-                line = f'{match.group(1)}"{value}"{match.group(3) or ""}'
+                line = f"{match.group(1)}{value}{match.group(3) or ''}"
                 line += match.group(4)
                 found[key] = True
                 break
@@ -287,6 +344,7 @@ def stage_inputs(
     pairs: list[CatchmentFiles],
     parameter_dir: Path,
     target_dir: Path,
+    model_option_overrides: NoahModelOptionOverrides,
 ) -> list[CatchmentFiles]:
     """Copy selected SYMFLUENCE outputs into the target runtime tree."""
     config_dir = target_dir / "data" / "configs"
@@ -309,7 +367,7 @@ def stage_inputs(
         staged_forcing = forcing_dir / source_forcing.name
         shutil.copy2(source_config, staged_config)
         shutil.copy2(source_forcing, staged_forcing)
-        rewrite_noah_input(staged_config, subdomain_id)
+        rewrite_noah_input(staged_config, subdomain_id, model_option_overrides)
         staged_pairs.append((subdomain_id, staged_config, staged_forcing))
     return staged_pairs
 
@@ -379,6 +437,7 @@ def run_preprocessing(
     realization_path: Path,
 ) -> None:
     """Run SYMFLUENCE and stage the selected catchments for MIAOW."""
+    model_option_overrides = load_noah_model_option_overrides(config_path)
     symfluence_class, resolve_data_subdir = load_symfluence()
     workflow = symfluence_class(str(config_path))
     validate_ngen_config(workflow)
@@ -393,7 +452,12 @@ def run_preprocessing(
         parameter_dir,
     ) = find_outputs(workflow, resolve_data_subdir)
     pairs = selected_pairs(noah_inputs, csv_dir, keep_first)
-    staged_pairs = stage_inputs(pairs, parameter_dir, target_dir)
+    staged_pairs = stage_inputs(
+        pairs,
+        parameter_dir,
+        target_dir,
+        model_option_overrides,
+    )
     staged_catchments = stage_catchments(
         source_catchments,
         staged_pairs,

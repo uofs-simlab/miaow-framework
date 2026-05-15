@@ -1,6 +1,7 @@
 #include "miaow_bmi.hpp"
 
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -14,97 +15,42 @@ namespace miaow {
 
 namespace {
 
-// The forcing is provided as a double; convert to BMI model type if necessary
-void set_forcing_value(bmi_api::Bmi& model,
-                       const std::string& name,
-                       double raw_value) {
-    const std::string type = model.GetVarType(name);
-    if (type == "double") {
-        model.SetValue(name, &raw_value);
-        return;
+// Validate the public task contract before touching files or BMI lifecycle
+const bmi::BmiPipelineConfig&
+require_bmi_pipeline_config_argument(const Task& task) {
+    if (task.args_.size() != 1) {
+        throw std::runtime_error(
+            "BMI pipeline config error: task must contain exactly one "
+            "top-level BMI pipeline config dictionary argument");
     }
-    if (type == "float") {
-        float value = static_cast<float>(raw_value);
-        model.SetValue(name, &value);
-        return;
+
+    const bmi::BmiPipelineConfig* pipeline_config =
+        caf::get_if<caf::config_value::dictionary>(&task.args_.front());
+    if (pipeline_config == nullptr) {
+        throw std::runtime_error(
+            "BMI pipeline config error: first task argument must be a "
+            "top-level BMI pipeline config dictionary");
     }
-    throw std::runtime_error("BMI forcing error: unsupported BMI variable type '" +
-                             type + "' for input variable '" + name + "'");
+    return *pipeline_config;
 }
 
-// Advance the model and forcing in lockstep and write CSV output
-void run_model(
-    bmi_api::Bmi& model,
-    const caf::config_value::dictionary* forcing_config,
-    const std::string& task_output_dir,
-    const std::string& task_output_name,
-    std::size_t& update_steps,
-    std::vector<std::string>& artifact_paths) {
-
-    // Build the forcing source once so the update loop only moves scalar values
-    std::unique_ptr<bmi_api::Bmi> forcing_model;
-    std::vector<std::string> forcing_vars;
-    if (forcing_config != nullptr) {
-        forcing_model = bmi::make_forcing_bmi(*forcing_config, model);
-        forcing_vars = forcing_model->GetOutputVarNames();
-    }
-
-    // Open one CSV output file if an output directory exists
-    std::unique_ptr<bmi::OutputFile> output_file;
-    if (!task_output_dir.empty()) {
-        output_file = std::make_unique<bmi::OutputFile>(
-            bmi::open_output_file(model, task_output_dir, task_output_name));
-        artifact_paths.push_back(output_file->artifact_path_);
-    }
-
-    // Get the model end time for update loop condition and initialize update step counter
-    const double end_time = model.GetEndTime();
-    update_steps = 0;
-
-    // Main iteration loop: update the model and forcing until the end time is reached
-    while (model.GetCurrentTime() < end_time) {
-        if (forcing_model) {
-            // If there is forcing, apply to each variable requested by the model
-            for (const std::string& forcing_var : forcing_vars) {
-                double forcing_value = 0.0;
-                forcing_model->GetValue(forcing_var, &forcing_value);
-                set_forcing_value(model, forcing_var, forcing_value);
-            }
-            // Advance the forcing model to the next time step
-            forcing_model->Update();
-        }
-
-        // Call the model update function and increment the update step counter
-        model.Update();
-        ++update_steps;
-
-        // Get the current model time and write one output row
-        const double current_time = model.GetCurrentTime();
-        if (output_file) {
-            bmi::write_output_step(model, *output_file, current_time);
-        }
-    }
-
-    // Finalize the forcing model if it exists
-    if (forcing_model) {
-        forcing_model->Finalize();
-    }
-}
-
+// Preserve useful domain context while normalizing generic BMI failures
 std::string format_bmi_error_message(const std::string& error_message) {
-    // Preserve forcing-prefixed errors and prefix only generic BMI failures
     const bool has_known_prefix =
         error_message.rfind("Forcing config error: ", 0) == 0 ||
         error_message.rfind("Forcing data error: ", 0) == 0 ||
         error_message.rfind("Forcing alignment error: ", 0) == 0 ||
-        error_message.rfind("BMI forcing error: ", 0) == 0;
+        error_message.rfind("BMI coupling error: ", 0) == 0 ||
+        error_message.rfind("BMI forcing error: ", 0) == 0 ||
+        error_message.rfind("BMI pipeline config error: ", 0) == 0 ||
+        error_message.rfind("BMI pipeline error: ", 0) == 0;
     if (has_known_prefix) {
         return error_message;
     }
     return std::string("BMI error: ") + error_message;
 }
 
-// Convert a captured exception into the BMI task result message
+// Convert captured exceptions into task result messages
 std::string format_bmi_error_message(std::exception_ptr exception) {
     if (!exception) {
         return "BMI error: unknown exception";
@@ -119,54 +65,49 @@ std::string format_bmi_error_message(std::exception_ptr exception) {
     }
 }
 
-} // namespace
-
-TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
-    if (task.args_.empty()) {
-        throw std::runtime_error("missing config path in task specification");
-    }
-
-    // Require the first task argument to be the BMI config path
-    const std::string* config_file = caf::get_if<std::string>(&task.args_.front());
-    if (!config_file) {
-        throw std::runtime_error("first task argument must be a config path string");
-    }
-
-    const caf::config_value::dictionary* forcing_config = nullptr;
-    if (task.args_.size() >= 2) {
-        // args[1] is the structured forcing payload when external forcing is enabled
-        forcing_config =
-            caf::get_if<caf::config_value::dictionary>(&task.args_.at(1));
-        if (!forcing_config) {
-            throw std::runtime_error(
-                "Forcing config error: second task argument must be a forcing "
-                "dictionary");
-        }
-    }
-
+// Run the standard BMI lifecycle and collect runtime artifacts
+TaskResult execute_bmi_lifecycle(bmi_api::Bmi& model,
+                                 const std::string& config_path,
+                                 const Task& task,
+                                 std::vector<std::string> artifact_paths) {
     bool needs_finalize = false;
     std::size_t update_steps = 0;
-    std::vector<std::string> artifact_paths;
 
-    // Main execution workflow
     try {
-        // The model handles reading the config file
-        model.Initialize(*config_file);
+        // Initialize before opening output so BMI variable metadata is available
         needs_finalize = true;
+        model.Initialize(config_path);
 
-        // MIAOW applies the forcing and advances the model in lockstep
-        run_model(model,
-                  forcing_config,
-                  task.task_output_dir_,
-                  task.task_output_name_,
-                  update_steps,
-                  artifact_paths);
+        {
+            // Open one CSV output file if an output directory exists
+            std::unique_ptr<bmi::OutputFile> output_file;
+            if (!task.task_output_dir_.empty()) {
+                output_file = std::make_unique<bmi::OutputFile>(
+                    bmi::open_output_file(model,
+                                          task.task_output_dir_,
+                                          task.task_output_name_));
+                artifact_paths.push_back(output_file->artifact_path_);
+            }
 
-        // Finalize the model after successful completion of the update loop
+            // Update until the selected BMI clock reaches its configured end time
+            const double end_time = model.GetEndTime();
+            update_steps = 0;
+            while (model.GetCurrentTime() < end_time) {
+                model.Update();
+                ++update_steps;
+
+                const double current_time = model.GetCurrentTime();
+                if (output_file) {
+                    bmi::write_output_step(model, *output_file, current_time);
+                }
+            }
+        }
+
+        // Finalize after output streams have been closed
         needs_finalize = false;
         model.Finalize();
 
-    // Handle exceptions thrown during model initialization, update, or finalization
+    // Handle exceptions thrown during initialization, update, or finalization
     } catch (...) {
         std::string failure_message =
             format_bmi_error_message(std::current_exception()) +
@@ -190,6 +131,43 @@ TaskResult execute_bmi_model(bmi_api::Bmi& model, const Task& task) {
     std::ostringstream message;
     message << "BMI workflow complete (updates: " << update_steps << ")";
     return TaskResult{TaskStatus::succeeded, message.str(), std::move(artifact_paths)};
+}
+
+} // namespace
+
+TaskResult execute_bmi_pipeline(
+    const Task& task,
+    std::unique_ptr<bmi_api::Bmi> supplied_model) {
+    // Read the top-level pipeline config argument from the task
+    const bmi::BmiPipelineConfig& pipeline_config =
+        require_bmi_pipeline_config_argument(task);
+
+    // Persist the pipeline config because BMI Initialize accepts a file path
+    const std::filesystem::path pipeline_config_path =
+        bmi::bmi_pipeline_config_file_path(task);
+    std::vector<std::string> artifact_paths =
+        bmi::bmi_pipeline_config_artifact_paths(task);
+    bmi::write_bmi_pipeline_config_file(pipeline_config, pipeline_config_path);
+
+    // Wrap the supplied model in the pipeline adapter and execute it as BMI
+    bmi::BmiPipeline pipeline(std::move(supplied_model));
+    return execute_bmi_lifecycle(pipeline,
+                                 pipeline_config_path.string(),
+                                 task,
+                                 std::move(artifact_paths));
+}
+
+TaskResult BmiPipelineSimulationUnit::execute(const Task& task) {
+    try {
+        if (execution_mode_ != BmiExecutionMode::in_process) {
+            throw std::runtime_error(
+                "BMI pipeline error: subprocess execution is not supported "
+                "for BMI pipeline configs");
+        }
+        return execute_bmi_pipeline(task);
+    } catch (...) {
+        return make_failed_task_result(std::current_exception(), "BMI error");
+    }
 }
 
 } // namespace miaow

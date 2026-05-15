@@ -66,6 +66,23 @@ std::filesystem::path make_control_dir(const Task& task) {
     return control_dir;
 }
 
+const bmi::BmiPipelineConfig&
+require_bmi_pipeline_config_argument(const Task& task) {
+    if (task.args_.size() != 1) {
+        throw std::runtime_error(
+            "subprocess BMI task must contain exactly one top-level BMI "
+            "pipeline config argument");
+    }
+    const bmi::BmiPipelineConfig* pipeline_config =
+        caf::get_if<caf::config_value::dictionary>(&task.args_.front());
+    if (pipeline_config == nullptr) {
+        throw std::runtime_error(
+            "subprocess BMI task argument must be a top-level BMI pipeline "
+            "config dictionary");
+    }
+    return *pipeline_config;
+}
+
 // Create the task-local files used by one BMI subprocess execution
 BmiSubprocessPaths make_subprocess_paths(const Task& task) {
     const std::filesystem::path control_dir = make_control_dir(task);
@@ -166,13 +183,12 @@ void write_subprocess_task(const std::filesystem::path& spec_path,
                            const std::string& plugin_path,
                            const std::string& cpp_create_function,
                            const std::string& cpp_destroy_function,
-                           const std::string& config_file,
-                           const Task& task) {
+    const bmi::BmiPipelineConfig& pipeline_config,
+    const Task& task) {
     bmi::BmiSubprocessTaskSpec subprocess_task;
-    subprocess_task.backend_ =
-        backend == DynamicBmiBackend::cpp ? "cpp" : "fortran";
-    subprocess_task.plugin_path_ = plugin_path;
-    subprocess_task.config_file_ = config_file;
+    subprocess_task.pipeline_config_ = pipeline_config;
+    subprocess_task.module_.dynamic_backend_ = backend;
+    subprocess_task.module_.plugin_path_ = plugin_path;
     subprocess_task.output_dir_ = task.task_output_dir_.empty()
         ? ""
         : std::filesystem::absolute(task.task_output_dir_)
@@ -181,55 +197,8 @@ void write_subprocess_task(const std::filesystem::path& spec_path,
     subprocess_task.output_name_ = task.task_output_name_;
 
     if (backend == DynamicBmiBackend::cpp) {
-        subprocess_task.cpp_create_function_ = cpp_create_function;
-        subprocess_task.cpp_destroy_function_ = cpp_destroy_function;
-    }
-
-    if (task.args_.size() >= 2) {
-        const caf::config_value::dictionary* forcing_config =
-            caf::get_if<caf::config_value::dictionary>(&task.args_.at(1));
-        if (forcing_config == nullptr) {
-            throw std::runtime_error(
-                "second task argument must be a forcing dictionary");
-        }
-
-        const caf::config_value::dictionary::const_iterator forcing_file_it =
-            forcing_config->find("forcing_file");
-        if (forcing_file_it == forcing_config->end()) {
-            throw std::runtime_error("missing forcing key 'forcing_file'");
-        }
-        const std::string* forcing_file =
-            caf::get_if<std::string>(&forcing_file_it->second);
-        if (forcing_file == nullptr || forcing_file->empty()) {
-            throw std::runtime_error(
-                "forcing key 'forcing_file' must be a non-empty string");
-        }
-        subprocess_task.forcing_file_ = *forcing_file;
-
-        const caf::config_value::dictionary::const_iterator map_it =
-            forcing_config->find("variables_names_map");
-        if (map_it != forcing_config->end()) {
-            const caf::config_value::dictionary* variables_names_map =
-                caf::get_if<caf::config_value::dictionary>(&map_it->second);
-            if (variables_names_map == nullptr) {
-                throw std::runtime_error(
-                    "forcing key 'variables_names_map' must be a dictionary");
-            }
-            subprocess_task.variables_names_map_.emplace();
-            for (const std::pair<const std::string, caf::config_value>&
-                     map_entry : *variables_names_map) {
-                const std::string* header =
-                    caf::get_if<std::string>(&map_entry.second);
-                if (header == nullptr) {
-                    throw std::runtime_error(
-                        "forcing map entry '" + map_entry.first +
-                        "' must be a string");
-                }
-                subprocess_task.variables_names_map_->emplace(
-                    map_entry.first,
-                    *header);
-            }
-        }
+        subprocess_task.module_.cpp_create_function_ = cpp_create_function;
+        subprocess_task.module_.cpp_destroy_function_ = cpp_destroy_function;
     }
 
     io::write_json_file(spec_path, subprocess_task);
@@ -247,15 +216,8 @@ TaskResult execute_dynamic_bmi_model_in_subprocess(
     if (plugin_path.empty()) {
         throw std::runtime_error("dynamic BMI plugin path is empty");
     }
-    if (task.args_.empty()) {
-        throw std::runtime_error("missing config path in task specification");
-    }
-
-    const std::string* config_file =
-        caf::get_if<std::string>(&task.args_.front());
-    if (config_file == nullptr) {
-        throw std::runtime_error("first task argument must be a config path string");
-    }
+    const bmi::BmiPipelineConfig& pipeline_config =
+        require_bmi_pipeline_config_argument(task);
 
     const std::string subprocess_path = configured_subprocess_path();
     if (subprocess_path.empty()) {
@@ -268,7 +230,7 @@ TaskResult execute_dynamic_bmi_model_in_subprocess(
                           plugin_path,
                           create_function,
                           destroy_function,
-                          *config_file,
+                          pipeline_config,
                           task);
 
     return execute_subprocess_task(paths, subprocess_path);

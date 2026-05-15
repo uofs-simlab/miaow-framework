@@ -37,14 +37,30 @@ APPLY_LAPSE_RATE: true
 
 # Use SYMFLUENCE's native NGEN preprocessing for Noah-OWP only
 HYDROLOGICAL_MODEL: "NGEN"
-NGEN_INSTALL_PATH: "default"
-NGEN_EXE: "ngen"
 NGEN_MODULES_SELECTED: "NOAH"
 NGEN_MODULES_TO_CALIBRATE: "NOAH"
 
-NUM_PROCESSES: 1
-FORCE_RUN_ALL_STEPS: false
-LOG_LEVEL: "INFO"
+# MIAOW stages Noah-OWP inputs with upstream standalone-style model options
+MIAOW_STAGING:
+  noah_overrides:
+    model_options:
+      precip_phase_option: 1
+      snow_albedo_option: 1
+      dynamic_veg_option: 1
+      runoff_option: 8
+      drainage_option: 8
+      frozen_soil_option: 1
+      dynamic_vic_option: 1
+      radiative_transfer_option: 3
+      sfc_drag_coeff_option: 1
+      canopy_stom_resist_option: 1
+      crop_model_option: 0
+      snowsoil_temp_time_option: 3
+      soil_temp_boundary_option: 2
+      supercooled_water_option: 1
+      stomatal_resistance_option: 1
+      evap_srfc_resistance_option: 1
+      subsurface_option: 1
 
 # Feature IDs for exported CSV filenames come from the generated catchment layer
 CATCHMENT_SHP_HRUID: "HRU_ID"
