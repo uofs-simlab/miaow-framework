@@ -69,8 +69,16 @@ Runtime orchestration
 BMI integration
 ---------------
 
-Dynamic BMI types
-~~~~~~~~~~~~~~~~~
+MIAOW's BMI support targets the
+`Basic Model Interface <https://bmi.csdms.io/en/stable/>`_ and the
+`CSDMS BMI C++ interface <https://github.com/csdms/bmi-cxx>`_.
+Dynamic Fortran plugins use the
+`NOAA-OWP BMI bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_.
+Realization-driven workflows follow the
+`NextGen <https://github.com/NOAA-OWP/ngen>`_ realization shape.
+
+BMI model types
+~~~~~~~~~~~~~~~
 
 .. doxygenenum:: miaow::DynamicBmiBackend
    :project: MIAOW
@@ -78,45 +86,46 @@ Dynamic BMI types
 .. doxygenenum:: miaow::BmiExecutionMode
    :project: MIAOW
 
-.. doxygentypedef:: miaow::DynamicCppBmi
-   :project: MIAOW
-
-.. doxygentypedef:: miaow::DynamicFortranBmi
-   :project: MIAOW
-
-.. doxygenclass:: miaow::DynamicBmi< DynamicBmiBackend::cpp >
+.. doxygenclass:: miaow::DynamicBmiModel
    :project: MIAOW
    :members:
 
-.. doxygenclass:: miaow::DynamicBmi< DynamicBmiBackend::fortran >
+.. doxygenclass:: miaow::BmiPipeline
    :project: MIAOW
    :members:
 
 Simulation units
 ~~~~~~~~~~~~~~~~
 
-.. doxygenfunction:: miaow::execute_bmi_pipeline
+Use ``BmiSimulationUnit<DynamicBmiModel>`` for one dynamic plugin model. The
+simulation unit still runs that model inside a task-level ``BmiPipeline``. Use
+``BmiSimulationUnit<BmiPipeline>`` when the task argument is a complete
+``BmiPipelineConfig`` and the pipeline should build its own model modules.
+
+.. doxygenfunction:: miaow::make_bmi_pipeline_config
    :project: MIAOW
+
+.. doxygenfunction:: miaow::make_bmi_model_config
+   :project: MIAOW
+
+.. doxygenfunction:: miaow::bmi::execute_bmi_lifecycle_in_subprocess
+   :project: MIAOW
+
+.. doxygentypedef:: miaow::BmiPipelineConfig
+   :project: MIAOW
+
+.. doxygenstruct:: miaow::BmiModuleSpec
+   :project: MIAOW
+   :members:
 
 .. doxygenclass:: miaow::BmiSimulationUnit
    :project: MIAOW
    :members:
 
-.. doxygenclass:: miaow::BmiSimulationUnit< DynamicBmi< Backend > >
-   :project: MIAOW
-   :members:
-
-.. doxygenfunction:: miaow::execute_dynamic_bmi_model_in_subprocess
-   :project: MIAOW
-
 Realization workflows
 ---------------------
 
-.. doxygenstruct:: miaow::RealizationFeature
-   :project: MIAOW
-   :members:
-
-.. doxygenstruct:: miaow::RealizationConfig
+.. doxygenstruct:: miaow::PartitionedBmiRealization
    :project: MIAOW
    :members:
 

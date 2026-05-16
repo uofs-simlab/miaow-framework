@@ -6,7 +6,6 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
-#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -23,9 +22,6 @@ namespace miaow {
 namespace {
 
 constexpr const char* bmi_subprocess_error_prefix = "BMI subprocess error";
-constexpr const char* default_cpp_create_function = "bmi_model_create";
-constexpr const char* default_cpp_destroy_function = "bmi_model_destroy";
-
 // CAF config values require core meta objects before JSON IO
 void initialize_caf() {
     caf::init_global_meta_objects<caf::id_block::core_module>();
@@ -76,10 +72,6 @@ void require_non_empty_task_string(const std::string& value, const std::string& 
 
 // Enforce semantic constraints that JSON deserialization cannot express
 void validate_subprocess_task(const bmi::BmiSubprocessTaskSpec& subprocess_task) {
-    const bmi::BmiModuleConfig& module_config = subprocess_task.module_;
-    const DynamicBmiBackend backend =
-        bmi::require_dynamic_backend(module_config, "subprocess task");
-    require_non_empty_task_string(module_config.plugin_path_, "plugin_path");
     if (subprocess_task.pipeline_config_.empty()) {
         throw std::runtime_error(
             "subprocess task key 'pipeline_config' must be a non-empty "
@@ -87,14 +79,6 @@ void validate_subprocess_task(const bmi::BmiSubprocessTaskSpec& subprocess_task)
     }
     if (!subprocess_task.output_dir_.empty()) {
         require_non_empty_task_string(subprocess_task.output_name_, "output_name");
-    }
-    if (backend == DynamicBmiBackend::cpp) {
-        const std::string create_function =
-            module_config.cpp_create_function_.value_or(default_cpp_create_function);
-        const std::string destroy_function =
-            module_config.cpp_destroy_function_.value_or(default_cpp_destroy_function);
-        require_non_empty_task_string(create_function, "cpp_create_function");
-        require_non_empty_task_string(destroy_function, "cpp_destroy_function");
     }
 }
 
@@ -137,10 +121,9 @@ int main(int argc, char* argv[]) {
             task.task_output_dir_ = subprocess_task.output_dir_;
             task.task_output_name_ = subprocess_task.output_name_;
 
-            // Construct and execute the requested dynamic BMI backend
-            std::unique_ptr<::bmi::Bmi> model =
-                miaow::bmi::make_dynamic_bmi_model(subprocess_task.module_);
-            task_result = miaow::execute_bmi_pipeline(task, std::move(model));
+            // Config-constructible pipelines build all models in the child process
+            miaow::BmiPipeline pipeline(task);
+            task_result = pipeline.execute_bmi_lifecycle(task);
         } catch (...) {
             // Exceptions cannot propagate through the subprocess boundary
             task_result =

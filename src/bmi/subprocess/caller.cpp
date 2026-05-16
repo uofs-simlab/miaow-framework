@@ -11,7 +11,6 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 #define BOOST_PROCESS_USE_STD_FS
@@ -35,9 +34,16 @@ constexpr const char* bmi_temp_dir_prefix = "miaow_bmi_subprocess";
 std::atomic<unsigned long long> next_control_dir_id{0};
 
 struct BmiSubprocessPaths {
+    // Parent-written JSON payload consumed by the subprocess
     std::filesystem::path spec_path_;
+
+    // Child-written JSON task result consumed by the parent
     std::filesystem::path result_path_;
+
+    // Child stdout log used for diagnostics
     std::filesystem::path stdout_path_;
+
+    // Child stderr log used when subprocess setup or execution fails
     std::filesystem::path stderr_path_;
 };
 
@@ -66,18 +72,17 @@ std::filesystem::path make_control_dir(const Task& task) {
     return control_dir;
 }
 
-const bmi::BmiPipelineConfig& require_bmi_pipeline_config_argument(const Task& task) {
+const miaow::BmiPipelineConfig& require_bmi_pipeline_config_argument(const Task& task) {
     if (task.args_.size() != 1) {
         throw std::runtime_error(
             "subprocess BMI task must contain exactly one top-level BMI "
             "pipeline config argument");
     }
-    const bmi::BmiPipelineConfig* pipeline_config =
+    const miaow::BmiPipelineConfig* pipeline_config =
         caf::get_if<caf::config_value::dictionary>(&task.args_.front());
     if (pipeline_config == nullptr) {
         throw std::runtime_error(
-            "subprocess BMI task argument must be a top-level BMI pipeline "
-            "config dictionary");
+            "subprocess BMI task argument must be a BmiPipelineConfig");
     }
     return *pipeline_config;
 }
@@ -172,41 +177,26 @@ TaskResult execute_subprocess_task(const BmiSubprocessPaths& paths,
 
 // Write the parent-to-subprocess BMI task payload
 void write_subprocess_task(const std::filesystem::path& spec_path,
-                           DynamicBmiBackend backend, const std::string& plugin_path,
-                           const std::string& cpp_create_function,
-                           const std::string& cpp_destroy_function,
-                           const bmi::BmiPipelineConfig& pipeline_config,
+                           const miaow::BmiPipelineConfig& pipeline_config,
                            const Task& task) {
     bmi::BmiSubprocessTaskSpec subprocess_task;
     subprocess_task.pipeline_config_ = pipeline_config;
-    subprocess_task.module_.dynamic_backend_ = backend;
-    subprocess_task.module_.plugin_path_ = plugin_path;
     subprocess_task.output_dir_ =
         task.task_output_dir_.empty()
             ? ""
             : std::filesystem::absolute(task.task_output_dir_).lexically_normal().string();
     subprocess_task.output_name_ = task.task_output_name_;
 
-    if (backend == DynamicBmiBackend::cpp) {
-        subprocess_task.module_.cpp_create_function_ = cpp_create_function;
-        subprocess_task.module_.cpp_destroy_function_ = cpp_destroy_function;
-    }
-
     io::write_json_file(spec_path, subprocess_task);
 }
 
 } // namespace
 
-// Execute a dynamic BMI model in a subprocess and return the result
-TaskResult execute_dynamic_bmi_model_in_subprocess(DynamicBmiBackend backend,
-                                                   const std::string& plugin_path,
-                                                   const Task& task,
-                                                   const std::string& create_function,
-                                                   const std::string& destroy_function) {
-    if (plugin_path.empty()) {
-        throw std::runtime_error("dynamic BMI plugin path is empty");
-    }
-    const bmi::BmiPipelineConfig& pipeline_config =
+namespace bmi {
+
+// Execute one BMI pipeline lifecycle in a subprocess
+TaskResult execute_bmi_lifecycle_in_subprocess(const Task& task) {
+    const miaow::BmiPipelineConfig& pipeline_config =
         require_bmi_pipeline_config_argument(task);
 
     const std::string subprocess_path = configured_subprocess_path();
@@ -215,10 +205,11 @@ TaskResult execute_dynamic_bmi_model_in_subprocess(DynamicBmiBackend backend,
     }
 
     const BmiSubprocessPaths paths = make_subprocess_paths(task);
-    write_subprocess_task(paths.spec_path_, backend, plugin_path, create_function,
-                          destroy_function, pipeline_config, task);
+    write_subprocess_task(paths.spec_path_, pipeline_config, task);
 
     return execute_subprocess_task(paths, subprocess_path);
 }
+
+} // namespace bmi
 
 } // namespace miaow

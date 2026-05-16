@@ -59,10 +59,12 @@ foreach(run_directory IN LISTS run_directories)
         endif()
 
         file(GLOB task_directories LIST_DIRECTORIES true "${job_directory}/task_*")
-        if(task_directories)
-            message(FATAL_ERROR
-                "Unexpected task_* directory found under ${job_directory}")
-        endif()
+        foreach(task_directory IN LISTS task_directories)
+            if(IS_DIRECTORY "${task_directory}")
+                message(FATAL_ERROR
+                    "Unexpected task_* directory found under ${job_directory}")
+            endif()
+        endforeach()
     endforeach()
 endforeach()
 

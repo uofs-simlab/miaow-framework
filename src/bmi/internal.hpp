@@ -6,7 +6,6 @@
 #include <fstream>
 #include <map>
 #include <memory>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -22,42 +21,9 @@ namespace miaow::bmi {
 
 inline constexpr const char* bmi_file_prefix = "bmi_subprocess";
 
-using BmiPipelineConfig = caf::config_value::dictionary;
-
-// Shared data contracts
-struct BmiModuleConfig {
-    BmiModuleConfig() = default;
-
-    BmiModuleConfig(const caf::json_object& module, std::string_view error_prefix);
-
-    // Module name from the BMI pipeline config
-    std::string name_;
-
-    // Dynamic plugin backend for C++ and Fortran BMI modules
-    std::optional<DynamicBmiBackend> dynamic_backend_;
-
-    // Dynamic plugin library path
-    std::string plugin_path_;
-
-    // BMI initialization config path
-    std::string config_file_;
-
-    // C++ BMI factory function name
-    std::optional<std::string> cpp_create_function_;
-
-    // C++ BMI destructor function name
-    std::optional<std::string> cpp_destroy_function_;
-
-    // Map from target BMI input names to source output names or CSV headers
-    std::map<std::string, std::string> variables_names_map_;
-};
-
 struct BmiSubprocessTaskSpec {
     // BMI pipeline config argument forwarded through the subprocess boundary
-    BmiPipelineConfig pipeline_config_;
-
-    // Dynamic BMI module to execute in the subprocess
-    BmiModuleConfig module_;
+    miaow::BmiPipelineConfig pipeline_config_;
 
     // Task output directory written by the subprocess
     std::string output_dir_;
@@ -121,7 +87,7 @@ struct BmiCoupling {
 // Internal BMI model adapters
 class ForcingBmi : public ::bmi::Bmi {
   public:
-    explicit ForcingBmi(::bmi::Bmi& clock_model);
+    explicit ForcingBmi(::bmi::Bmi& target_model);
 
     ForcingBmi(const ForcingBmi&) = delete;
     ForcingBmi& operator=(const ForcingBmi&) = delete;
@@ -177,8 +143,8 @@ class ForcingBmi : public ::bmi::Bmi {
     std::size_t find_output_index(const std::string& name) const;
     void check_grid_id(int grid) const;
 
-    // Clock model supplies timestep constraints for the forcing source
-    ::bmi::Bmi& clock_model_;
+    // Receiving model supplies timestep constraints for the forcing stream
+    ::bmi::Bmi& target_model_;
 
     // Streaming CSV source positioned after the current forcing row
     std::ifstream csv_stream_;
@@ -212,121 +178,30 @@ class ForcingBmi : public ::bmi::Bmi {
     bool active_{false};
 };
 
-class BmiPipeline : public ::bmi::Bmi {
-  public:
-    explicit BmiPipeline(std::unique_ptr<::bmi::Bmi> supplied_model = nullptr);
-
-    BmiPipeline(const BmiPipeline&) = delete;
-    BmiPipeline& operator=(const BmiPipeline&) = delete;
-
-    ~BmiPipeline() override = default;
-
-    void Initialize(std::string config_file) override;
-    void Update() override;
-    void UpdateUntil(double time) override;
-    void Finalize() override;
-
-    std::string GetComponentName() override;
-    int GetInputItemCount() override;
-    int GetOutputItemCount() override;
-    std::vector<std::string> GetInputVarNames() override;
-    std::vector<std::string> GetOutputVarNames() override;
-    int GetVarGrid(std::string name) override;
-    std::string GetVarType(std::string name) override;
-    std::string GetVarUnits(std::string name) override;
-    int GetVarItemsize(std::string name) override;
-    int GetVarNbytes(std::string name) override;
-    std::string GetVarLocation(std::string name) override;
-    double GetCurrentTime() override;
-    double GetStartTime() override;
-    double GetEndTime() override;
-    std::string GetTimeUnits() override;
-    double GetTimeStep() override;
-    void GetValue(std::string name, void* dest) override;
-    void* GetValuePtr(std::string name) override;
-    void GetValueAtIndices(std::string name, void* dest, int* inds, int count) override;
-    void SetValue(std::string name, void* src) override;
-    void SetValueAtIndices(std::string name, int* inds, int count, void* src) override;
-    int GetGridRank(const int grid) override;
-    int GetGridSize(const int grid) override;
-    std::string GetGridType(const int grid) override;
-    void GetGridShape(const int grid, int* shape) override;
-    void GetGridSpacing(const int grid, double* spacing) override;
-    void GetGridOrigin(const int grid, double* origin) override;
-    void GetGridX(const int grid, double* x) override;
-    void GetGridY(const int grid, double* y) override;
-    void GetGridZ(const int grid, double* z) override;
-    int GetGridNodeCount(const int grid) override;
-    int GetGridEdgeCount(const int grid) override;
-    int GetGridFaceCount(const int grid) override;
-    void GetGridEdgeNodes(const int grid, int* edge_nodes) override;
-    void GetGridFaceEdges(const int grid, int* face_edges) override;
-    void GetGridFaceNodes(const int grid, int* face_nodes) override;
-    void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
-
-  private:
-    [[noreturn]] void throw_config_error(const std::string& message) const;
-    caf::json_object read_bmi_multi_params(const caf::json_object& global) const;
-    BmiModuleConfig
-    parse_single_module_config(const caf::json_object& bmi_multi_params) const;
-    std::size_t add_model_module(const BmiModuleConfig& module_config);
-    bool add_forcing_module(const caf::json_object& global, std::size_t model_module,
-                            std::size_t& forcing_module);
-    ::bmi::Bmi& output_model();
-    void reset_pipeline();
-    void build_couplings(std::size_t source_module, std::size_t target_module,
-                         const std::map<std::string, std::string>& variables_names_map);
-    void apply_coupling(const BmiCoupling& coupling);
-
-    // Optional model supplied by BmiSimulationUnit<T> for bmi_model modules
-    std::unique_ptr<::bmi::Bmi> supplied_model_;
-
-    // Modules constructed from dynamic plugins or internal adapters
-    std::vector<std::unique_ptr<::bmi::Bmi>> owned_modules_;
-
-    // Non-owning module update order
-    std::vector<::bmi::Bmi*> modules_;
-
-    // Per-module configuration string passed to BMI Initialize
-    std::vector<std::string> configs_;
-
-    // Scalar source-to-target transfers applied before target module updates
-    std::vector<BmiCoupling> couplings_;
-
-    // Module whose BMI surface is exposed by the pipeline
-    std::size_t output_module_{0};
-
-    // Number of modules that completed Initialize and need Finalize
-    std::size_t initialized_count_{0};
-};
-
 // CAF serialization hooks
 template <class Inspector>
 bool inspect(Inspector& inspector, BmiSubprocessTaskSpec& subprocess_task) {
     return inspector.object(subprocess_task)
         .fields(inspector.field("pipeline_config", subprocess_task.pipeline_config_),
-                inspector.field("backend", subprocess_task.module_.dynamic_backend_),
-                inspector.field("plugin_path", subprocess_task.module_.plugin_path_),
                 inspector.field("output_dir", subprocess_task.output_dir_),
-                inspector.field("output_name", subprocess_task.output_name_),
-                inspector.field("cpp_create_function",
-                                subprocess_task.module_.cpp_create_function_),
-                inspector.field("cpp_destroy_function",
-                                subprocess_task.module_.cpp_destroy_function_));
+                inspector.field("output_name", subprocess_task.output_name_));
 }
 
 // BMI pipeline config and module IO
 caf::json_object read_bmi_pipeline_config_file(const std::filesystem::path& path);
 
 caf::config_value::dictionary
-make_bmi_multi_global_config(const BmiModuleConfig& module_config,
+make_bmi_multi_global_config(const std::vector<BmiModuleSpec>& module_specs,
                              const std::string& forcing_file);
+
+BmiModuleSpec parse_bmi_module_spec(const caf::json_object& module,
+                                    std::string_view error_prefix);
 
 std::filesystem::path bmi_pipeline_config_file_path(const Task& task);
 
 std::vector<std::string> bmi_pipeline_config_artifact_paths(const Task& task);
 
-void write_bmi_pipeline_config_file(const BmiPipelineConfig& pipeline_config,
+void write_bmi_pipeline_config_file(const miaow::BmiPipelineConfig& pipeline_config,
                                     const std::filesystem::path& path);
 
 // Output CSV writing
@@ -350,28 +225,9 @@ make_subprocess_result_path(const std::filesystem::path& spec_path) {
     return spec_path.parent_path() / (std::string(bmi_file_prefix) + "_result.json");
 }
 
-// Dynamic module construction helpers
-inline DynamicBmiBackend require_dynamic_backend(const BmiModuleConfig& module_config,
-                                                 const std::string& context) {
-    if (!module_config.dynamic_backend_) {
-        throw std::runtime_error(context + " requires a dynamic BMI backend");
-    }
-    return *module_config.dynamic_backend_;
-}
-
 inline std::unique_ptr<::bmi::Bmi>
-make_dynamic_bmi_model(const BmiModuleConfig& module_config) {
-    const DynamicBmiBackend backend =
-        require_dynamic_backend(module_config, "BMI module config");
-    if (backend == DynamicBmiBackend::cpp) {
-        const std::string create_function =
-            module_config.cpp_create_function_.value_or("bmi_model_create");
-        const std::string destroy_function =
-            module_config.cpp_destroy_function_.value_or("bmi_model_destroy");
-        return std::make_unique<DynamicCppBmi>(module_config.plugin_path_, create_function,
-                                               destroy_function);
-    }
-    return std::make_unique<DynamicFortranBmi>(module_config.plugin_path_);
+make_dynamic_bmi_model(const BmiModuleSpec& module_spec) {
+    return std::make_unique<DynamicBmiModel>(module_spec);
 }
 
 } // namespace miaow::bmi

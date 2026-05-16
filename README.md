@@ -15,14 +15,16 @@ reality by using actor-based asynchronous orchestration so tasks run when they
 are ready, maximizing utilization across available resources.
 
 MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html),
-uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its actor orchestration backend, and employs the
-[Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) for Earth system model integration.
+uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its
+actor orchestration backend, and employs the
+[Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) for Earth
+system model integration.
 
 
 ## Quick start
 
 From the repository root, using [CMake](https://cmake.org/) (requires C++ and
-Fortran compilers plus Boost):
+Fortran compilers plus [Boost](https://www.boost.org/)):
 
 ```sh
 cmake -S . -B build
@@ -46,9 +48,10 @@ cd ../04_noah_owp
 
 ## Documentation
 
-Generated API documentation uses [Doxygen](https://www.doxygen.nl/) for C++ docstring extraction and [Sphinx](https://www.sphinx-doc.org/) with
-[Breathe](https://www.breathe-doc.org/) for HTML rendering. Doxygen must be installed separately and available
-on `PATH`.
+Generated API documentation uses [Doxygen](https://www.doxygen.nl/) for C++
+docstring extraction and [Sphinx](https://www.sphinx-doc.org/) with
+[Breathe](https://www.breathe-doc.org/) for HTML rendering. Doxygen must be
+installed separately and available on `PATH`.
 
 You can build the docs locally from a dedicated Python environment:
 
@@ -59,7 +62,8 @@ rm -rf docs/_build/html docs/_build/doctrees
 docs/.venv/bin/sphinx-build -b html -d docs/_build/doctrees docs docs/_build/html
 ```
 
-The generated HTML entry point is `docs/_build/html/index.html`. Currently, the documentation is deployed from GitHub Actions to
+The generated HTML entry point is `docs/_build/html/index.html`. Currently, the
+documentation is deployed from GitHub Actions to
 [https://tjbmontoya.com/miaow-framework/](https://tjbmontoya.com/miaow-framework/).
 
 ## Orchestration model
@@ -111,9 +115,6 @@ Key types in `include/miaow.hpp`:
 - `Runtime`: submits jobs and returns non-blocking `JobHandle`
 - `JobRecord`: run ID, job ID, task records, and job runtime
 
-For BMI models, use `miaow::BmiSimulationUnit<BmiModelType>` from
-`include/miaow_bmi.hpp`.
-
 ## Code structure
 
 ```text
@@ -129,16 +130,16 @@ src/
     internal.hpp         # core-private actor declarations and JobState
 
   bmi/
-    execute.cpp          # BMI pipeline execution bridge
-    dynamic.cpp          # DynamicBmi adapter for C++/Fortran plugins
+    execute.cpp          # BMI pipeline lifecycle execution
+    dynamic.cpp          # DynamicBmiModel adapter for C++/Fortran plugins
     forcing.cpp          # streaming external BMI forcing CSV source
-    output.cpp           # task-level BMI output CSV writer
+    io.cpp               # BMI config, artifact, and output CSV helpers
     pipeline.cpp         # ordered BMI module pipeline and coupling application
     realization.cpp      # BMI realization parsing, task, and registration helpers
     subprocess/
-      caller.cpp         # parent-side dynamic BMI subprocess launcher
-      runner.cpp         # dynamic BMI subprocess executable entry point
-    internal.hpp         # BMI-private subprocess, forcing, output, and pipeline types
+      caller.cpp         # parent-side BMI subprocess launcher
+      runner.cpp         # BMI subprocess executable entry point
+    internal.hpp         # BMI-private subprocess, forcing, and output types
 
   io/
     cli.cpp              # runtime command-line option parsing
@@ -166,40 +167,128 @@ examples/
 
 ## Basic Model Interface (BMI) integration
 
-MIAOW runs BMI work from top-level pipeline configs. A BMI task carries one
-argument:
+Use `BmiSimulationUnit<BmiModelType>` from `include/miaow_bmi.hpp` to run BMI
+work. The simulation unit creates the task-level model or pipeline, executes the
+BMI lifecycle, writes artifacts, and returns a `TaskResult`.
 
-```text
-task.args_[0] = top-level BMI pipeline config dictionary
+There are three common ways to use it:
+
+- `BmiSimulationUnit<YourModel>` runs one linked BMI model per task, where
+  `YourModel` is a subtype of `miaow::bmi_api::Bmi` defined in the code.
+- `BmiSimulationUnit<DynamicBmiModel>` runs one BMI model loaded from a dynamic
+  plugin per task.
+- `BmiSimulationUnit<BmiPipeline>` runs a complete pipeline described by the
+  task config, which may be obtained from partitioning of a NextGen-style realization file.
+
+Each BMI task carries one `BmiPipelineConfig`, which is a named
+`caf::config_value::dictionary` using MIAOW's BMI pipeline schema. Task
+arguments are `caf::config_value` entries, so the dictionary is wrapped before
+being stored in the task:
+
+```cpp
+task.args_[0] = caf::config_value{pipeline_config};
 ```
 
-During execution, MIAOW writes that dictionary beside the task results as
-`realization_<task_output_name>.json` and passes that file path to
-`BmiPipeline::Initialize(...)`. With one model, the pipeline exposes that
-model's BMI surface:
+During execution, MIAOW writes that `BmiPipelineConfig` beside the task results
+as `<task_output_name>.json`, which serves as the top-level config file used for
+the BMI pipeline lifecycle:
 
-1. `Initialize(config_path)`
+1. `Initialize(<task_output_name>.json)`
 2. zero or more `Update()` calls
 3. `Finalize()`
 
-Direct static examples build pipeline configs with `make_bmi_model_pipeline_config(...)`.
-Those pipeline configs use a `bmi_model` module, which means "the BMI model
-supplied by `BmiSimulationUnit<T>`". Realization-driven BMI examples use
-`RealizationConfig(path)` to partition a global NextGen-style realization into
-one resolved dictionary per catchment. `build_bmi_realization_tasks(...)`
-registers one `BmiPipelineSimulationUnit` and builds one task per feature task
-config.
+Within the `Initialize(...)`, `Update()`, and `Finalize()` calls, the pipeline
+calls the corresponding BMI methods on each module in the pipeline. For
+single-model pipelines, this is just one module.
 
-Forcing is represented in the pipeline config as `global.forcing`, then normalized
-into an internal `ForcingBmi` module. The forcing module is always appended
-after the realization module; when no forcing is configured, it is initialized
-with an empty config and acts as a no-op. With configured forcing, `ForcingBmi`
-reads a CSV file and exposes data columns as BMI outputs. `BmiPipeline` derives
-explicit scalar couplings from each module's `variables_names_map`, applies
-those couplings immediately before the target model updates, and advances the
-forcing source later in the same ordered update loop.
+### Executing a static BMI model
+
+Use `BmiSimulationUnit<YourModel>` when the BMI model class is linked into the
+executable. The simulation unit constructs one model object per task. The task
+config comes from `make_bmi_model_config(...)`, which records the model
+initialization file plus optional forcing and variable mapping.
+
+```cpp
+miaow::SimulationUnitRegistry registry;
+const miaow::SimulationUnitId heat =
+    registry.add<miaow::BmiSimulationUnit<BmiHeat>>();
+
+const miaow::BmiPipelineConfig pipeline_config =
+    miaow::make_bmi_model_config(heat_config);
+const std::vector<miaow::Task> tasks{{heat, caf::config_value{pipeline_config}}};
+```
+
+At execution time, MIAOW wraps the model in `BmiPipeline` so the same lifecycle,
+forcing, output writing, and artifact tracking are used for static and dynamic
+BMI work.
+
+### Executing a dynamic BMI model
+
+Use `BmiSimulationUnit<DynamicBmiModel>` when the task should run one BMI model
+loaded from a plugin library. `BmiModuleSpec` describes how to load the plugin.
+The task config still comes from `make_bmi_model_config(...)` because the task
+runs one model.
+
+```cpp
+miaow::BmiModuleSpec module;
+module.name_ = "bmi_fortran";
+module.dynamic_backend_ = miaow::DynamicBmiBackend::fortran;
+module.plugin_path_ = plugin_path;
+
+miaow::SimulationUnitRegistry registry;
+const miaow::SimulationUnitId model =
+    registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(module);
+
+const miaow::BmiPipelineConfig pipeline_config =
+    miaow::make_bmi_model_config(init_config);
+const std::vector<miaow::Task> tasks{{model, caf::config_value{pipeline_config}}};
+```
+
+Use the C++ backend for plugins that export `bmi_model_create()` and
+`bmi_model_destroy(...)`. Use the Fortran backend for plugins that export
+`register_bmi(void**)` for the linked procedural BMI bridge.
+
+### Executing a dynamic BMI pipeline
+
+Use `BmiSimulationUnit<BmiPipeline>` when the task's `BmiPipelineConfig`
+describes the model modules directly. This is the path used by realization
+workflows and by pipelines with more than one model module.
+
+```cpp
+miaow::PartitionedBmiRealization realization(realization_path);
+
+miaow::SimulationUnitRegistry registry;
+const miaow::SimulationUnitId pipeline =
+    registry.add<miaow::BmiSimulationUnit<miaow::BmiPipeline>>(
+        miaow::BmiExecutionMode::subprocess);
+
+const std::vector<miaow::Task> tasks =
+    miaow::build_bmi_realization_tasks(realization, pipeline);
+```
+
+`PartitionedBmiRealization` reads a NextGen-style realization and produces one
+`BmiPipelineConfig` per feature. `build_bmi_realization_tasks(...)` turns those
+feature configs into MIAOW tasks for the registered pipeline unit.
+
+Subprocess mode runs one BMI lifecycle in a child process, which is useful for
+BMI models that are not safe to run concurrently in one process. The Noah
+example uses subprocess mode.
+
+For hand-built dynamic pipelines, pass a vector of `BmiModuleSpec` entries to
+`make_bmi_pipeline_config(...)`. Each module spec carries the module name,
+backend, plugin path, initialization config, and optional variable map.
 
 ### Reading forcing data
+
+Forcing is represented in the pipeline config as `global.forcing`, then
+normalized into an internal BMI forcing module. The forcing module is always
+appended after the realization module; when no forcing is configured, it is
+initialized with an empty config and acts as a no-op. With configured forcing,
+the module reads a CSV file and exposes data columns as BMI outputs.
+`BmiPipeline` derives explicit scalar couplings from each module's
+`variables_names_map`, applies those couplings immediately before the target
+model updates, and advances the forcing source later in the same ordered update
+loop.
 
 The BMI pipeline config forcing object uses the following fields:
 
@@ -207,7 +296,6 @@ The BMI pipeline config forcing object uses the following fields:
 | --- | --- |
 | `provider` | `CsvFile` for resolved task-local forcing |
 | `file` | Path to the CSV forcing file |
-| `clock_module` | Module index that supplies timestep metadata |
 
 Each BMI module may include `variables_names_map` in its `params` object. The
 map is interpreted as `BMI input variable -> CSV header`.
@@ -219,8 +307,9 @@ Explicit map entries override that identity behaviour completely.
 MIAOW's external forcing reader supports CSV only. The file must define a
 `time` or `Time` column plus all required numeric data columns. Supported
 timestamp formats are `YYYY-MM-DD HH:MM:SS` and `YYYY/MM/DD HH:MM:SS`.
-Forcing rows are streamed as the model advances; each row-to-row timestamp
-delta must match the BMI model timestep after unit normalization.
+MIAOW treats the first forcing row as the model-start forcing values. Later
+forcing rows are streamed as the model advances; each row-to-row timestamp
+delta must match the receiving BMI model timestep after unit normalization.
 
 Exhausting the forcing data before the model's `end_time` fails the task with a
 `Forcing alignment error`; forcing rows beyond `end_time` are silently ignored.
@@ -230,57 +319,8 @@ run, a 512-day run whose 1-day forcing is exhausted early (deliberate
 failure), and a 1-day run that stops well before its 512-day forcing ends.
 
 In global NextGen-style realization files, `CsvPerFeature` forcing enables
-MIAOW-managed CSV forcing for each catchment. Partitioning resolves that global
+MIAOW-managed CSV forcing for each feature. Partitioning resolves that global
 forcing entry to per-task `CsvFile` forcing.
-
-### Dynamically linking BMI models
-
-The `miaow::DynamicBmi<Backend>` template adapts a dynamically loaded BMI
-plugin to MIAOW's C++ BMI interface. The plugin path is supplied at runtime and
-is passed directly to the platform dynamic loader. The plugin backend is
-explicit in the model type:
-
-- `miaow::DynamicCppBmi` (alias for `miaow::DynamicBmi<DynamicBmiBackend::cpp>`)
-  loads a C++ plugin that exports `bmi_model_create()` and
-  `bmi_model_destroy(...)`.
-- `miaow::DynamicFortranBmi` (alias for
-  `miaow::DynamicBmi<DynamicBmiBackend::fortran>`) loads a Fortran plugin that
-  exports `register_bmi(void**)` for the linked
-  [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
-  A Fortran `unregister_bmi(void**)` symbol is used when present.
-
-Direct dynamic BMI registration uses the same `BmiSimulationUnit` wrapper as
-statically linked C++ BMI models. These tasks use `bmi_model` pipeline configs
-because the dynamic model is supplied by the registered simulation unit:
-
-```cpp
-const miaow::SimulationUnitId my_dynamic_bmi_model =
-    registry.add<miaow::BmiSimulationUnit<miaow::DynamicCppBmi>>(
-        plugin_path);
-```
-
-Dynamic BMI models can also run tasks in a subprocess by selecting subprocess
-execution at registration:
-
-```cpp
-const miaow::SimulationUnitId my_isolated_bmi_model =
-    registry.add<miaow::BmiSimulationUnit<miaow::DynamicFortranBmi>>(
-        plugin_path,
-        miaow::BmiExecutionMode::subprocess);
-```
-
-Subprocess mode is limited to direct dynamic BMI tasks with one supplied
-`bmi_model` module. Multi-module `BmiPipelineSimulationUnit` pipeline configs run
-in-process for now. The parent writes a JSON spec, launches the CMake-configured
-`miaow_subprocess` executable with Boost.Process, and the subprocess uses the
-same BMI pipeline config execution path. The parent reads a serialized JSON
-`TaskResult` from `bmi_subprocess_*_result.json`. If the result file is missing,
-the parent includes the captured stderr output in a failed `TaskResult`. Set
-`MIAOW_SUBPROCESS_PATH` to override the executable path at runtime.
-
-Dynamic C++ and Fortran loading are exercised together in the
-`03_dynamic_bmi` example, which prints the resolved C++ and Fortran plugin
-library paths before running both models in one job.
 
 ## Diagnostics and artifacts
 
@@ -295,23 +335,22 @@ not change task statuses. If
 └─ run_<run_id>/
    └─ job_<job_id>/
       ├─ job_record.json
-      ├─ realization_<feature_id or task_<task_id>>.json
+      ├─ <feature_id or task_<task_id>>.json
       └─ results/
          └─ <feature_id or task_<task_id>>.csv
 ```
 
 Persisted run directories start at `run_0`. When an output root already
 contains run directories, the next run uses the largest existing run ID plus
-one.
+one so as not to overwrite any existing output.
 
 Each task receives `Task::task_output_dir_` for the job `results/` directory
 and `Task::task_output_name_` for task-specific artifact filenames. BMI tasks
 write the resolved BMI pipeline config in the job directory and one CSV file
 per task under `results/`, with BMI output variables as columns. They report
-job-relative filenames such as `realization_cat-552.json` and
-`results/cat-552.csv` in `TaskResult::artifact_paths_`. `job_record.json`
-records those paths under each task record's `result` field and records each
-task's descriptive
+job-relative filenames such as `cat-552.json` and `results/cat-552.csv` in
+`TaskResult::artifact_paths_`. `job_record.json` records those paths under each
+task record's `result` field and records each task's descriptive
 `Task::metadata_`, but it does not embed artifact file contents. If a task has
 non-empty `metadata_["feature_id"]`, that value becomes the output file stem;
 otherwise the runtime uses `task_<task_id>`. Output stems must be unique within
@@ -334,7 +373,7 @@ Top-level CMake options:
 | `-DMIAOW_CAF_PROVIDER` | `auto` | CAF provider: `system`, `fetch`, or `auto` |
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | CAF version used by `find_package` and `FetchContent` |
 | `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
-| `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Optional explicit path to a valid local [`NOAA-OWP/iso_c_fortran_bmi`](https://github.com/NOAA-OWP/iso_c_fortran_bmi) checkout; when empty, CMake looks for `iso_c_fortran_bmi` in `${MIAOW_DEFAULT_MODEL_BASE_DIR}/` and fetches into that location if missing |
+| `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Optional explicit path to a valid local `NOAA-OWP/iso_c_fortran_bmi` checkout; when empty, CMake looks for `iso_c_fortran_bmi` in `${MIAOW_DEFAULT_MODEL_BASE_DIR}/` and fetches into that location if missing |
 
 Provider values are interpreted as follows:
 
@@ -364,17 +403,21 @@ Run examples from their own `examples/<example_name>` directory:
   per-task forcing, including matched, short, and long forcing cases
 - `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration
   using the CSDMS heat examples
-- `examples/04_noah_owp`: Noah-OWP-Modular run using a dynamic Fortran BMI
-  subprocess and one MIAOW task per staged catchment described by a
-  NextGen-style realization. The plugin is compiled with `NGEN_ACTIVE`,
+- `examples/04_noah_owp`: [Noah-OWP-Modular](https://github.com/NOAA-OWP/noah-owp-modular)
+  run using subprocess pipeline execution and one MIAOW task per staged
+  catchment feature described by a NextGen-style realization. Noah-OWP runs in
+  a subprocess because the model is not thread safe. The plugin is compiled
+  with `NGEN_ACTIVE`,
   `NGEN_OUTPUT_ACTIVE`, and `NGEN_FORCING_ACTIVE` defined so Noah-OWP receives
   forcing through MIAOW's BMI `SetValue` path and writes outputs through
   MIAOW's BMI `GetValue` pipeline when `--output_root` is set.
 
-The Noah-OWP example uses staged Bow inputs by default:
+The Noah-OWP example provides a very small smoke test configuration with three
+catchments from the Bow River basin, consisting of the following files produced using
+[SYMFLUENCE](https://github.com/symfluence-org/SYMFLUENCE):
 `data/configs/cat-*.input`, `data/forcings/*_forcing.csv`,
 `data/parameters/*`, `data/catchments.geojson`, and
-`data/realization_config.json`. Regenerate that fixture manually from the
+`data/realization_config.json`. Regenerate those files manually from the
 repository root with:
 
 ```sh
@@ -435,7 +478,7 @@ these errors, print the message, and exit with status `1`.
 
 ## Limitations
 
-- Distributed runs are not currently supported.
+- Distributed-memory parallelism is not currently supported.
 - Target workloads are embarrassingly parallel tasks without inter-task communication.
 - Windows is not supported and there is no plan to add such support.
 

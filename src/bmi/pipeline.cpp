@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -13,18 +14,156 @@
 
 #include <caf/json.hpp>
 
-namespace miaow::bmi {
+namespace miaow {
 
-// Construct a BMI pipeline from the supplied model
-BmiPipeline::BmiPipeline(std::unique_ptr<::bmi::Bmi> supplied_model)
+namespace internal_bmi = miaow::bmi;
+
+using internal_bmi::bmi_pipeline_config_artifact_paths;
+using internal_bmi::bmi_pipeline_config_file_path;
+using internal_bmi::BmiCoupling;
+using internal_bmi::ForcingBmi;
+using internal_bmi::make_dynamic_bmi_model;
+using internal_bmi::parse_bmi_module_spec;
+using internal_bmi::read_bmi_pipeline_config_file;
+using internal_bmi::write_bmi_pipeline_config_file;
+
+namespace {
+
+// Validate the public task contract before touching files or BMI lifecycle
+const miaow::BmiPipelineConfig& require_bmi_pipeline_config_argument(const Task& task) {
+    if (task.args_.size() != 1) {
+        throw std::runtime_error("BMI pipeline config error: task must contain exactly one "
+                                 "BmiPipelineConfig argument");
+    }
+
+    const miaow::BmiPipelineConfig* pipeline_config =
+        caf::get_if<caf::config_value::dictionary>(&task.args_.front());
+    if (pipeline_config == nullptr) {
+        throw std::runtime_error(
+            "BMI pipeline config error: first task argument must be a BmiPipelineConfig");
+    }
+    return *pipeline_config;
+}
+
+} // namespace
+
+class BmiPipeline::Impl : public bmi_api::Bmi {
+  public:
+    explicit Impl(std::unique_ptr<::bmi::Bmi> supplied_model = nullptr);
+    explicit Impl(const Task& task, std::unique_ptr<::bmi::Bmi> supplied_model = nullptr);
+
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
+
+    ~Impl() override = default;
+
+    void Initialize(std::string config_file) override;
+    void Update() override;
+    void UpdateUntil(double time) override;
+    void Finalize() override;
+
+    std::string GetComponentName() override;
+    int GetInputItemCount() override;
+    int GetOutputItemCount() override;
+    std::vector<std::string> GetInputVarNames() override;
+    std::vector<std::string> GetOutputVarNames() override;
+    int GetVarGrid(std::string name) override;
+    std::string GetVarType(std::string name) override;
+    std::string GetVarUnits(std::string name) override;
+    int GetVarItemsize(std::string name) override;
+    int GetVarNbytes(std::string name) override;
+    std::string GetVarLocation(std::string name) override;
+    double GetCurrentTime() override;
+    double GetStartTime() override;
+    double GetEndTime() override;
+    std::string GetTimeUnits() override;
+    double GetTimeStep() override;
+    void GetValue(std::string name, void* dest) override;
+    void* GetValuePtr(std::string name) override;
+    void GetValueAtIndices(std::string name, void* dest, int* inds, int count) override;
+    void SetValue(std::string name, void* src) override;
+    void SetValueAtIndices(std::string name, int* inds, int count, void* src) override;
+    int GetGridRank(const int grid) override;
+    int GetGridSize(const int grid) override;
+    std::string GetGridType(const int grid) override;
+    void GetGridShape(const int grid, int* shape) override;
+    void GetGridSpacing(const int grid, double* spacing) override;
+    void GetGridOrigin(const int grid, double* origin) override;
+    void GetGridX(const int grid, double* x) override;
+    void GetGridY(const int grid, double* y) override;
+    void GetGridZ(const int grid, double* z) override;
+    int GetGridNodeCount(const int grid) override;
+    int GetGridEdgeCount(const int grid) override;
+    int GetGridFaceCount(const int grid) override;
+    void GetGridEdgeNodes(const int grid, int* edge_nodes) override;
+    void GetGridFaceEdges(const int grid, int* face_edges) override;
+    void GetGridFaceNodes(const int grid, int* face_nodes) override;
+    void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
+
+    std::string config_path_string() const;
+    std::vector<std::string> artifact_paths() const;
+
+  private:
+    [[noreturn]] void throw_config_error(const std::string& message) const;
+    caf::json_object read_bmi_multi_params(const caf::json_object& global) const;
+    BmiModuleSpec parse_single_module_spec(const caf::json_object& bmi_multi_params) const;
+    std::size_t add_model_module(const BmiModuleSpec& module_spec);
+    bool add_forcing_module(const caf::json_object& global, std::size_t model_module,
+                            std::size_t& forcing_module);
+    ::bmi::Bmi& output_model();
+    void reset_pipeline();
+    void build_couplings(std::size_t source_module, std::size_t target_module,
+                         const std::map<std::string, std::string>& variables_names_map);
+    void apply_coupling(const BmiCoupling& coupling);
+
+    // Optional supplied model owned by the pipeline
+    std::unique_ptr<::bmi::Bmi> supplied_model_;
+
+    // Path to the BmiPipelineConfig JSON file read by BMI Initialize
+    std::filesystem::path config_path_;
+
+    // Pipeline config artifacts relative to the job directory
+    std::vector<std::string> artifact_paths_;
+
+    // Modules constructed from dynamic plugins or internal adapters
+    std::vector<std::unique_ptr<::bmi::Bmi>> owned_modules_;
+
+    // Module pointers ordered by pipeline execution
+    std::vector<::bmi::Bmi*> modules_;
+
+    // Per-module configuration string passed to BMI Initialize
+    std::vector<std::string> configs_;
+
+    // Scalar source-to-target transfers applied before target module updates
+    std::vector<BmiCoupling> couplings_;
+
+    // Module whose BMI surface is exposed by the pipeline
+    std::size_t output_module_{0};
+
+    // Number of modules that completed Initialize and need Finalize
+    std::size_t initialized_count_{0};
+};
+
+// Construct a BMI pipeline from an already supplied model
+BmiPipeline::Impl::Impl(std::unique_ptr<::bmi::Bmi> supplied_model)
     : supplied_model_(std::move(supplied_model)) {}
 
-void BmiPipeline::throw_config_error(const std::string& message) const {
+BmiPipeline::Impl::Impl(const Task& task, std::unique_ptr<::bmi::Bmi> supplied_model)
+    : supplied_model_(std::move(supplied_model)),
+      config_path_(bmi_pipeline_config_file_path(task)),
+      artifact_paths_(bmi_pipeline_config_artifact_paths(task)) {
+    // Write the BmiPipelineConfig because BMI Initialize accepts a file path
+    write_bmi_pipeline_config_file(require_bmi_pipeline_config_argument(task),
+                                   config_path_);
+}
+
+void BmiPipeline::Impl::throw_config_error(const std::string& message) const {
     io::throw_config_error("BMI pipeline config error: ", message);
 }
 
 // Parse the single bmi_multi formulation used by the current pipeline schema
-caf::json_object BmiPipeline::read_bmi_multi_params(const caf::json_object& global) const {
+caf::json_object
+BmiPipeline::Impl::read_bmi_multi_params(const caf::json_object& global) const {
     const caf::json_array formulations = global.value("formulations").to_array();
     if (formulations.size() != 1) {
         throw_config_error("BMI pipeline config formulations must contain one entry");
@@ -39,8 +178,8 @@ caf::json_object BmiPipeline::read_bmi_multi_params(const caf::json_object& glob
 }
 
 // The BMI pipeline currently supports a single module per bmi_multi formulation
-BmiModuleConfig
-BmiPipeline::parse_single_module_config(const caf::json_object& bmi_multi_params) const {
+BmiModuleSpec BmiPipeline::Impl::parse_single_module_spec(
+    const caf::json_object& bmi_multi_params) const {
     const caf::json_array modules = bmi_multi_params.value("modules").to_array();
 
     // The current pipeline schema supports one model module
@@ -48,31 +187,33 @@ BmiPipeline::parse_single_module_config(const caf::json_object& bmi_multi_params
         throw_config_error("bmi_multi modules must contain one entry");
     }
 
-    return BmiModuleConfig((*modules.begin()).to_object(), "BMI pipeline config error: ");
+    return parse_bmi_module_spec((*modules.begin()).to_object(),
+                                 "BMI pipeline config error: ");
 }
 
 // Add a model module to the pipeline and return its module index
-std::size_t BmiPipeline::add_model_module(const BmiModuleConfig& module_config) {
-    if (!module_config.dynamic_backend_) {
+std::size_t BmiPipeline::Impl::add_model_module(const BmiModuleSpec& module_spec) {
+    if (!module_spec.dynamic_backend_) {
+        // supplied_model modules are bound to the model passed by the caller
         if (!supplied_model_) {
-            throw_config_error("module 'bmi_model' requires a supplied BMI model");
+            throw_config_error("module 'supplied_model' requires a supplied BMI model");
         }
         modules_.push_back(supplied_model_.get());
     } else {
-        owned_modules_.push_back(make_dynamic_bmi_model(module_config));
+        // Dynamic modules are constructed from plugin metadata in the config
+        owned_modules_.push_back(make_dynamic_bmi_model(module_spec));
         modules_.push_back(owned_modules_.back().get());
     }
 
-    configs_.push_back(module_config.config_file_);
+    configs_.push_back(module_spec.config_file_);
     return modules_.size() - 1;
 }
 
 // Add the forcing module and return whether forcing is active
-bool BmiPipeline::add_forcing_module(const caf::json_object& global,
-                                     std::size_t model_module,
-                                     std::size_t& forcing_module) {
+bool BmiPipeline::Impl::add_forcing_module(const caf::json_object& global,
+                                           std::size_t model_module,
+                                           std::size_t& forcing_module) {
     std::string forcing_file;
-    std::size_t clock_module = model_module;
     const caf::json_value forcing_value = global.value("forcing");
     const bool has_forcing = !forcing_value.is_undefined();
     if (has_forcing) {
@@ -83,23 +224,20 @@ bool BmiPipeline::add_forcing_module(const caf::json_object& global,
             throw_config_error("unsupported forcing provider '" + provider + "'");
         }
         forcing_file = io::trim(std::string(forcing.value("file").to_string()));
-        clock_module = static_cast<std::size_t>(forcing.value("clock_module").to_integer());
-        if (clock_module >= modules_.size()) {
-            throw std::runtime_error("BMI pipeline error: forcing clock module "
-                                     "is invalid");
-        }
     }
 
     // The forcing module is always last; empty config makes it a no-op
     forcing_module = modules_.size();
-    owned_modules_.push_back(std::make_unique<ForcingBmi>(*modules_.at(clock_module)));
+
+    // The receiving model clock defines CSV timestep alignment
+    owned_modules_.push_back(std::make_unique<ForcingBmi>(*modules_.at(model_module)));
     modules_.push_back(owned_modules_.back().get());
     configs_.push_back(forcing_file);
     return has_forcing;
 }
 
 // Clear pipeline state to prepare for the next pipeline config initialization
-void BmiPipeline::reset_pipeline() {
+void BmiPipeline::Impl::reset_pipeline() {
     owned_modules_.clear();
     modules_.clear();
     configs_.clear();
@@ -109,7 +247,7 @@ void BmiPipeline::reset_pipeline() {
 }
 
 // Build scalar couplings from source outputs to target inputs
-void BmiPipeline::build_couplings(
+void BmiPipeline::Impl::build_couplings(
     std::size_t source_module, std::size_t target_module,
     const std::map<std::string, std::string>& variables_names_map) {
     ::bmi::Bmi& source_model = *modules_.at(source_module);
@@ -180,14 +318,14 @@ void BmiPipeline::build_couplings(
     }
 }
 
-void BmiPipeline::Initialize(std::string config_file) {
+void BmiPipeline::Impl::Initialize(std::string config_file) {
     // Reset any previous BMI lifecycle before reading the next pipeline config
     if (initialized_count_ > 0) {
         Finalize();
     }
     reset_pipeline();
 
-    // Read the top-level pipeline config and select the bmi_multi formulation
+    // Read the BmiPipelineConfig and select the bmi_multi formulation
     const caf::json_object root = read_bmi_pipeline_config_file(config_file);
     const caf::json_object global = root.value("global").to_object();
     const caf::json_object bmi_multi_params = read_bmi_multi_params(global);
@@ -195,8 +333,8 @@ void BmiPipeline::Initialize(std::string config_file) {
         static_cast<std::size_t>(bmi_multi_params.value("output_module").to_integer());
 
     // Add the configured model module before attaching optional forcing
-    const BmiModuleConfig module_config = parse_single_module_config(bmi_multi_params);
-    const std::size_t model_module = add_model_module(module_config);
+    const BmiModuleSpec module_spec = parse_single_module_spec(bmi_multi_params);
+    const std::size_t model_module = add_model_module(module_spec);
 
     if (output_module_ >= modules_.size()) {
         throw std::runtime_error("BMI pipeline error: output module is invalid");
@@ -213,11 +351,11 @@ void BmiPipeline::Initialize(std::string config_file) {
 
     if (has_forcing) {
         // Couplings are built after initialization so BMI metadata is available
-        build_couplings(forcing_module, model_module, module_config.variables_names_map_);
+        build_couplings(forcing_module, model_module, module_spec.variables_names_map_);
     }
 }
 
-void BmiPipeline::apply_coupling(const BmiCoupling& coupling) {
+void BmiPipeline::Impl::apply_coupling(const BmiCoupling& coupling) {
     double source_value = 0.0;
     modules_.at(coupling.source_module_)
         ->GetValue(coupling.source_variable_, &source_value);
@@ -244,7 +382,7 @@ void BmiPipeline::apply_coupling(const BmiCoupling& coupling) {
                              coupling.target_variable_ + "'");
 }
 
-void BmiPipeline::Update() {
+void BmiPipeline::Impl::Update() {
     // Each module receives its coupled inputs immediately before it advances
     for (std::size_t module_index = 0; module_index < modules_.size(); ++module_index) {
         for (const BmiCoupling& coupling : couplings_) {
@@ -256,14 +394,14 @@ void BmiPipeline::Update() {
     }
 }
 
-void BmiPipeline::UpdateUntil(double time) {
+void BmiPipeline::Impl::UpdateUntil(double time) {
     // Repeated pipeline updates preserve coupling order for each step
     while (GetCurrentTime() < time) {
         Update();
     }
 }
 
-void BmiPipeline::Finalize() {
+void BmiPipeline::Impl::Finalize() {
     std::exception_ptr first_exception;
 
     // Finalize modules in update order so lifecycle order is explicit
@@ -286,156 +424,346 @@ void BmiPipeline::Finalize() {
 }
 
 // The pipeline exposes one selected module as its BMI surface
-::bmi::Bmi& BmiPipeline::output_model() {
+::bmi::Bmi& BmiPipeline::Impl::output_model() {
     return *modules_.at(output_module_);
 }
 
-std::string BmiPipeline::GetComponentName() {
+std::string BmiPipeline::Impl::GetComponentName() {
     return output_model().GetComponentName();
 }
 
-int BmiPipeline::GetInputItemCount() {
+int BmiPipeline::Impl::GetInputItemCount() {
     return output_model().GetInputItemCount();
 }
 
-int BmiPipeline::GetOutputItemCount() {
+int BmiPipeline::Impl::GetOutputItemCount() {
     return output_model().GetOutputItemCount();
 }
 
-std::vector<std::string> BmiPipeline::GetInputVarNames() {
+std::vector<std::string> BmiPipeline::Impl::GetInputVarNames() {
     return output_model().GetInputVarNames();
 }
 
-std::vector<std::string> BmiPipeline::GetOutputVarNames() {
+std::vector<std::string> BmiPipeline::Impl::GetOutputVarNames() {
     return output_model().GetOutputVarNames();
 }
 
-int BmiPipeline::GetVarGrid(std::string name) {
+int BmiPipeline::Impl::GetVarGrid(std::string name) {
     return output_model().GetVarGrid(name);
 }
 
-std::string BmiPipeline::GetVarType(std::string name) {
+std::string BmiPipeline::Impl::GetVarType(std::string name) {
     return output_model().GetVarType(name);
 }
 
-std::string BmiPipeline::GetVarUnits(std::string name) {
+std::string BmiPipeline::Impl::GetVarUnits(std::string name) {
     return output_model().GetVarUnits(name);
 }
 
-int BmiPipeline::GetVarItemsize(std::string name) {
+int BmiPipeline::Impl::GetVarItemsize(std::string name) {
     return output_model().GetVarItemsize(name);
 }
 
-int BmiPipeline::GetVarNbytes(std::string name) {
+int BmiPipeline::Impl::GetVarNbytes(std::string name) {
     return output_model().GetVarNbytes(name);
 }
 
-std::string BmiPipeline::GetVarLocation(std::string name) {
+std::string BmiPipeline::Impl::GetVarLocation(std::string name) {
     return output_model().GetVarLocation(name);
 }
 
-double BmiPipeline::GetCurrentTime() {
+double BmiPipeline::Impl::GetCurrentTime() {
     return output_model().GetCurrentTime();
 }
 
-double BmiPipeline::GetStartTime() {
+double BmiPipeline::Impl::GetStartTime() {
     return output_model().GetStartTime();
 }
 
-double BmiPipeline::GetEndTime() {
+double BmiPipeline::Impl::GetEndTime() {
     return output_model().GetEndTime();
 }
 
-std::string BmiPipeline::GetTimeUnits() {
+std::string BmiPipeline::Impl::GetTimeUnits() {
     return output_model().GetTimeUnits();
 }
 
-double BmiPipeline::GetTimeStep() {
+double BmiPipeline::Impl::GetTimeStep() {
     return output_model().GetTimeStep();
 }
 
-void BmiPipeline::GetValue(std::string name, void* dest) {
+void BmiPipeline::Impl::GetValue(std::string name, void* dest) {
     output_model().GetValue(name, dest);
 }
 
-void* BmiPipeline::GetValuePtr(std::string name) {
+void* BmiPipeline::Impl::GetValuePtr(std::string name) {
     return output_model().GetValuePtr(name);
 }
 
-void BmiPipeline::GetValueAtIndices(std::string name, void* dest, int* inds, int count) {
+void BmiPipeline::Impl::GetValueAtIndices(std::string name, void* dest, int* inds,
+                                          int count) {
     output_model().GetValueAtIndices(name, dest, inds, count);
 }
 
-void BmiPipeline::SetValue(std::string name, void* src) {
+void BmiPipeline::Impl::SetValue(std::string name, void* src) {
     output_model().SetValue(name, src);
 }
 
-void BmiPipeline::SetValueAtIndices(std::string name, int* inds, int count, void* src) {
+void BmiPipeline::Impl::SetValueAtIndices(std::string name, int* inds, int count,
+                                          void* src) {
     output_model().SetValueAtIndices(name, inds, count, src);
 }
 
-int BmiPipeline::GetGridRank(const int grid) {
+int BmiPipeline::Impl::GetGridRank(const int grid) {
     return output_model().GetGridRank(grid);
 }
 
-int BmiPipeline::GetGridSize(const int grid) {
+int BmiPipeline::Impl::GetGridSize(const int grid) {
     return output_model().GetGridSize(grid);
 }
 
-std::string BmiPipeline::GetGridType(const int grid) {
+std::string BmiPipeline::Impl::GetGridType(const int grid) {
     return output_model().GetGridType(grid);
 }
 
-void BmiPipeline::GetGridShape(const int grid, int* shape) {
+void BmiPipeline::Impl::GetGridShape(const int grid, int* shape) {
     output_model().GetGridShape(grid, shape);
 }
 
-void BmiPipeline::GetGridSpacing(const int grid, double* spacing) {
+void BmiPipeline::Impl::GetGridSpacing(const int grid, double* spacing) {
     output_model().GetGridSpacing(grid, spacing);
 }
 
-void BmiPipeline::GetGridOrigin(const int grid, double* origin) {
+void BmiPipeline::Impl::GetGridOrigin(const int grid, double* origin) {
     output_model().GetGridOrigin(grid, origin);
 }
 
-void BmiPipeline::GetGridX(const int grid, double* x) {
+void BmiPipeline::Impl::GetGridX(const int grid, double* x) {
     output_model().GetGridX(grid, x);
 }
 
-void BmiPipeline::GetGridY(const int grid, double* y) {
+void BmiPipeline::Impl::GetGridY(const int grid, double* y) {
     output_model().GetGridY(grid, y);
 }
 
-void BmiPipeline::GetGridZ(const int grid, double* z) {
+void BmiPipeline::Impl::GetGridZ(const int grid, double* z) {
     output_model().GetGridZ(grid, z);
 }
 
-int BmiPipeline::GetGridNodeCount(const int grid) {
+int BmiPipeline::Impl::GetGridNodeCount(const int grid) {
     return output_model().GetGridNodeCount(grid);
 }
 
-int BmiPipeline::GetGridEdgeCount(const int grid) {
+int BmiPipeline::Impl::GetGridEdgeCount(const int grid) {
     return output_model().GetGridEdgeCount(grid);
 }
 
-int BmiPipeline::GetGridFaceCount(const int grid) {
+int BmiPipeline::Impl::GetGridFaceCount(const int grid) {
     return output_model().GetGridFaceCount(grid);
 }
 
-void BmiPipeline::GetGridEdgeNodes(const int grid, int* edge_nodes) {
+void BmiPipeline::Impl::GetGridEdgeNodes(const int grid, int* edge_nodes) {
     output_model().GetGridEdgeNodes(grid, edge_nodes);
 }
 
-void BmiPipeline::GetGridFaceEdges(const int grid, int* face_edges) {
+void BmiPipeline::Impl::GetGridFaceEdges(const int grid, int* face_edges) {
     output_model().GetGridFaceEdges(grid, face_edges);
 }
 
-void BmiPipeline::GetGridFaceNodes(const int grid, int* face_nodes) {
+void BmiPipeline::Impl::GetGridFaceNodes(const int grid, int* face_nodes) {
     output_model().GetGridFaceNodes(grid, face_nodes);
 }
 
-void BmiPipeline::GetGridNodesPerFace(const int grid, int* nodes_per_face) {
+void BmiPipeline::Impl::GetGridNodesPerFace(const int grid, int* nodes_per_face) {
     output_model().GetGridNodesPerFace(grid, nodes_per_face);
 }
 
-} // namespace miaow::bmi
+std::string BmiPipeline::Impl::config_path_string() const {
+    return config_path_.string();
+}
+
+std::vector<std::string> BmiPipeline::Impl::artifact_paths() const {
+    return artifact_paths_;
+}
+
+BmiPipeline::BmiPipeline(std::unique_ptr<bmi_api::Bmi> model)
+    : impl_(std::make_unique<Impl>(std::move(model))) {}
+
+BmiPipeline::BmiPipeline(const Task& task, std::unique_ptr<bmi_api::Bmi> model)
+    : impl_(std::make_unique<Impl>(task, std::move(model))) {}
+
+BmiPipeline::~BmiPipeline() = default;
+
+void BmiPipeline::Initialize(std::string config_file) {
+    impl_->Initialize(std::move(config_file));
+}
+
+void BmiPipeline::Update() {
+    impl_->Update();
+}
+
+void BmiPipeline::UpdateUntil(double time) {
+    impl_->UpdateUntil(time);
+}
+
+void BmiPipeline::Finalize() {
+    impl_->Finalize();
+}
+
+std::string BmiPipeline::GetComponentName() {
+    return impl_->GetComponentName();
+}
+
+int BmiPipeline::GetInputItemCount() {
+    return impl_->GetInputItemCount();
+}
+
+int BmiPipeline::GetOutputItemCount() {
+    return impl_->GetOutputItemCount();
+}
+
+std::vector<std::string> BmiPipeline::GetInputVarNames() {
+    return impl_->GetInputVarNames();
+}
+
+std::vector<std::string> BmiPipeline::GetOutputVarNames() {
+    return impl_->GetOutputVarNames();
+}
+
+int BmiPipeline::GetVarGrid(std::string name) {
+    return impl_->GetVarGrid(std::move(name));
+}
+
+std::string BmiPipeline::GetVarType(std::string name) {
+    return impl_->GetVarType(std::move(name));
+}
+
+std::string BmiPipeline::GetVarUnits(std::string name) {
+    return impl_->GetVarUnits(std::move(name));
+}
+
+int BmiPipeline::GetVarItemsize(std::string name) {
+    return impl_->GetVarItemsize(std::move(name));
+}
+
+int BmiPipeline::GetVarNbytes(std::string name) {
+    return impl_->GetVarNbytes(std::move(name));
+}
+
+std::string BmiPipeline::GetVarLocation(std::string name) {
+    return impl_->GetVarLocation(std::move(name));
+}
+
+double BmiPipeline::GetCurrentTime() {
+    return impl_->GetCurrentTime();
+}
+
+double BmiPipeline::GetStartTime() {
+    return impl_->GetStartTime();
+}
+
+double BmiPipeline::GetEndTime() {
+    return impl_->GetEndTime();
+}
+
+std::string BmiPipeline::GetTimeUnits() {
+    return impl_->GetTimeUnits();
+}
+
+double BmiPipeline::GetTimeStep() {
+    return impl_->GetTimeStep();
+}
+
+void BmiPipeline::GetValue(std::string name, void* dest) {
+    impl_->GetValue(std::move(name), dest);
+}
+
+void* BmiPipeline::GetValuePtr(std::string name) {
+    return impl_->GetValuePtr(std::move(name));
+}
+
+void BmiPipeline::GetValueAtIndices(std::string name, void* dest, int* inds, int count) {
+    impl_->GetValueAtIndices(std::move(name), dest, inds, count);
+}
+
+void BmiPipeline::SetValue(std::string name, void* src) {
+    impl_->SetValue(std::move(name), src);
+}
+
+void BmiPipeline::SetValueAtIndices(std::string name, int* inds, int count, void* src) {
+    impl_->SetValueAtIndices(std::move(name), inds, count, src);
+}
+
+int BmiPipeline::GetGridRank(const int grid) {
+    return impl_->GetGridRank(grid);
+}
+
+int BmiPipeline::GetGridSize(const int grid) {
+    return impl_->GetGridSize(grid);
+}
+
+std::string BmiPipeline::GetGridType(const int grid) {
+    return impl_->GetGridType(grid);
+}
+
+void BmiPipeline::GetGridShape(const int grid, int* shape) {
+    impl_->GetGridShape(grid, shape);
+}
+
+void BmiPipeline::GetGridSpacing(const int grid, double* spacing) {
+    impl_->GetGridSpacing(grid, spacing);
+}
+
+void BmiPipeline::GetGridOrigin(const int grid, double* origin) {
+    impl_->GetGridOrigin(grid, origin);
+}
+
+void BmiPipeline::GetGridX(const int grid, double* x) {
+    impl_->GetGridX(grid, x);
+}
+
+void BmiPipeline::GetGridY(const int grid, double* y) {
+    impl_->GetGridY(grid, y);
+}
+
+void BmiPipeline::GetGridZ(const int grid, double* z) {
+    impl_->GetGridZ(grid, z);
+}
+
+int BmiPipeline::GetGridNodeCount(const int grid) {
+    return impl_->GetGridNodeCount(grid);
+}
+
+int BmiPipeline::GetGridEdgeCount(const int grid) {
+    return impl_->GetGridEdgeCount(grid);
+}
+
+int BmiPipeline::GetGridFaceCount(const int grid) {
+    return impl_->GetGridFaceCount(grid);
+}
+
+void BmiPipeline::GetGridEdgeNodes(const int grid, int* edge_nodes) {
+    impl_->GetGridEdgeNodes(grid, edge_nodes);
+}
+
+void BmiPipeline::GetGridFaceEdges(const int grid, int* face_edges) {
+    impl_->GetGridFaceEdges(grid, face_edges);
+}
+
+void BmiPipeline::GetGridFaceNodes(const int grid, int* face_nodes) {
+    impl_->GetGridFaceNodes(grid, face_nodes);
+}
+
+void BmiPipeline::GetGridNodesPerFace(const int grid, int* nodes_per_face) {
+    impl_->GetGridNodesPerFace(grid, nodes_per_face);
+}
+
+std::string BmiPipeline::config_path_string() const {
+    return impl_->config_path_string();
+}
+
+std::vector<std::string> BmiPipeline::artifact_paths() const {
+    return impl_->artifact_paths();
+}
+
+} // namespace miaow

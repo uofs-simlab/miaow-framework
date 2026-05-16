@@ -17,16 +17,24 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Parse runtime CLI options and read the realization file
+    // Parse runtime CLI options
     miaow::RuntimeOptions runtime_options;
-    miaow::RealizationConfig realization;
     try {
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
-        const std::string realization_path =
-            runtime_options.realization_path_.empty()
-                ? std::string("data/realization_config.json")
-                : runtime_options.realization_path_;
-        realization = miaow::RealizationConfig(realization_path);
+    } catch (const std::exception& exception) {
+        std::cerr << exception.what() << "\n";
+        return 1;
+    }
+
+    // Select the realization file requested by CLI options
+    const std::string realization_path = runtime_options.realization_path_.empty()
+                                             ? std::string("data/realization_config.json")
+                                             : runtime_options.realization_path_;
+
+    // Read and partition the realization file
+    miaow::PartitionedBmiRealization realization;
+    try {
+        realization = miaow::PartitionedBmiRealization(realization_path);
         if (runtime_options.output_root_.empty() && !realization.output_root_.empty()) {
             runtime_options.output_root_ = realization.output_root_;
         }
@@ -37,10 +45,15 @@ int main(int argc, char* argv[]) {
     std::cout << "Parsed realization with " << realization.feature_pipeline_configs_.size()
               << " feature pipeline config(s)\n";
 
-    // Register dynamic BMI units and build one task per feature
+    // Register the pipeline model that will execute each realization feature task
     miaow::SimulationUnitRegistry registry;
+    const miaow::SimulationUnitId bmi_pipeline_unit =
+        registry.add<miaow::BmiSimulationUnit<miaow::BmiPipeline>>(
+            miaow::BmiExecutionMode::subprocess);
+
+    // Build one task per feature using the registered pipeline unit
     const std::vector<miaow::Task> tasks =
-        miaow::build_bmi_realization_tasks(realization, registry);
+        miaow::build_bmi_realization_tasks(realization, bmi_pipeline_unit);
     miaow::Runtime runtime(registry, runtime_options);
 
     // Submit tasks and wait for results

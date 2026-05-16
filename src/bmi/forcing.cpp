@@ -138,7 +138,7 @@ double parse_numeric_value(const std::string& raw_value, const std::string& colu
 
 } // namespace
 
-ForcingBmi::ForcingBmi(::bmi::Bmi& clock_model) : clock_model_(clock_model) {}
+ForcingBmi::ForcingBmi(::bmi::Bmi& target_model) : target_model_(target_model) {}
 
 void ForcingBmi::open_stream(const std::filesystem::path& forcing_path) {
     csv_stream_.open(forcing_path);
@@ -246,8 +246,8 @@ void ForcingBmi::Initialize(std::string config_file) {
     // The config string for this internal module is the forcing CSV path
     const std::filesystem::path forcing_path = resolve_forcing_path(config_file);
 
-    // The paired model clock defines the expected forcing timestep
-    time_step_seconds_ = get_model_time_step_seconds(clock_model_);
+    // The receiving model clock defines the expected forcing timestep
+    time_step_seconds_ = get_model_time_step_seconds(target_model_);
     open_stream(forcing_path);
 
     // The first CSV data row is already loaded by open_stream
