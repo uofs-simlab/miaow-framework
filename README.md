@@ -165,10 +165,40 @@ examples/
 - External [BMI C++ API](https://github.com/csdms/bmi-cxx/tree/master) alias:
   `miaow::bmi_api = ::bmi`
 
+## Build options
+
+Top-level CMake options:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-DBUILD_EXAMPLES` | `ON` | Build all example programs |
+| `-DMIAOW_BOOST_PROVIDER` | `system` | Boost provider: `system`, `fetch`, or `auto` |
+| `-DMIAOW_BOOST_VERSION` | `1.86.0` | Boost version used by the `FetchContent` fallback |
+| `-DMIAOW_CAF_PROVIDER` | `auto` | CAF provider: `system`, `fetch`, or `auto` |
+| `-DMIAOW_CAF_VERSION` | `1.1.0` | CAF version used by `find_package` and `FetchContent` |
+| `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
+| `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Optional explicit path to a valid local `NOAA-OWP/iso_c_fortran_bmi` checkout; when empty, CMake looks for `iso_c_fortran_bmi` in `${MIAOW_DEFAULT_MODEL_BASE_DIR}/` and fetches into that location if missing |
+
+Provider values are interpreted as follows:
+
+- `system`: require `find_package(...)` to provide the dependency
+- `fetch`: skip `find_package(...)` and use `FetchContent`
+- `auto`: try `find_package(...)`, then use `FetchContent` if not found
+
+For [Conan](https://conan.io/)-based CI-style setup:
+
+```sh
+conan install . --output-folder=build/conan --build=missing
+cmake -S . -B build \
+  -DMIAOW_BOOST_PROVIDER=system \
+  -DMIAOW_CAF_PROVIDER=system
+cmake --build build --config Release
+```
+
 ## Basic Model Interface (BMI) integration
 
-Use `BmiSimulationUnit<BmiModelType>` from `include/miaow_bmi.hpp` to run BMI
-work. The simulation unit creates the task-level model or pipeline, executes the
+Use `BmiSimulationUnit<BmiModelType>` from `include/miaow_bmi.hpp` to run BMI-compatible 
+models. The simulation unit creates the task-level model or pipeline, executes the
 BMI lifecycle, writes artifacts, and returns a `TaskResult`.
 
 There are three common ways to use it:
@@ -198,8 +228,8 @@ the BMI pipeline lifecycle:
 3. `Finalize()`
 
 Within the `Initialize(...)`, `Update()`, and `Finalize()` calls, the pipeline
-calls the corresponding BMI methods on each module in the pipeline. For
-single-model pipelines, this is just one module.
+calls the corresponding BMI methods for each module in the pipeline, in order (for
+single-model runs, the pipeline consists of just one module).
 
 ### Executing a static BMI model
 
@@ -230,14 +260,14 @@ The task config still comes from `make_bmi_model_config(...)` because the task
 runs one model.
 
 ```cpp
-miaow::BmiModuleSpec module;
-module.name_ = "bmi_fortran";
-module.dynamic_backend_ = miaow::DynamicBmiBackend::fortran;
-module.plugin_path_ = plugin_path;
+miaow::BmiModuleSpec module_spec;
+module_spec.name_ = "bmi_fortran";
+module_spec.dynamic_backend_ = miaow::DynamicBmiBackend::fortran;
+module_spec.plugin_path_ = plugin_path;
 
 miaow::SimulationUnitRegistry registry;
 const miaow::SimulationUnitId model =
-    registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(module);
+    registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(module_spec);
 
 const miaow::BmiPipelineConfig pipeline_config =
     miaow::make_bmi_model_config(init_config);
@@ -360,36 +390,6 @@ task-specific `bmi_subprocess_*_spec.json`,
 `bmi_subprocess_*_stderr.log` files beside `job_record.json`. When no task
 output directory is assigned, these subprocess control files use a temporary
 directory instead.
-
-## Build options
-
-Top-level CMake options:
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `-DBUILD_EXAMPLES` | `ON` | Build all example programs |
-| `-DMIAOW_BOOST_PROVIDER` | `system` | Boost provider: `system`, `fetch`, or `auto` |
-| `-DMIAOW_BOOST_VERSION` | `1.86.0` | Boost version used by the `FetchContent` fallback |
-| `-DMIAOW_CAF_PROVIDER` | `auto` | CAF provider: `system`, `fetch`, or `auto` |
-| `-DMIAOW_CAF_VERSION` | `1.1.0` | CAF version used by `find_package` and `FetchContent` |
-| `-DMIAOW_DEFAULT_MODEL_BASE_DIR` | `${MIAOW_ROOT}/third_party` | Default base directory where external model sources are resolved/fetched |
-| `-DMIAOW_ISO_C_FORTRAN_BMI_ROOT` | empty | Optional explicit path to a valid local `NOAA-OWP/iso_c_fortran_bmi` checkout; when empty, CMake looks for `iso_c_fortran_bmi` in `${MIAOW_DEFAULT_MODEL_BASE_DIR}/` and fetches into that location if missing |
-
-Provider values are interpreted as follows:
-
-- `system`: require `find_package(...)` to provide the dependency
-- `fetch`: skip `find_package(...)` and use `FetchContent`
-- `auto`: try `find_package(...)`, then use `FetchContent` if not found
-
-For [Conan](https://conan.io/)-based CI-style setup:
-
-```sh
-conan install . --output-folder=build/conan --build=missing
-cmake -S . -B build \
-  -DMIAOW_BOOST_PROVIDER=system \
-  -DMIAOW_CAF_PROVIDER=system
-cmake --build build --config Release
-```
 
 ## Examples
 

@@ -125,12 +125,12 @@ void write_var_values(::bmi::Bmi& model, const std::string& name, std::size_t n_
 
 } // namespace
 
-BmiModuleSpec parse_bmi_module_spec(const caf::json_object& module,
+BmiModuleSpec parse_bmi_module_spec(const caf::json_object& module_object,
                                     std::string_view error_prefix) {
     BmiModuleSpec module_spec;
-    module_spec.name_ = io::trim(std::string(module.value("name").to_string()));
+    module_spec.name_ = io::trim(std::string(module_object.value("name").to_string()));
 
-    const caf::json_object module_params = module.value("params").to_object();
+    const caf::json_object module_params = module_object.value("params").to_object();
     module_spec.config_file_ =
         io::trim(std::string(module_params.value("init_config").to_string()));
     module_spec.variables_names_map_ =
@@ -188,10 +188,10 @@ make_bmi_multi_global_config(const std::vector<BmiModuleSpec>& module_specs,
         }
         add_variables_names_map_to_params(module_params, module_spec.variables_names_map_);
 
-        caf::config_value::dictionary module;
-        module.insert("name", module_spec.name_);
-        module.insert("params", std::move(module_params));
-        modules.emplace_back(std::move(module));
+        caf::config_value::dictionary module_value;
+        module_value.insert("name", module_spec.name_);
+        module_value.insert("params", std::move(module_params));
+        modules.emplace_back(std::move(module_value));
     }
 
     caf::config_value::dictionary formulation_params;

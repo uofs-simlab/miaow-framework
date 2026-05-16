@@ -194,7 +194,7 @@ caf::config_value::dictionary
 make_bmi_multi_global_config(const std::vector<BmiModuleSpec>& module_specs,
                              const std::string& forcing_file);
 
-BmiModuleSpec parse_bmi_module_spec(const caf::json_object& module,
+BmiModuleSpec parse_bmi_module_spec(const caf::json_object& module_object,
                                     std::string_view error_prefix);
 
 std::filesystem::path bmi_pipeline_config_file_path(const Task& task);
