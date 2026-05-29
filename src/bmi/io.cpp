@@ -16,12 +16,13 @@
 
 namespace miaow {
 
-miaow::BmiPipelineConfig make_bmi_pipeline_config(std::vector<BmiModuleSpec> module_specs,
-                                                  const std::string& forcing_file,
-                                                  caf::config_value::dictionary feature) {
-    if (module_specs.empty()) {
+miaow::BmiPipelineConfig
+make_bmi_pipeline_config(std::vector<BmiModuleConfig> module_configs,
+                         const std::string& forcing_file,
+                         caf::config_value::dictionary feature) {
+    if (module_configs.empty()) {
         throw std::runtime_error(
-            "BMI pipeline config error: module_specs must contain at least one module");
+            "BMI pipeline config error: module_configs must contain at least one module");
     }
 
     miaow::BmiPipelineConfig pipeline_config;
@@ -29,7 +30,7 @@ miaow::BmiPipelineConfig make_bmi_pipeline_config(std::vector<BmiModuleSpec> mod
         pipeline_config.insert("feature", std::move(feature));
     }
     pipeline_config.insert("global",
-                           bmi::make_bmi_multi_global_config(module_specs, forcing_file));
+                           bmi::make_bmi_multi_global_config(module_configs, forcing_file));
     return pipeline_config;
 }
 
@@ -41,12 +42,12 @@ make_bmi_model_config(const std::string& init_config, const std::string& forcing
             "BMI pipeline config error: init_config must be a non-empty string");
     }
 
-    BmiModuleSpec module_spec;
-    module_spec.name_ = "supplied_model";
-    module_spec.config_file_ = init_config;
-    module_spec.variables_names_map_ = variables_names_map;
+    BmiModuleConfig module_config;
+    module_config.name_ = "supplied_model";
+    module_config.config_file_ = init_config;
+    module_config.variables_names_map_ = variables_names_map;
 
-    return make_bmi_pipeline_config({std::move(module_spec)}, forcing_file);
+    return make_bmi_pipeline_config({std::move(module_config)}, forcing_file);
 }
 
 } // namespace miaow
@@ -125,71 +126,74 @@ void write_var_values(::bmi::Bmi& model, const std::string& name, std::size_t n_
 
 } // namespace
 
-BmiModuleSpec parse_bmi_module_spec(const caf::json_object& module_object,
-                                    std::string_view error_prefix) {
-    BmiModuleSpec module_spec;
-    module_spec.name_ = io::trim(std::string(module_object.value("name").to_string()));
+BmiModuleConfig parse_bmi_module_config(const caf::json_object& module_object,
+                                        std::string_view error_prefix) {
+    BmiModuleConfig module_config;
+    module_config.name_ = io::trim(std::string(module_object.value("name").to_string()));
 
     const caf::json_object module_params = module_object.value("params").to_object();
-    module_spec.config_file_ =
+    module_config.config_file_ =
         io::trim(std::string(module_params.value("init_config").to_string()));
-    module_spec.variables_names_map_ =
+    module_config.variables_names_map_ =
         io::parse_json_string_map(module_params, "variables_names_map", error_prefix);
 
     // Supplied model modules are bound to a model from BmiSimulationUnit
-    if (module_spec.name_ == "supplied_model") {
-        return module_spec;
+    if (module_config.name_ == "supplied_model") {
+        return module_config;
     }
 
     // Otherwise, it's a dynamic module that requires a plugin library path
-    module_spec.plugin_path_ =
+    module_config.plugin_path_ =
         io::trim(std::string(module_params.value("library_file").to_string()));
 
     // Fortran backend
-    if (module_spec.name_ == "bmi_fortran") {
-        module_spec.dynamic_backend_ = DynamicBmiBackend::fortran;
-        return module_spec;
+    if (module_config.name_ == "bmi_fortran") {
+        module_config.dynamic_backend_ = DynamicBmiBackend::fortran;
+        return module_config;
     }
 
     // C++ backend
-    if (module_spec.name_ == "bmi_c++" || module_spec.name_ == "bmi_cpp" ||
-        module_spec.name_.rfind("bmi_c++", 0) == 0 ||
-        module_spec.name_.rfind("bmi_cpp", 0) == 0) {
-        module_spec.dynamic_backend_ = DynamicBmiBackend::cpp;
-        module_spec.cpp_create_function_ =
+    if (module_config.name_ == "bmi_c++" || module_config.name_ == "bmi_cpp" ||
+        module_config.name_.rfind("bmi_c++", 0) == 0 ||
+        module_config.name_.rfind("bmi_cpp", 0) == 0) {
+        module_config.dynamic_backend_ = DynamicBmiBackend::cpp;
+        module_config.cpp_create_function_ =
             io::optional_json_string(module_params, "cpp_create_function",
                                      "bmi_model_create", error_prefix);
-        module_spec.cpp_destroy_function_ =
+        module_config.cpp_destroy_function_ =
             io::optional_json_string(module_params, "cpp_destroy_function",
                                      "bmi_model_destroy", error_prefix);
-        return module_spec;
+        return module_config;
     }
 
-    io::throw_config_error(error_prefix, "unsupported module '" + module_spec.name_ + "'");
+    io::throw_config_error(error_prefix,
+                           "unsupported module '" + module_config.name_ + "'");
 }
 
 // Build the shared bmi_multi global block used by BMI pipeline configs
 caf::config_value::dictionary
-make_bmi_multi_global_config(const std::vector<BmiModuleSpec>& module_specs,
+make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
                              const std::string& forcing_file) {
     caf::config_value::list modules;
-    for (const BmiModuleSpec& module_spec : module_specs) {
+    for (const BmiModuleConfig& module_config : module_configs) {
         caf::config_value::dictionary module_params;
-        if (module_spec.dynamic_backend_) {
-            module_params.insert("library_file", module_spec.plugin_path_);
+        if (module_config.dynamic_backend_) {
+            module_params.insert("library_file", module_config.plugin_path_);
         }
-        module_params.insert("init_config", module_spec.config_file_);
-        if (module_spec.cpp_create_function_) {
-            module_params.insert("cpp_create_function", *module_spec.cpp_create_function_);
+        module_params.insert("init_config", module_config.config_file_);
+        if (module_config.cpp_create_function_) {
+            module_params.insert("cpp_create_function",
+                                 *module_config.cpp_create_function_);
         }
-        if (module_spec.cpp_destroy_function_) {
+        if (module_config.cpp_destroy_function_) {
             module_params.insert("cpp_destroy_function",
-                                 *module_spec.cpp_destroy_function_);
+                                 *module_config.cpp_destroy_function_);
         }
-        add_variables_names_map_to_params(module_params, module_spec.variables_names_map_);
+        add_variables_names_map_to_params(module_params,
+                                          module_config.variables_names_map_);
 
         caf::config_value::dictionary module_value;
-        module_value.insert("name", module_spec.name_);
+        module_value.insert("name", module_config.name_);
         module_value.insert("params", std::move(module_params));
         modules.emplace_back(std::move(module_value));
     }

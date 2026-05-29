@@ -169,19 +169,19 @@ void* resolve_required_dynamic_symbol(void* library_handle, const std::string& s
     return symbol;
 }
 
-DynamicBmiBackend require_dynamic_backend(const BmiModuleSpec& module_spec) {
-    if (!module_spec.dynamic_backend_) {
-        throw std::runtime_error("BMI dynamic plugin error: module spec is missing "
+DynamicBmiBackend require_dynamic_backend(const BmiModuleConfig& module_config) {
+    if (!module_config.dynamic_backend_) {
+        throw std::runtime_error("BMI dynamic plugin error: module config is missing "
                                  "dynamic backend");
     }
-    return *module_spec.dynamic_backend_;
+    return *module_config.dynamic_backend_;
 }
 
 } // namespace
 
 class DynamicBmiModel::Impl : public bmi_api::Bmi {
   public:
-    explicit Impl(const BmiModuleSpec& module_spec);
+    explicit Impl(const BmiModuleConfig& module_config);
 
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
@@ -236,8 +236,8 @@ class DynamicBmiModel::Impl : public bmi_api::Bmi {
     using RegisterBmiFunction = int (*)(void**);
     using UnregisterBmiFunction = int (*)(void**);
 
-    void open_cpp_plugin(const BmiModuleSpec& module_spec);
-    void open_fortran_plugin(const BmiModuleSpec& module_spec);
+    void open_cpp_plugin(const BmiModuleConfig& module_config);
+    void open_fortran_plugin(const BmiModuleConfig& module_config);
     void finalize_fortran_model();
     void unregister_fortran_model();
     void cleanup_model();
@@ -253,12 +253,12 @@ class DynamicBmiModel::Impl : public bmi_api::Bmi {
     bool initialized_{false};
 };
 
-DynamicBmiModel::Impl::Impl(const BmiModuleSpec& module_spec)
-    : backend_(require_dynamic_backend(module_spec)) {
+DynamicBmiModel::Impl::Impl(const BmiModuleConfig& module_config)
+    : backend_(require_dynamic_backend(module_config)) {
     if (backend_ == DynamicBmiBackend::cpp) {
-        open_cpp_plugin(module_spec);
+        open_cpp_plugin(module_config);
     } else {
-        open_fortran_plugin(module_spec);
+        open_fortran_plugin(module_config);
     }
 }
 
@@ -268,18 +268,18 @@ DynamicBmiModel::Impl::~Impl() {
 }
 
 // Open a C++ plugin and construct its BMI model instance
-void DynamicBmiModel::Impl::open_cpp_plugin(const BmiModuleSpec& module_spec) {
+void DynamicBmiModel::Impl::open_cpp_plugin(const BmiModuleConfig& module_config) {
     const std::string create_function =
-        module_spec.cpp_create_function_.value_or("bmi_model_create");
+        module_config.cpp_create_function_.value_or("bmi_model_create");
     const std::string destroy_function =
-        module_spec.cpp_destroy_function_.value_or("bmi_model_destroy");
+        module_config.cpp_destroy_function_.value_or("bmi_model_destroy");
     if (create_function.empty() || destroy_function.empty()) {
         throw std::runtime_error(
             "BMI dynamic C++ plugin error: create/destroy symbol is empty");
     }
 
     library_handle_ =
-        open_dynamic_library(module_spec.plugin_path_, cpp_plugin_error_prefix);
+        open_dynamic_library(module_config.plugin_path_, cpp_plugin_error_prefix);
 
     try {
         void* create_symbol =
@@ -305,9 +305,9 @@ void DynamicBmiModel::Impl::open_cpp_plugin(const BmiModuleSpec& module_spec) {
 }
 
 // Open a Fortran plugin and resolve the procedural BMI bridge symbols
-void DynamicBmiModel::Impl::open_fortran_plugin(const BmiModuleSpec& module_spec) {
+void DynamicBmiModel::Impl::open_fortran_plugin(const BmiModuleConfig& module_config) {
     library_handle_ =
-        open_dynamic_library(module_spec.plugin_path_, fortran_plugin_error_prefix);
+        open_dynamic_library(module_config.plugin_path_, fortran_plugin_error_prefix);
     try {
         void* register_symbol =
             resolve_required_dynamic_symbol(library_handle_, "register_bmi",
@@ -902,8 +902,8 @@ void DynamicBmiModel::Impl::GetGridNodesPerFace(const int grid, int* nodes_per_f
                      "get_grid_nodes_per_face");
 }
 
-DynamicBmiModel::DynamicBmiModel(const BmiModuleSpec& module_spec)
-    : impl_(std::make_unique<Impl>(module_spec)) {}
+DynamicBmiModel::DynamicBmiModel(const BmiModuleConfig& module_config)
+    : impl_(std::make_unique<Impl>(module_config)) {}
 
 DynamicBmiModel::~DynamicBmiModel() = default;
 

@@ -28,26 +28,26 @@ void initialize_caf() {
 }
 
 // Parse the subprocess executable command-line contract
-std::filesystem::path parse_subprocess_spec_path(int argc, char* argv[]) {
-    std::string spec_path;
+std::filesystem::path parse_subprocess_task_path(int argc, char* argv[]) {
+    std::string task_path;
 
     for (int index = 1; index < argc; ++index) {
         const std::string arg = argv[index];
-        if (arg == "--spec") {
+        if (arg == "--task") {
             if (index + 1 >= argc) {
                 throw std::runtime_error(std::string("missing value for ") + argv[index]);
             }
             ++index;
-            spec_path = argv[index];
+            task_path = argv[index];
         } else {
             throw std::runtime_error("unknown argument '" + arg + "'");
         }
     }
 
-    if (spec_path.empty()) {
-        throw std::runtime_error("missing --spec");
+    if (task_path.empty()) {
+        throw std::runtime_error("missing --task");
     }
-    return std::filesystem::absolute(spec_path).lexically_normal();
+    return std::filesystem::absolute(task_path).lexically_normal();
 }
 
 // Write the complete result contract consumed by the parent process
@@ -71,32 +71,44 @@ void require_non_empty_task_string(const std::string& value, const std::string& 
 }
 
 // Enforce semantic constraints that JSON deserialization cannot express
-void validate_subprocess_task(const bmi::BmiSubprocessTaskSpec& subprocess_task) {
-    if (subprocess_task.pipeline_config_.empty()) {
+void validate_subprocess_task(const Task& task) {
+    if (task.args_.size() != 1) {
         throw std::runtime_error(
-            "subprocess task key 'pipeline_config' must be a non-empty "
+            "subprocess task must contain exactly one top-level BMI pipeline "
+            "config argument");
+    }
+
+    const BmiPipelineConfig* pipeline_config =
+        caf::get_if<caf::config_value::dictionary>(&task.args_.front());
+    if (pipeline_config == nullptr) {
+        throw std::runtime_error(
+            "subprocess task argument must be a BmiPipelineConfig");
+    }
+    if (pipeline_config->empty()) {
+        throw std::runtime_error(
+            "subprocess task argument must be a non-empty "
             "dictionary");
     }
-    if (!subprocess_task.output_dir_.empty()) {
-        require_non_empty_task_string(subprocess_task.output_name_, "output_name");
+    if (!task.task_output_dir_.empty()) {
+        require_non_empty_task_string(task.task_output_name_, "task_output_name");
     }
 }
 
 // Read the parent-written JSON file into the subprocess task payload
-bmi::BmiSubprocessTaskSpec read_subprocess_task(const std::filesystem::path& spec_path) {
+Task read_subprocess_task(const std::filesystem::path& task_path) {
     caf::json_reader reader;
-    if (!reader.load_file(spec_path.string())) {
-        throw std::runtime_error("failed to parse spec file '" + spec_path.string() +
+    if (!reader.load_file(task_path.string())) {
+        throw std::runtime_error("failed to parse task file '" + task_path.string() +
                                  "': " + caf::to_string(reader.get_error()));
     }
 
-    bmi::BmiSubprocessTaskSpec subprocess_task;
-    if (!reader.apply(subprocess_task)) {
-        throw std::runtime_error("failed to read spec file '" + spec_path.string() +
+    Task task;
+    if (!reader.apply(task)) {
+        throw std::runtime_error("failed to read task file '" + task_path.string() +
                                  "': " + caf::to_string(reader.get_error()));
     }
-    validate_subprocess_task(subprocess_task);
-    return subprocess_task;
+    validate_subprocess_task(task);
+    return task;
 }
 
 } // namespace
@@ -107,19 +119,12 @@ bmi::BmiSubprocessTaskSpec read_subprocess_task(const std::filesystem::path& spe
 int main(int argc, char* argv[]) {
     try {
         miaow::initialize_caf();
-        const std::filesystem::path spec_path =
-            miaow::parse_subprocess_spec_path(argc, argv);
+        const std::filesystem::path task_path =
+            miaow::parse_subprocess_task_path(argc, argv);
         miaow::TaskResult task_result;
         try {
             // Read the subprocess task payload written by the parent process
-            const miaow::bmi::BmiSubprocessTaskSpec subprocess_task =
-                miaow::read_subprocess_task(spec_path);
-
-            // Rebuild the task payload expected by the shared BMI execution path
-            miaow::Task task;
-            task.args_.push_back(caf::config_value{subprocess_task.pipeline_config_});
-            task.task_output_dir_ = subprocess_task.output_dir_;
-            task.task_output_name_ = subprocess_task.output_name_;
+            const miaow::Task task = miaow::read_subprocess_task(task_path);
 
             // Config-constructible pipelines build all models in the child process
             miaow::BmiPipeline pipeline(task);
@@ -131,7 +136,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Write the result file that the parent process will read
-        miaow::write_subprocess_result(miaow::bmi::make_subprocess_result_path(spec_path),
+        miaow::write_subprocess_result(miaow::bmi::make_subprocess_result_path(task_path),
                                        task_result);
         return 0;
     } catch (const std::exception& exception) {

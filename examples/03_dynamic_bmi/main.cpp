@@ -36,12 +36,12 @@ int main(int argc, char* argv[]) {
     std::cout << "Fortran dynamic BMI plugin: " << fortran_heat_plugin_path << "\n";
 
     // Describe each dynamic plugin loader
-    miaow::BmiModuleSpec cpp_heat_module;
+    miaow::BmiModuleConfig cpp_heat_module;
     cpp_heat_module.name_ = "bmi_cpp";
     cpp_heat_module.dynamic_backend_ = miaow::DynamicBmiBackend::cpp;
     cpp_heat_module.plugin_path_ = cpp_heat_plugin_path;
 
-    miaow::BmiModuleSpec fortran_heat_module;
+    miaow::BmiModuleConfig fortran_heat_module;
     fortran_heat_module.name_ = "bmi_fortran";
     fortran_heat_module.dynamic_backend_ = miaow::DynamicBmiBackend::fortran;
     fortran_heat_module.plugin_path_ = fortran_heat_plugin_path;

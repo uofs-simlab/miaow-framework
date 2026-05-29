@@ -255,19 +255,19 @@ BMI work.
 ### Executing a dynamic BMI model
 
 Use `BmiSimulationUnit<DynamicBmiModel>` when the task should run one BMI model
-loaded from a plugin library. `BmiModuleSpec` describes how to load the plugin.
+loaded from a plugin library. `BmiModuleConfig` describes how to load the plugin.
 The task config still comes from `make_bmi_model_config(...)` because the task
 runs one model.
 
 ```cpp
-miaow::BmiModuleSpec module_spec;
-module_spec.name_ = "bmi_fortran";
-module_spec.dynamic_backend_ = miaow::DynamicBmiBackend::fortran;
-module_spec.plugin_path_ = plugin_path;
+miaow::BmiModuleConfig module_config;
+module_config.name_ = "bmi_fortran";
+module_config.dynamic_backend_ = miaow::DynamicBmiBackend::fortran;
+module_config.plugin_path_ = plugin_path;
 
 miaow::SimulationUnitRegistry registry;
 const miaow::SimulationUnitId model =
-    registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(module_spec);
+    registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(module_config);
 
 const miaow::BmiPipelineConfig pipeline_config =
     miaow::make_bmi_model_config(init_config);
@@ -304,8 +304,8 @@ Subprocess mode runs one BMI lifecycle in a child process, which is useful for
 BMI models that are not safe to run concurrently in one process. The Noah
 example uses subprocess mode.
 
-For hand-built dynamic pipelines, pass a vector of `BmiModuleSpec` entries to
-`make_bmi_pipeline_config(...)`. Each module spec carries the module name,
+For hand-built dynamic pipelines, pass a vector of `BmiModuleConfig` entries to
+`make_bmi_pipeline_config(...)`. Each module config carries the module name,
 backend, plugin path, initialization config, and optional variable map.
 
 ### Reading forcing data
@@ -385,7 +385,7 @@ task record's `result` field and records each task's descriptive
 non-empty `metadata_["feature_id"]`, that value becomes the output file stem;
 otherwise the runtime uses `task_<task_id>`. Output stems must be unique within
 one job and cannot contain path separators. Subprocess BMI tasks also write
-task-specific `bmi_subprocess_*_spec.json`,
+task-specific `bmi_subprocess_*_input.json`,
 `bmi_subprocess_*_result.json`, `bmi_subprocess_*_stdout.log`, and
 `bmi_subprocess_*_stderr.log` files beside `job_record.json`. When no task
 output directory is assigned, these subprocess control files use a temporary

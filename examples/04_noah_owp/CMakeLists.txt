@@ -234,15 +234,15 @@ if(BUILD_TESTING)
     list(JOIN noah_owp_expected_job_record_snippets ";"
         noah_owp_job_record_snippets_arg)
     set(noah_owp_expected_result_paths
-        "bmi_subprocess_cat-552_spec.json"
+        "bmi_subprocess_cat-552_input.json"
         "bmi_subprocess_cat-552_result.json"
         "bmi_subprocess_cat-552_stdout.log"
         "bmi_subprocess_cat-552_stderr.log"
-        "bmi_subprocess_cat-562_spec.json"
+        "bmi_subprocess_cat-562_input.json"
         "bmi_subprocess_cat-562_result.json"
         "bmi_subprocess_cat-562_stdout.log"
         "bmi_subprocess_cat-562_stderr.log"
-        "bmi_subprocess_cat-585_spec.json"
+        "bmi_subprocess_cat-585_input.json"
         "bmi_subprocess_cat-585_result.json"
         "bmi_subprocess_cat-585_stdout.log"
         "bmi_subprocess_cat-585_stderr.log"

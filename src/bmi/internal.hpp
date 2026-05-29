@@ -21,17 +21,6 @@ namespace miaow::bmi {
 
 inline constexpr const char* bmi_file_prefix = "bmi_subprocess";
 
-struct BmiSubprocessTaskSpec {
-    // BMI pipeline config argument forwarded through the subprocess boundary
-    miaow::BmiPipelineConfig pipeline_config_;
-
-    // Task output directory written by the subprocess
-    std::string output_dir_;
-
-    // Task output basename used for CSV output
-    std::string output_name_;
-};
-
 struct OutputVariable {
     // BMI output variable name
     std::string name_;
@@ -178,24 +167,15 @@ class ForcingBmi : public ::bmi::Bmi {
     bool active_{false};
 };
 
-// CAF serialization hooks
-template <class Inspector>
-bool inspect(Inspector& inspector, BmiSubprocessTaskSpec& subprocess_task) {
-    return inspector.object(subprocess_task)
-        .fields(inspector.field("pipeline_config", subprocess_task.pipeline_config_),
-                inspector.field("output_dir", subprocess_task.output_dir_),
-                inspector.field("output_name", subprocess_task.output_name_));
-}
-
 // BMI pipeline config and module IO
 caf::json_object read_bmi_pipeline_config_file(const std::filesystem::path& path);
 
 caf::config_value::dictionary
-make_bmi_multi_global_config(const std::vector<BmiModuleSpec>& module_specs,
+make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
                              const std::string& forcing_file);
 
-BmiModuleSpec parse_bmi_module_spec(const caf::json_object& module_object,
-                                    std::string_view error_prefix);
+BmiModuleConfig parse_bmi_module_config(const caf::json_object& module_object,
+                                        std::string_view error_prefix);
 
 std::filesystem::path bmi_pipeline_config_file_path(const Task& task);
 
@@ -212,22 +192,22 @@ void write_output_step(::bmi::Bmi& model, OutputFile& output_file, double time);
 
 // Subprocess path helpers
 inline std::filesystem::path
-make_subprocess_result_path(const std::filesystem::path& spec_path) {
-    const std::string spec_filename = spec_path.filename().string();
-    const std::string spec_suffix = "_spec.json";
-    if (spec_filename.size() > spec_suffix.size() &&
-        spec_filename.compare(spec_filename.size() - spec_suffix.size(), spec_suffix.size(),
-                              spec_suffix) == 0) {
-        return spec_path.parent_path() /
-               (spec_filename.substr(0, spec_filename.size() - spec_suffix.size()) +
+make_subprocess_result_path(const std::filesystem::path& task_path) {
+    const std::string task_filename = task_path.filename().string();
+    const std::string input_suffix = "_input.json";
+    if (task_filename.size() > input_suffix.size() &&
+        task_filename.compare(task_filename.size() - input_suffix.size(),
+                              input_suffix.size(), input_suffix) == 0) {
+        return task_path.parent_path() /
+               (task_filename.substr(0, task_filename.size() - input_suffix.size()) +
                 "_result.json");
     }
-    return spec_path.parent_path() / (std::string(bmi_file_prefix) + "_result.json");
+    return task_path.parent_path() / (task_path.stem().string() + "_result.json");
 }
 
 inline std::unique_ptr<::bmi::Bmi>
-make_dynamic_bmi_model(const BmiModuleSpec& module_spec) {
-    return std::make_unique<DynamicBmiModel>(module_spec);
+make_dynamic_bmi_model(const BmiModuleConfig& module_config) {
+    return std::make_unique<DynamicBmiModel>(module_config);
 }
 
 } // namespace miaow::bmi

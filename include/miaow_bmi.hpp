@@ -23,8 +23,9 @@ namespace bmi_api = ::bmi;
  * @brief Named CAF dictionary containing MIAOW's BMI pipeline schema.
  *
  * `BmiPipelineConfig` is a semantic alias for
- * `caf::config_value::dictionary`. Tasks and subprocess payloads wrap this
- * dictionary in `caf::config_value` so the same schema can be serialized.
+ * `caf::config_value::dictionary`. Tasks wrap this dictionary in
+ * `caf::config_value` so the same schema can be serialized through the
+ * runtime and subprocess boundaries.
  */
 using BmiPipelineConfig = caf::config_value::dictionary;
 
@@ -52,12 +53,12 @@ enum class BmiExecutionMode {
 };
 
 /**
- * @brief Model module specification for `BmiPipelineConfig` and `DynamicBmiModel`.
+ * @brief Model module configuration for `BmiPipelineConfig` and `DynamicBmiModel`.
  *
  * Dynamic module entries mirror the model-module parts of NextGen-style
  * realization files used by [ngen](https://github.com/NOAA-OWP/ngen).
  */
-struct BmiModuleSpec {
+struct BmiModuleConfig {
     // Module name written to the BmiPipelineConfig
     std::string name_;
 
@@ -81,14 +82,14 @@ struct BmiModuleSpec {
 };
 
 /**
- * @brief Build a top-level `BmiPipelineConfig` from model module specs.
- * @param module_specs Model modules included in the pipeline.
+ * @brief Build a top-level `BmiPipelineConfig` from model module configs.
+ * @param module_configs Model modules included in the pipeline.
  * @param forcing_file Optional CSV forcing file path.
  * @param feature Optional feature metadata for realization-derived tasks.
  * @return Top-level `BmiPipelineConfig`.
  * @throws std::runtime_error if the module list or forcing config is invalid.
  */
-BmiPipelineConfig make_bmi_pipeline_config(std::vector<BmiModuleSpec> module_specs,
+BmiPipelineConfig make_bmi_pipeline_config(std::vector<BmiModuleConfig> module_configs,
                                            const std::string& forcing_file = "",
                                            caf::config_value::dictionary feature = {});
 
@@ -119,9 +120,9 @@ make_bmi_model_config(const std::string& init_config, const std::string& forcing
  *
  * The wrapper exposes the
  * [CSDMS BMI C++ interface](https://github.com/csdms/bmi-cxx) for the loaded
- * plugin. The `BmiModuleSpec` selects the dynamic backend and plugin library
+ * plugin. The `BmiModuleConfig` selects the dynamic backend and plugin library
  * path. C++ plugins must export `bmi_model_create()` and
- * `bmi_model_destroy(...)` unless the module spec names different symbols.
+ * `bmi_model_destroy(...)` unless the module config names different symbols.
  * Fortran plugins must export `register_bmi(void**)` for the linked
  * [NOAA-OWP procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
  * If a Fortran plugin exports `unregister_bmi(void**)`, MIAOW calls it after
@@ -130,12 +131,12 @@ make_bmi_model_config(const std::string& init_config, const std::string& forcing
 class DynamicBmiModel : public bmi_api::Bmi {
   public:
     /**
-     * @brief Open a dynamic BMI plugin described by a module spec.
-     * @param module_spec Module spec with backend and plugin path.
+     * @brief Open a dynamic BMI plugin described by a module config.
+     * @param module_config Module config with backend and plugin path.
      * @throws std::runtime_error if the plugin path or required symbols are
      * invalid, or if a C++ model creation function returns null.
      */
-    explicit DynamicBmiModel(const BmiModuleSpec& module_spec);
+    explicit DynamicBmiModel(const BmiModuleConfig& module_config);
 
     DynamicBmiModel(const DynamicBmiModel&) = delete;
     DynamicBmiModel& operator=(const DynamicBmiModel&) = delete;

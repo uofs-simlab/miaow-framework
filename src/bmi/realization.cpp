@@ -148,7 +148,7 @@ std::string match_forcing_file(const std::filesystem::path& forcing_directory,
 }
 
 // The supported SYMFLUENCE realization contains one bmi_multi Fortran module
-BmiModuleSpec parse_fortran_module_spec(const caf::json_object& global_object) {
+BmiModuleConfig parse_fortran_module_config(const caf::json_object& global_object) {
     const caf::json_array formulations = global_object.value("formulations").to_array();
     if (formulations.size() != 1) {
         throw_realization_config_error("formulations must contain one entry");
@@ -168,13 +168,13 @@ BmiModuleSpec parse_fortran_module_spec(const caf::json_object& global_object) {
         throw_realization_config_error("bmi_multi modules must contain one entry");
     }
 
-    BmiModuleSpec module_spec = bmi::parse_bmi_module_spec((*modules.begin()).to_object(),
-                                                           "Realization config error: ");
-    if (module_spec.name_ != "bmi_fortran") {
-        throw_realization_config_error("unsupported module '" + module_spec.name_ + "'");
+    BmiModuleConfig module_config = bmi::parse_bmi_module_config(
+        (*modules.begin()).to_object(), "Realization config error: ");
+    if (module_config.name_ != "bmi_fortran") {
+        throw_realization_config_error("unsupported module '" + module_config.name_ + "'");
     }
 
-    return module_spec;
+    return module_config;
 }
 
 std::string
@@ -217,7 +217,7 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
     const std::filesystem::path base_directory = normalized_path.parent_path();
     const caf::json_object root = parse_json_file(normalized_path, "root");
     const caf::json_object global = root.value("global").to_object();
-    BmiModuleSpec module_spec = parse_fortran_module_spec(global);
+    BmiModuleConfig module_config = parse_fortran_module_config(global);
     const caf::json_object forcing = global.value("forcing").to_object();
     const std::string provider =
         io::trim(std::string(forcing.value("provider").to_string()));
@@ -225,7 +225,7 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         throw_realization_config_error("unsupported forcing provider '" + provider + "'");
     }
 
-    const std::string init_template = module_spec.config_file_;
+    const std::string init_template = module_config.config_file_;
 
     const std::string forcing_path_text =
         io::trim(std::string(forcing.value("path").to_string()));
@@ -233,8 +233,8 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         io::trim(std::string(forcing.value("file_pattern").to_string()));
 
     const std::filesystem::path library_path =
-        resolve_path(base_directory, module_spec.plugin_path_);
-    module_spec.plugin_path_ = require_existing_file(library_path, "module library_file");
+        resolve_path(base_directory, module_config.plugin_path_);
+    module_config.plugin_path_ = require_existing_file(library_path, "module library_file");
     const std::filesystem::path forcing_directory =
         require_existing_directory(resolve_path(base_directory, forcing_path_text),
                                    "global forcing");
@@ -268,8 +268,8 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         const std::string forcing_file =
             match_forcing_file(forcing_directory, forcing_pattern, feature_id);
 
-        BmiModuleSpec task_module_spec = module_spec;
-        task_module_spec.config_file_ = init_config_path;
+        BmiModuleConfig task_module_config = module_config;
+        task_module_config.config_file_ = init_config_path;
 
         caf::config_value::dictionary feature;
         feature.insert("id", feature_id);
@@ -278,7 +278,7 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         feature.insert("hydrofabric_id_field", "id");
 
         feature_pipeline_configs_.push_back(
-            make_bmi_pipeline_config({std::move(task_module_spec)}, forcing_file,
+            make_bmi_pipeline_config({std::move(task_module_config)}, forcing_file,
                                      std::move(feature)));
     }
 }

@@ -23,7 +23,7 @@ using internal_bmi::bmi_pipeline_config_file_path;
 using internal_bmi::BmiCoupling;
 using internal_bmi::ForcingBmi;
 using internal_bmi::make_dynamic_bmi_model;
-using internal_bmi::parse_bmi_module_spec;
+using internal_bmi::parse_bmi_module_config;
 using internal_bmi::read_bmi_pipeline_config_file;
 using internal_bmi::write_bmi_pipeline_config_file;
 
@@ -106,8 +106,9 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
   private:
     [[noreturn]] void throw_config_error(const std::string& message) const;
     caf::json_object read_bmi_multi_params(const caf::json_object& global) const;
-    BmiModuleSpec parse_single_module_spec(const caf::json_object& bmi_multi_params) const;
-    std::size_t add_model_module(const BmiModuleSpec& module_spec);
+    BmiModuleConfig
+    parse_single_module_config(const caf::json_object& bmi_multi_params) const;
+    std::size_t add_model_module(const BmiModuleConfig& module_config);
     bool add_forcing_module(const caf::json_object& global, std::size_t model_module,
                             std::size_t& forcing_module);
     ::bmi::Bmi& output_model();
@@ -178,7 +179,7 @@ BmiPipeline::Impl::read_bmi_multi_params(const caf::json_object& global) const {
 }
 
 // The BMI pipeline currently supports a single module per bmi_multi formulation
-BmiModuleSpec BmiPipeline::Impl::parse_single_module_spec(
+BmiModuleConfig BmiPipeline::Impl::parse_single_module_config(
     const caf::json_object& bmi_multi_params) const {
     const caf::json_array modules = bmi_multi_params.value("modules").to_array();
 
@@ -187,13 +188,13 @@ BmiModuleSpec BmiPipeline::Impl::parse_single_module_spec(
         throw_config_error("bmi_multi modules must contain one entry");
     }
 
-    return parse_bmi_module_spec((*modules.begin()).to_object(),
-                                 "BMI pipeline config error: ");
+    return parse_bmi_module_config((*modules.begin()).to_object(),
+                                   "BMI pipeline config error: ");
 }
 
 // Add a model module to the pipeline and return its module index
-std::size_t BmiPipeline::Impl::add_model_module(const BmiModuleSpec& module_spec) {
-    if (!module_spec.dynamic_backend_) {
+std::size_t BmiPipeline::Impl::add_model_module(const BmiModuleConfig& module_config) {
+    if (!module_config.dynamic_backend_) {
         // supplied_model modules are bound to the model passed by the caller
         if (!supplied_model_) {
             throw_config_error("module 'supplied_model' requires a supplied BMI model");
@@ -201,11 +202,11 @@ std::size_t BmiPipeline::Impl::add_model_module(const BmiModuleSpec& module_spec
         modules_.push_back(supplied_model_.get());
     } else {
         // Dynamic modules are constructed from plugin metadata in the config
-        owned_modules_.push_back(make_dynamic_bmi_model(module_spec));
+        owned_modules_.push_back(make_dynamic_bmi_model(module_config));
         modules_.push_back(owned_modules_.back().get());
     }
 
-    configs_.push_back(module_spec.config_file_);
+    configs_.push_back(module_config.config_file_);
     return modules_.size() - 1;
 }
 
@@ -333,8 +334,8 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
         static_cast<std::size_t>(bmi_multi_params.value("output_module").to_integer());
 
     // Add the configured model module before attaching optional forcing
-    const BmiModuleSpec module_spec = parse_single_module_spec(bmi_multi_params);
-    const std::size_t model_module = add_model_module(module_spec);
+    const BmiModuleConfig module_config = parse_single_module_config(bmi_multi_params);
+    const std::size_t model_module = add_model_module(module_config);
 
     if (output_module_ >= modules_.size()) {
         throw std::runtime_error("BMI pipeline error: output module is invalid");
@@ -351,7 +352,7 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
 
     if (has_forcing) {
         // Couplings are built after initialization so BMI metadata is available
-        build_couplings(forcing_module, model_module, module_spec.variables_names_map_);
+        build_couplings(forcing_module, model_module, module_config.variables_names_map_);
     }
 }
 

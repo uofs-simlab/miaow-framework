@@ -35,7 +35,7 @@ std::atomic<unsigned long long> next_control_dir_id{0};
 
 struct BmiSubprocessPaths {
     // Parent-written JSON payload consumed by the subprocess
-    std::filesystem::path spec_path_;
+    std::filesystem::path task_path_;
 
     // Child-written JSON task result consumed by the parent
     std::filesystem::path result_path_;
@@ -95,8 +95,8 @@ BmiSubprocessPaths make_subprocess_paths(const Task& task) {
     const std::string control_stem = std::string(bmi::bmi_file_prefix) + "_" + output_name;
 
     BmiSubprocessPaths paths;
-    paths.spec_path_ = control_dir / (control_stem + "_spec.json");
-    paths.result_path_ = bmi::make_subprocess_result_path(paths.spec_path_);
+    paths.task_path_ = control_dir / (control_stem + "_input.json");
+    paths.result_path_ = bmi::make_subprocess_result_path(paths.task_path_);
     paths.stdout_path_ = control_dir / (control_stem + "_stdout.log");
     paths.stderr_path_ = control_dir / (control_stem + "_stderr.log");
     return paths;
@@ -148,8 +148,8 @@ TaskResult execute_subprocess_task(const BmiSubprocessPaths& paths,
                                    const std::string& subprocess_path) {
     // Specify command-line args to be passed to the subprocess executable
     const std::vector<std::string> args{
-        "--spec",
-        paths.spec_path_.string(),
+        "--task",
+        paths.task_path_.string(),
     };
 
     // Create the child process and redirect stdout and stderr to specified paths
@@ -175,19 +175,17 @@ TaskResult execute_subprocess_task(const BmiSubprocessPaths& paths,
     throw std::runtime_error(message);
 }
 
-// Write the parent-to-subprocess BMI task payload
-void write_subprocess_task(const std::filesystem::path& spec_path,
-                           const miaow::BmiPipelineConfig& pipeline_config,
-                           const Task& task) {
-    bmi::BmiSubprocessTaskSpec subprocess_task;
-    subprocess_task.pipeline_config_ = pipeline_config;
-    subprocess_task.output_dir_ =
-        task.task_output_dir_.empty()
-            ? ""
-            : std::filesystem::absolute(task.task_output_dir_).lexically_normal().string();
-    subprocess_task.output_name_ = task.task_output_name_;
+// Write the parent-to-subprocess task payload
+void write_subprocess_task(const std::filesystem::path& task_path, const Task& task) {
+    Task task_payload = task;
+    if (!task_payload.task_output_dir_.empty()) {
+        task_payload.task_output_dir_ =
+            std::filesystem::absolute(task_payload.task_output_dir_)
+                .lexically_normal()
+                .string();
+    }
 
-    io::write_json_file(spec_path, subprocess_task);
+    io::write_json_file(task_path, task_payload, false);
 }
 
 } // namespace
@@ -196,8 +194,7 @@ namespace bmi {
 
 // Execute one BMI pipeline lifecycle in a subprocess
 TaskResult execute_bmi_lifecycle_in_subprocess(const Task& task) {
-    const miaow::BmiPipelineConfig& pipeline_config =
-        require_bmi_pipeline_config_argument(task);
+    require_bmi_pipeline_config_argument(task);
 
     const std::string subprocess_path = configured_subprocess_path();
     if (subprocess_path.empty()) {
@@ -205,7 +202,7 @@ TaskResult execute_bmi_lifecycle_in_subprocess(const Task& task) {
     }
 
     const BmiSubprocessPaths paths = make_subprocess_paths(task);
-    write_subprocess_task(paths.spec_path_, pipeline_config, task);
+    write_subprocess_task(paths.task_path_, task);
 
     return execute_subprocess_task(paths, subprocess_path);
 }
