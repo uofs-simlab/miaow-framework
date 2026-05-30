@@ -24,7 +24,9 @@ system model integration.
 ## Quick start
 
 From the repository root, using [CMake](https://cmake.org/) (requires C++ and
-Fortran compilers plus [Boost](https://www.boost.org/)):
+Fortran compilers plus
+[Boost.Process](https://www.boost.org/doc/libs/release/libs/process/) and
+[Boost.JSON](https://www.boost.org/doc/libs/release/libs/json/)):
 
 ```sh
 cmake -S . -B build
@@ -210,13 +212,12 @@ There are three common ways to use it:
 - `BmiSimulationUnit<BmiPipeline>` runs a complete pipeline described by the
   task config, which may be obtained from partitioning of a NextGen-style realization file.
 
-Each BMI task carries one `BmiPipelineConfig`, which is a named
-`caf::config_value::dictionary` using MIAOW's BMI pipeline schema. Task
-arguments are `caf::config_value` entries, so the dictionary is wrapped before
-being stored in the task:
+Each BMI task starts from one typed `BmiPipelineConfig`. Task arguments are
+`caf::config_value` entries, so the typed config is converted before being
+stored in the task:
 
 ```cpp
-task.args_[0] = caf::config_value{pipeline_config};
+task.args_[0] = miaow::bmi_pipeline_config_to_value(pipeline_config);
 ```
 
 During execution, MIAOW writes that `BmiPipelineConfig` beside the task results
@@ -245,7 +246,8 @@ const miaow::SimulationUnitId heat =
 
 const miaow::BmiPipelineConfig pipeline_config =
     miaow::make_bmi_model_config(heat_config);
-const std::vector<miaow::Task> tasks{{heat, caf::config_value{pipeline_config}}};
+const std::vector<miaow::Task> tasks{
+    {heat, miaow::bmi_pipeline_config_to_value(pipeline_config)}};
 ```
 
 At execution time, MIAOW wraps the model in `BmiPipeline` so the same lifecycle,
@@ -260,10 +262,8 @@ The task config still comes from `make_bmi_model_config(...)` because the task
 runs one model.
 
 ```cpp
-miaow::BmiModuleConfig module_config;
-module_config.name_ = "bmi_fortran";
-module_config.dynamic_backend_ = miaow::DynamicBmiBackend::fortran;
-module_config.plugin_path_ = plugin_path;
+const miaow::BmiModuleConfig module_config(
+    "bmi_fortran", miaow::DynamicBmiBackend::fortran, plugin_path);
 
 miaow::SimulationUnitRegistry registry;
 const miaow::SimulationUnitId model =
@@ -271,7 +271,8 @@ const miaow::SimulationUnitId model =
 
 const miaow::BmiPipelineConfig pipeline_config =
     miaow::make_bmi_model_config(init_config);
-const std::vector<miaow::Task> tasks{{model, caf::config_value{pipeline_config}}};
+const std::vector<miaow::Task> tasks{
+    {model, miaow::bmi_pipeline_config_to_value(pipeline_config)}};
 ```
 
 Use the C++ backend for plugins that export `bmi_model_create()` and
@@ -304,8 +305,8 @@ Subprocess mode runs one BMI lifecycle in a child process, which is useful for
 BMI models that are not safe to run concurrently in one process. The Noah
 example uses subprocess mode.
 
-For hand-built dynamic pipelines, pass a vector of `BmiModuleConfig` entries to
-`make_bmi_pipeline_config(...)`. Each module config carries the module name,
+For hand-built dynamic pipelines, construct a `BmiPipelineConfig` from a vector
+of `BmiModuleConfig` entries. Each module config carries the module name,
 backend, plugin path, initialization config, and optional variable map.
 
 ### Reading forcing data

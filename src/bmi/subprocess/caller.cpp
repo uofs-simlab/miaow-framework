@@ -72,21 +72,6 @@ std::filesystem::path make_control_dir(const Task& task) {
     return control_dir;
 }
 
-const miaow::BmiPipelineConfig& require_bmi_pipeline_config_argument(const Task& task) {
-    if (task.args_.size() != 1) {
-        throw std::runtime_error(
-            "subprocess BMI task must contain exactly one top-level BMI "
-            "pipeline config argument");
-    }
-    const miaow::BmiPipelineConfig* pipeline_config =
-        caf::get_if<caf::config_value::dictionary>(&task.args_.front());
-    if (pipeline_config == nullptr) {
-        throw std::runtime_error(
-            "subprocess BMI task argument must be a BmiPipelineConfig");
-    }
-    return *pipeline_config;
-}
-
 // Create the task-local files used by one BMI subprocess execution
 BmiSubprocessPaths make_subprocess_paths(const Task& task) {
     const std::filesystem::path control_dir = make_control_dir(task);
@@ -194,7 +179,15 @@ namespace bmi {
 
 // Execute one BMI pipeline lifecycle in a subprocess
 TaskResult execute_bmi_lifecycle_in_subprocess(const Task& task) {
-    require_bmi_pipeline_config_argument(task);
+    if (task.args_.size() != 1) {
+        throw std::runtime_error(
+            "subprocess BMI task must contain exactly one top-level BMI "
+            "pipeline config argument");
+    }
+    if (caf::get_if<caf::config_value::dictionary>(&task.args_.front()) == nullptr) {
+        throw std::runtime_error(
+            "subprocess BMI task argument must be a BmiPipelineConfig");
+    }
 
     const std::string subprocess_path = configured_subprocess_path();
     if (subprocess_path.empty()) {

@@ -99,22 +99,23 @@ Simulation units
 
 Use ``BmiSimulationUnit<DynamicBmiModel>`` for one dynamic plugin model. The
 simulation unit still runs that model inside a task-level ``BmiPipeline``. Use
-``BmiSimulationUnit<BmiPipeline>`` when the task argument is a complete
+``BmiSimulationUnit<BmiPipeline>`` when the task argument stores a serialized
 ``BmiPipelineConfig`` and the pipeline should build its own model modules.
 
-.. doxygenfunction:: miaow::make_bmi_pipeline_config
+.. doxygenstruct:: miaow::BmiPipelineConfig
    :project: MIAOW
+   :members:
 
 .. doxygenfunction:: miaow::make_bmi_model_config
+   :project: MIAOW
+
+.. doxygenfunction:: miaow::bmi_pipeline_config_to_value
    :project: MIAOW
 
 .. doxygenfunction:: miaow::bmi::execute_bmi_lifecycle_in_subprocess
    :project: MIAOW
 
-.. doxygentypedef:: miaow::BmiPipelineConfig
-   :project: MIAOW
-
-.. doxygenstruct:: miaow::BmiModuleSpec
+.. doxygenstruct:: miaow::BmiModuleConfig
    :project: MIAOW
    :members:
 

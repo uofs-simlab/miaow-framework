@@ -16,7 +16,9 @@ Quick start
 -----------
 
 From the repository root, using `CMake <https://cmake.org/>`_ (requires C++ and
-Fortran compilers plus Boost):
+Fortran compilers plus
+`Boost.Process <https://www.boost.org/doc/libs/release/libs/process/>`_ and
+`Boost.JSON <https://www.boost.org/doc/libs/release/libs/json/>`_):
 
 .. code-block:: sh
 

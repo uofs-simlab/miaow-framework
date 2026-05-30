@@ -573,30 +573,17 @@ class Runtime {
     JobHandle submit_job(const Task& task) const;
 
     /**
-     * @brief Submit a multi-task asynchronous job with copied tasks.
+     * @brief Submit a multi-task asynchronous job.
      *
-     * This `const&` overload accepts caller-owned vectors (lvalues) and copies
-     * tasks so the caller keeps ownership unchanged.
+     * Lvalue inputs are copied, while rvalue inputs transfer ownership into
+     * `Runtime`.
      * The returned handle may rethrow if final `job_record.json` output fails.
      * @param tasks Generic `Task` arguments.
      * @return `JobHandle` for retrieving the final `JobRecord`.
      * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */
-    JobHandle submit_job(const std::vector<Task>& tasks) const;
-
-    /**
-     * @brief Submit a multi-task asynchronous job with moved tasks.
-     *
-     * This `&&` overload accepts rvalues (temporaries or `std::move(...)`) and
-     * transfers task ownership into `Runtime` to avoid an extra copy.
-     * The returned handle may rethrow if final `job_record.json` output fails.
-     * @param tasks Generic `Task` arguments.
-     * @return `JobHandle` for retrieving the final `JobRecord`.
-     * @throws std::filesystem::filesystem_error if runtime output directories
-     * cannot be created.
-     */
-    JobHandle submit_job(std::vector<Task>&& tasks) const;
+    JobHandle submit_job(std::vector<Task> tasks) const;
 
   private:
     // Shared simulation unit registry used by all `simulation_unit_actor`s in this runtime

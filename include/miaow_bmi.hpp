@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <exception>
 #include <functional>
 #include <map>
@@ -20,16 +21,6 @@ namespace miaow {
 namespace bmi_api = ::bmi;
 
 /**
- * @brief Named CAF dictionary containing MIAOW's BMI pipeline schema.
- *
- * `BmiPipelineConfig` is a semantic alias for
- * `caf::config_value::dictionary`. Tasks wrap this dictionary in
- * `caf::config_value` so the same schema can be serialized through the
- * runtime and subprocess boundaries.
- */
-using BmiPipelineConfig = caf::config_value::dictionary;
-
-/**
  * @brief Backend interface exposed by a dynamically loaded BMI plugin.
  *
  * Dynamic modules adapt plugins that implement the
@@ -38,6 +29,56 @@ using BmiPipelineConfig = caf::config_value::dictionary;
 enum class DynamicBmiBackend {
     cpp,
     fortran,
+};
+
+/**
+ * @brief Model module configuration for `BmiPipelineConfig` and `DynamicBmiModel`.
+ *
+ * Dynamic module entries mirror the model-module parts of NextGen-style
+ * realization files used by [ngen](https://github.com/NOAA-OWP/ngen).
+ */
+struct BmiModuleConfig {
+    /**
+     * @brief Construct a supplied-model module config.
+     * @param name Module name written to the serialized pipeline config.
+     * @param config_file BMI initialization config path.
+     * @param variables_names_map Optional BMI input to source variable map.
+     */
+    BmiModuleConfig(std::string name, std::string config_file,
+                    std::map<std::string, std::string> variables_names_map = {});
+
+    /**
+     * @brief Construct a dynamic plugin module config.
+     * @param name Module name written to the serialized pipeline config.
+     * @param dynamic_backend Dynamic plugin backend.
+     * @param plugin_path Dynamic plugin library path.
+     * @param config_file Optional BMI initialization config path.
+     * @param variables_names_map Optional BMI input to source variable map.
+     */
+    BmiModuleConfig(std::string name, DynamicBmiBackend dynamic_backend,
+                    std::string plugin_path, std::string config_file = "",
+                    std::map<std::string, std::string> variables_names_map = {});
+
+    // Module name written to the serialized pipeline config
+    std::string name_;
+
+    // Dynamic plugin backend for C++ and Fortran BMI modules
+    std::optional<DynamicBmiBackend> dynamic_backend_;
+
+    // Dynamic plugin library path
+    std::string plugin_path_;
+
+    // BMI initialization config path written into serialized modules
+    std::string config_file_;
+
+    // C++ BMI factory function name
+    std::optional<std::string> cpp_create_function_;
+
+    // C++ BMI destructor function name
+    std::optional<std::string> cpp_destroy_function_;
+
+    // Map from target BMI input names to source output names or CSV headers
+    std::map<std::string, std::string> variables_names_map_;
 };
 
 /**
@@ -53,45 +94,35 @@ enum class BmiExecutionMode {
 };
 
 /**
- * @brief Model module configuration for `BmiPipelineConfig` and `DynamicBmiModel`.
+ * @brief Typed task-level BMI pipeline configuration.
  *
- * Dynamic module entries mirror the model-module parts of NextGen-style
- * realization files used by [ngen](https://github.com/NOAA-OWP/ngen).
+ * `BmiPipelineConfig` stores the model modules, forcing source, and optional
+ * feature identifier for one BMI task. Convert it with
+ * `bmi_pipeline_config_to_value(...)` before placing it in `Task::args_`.
  */
-struct BmiModuleConfig {
-    // Module name written to the BmiPipelineConfig
-    std::string name_;
+struct BmiPipelineConfig {
+    /**
+     * @brief Construct a pipeline config from model modules and optional inputs.
+     * @param module_configs Model modules included in the pipeline.
+     * @param forcing_file Optional CSV forcing file path.
+     * @param feature_id Optional feature identifier for realization-derived tasks.
+     * @throws std::runtime_error if the module list is empty.
+     */
+    BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs,
+                      std::string forcing_file = "", std::string feature_id = "");
 
-    // Dynamic plugin backend for C++ and Fortran BMI modules
-    std::optional<DynamicBmiBackend> dynamic_backend_;
+    // Model modules configured for this pipeline
+    std::vector<BmiModuleConfig> module_configs_;
 
-    // Dynamic plugin library path
-    std::string plugin_path_;
+    // Zero-based module index exposed through the pipeline BMI surface
+    std::size_t output_module_{0};
 
-    // BMI initialization config path written into BmiPipelineConfig modules
-    std::string config_file_;
+    // Optional CSV forcing file consumed by the internal forcing module
+    std::string forcing_file_;
 
-    // C++ BMI factory function name
-    std::optional<std::string> cpp_create_function_;
-
-    // C++ BMI destructor function name
-    std::optional<std::string> cpp_destroy_function_;
-
-    // Map from target BMI input names to source output names or CSV headers
-    std::map<std::string, std::string> variables_names_map_;
+    // Optional feature identifier for realization-derived tasks
+    std::string feature_id_;
 };
-
-/**
- * @brief Build a top-level `BmiPipelineConfig` from model module configs.
- * @param module_configs Model modules included in the pipeline.
- * @param forcing_file Optional CSV forcing file path.
- * @param feature Optional feature metadata for realization-derived tasks.
- * @return Top-level `BmiPipelineConfig`.
- * @throws std::runtime_error if the module list or forcing config is invalid.
- */
-BmiPipelineConfig make_bmi_pipeline_config(std::vector<BmiModuleConfig> module_configs,
-                                           const std::string& forcing_file = "",
-                                           caf::config_value::dictionary feature = {});
 
 /**
  * @brief Build a `BmiPipelineConfig` for one BMI model.
@@ -109,6 +140,14 @@ BmiPipelineConfig make_bmi_pipeline_config(std::vector<BmiModuleConfig> module_c
 BmiPipelineConfig
 make_bmi_model_config(const std::string& init_config, const std::string& forcing_file = "",
                       const std::map<std::string, std::string>& variables_names_map = {});
+
+/**
+ * @brief Convert a `BmiPipelineConfig` to a `Task` argument value.
+ * @param pipeline_config Typed pipeline config.
+ * @return CAF config value suitable for `Task::args_`.
+ * @throws std::runtime_error if the pipeline config is invalid.
+ */
+caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline_config);
 
 /**
  * @brief BMI model backed by a single dynamically loaded C++ or Fortran BMI plugin.
@@ -213,7 +252,7 @@ class BmiPipeline : public bmi_api::Bmi {
 
     /**
      * @brief Construct a task pipeline and write its `BmiPipelineConfig` file.
-     * @param task Task whose first argument is a `BmiPipelineConfig`.
+     * @param task Task whose first argument stores a serialized `BmiPipelineConfig`.
      * @param model Optional single model provided by `BmiSimulationUnit`.
      */
     explicit BmiPipeline(const Task& task, std::unique_ptr<bmi_api::Bmi> model = nullptr);
@@ -330,7 +369,7 @@ namespace bmi {
  * [Boost.Process](https://www.boost.org/doc/libs/release/libs/process/) and
  * reads the `TaskResult` JSON file written by the child.
  *
- * @param task Task whose first argument is a `BmiPipelineConfig`.
+ * @param task Task whose first argument stores a serialized `BmiPipelineConfig`.
  * @return Structured `TaskResult` read from the subprocess result file.
  * @throws std::runtime_error if subprocess setup, launch, or result parsing fails.
  */
@@ -343,12 +382,13 @@ TaskResult execute_bmi_lifecycle_in_subprocess(const Task& task);
  *
  * For ordinary BMI model types, including `DynamicBmiModel`,
  * `BmiSimulationUnit` constructs a fresh model per task and runs it inside a
- * `BmiPipeline`. The first task argument must be a `BmiPipelineConfig` built
- * by `make_bmi_model_config(...)`.
+ * `BmiPipeline`. The first task argument must store a serialized
+ * `BmiPipelineConfig`, usually built by `make_bmi_model_config(...)` and
+ * converted with `bmi_pipeline_config_to_value(...)`.
  *
  * For `BmiPipeline`, `BmiSimulationUnit` runs the complete pipeline from
- * the task's `BmiPipelineConfig`. This is the path for realization-derived
- * pipelines and subprocess execution.
+ * the task's serialized `BmiPipelineConfig`. This is the path for
+ * realization-derived pipelines and subprocess execution.
  *
  * @tparam BmiModelType BMI model type derived from `bmi_api::Bmi`.
  */

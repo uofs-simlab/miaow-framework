@@ -50,48 +50,10 @@ std::filesystem::path parse_subprocess_task_path(int argc, char* argv[]) {
     return std::filesystem::absolute(task_path).lexically_normal();
 }
 
-// Write the complete result contract consumed by the parent process
-void write_subprocess_result(const std::filesystem::path& result_path,
-                             const TaskResult& task_result) {
-    io::write_json_file(result_path, task_result, false);
-}
-
 // Write child-process setup failures through the diagnostic stderr file
 void write_subprocess_error(const std::string& message) {
     std::cerr << bmi_subprocess_error_prefix << ": subprocess setup error: " << message
               << "\n";
-}
-
-// Require a non-empty task payload string except where empty is part of the contract
-void require_non_empty_task_string(const std::string& value, const std::string& key) {
-    if (value.empty()) {
-        throw std::runtime_error("subprocess task key '" + key +
-                                 "' must be a non-empty string");
-    }
-}
-
-// Enforce semantic constraints that JSON deserialization cannot express
-void validate_subprocess_task(const Task& task) {
-    if (task.args_.size() != 1) {
-        throw std::runtime_error(
-            "subprocess task must contain exactly one top-level BMI pipeline "
-            "config argument");
-    }
-
-    const BmiPipelineConfig* pipeline_config =
-        caf::get_if<caf::config_value::dictionary>(&task.args_.front());
-    if (pipeline_config == nullptr) {
-        throw std::runtime_error(
-            "subprocess task argument must be a BmiPipelineConfig");
-    }
-    if (pipeline_config->empty()) {
-        throw std::runtime_error(
-            "subprocess task argument must be a non-empty "
-            "dictionary");
-    }
-    if (!task.task_output_dir_.empty()) {
-        require_non_empty_task_string(task.task_output_name_, "task_output_name");
-    }
 }
 
 // Read the parent-written JSON file into the subprocess task payload
@@ -107,7 +69,21 @@ Task read_subprocess_task(const std::filesystem::path& task_path) {
         throw std::runtime_error("failed to read task file '" + task_path.string() +
                                  "': " + caf::to_string(reader.get_error()));
     }
-    validate_subprocess_task(task);
+
+    // Validate constraints that JSON deserialization cannot express
+    if (task.args_.size() != 1) {
+        throw std::runtime_error(
+            "subprocess task must contain exactly one top-level BMI pipeline "
+            "config argument");
+    }
+    if (caf::get_if<caf::config_value::dictionary>(&task.args_.front()) == nullptr) {
+        throw std::runtime_error(
+            "subprocess task argument must be a BmiPipelineConfig");
+    }
+    if (!task.task_output_dir_.empty() && task.task_output_name_.empty()) {
+        throw std::runtime_error(
+            "subprocess task key 'task_output_name' must be a non-empty string");
+    }
     return task;
 }
 
@@ -136,8 +112,8 @@ int main(int argc, char* argv[]) {
         }
 
         // Write the result file that the parent process will read
-        miaow::write_subprocess_result(miaow::bmi::make_subprocess_result_path(task_path),
-                                       task_result);
+        miaow::io::write_json_file(miaow::bmi::make_subprocess_result_path(task_path),
+                                   task_result, false);
         return 0;
     } catch (const std::exception& exception) {
         // The result-file contract may not be available at this point

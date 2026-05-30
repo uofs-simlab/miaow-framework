@@ -4,15 +4,12 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <map>
-#include <memory>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <boost/json.hpp>
 #include <caf/config_value.hpp>
-#include <caf/json.hpp>
 
 #include "miaow_bmi.hpp"
 #include "third_party/bmi/bmi.hxx"
@@ -168,21 +165,22 @@ class ForcingBmi : public ::bmi::Bmi {
 };
 
 // BMI pipeline config and module IO
-caf::json_object read_bmi_pipeline_config_file(const std::filesystem::path& path);
+BmiPipelineConfig read_bmi_pipeline_config_file(const std::filesystem::path& path);
+
+void write_bmi_pipeline_config_file(const Task& task,
+                                    const std::filesystem::path& path);
 
 caf::config_value::dictionary
 make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
-                             const std::string& forcing_file);
+                             const std::string& forcing_file,
+                             std::size_t output_module = 0);
 
-BmiModuleConfig parse_bmi_module_config(const caf::json_object& module_object,
+BmiModuleConfig parse_bmi_module_config(const boost::json::object& module_object,
                                         std::string_view error_prefix);
 
 std::filesystem::path bmi_pipeline_config_file_path(const Task& task);
 
 std::vector<std::string> bmi_pipeline_config_artifact_paths(const Task& task);
-
-void write_bmi_pipeline_config_file(const miaow::BmiPipelineConfig& pipeline_config,
-                                    const std::filesystem::path& path);
 
 // Output CSV writing
 OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
@@ -203,11 +201,6 @@ make_subprocess_result_path(const std::filesystem::path& task_path) {
                 "_result.json");
     }
     return task_path.parent_path() / (task_path.stem().string() + "_result.json");
-}
-
-inline std::unique_ptr<::bmi::Bmi>
-make_dynamic_bmi_model(const BmiModuleConfig& module_config) {
-    return std::make_unique<DynamicBmiModel>(module_config);
 }
 
 } // namespace miaow::bmi

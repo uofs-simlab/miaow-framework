@@ -33,21 +33,21 @@ miaow_validate_provider(MIAOW_BOOST_PROVIDER)
 miaow_validate_provider(MIAOW_CAF_PROVIDER)
 
 if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
-    find_package(Boost CONFIG QUIET COMPONENTS process)
-    if(NOT TARGET Boost::process)
-        find_package(Boost QUIET COMPONENTS process)
+    find_package(Boost CONFIG QUIET COMPONENTS process json)
+    if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
+        find_package(Boost QUIET COMPONENTS process json)
     endif()
 endif()
 
-if(NOT TARGET Boost::process)
+if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
     if(MIAOW_BOOST_PROVIDER STREQUAL "system")
         message(FATAL_ERROR
-            "Boost.Process not found. Use Conan, install Boost, or set "
+            "Boost.Process or Boost.JSON not found. Use Conan, install Boost, or set "
             "MIAOW_BOOST_PROVIDER to auto or fetch.")
     endif()
 
     include(FetchContent)
-    set(BOOST_INCLUDE_LIBRARIES process CACHE STRING
+    set(BOOST_INCLUDE_LIBRARIES process json CACHE STRING
         "Boost libraries included by FetchContent" FORCE)
     set(BOOST_ENABLE_CMAKE ON CACHE BOOL "Enable Boost CMake support" FORCE)
     set(miaow_boost_release_url
@@ -57,7 +57,7 @@ if(NOT TARGET Boost::process)
     string(CONCAT miaow_boost_url
         "${miaow_boost_release_url}/boost-${MIAOW_BOOST_VERSION}"
         "/${miaow_boost_cmake_archive}")
-    message(STATUS "Boost.Process not found. Fetching Boost ${MIAOW_BOOST_VERSION}...")
+    message(STATUS "Boost components not found. Fetching Boost ${MIAOW_BOOST_VERSION}...")
     FetchContent_Declare(
         boost
         URL ${miaow_boost_url}
@@ -65,8 +65,8 @@ if(NOT TARGET Boost::process)
     FetchContent_MakeAvailable(boost)
 endif()
 
-if(NOT TARGET Boost::process)
-    message(FATAL_ERROR "Boost did not provide the expected Boost::process target.")
+if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
+    message(FATAL_ERROR "Boost did not provide the expected Boost targets.")
 endif()
 
 set(MIAOW_CAF_CORE_TARGET "")
@@ -192,6 +192,7 @@ target_link_libraries(miaow
         ${CMAKE_DL_LIBS}
     PRIVATE
         Boost::process
+        Boost::json
 )
 
 set(MIAOW_SUBPROCESS_PATH

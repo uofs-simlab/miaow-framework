@@ -4,16 +4,18 @@
 #include "io/internal.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <regex>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-#include <caf/config_value.hpp>
-#include <caf/json.hpp>
+#include <boost/json.hpp>
 
 namespace miaow {
+
+namespace json = boost::json;
 
 namespace {
 
@@ -65,31 +67,30 @@ std::filesystem::path require_existing_directory(const std::filesystem::path& pa
     return path;
 }
 
-// CAF owns the JSON parser used by all realization configuration reads
-caf::json_object parse_json_file(const std::filesystem::path& path,
-                                 const std::string& context) {
-    return io::read_json_object_file(path, context, "unable to parse JSON file",
-                                     "Realization config error: ");
-}
-
 // Feature IDs come from GeoJSON feature IDs or SYMFLUENCE id properties
 std::vector<std::string> read_feature_ids(const std::filesystem::path& path) {
-    const caf::json_object root = parse_json_file(path, "features root");
+    std::ifstream input(path);
+    if (!input.is_open()) {
+        throw_realization_path_error("features path '" + path.string() +
+                                     "' could not be opened");
+    }
+    const json::object root = json::parse(input).as_object();
     std::vector<std::string> feature_ids;
-    const caf::json_array features = root.value("features").to_array();
+    const json::array& features = root.at("features").as_array();
     feature_ids.reserve(features.size());
-    for (const caf::json_value& feature_value : features) {
-        const caf::json_object feature = feature_value.to_object();
-        caf::json_value id_value = feature.value("id");
-        if (id_value.is_undefined()) {
-            const caf::json_object properties = feature.value("properties").to_object();
-            id_value = properties.value("id");
+    for (const json::value& feature_value : features) {
+        const json::object& feature = feature_value.as_object();
+        const json::value* id_value = feature.if_contains("id");
+        if (id_value == nullptr) {
+            const json::object& properties = feature.at("properties").as_object();
+            id_value = properties.if_contains("id");
         }
-        if (id_value.is_undefined()) {
+        if (id_value == nullptr) {
             throw_realization_config_error("feature id must be present");
         }
 
-        const std::string feature_id = io::trim(std::string(id_value.to_string()));
+        const std::string feature_id =
+            io::trim(std::string(id_value->as_string()));
         if (feature_id.empty()) {
             throw_realization_config_error("feature id must be non-empty");
         }
@@ -147,59 +148,34 @@ std::string match_forcing_file(const std::filesystem::path& forcing_directory,
     return matches.front().string();
 }
 
-// The supported SYMFLUENCE realization contains one bmi_multi Fortran module
-BmiModuleConfig parse_fortran_module_config(const caf::json_object& global_object) {
-    const caf::json_array formulations = global_object.value("formulations").to_array();
+// The supported realization contains one bmi_multi Fortran module
+BmiModuleConfig parse_fortran_module_config(const json::object& global_object) {
+    const json::array& formulations = global_object.at("formulations").as_array();
     if (formulations.size() != 1) {
         throw_realization_config_error("formulations must contain one entry");
     }
 
-    const caf::json_object formulation = (*formulations.begin()).to_object();
+    const json::object& formulation = formulations.at(0).as_object();
     const std::string formulation_name =
-        io::trim(std::string(formulation.value("name").to_string()));
+        io::trim(std::string(formulation.at("name").as_string()));
     if (formulation_name != "bmi_multi") {
         throw_realization_config_error("unsupported formulation '" + formulation_name +
                                        "'");
     }
 
-    const caf::json_object bmi_multi_params = formulation.value("params").to_object();
-    const caf::json_array modules = bmi_multi_params.value("modules").to_array();
+    const json::object& bmi_multi_params = formulation.at("params").as_object();
+    const json::array& modules = bmi_multi_params.at("modules").as_array();
     if (modules.size() != 1) {
         throw_realization_config_error("bmi_multi modules must contain one entry");
     }
 
     BmiModuleConfig module_config = bmi::parse_bmi_module_config(
-        (*modules.begin()).to_object(), "Realization config error: ");
+        modules.at(0).as_object(), "Realization config error: ");
     if (module_config.name_ != "bmi_fortran") {
         throw_realization_config_error("unsupported module '" + module_config.name_ + "'");
     }
 
     return module_config;
-}
-
-std::string
-pipeline_config_feature_id(const caf::config_value::dictionary& pipeline_config) {
-    const caf::config_value::dictionary::const_iterator feature_it =
-        pipeline_config.find("feature");
-    if (feature_it == pipeline_config.end()) {
-        throw_realization_config_error("pipeline config is missing key 'feature'");
-    }
-    const caf::config_value::dictionary* feature =
-        caf::get_if<caf::config_value::dictionary>(&feature_it->second);
-    if (feature == nullptr) {
-        throw_realization_config_error(
-            "pipeline config key 'feature' must be a dictionary");
-    }
-    const caf::config_value::dictionary::const_iterator id_it = feature->find("id");
-    if (id_it == feature->end()) {
-        throw_realization_config_error("pipeline config feature is missing key 'id'");
-    }
-    const std::string* feature_id = caf::get_if<std::string>(&id_it->second);
-    if (feature_id == nullptr || io::trim(*feature_id).empty()) {
-        throw_realization_config_error(
-            "pipeline config feature key 'id' must be a non-empty string");
-    }
-    return *feature_id;
 }
 
 } // namespace
@@ -215,12 +191,17 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
     require_existing_file(normalized_path, "realization");
 
     const std::filesystem::path base_directory = normalized_path.parent_path();
-    const caf::json_object root = parse_json_file(normalized_path, "root");
-    const caf::json_object global = root.value("global").to_object();
+    std::ifstream input(normalized_path);
+    if (!input.is_open()) {
+        throw_realization_path_error("realization path '" + normalized_path.string() +
+                                     "' could not be opened");
+    }
+    const json::object root = json::parse(input).as_object();
+    const json::object& global = root.at("global").as_object();
     BmiModuleConfig module_config = parse_fortran_module_config(global);
-    const caf::json_object forcing = global.value("forcing").to_object();
+    const json::object& forcing = global.at("forcing").as_object();
     const std::string provider =
-        io::trim(std::string(forcing.value("provider").to_string()));
+        io::trim(std::string(forcing.at("provider").as_string()));
     if (provider != "CsvPerFeature") {
         throw_realization_config_error("unsupported forcing provider '" + provider + "'");
     }
@@ -228,9 +209,9 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
     const std::string init_template = module_config.config_file_;
 
     const std::string forcing_path_text =
-        io::trim(std::string(forcing.value("path").to_string()));
+        io::trim(std::string(forcing.at("path").as_string()));
     const std::string forcing_pattern_template =
-        io::trim(std::string(forcing.value("file_pattern").to_string()));
+        io::trim(std::string(forcing.at("file_pattern").as_string()));
 
     const std::filesystem::path library_path =
         resolve_path(base_directory, module_config.plugin_path_);
@@ -242,13 +223,12 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
     require_existing_file(features_path, "features");
     const std::vector<std::string> feature_ids = read_feature_ids(features_path);
 
-    const caf::json_value output_root_value = root.value("output_root");
-    if (!output_root_value.is_undefined()) {
-        if (!output_root_value.is_string()) {
+    if (const json::value* output_root_value = root.if_contains("output_root")) {
+        if (!output_root_value->is_string()) {
             throw_realization_config_error("root key 'output_root' must be a string");
         }
         const std::string output_root =
-            io::trim(std::string(output_root_value.to_string()));
+            io::trim(std::string(output_root_value->as_string()));
         if (!output_root.empty()) {
             output_root_ = resolve_path(base_directory, output_root).string();
         }
@@ -271,15 +251,9 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         BmiModuleConfig task_module_config = module_config;
         task_module_config.config_file_ = init_config_path;
 
-        caf::config_value::dictionary feature;
-        feature.insert("id", feature_id);
-        feature.insert("type", "catchment");
-        feature.insert("hydrofabric_layer", "divides");
-        feature.insert("hydrofabric_id_field", "id");
-
-        feature_pipeline_configs_.push_back(
-            make_bmi_pipeline_config({std::move(task_module_config)}, forcing_file,
-                                     std::move(feature)));
+        feature_pipeline_configs_.emplace_back(
+            std::vector<BmiModuleConfig>{std::move(task_module_config)}, forcing_file,
+            feature_id);
     }
 }
 
@@ -289,12 +263,16 @@ std::vector<Task> build_bmi_realization_tasks(const PartitionedBmiRealization& r
     // Build one task for each feature in realization order
     std::vector<Task> tasks;
     tasks.reserve(realization.feature_pipeline_configs_.size());
-    for (const caf::config_value::dictionary& pipeline_config :
+    for (const BmiPipelineConfig& pipeline_config :
          realization.feature_pipeline_configs_) {
-        const std::string feature_id = pipeline_config_feature_id(pipeline_config);
+        const std::string feature_id = io::trim(pipeline_config.feature_id_);
+        if (feature_id.empty()) {
+            throw_realization_config_error(
+                "pipeline config feature_id must be a non-empty string");
+        }
 
         // Feature metadata provides the hydrofabric join key for map outputs
-        Task task(simulation_unit_id, caf::config_value{pipeline_config},
+        Task task(simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config),
                   TaskMetadata{{"feature_id", feature_id},
                                {"feature_type", "catchment"},
                                {"hydrofabric_layer", "divides"},

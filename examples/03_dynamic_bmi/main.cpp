@@ -36,15 +36,11 @@ int main(int argc, char* argv[]) {
     std::cout << "Fortran dynamic BMI plugin: " << fortran_heat_plugin_path << "\n";
 
     // Describe each dynamic plugin loader
-    miaow::BmiModuleConfig cpp_heat_module;
-    cpp_heat_module.name_ = "bmi_cpp";
-    cpp_heat_module.dynamic_backend_ = miaow::DynamicBmiBackend::cpp;
-    cpp_heat_module.plugin_path_ = cpp_heat_plugin_path;
+    const miaow::BmiModuleConfig cpp_heat_module(
+        "bmi_cpp", miaow::DynamicBmiBackend::cpp, cpp_heat_plugin_path);
 
-    miaow::BmiModuleConfig fortran_heat_module;
-    fortran_heat_module.name_ = "bmi_fortran";
-    fortran_heat_module.dynamic_backend_ = miaow::DynamicBmiBackend::fortran;
-    fortran_heat_module.plugin_path_ = fortran_heat_plugin_path;
+    const miaow::BmiModuleConfig fortran_heat_module(
+        "bmi_fortran", miaow::DynamicBmiBackend::fortran, fortran_heat_plugin_path);
 
     // Register dynamic BMI units that construct plugin models in this process
     miaow::SimulationUnitRegistry registry;
@@ -61,8 +57,8 @@ int main(int argc, char* argv[]) {
 
     // Run one C++ heat task and one Fortran heat task in the same job
     const std::vector<miaow::Task> tasks{
-        {cpp_heat, caf::config_value{heat_pipeline_config}},
-        {fortran_heat, caf::config_value{heat_pipeline_config}},
+        {cpp_heat, miaow::bmi_pipeline_config_to_value(heat_pipeline_config)},
+        {fortran_heat, miaow::bmi_pipeline_config_to_value(heat_pipeline_config)},
     };
 
     // Submit tasks and wait for results

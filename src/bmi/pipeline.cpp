@@ -12,8 +12,6 @@
 #include <utility>
 #include <vector>
 
-#include <caf/json.hpp>
-
 namespace miaow {
 
 namespace internal_bmi = miaow::bmi;
@@ -22,30 +20,8 @@ using internal_bmi::bmi_pipeline_config_artifact_paths;
 using internal_bmi::bmi_pipeline_config_file_path;
 using internal_bmi::BmiCoupling;
 using internal_bmi::ForcingBmi;
-using internal_bmi::make_dynamic_bmi_model;
-using internal_bmi::parse_bmi_module_config;
 using internal_bmi::read_bmi_pipeline_config_file;
 using internal_bmi::write_bmi_pipeline_config_file;
-
-namespace {
-
-// Validate the public task contract before touching files or BMI lifecycle
-const miaow::BmiPipelineConfig& require_bmi_pipeline_config_argument(const Task& task) {
-    if (task.args_.size() != 1) {
-        throw std::runtime_error("BMI pipeline config error: task must contain exactly one "
-                                 "BmiPipelineConfig argument");
-    }
-
-    const miaow::BmiPipelineConfig* pipeline_config =
-        caf::get_if<caf::config_value::dictionary>(&task.args_.front());
-    if (pipeline_config == nullptr) {
-        throw std::runtime_error(
-            "BMI pipeline config error: first task argument must be a BmiPipelineConfig");
-    }
-    return *pipeline_config;
-}
-
-} // namespace
 
 class BmiPipeline::Impl : public bmi_api::Bmi {
   public:
@@ -104,12 +80,9 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
     std::vector<std::string> artifact_paths() const;
 
   private:
-    [[noreturn]] void throw_config_error(const std::string& message) const;
-    caf::json_object read_bmi_multi_params(const caf::json_object& global) const;
-    BmiModuleConfig
-    parse_single_module_config(const caf::json_object& bmi_multi_params) const;
     std::size_t add_model_module(const BmiModuleConfig& module_config);
-    bool add_forcing_module(const caf::json_object& global, std::size_t model_module,
+    bool add_forcing_module(const BmiPipelineConfig& pipeline_config,
+                            std::size_t model_module,
                             std::size_t& forcing_module);
     ::bmi::Bmi& output_model();
     void reset_pipeline();
@@ -154,42 +127,7 @@ BmiPipeline::Impl::Impl(const Task& task, std::unique_ptr<::bmi::Bmi> supplied_m
       config_path_(bmi_pipeline_config_file_path(task)),
       artifact_paths_(bmi_pipeline_config_artifact_paths(task)) {
     // Write the BmiPipelineConfig because BMI Initialize accepts a file path
-    write_bmi_pipeline_config_file(require_bmi_pipeline_config_argument(task),
-                                   config_path_);
-}
-
-void BmiPipeline::Impl::throw_config_error(const std::string& message) const {
-    io::throw_config_error("BMI pipeline config error: ", message);
-}
-
-// Parse the single bmi_multi formulation used by the current pipeline schema
-caf::json_object
-BmiPipeline::Impl::read_bmi_multi_params(const caf::json_object& global) const {
-    const caf::json_array formulations = global.value("formulations").to_array();
-    if (formulations.size() != 1) {
-        throw_config_error("BMI pipeline config formulations must contain one entry");
-    }
-    const caf::json_object formulation = (*formulations.begin()).to_object();
-    const std::string formulation_name =
-        io::trim(std::string(formulation.value("name").to_string()));
-    if (formulation_name != "bmi_multi") {
-        throw_config_error("unsupported formulation '" + formulation_name + "'");
-    }
-    return formulation.value("params").to_object();
-}
-
-// The BMI pipeline currently supports a single module per bmi_multi formulation
-BmiModuleConfig BmiPipeline::Impl::parse_single_module_config(
-    const caf::json_object& bmi_multi_params) const {
-    const caf::json_array modules = bmi_multi_params.value("modules").to_array();
-
-    // The current pipeline schema supports one model module
-    if (modules.size() != 1) {
-        throw_config_error("bmi_multi modules must contain one entry");
-    }
-
-    return parse_bmi_module_config((*modules.begin()).to_object(),
-                                   "BMI pipeline config error: ");
+    write_bmi_pipeline_config_file(task, config_path_);
 }
 
 // Add a model module to the pipeline and return its module index
@@ -197,12 +135,13 @@ std::size_t BmiPipeline::Impl::add_model_module(const BmiModuleConfig& module_co
     if (!module_config.dynamic_backend_) {
         // supplied_model modules are bound to the model passed by the caller
         if (!supplied_model_) {
-            throw_config_error("module 'supplied_model' requires a supplied BMI model");
+            io::throw_config_error("BMI pipeline config error: ",
+                                   "module 'supplied_model' requires a supplied BMI model");
         }
         modules_.push_back(supplied_model_.get());
     } else {
         // Dynamic modules are constructed from plugin metadata in the config
-        owned_modules_.push_back(make_dynamic_bmi_model(module_config));
+        owned_modules_.push_back(std::make_unique<DynamicBmiModel>(module_config));
         modules_.push_back(owned_modules_.back().get());
     }
 
@@ -211,21 +150,11 @@ std::size_t BmiPipeline::Impl::add_model_module(const BmiModuleConfig& module_co
 }
 
 // Add the forcing module and return whether forcing is active
-bool BmiPipeline::Impl::add_forcing_module(const caf::json_object& global,
+bool BmiPipeline::Impl::add_forcing_module(const BmiPipelineConfig& pipeline_config,
                                            std::size_t model_module,
                                            std::size_t& forcing_module) {
-    std::string forcing_file;
-    const caf::json_value forcing_value = global.value("forcing");
-    const bool has_forcing = !forcing_value.is_undefined();
-    if (has_forcing) {
-        const caf::json_object forcing = forcing_value.to_object();
-        const std::string provider =
-            io::trim(std::string(forcing.value("provider").to_string()));
-        if (provider != "CsvFile") {
-            throw_config_error("unsupported forcing provider '" + provider + "'");
-        }
-        forcing_file = io::trim(std::string(forcing.value("file").to_string()));
-    }
+    const std::string forcing_file = io::trim(pipeline_config.forcing_file_);
+    const bool has_forcing = !forcing_file.empty();
 
     // The forcing module is always last; empty config makes it a no-op
     forcing_module = modules_.size();
@@ -326,15 +255,16 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
     }
     reset_pipeline();
 
-    // Read the BmiPipelineConfig and select the bmi_multi formulation
-    const caf::json_object root = read_bmi_pipeline_config_file(config_file);
-    const caf::json_object global = root.value("global").to_object();
-    const caf::json_object bmi_multi_params = read_bmi_multi_params(global);
-    output_module_ =
-        static_cast<std::size_t>(bmi_multi_params.value("output_module").to_integer());
+    // Read the typed BmiPipelineConfig consumed by this BMI lifecycle
+    const BmiPipelineConfig pipeline_config = read_bmi_pipeline_config_file(config_file);
+    if (pipeline_config.module_configs_.size() != 1) {
+        io::throw_config_error("BMI pipeline config error: ",
+                               "bmi_multi modules must contain one entry");
+    }
+    output_module_ = pipeline_config.output_module_;
 
     // Add the configured model module before attaching optional forcing
-    const BmiModuleConfig module_config = parse_single_module_config(bmi_multi_params);
+    const BmiModuleConfig& module_config = pipeline_config.module_configs_.front();
     const std::size_t model_module = add_model_module(module_config);
 
     if (output_module_ >= modules_.size()) {
@@ -342,7 +272,8 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
     }
 
     std::size_t forcing_module = 0;
-    const bool has_forcing = add_forcing_module(global, model_module, forcing_module);
+    const bool has_forcing = add_forcing_module(pipeline_config, model_module,
+                                                forcing_module);
 
     // Initialize modules in update order so downstream metadata is available
     for (std::size_t module_index = 0; module_index < modules_.size(); ++module_index) {

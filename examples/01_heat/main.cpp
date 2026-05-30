@@ -59,8 +59,10 @@ int main(int argc, char* argv[]) {
 
     // Tasks for this job include heat simulations and one hello message
     std::vector<miaow::Task> tasks{
-        {heat, caf::config_value{miaow::make_bmi_model_config(first_heat_config)}},
-        {heat, caf::config_value{miaow::make_bmi_model_config(second_heat_config)}},
+        {heat, miaow::bmi_pipeline_config_to_value(
+                   miaow::make_bmi_model_config(first_heat_config))},
+        {heat, miaow::bmi_pipeline_config_to_value(
+                   miaow::make_bmi_model_config(second_heat_config))},
         {hello, "hello"},
     };
 

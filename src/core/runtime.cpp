@@ -186,18 +186,13 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
                                          &pending_jobs_mutex_, &pending_jobs_);
 }
 
-// Submitting one task is a wrapper around the multi-task submission path
+// Submit one task through the multi-task path
 JobHandle Runtime::submit_job(const Task& task) const {
     return submit_job(std::vector<Task>{task});
 }
 
-// `const&` copy path: lvalue input is copied, so caller retains ownership
-JobHandle Runtime::submit_job(const std::vector<Task>& tasks) const {
-    return submit_job(std::vector<Task>{tasks});
-}
-
-// `&&` move path: rvalue input transfers ownership into the Runtime message path
-JobHandle Runtime::submit_job(std::vector<Task>&& tasks) const {
+// Submit a full task collection into the Runtime message path
+JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
     // If there are no tasks, return a ready future with an empty result immediately

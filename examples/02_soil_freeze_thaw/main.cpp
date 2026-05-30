@@ -52,20 +52,20 @@ int main(int argc, char* argv[]) {
     //   2: 1-day model, 512-day forcing (model stops before forcing ends)
     std::vector<miaow::Task> tasks{
         miaow::Task{soil_freeze_thaw,
-                    caf::config_value{miaow::make_bmi_model_config(
-                        config_512_days, forcing_512_days, forcing_names_map)},
+                    miaow::bmi_pipeline_config_to_value(miaow::make_bmi_model_config(
+                        config_512_days, forcing_512_days, forcing_names_map)),
                     miaow::TaskMetadata{{"label", "matched-duration"},
                                         {"config_path", config_512_days},
                                         {"forcing_file", forcing_512_days}}},
         miaow::Task{soil_freeze_thaw,
-                    caf::config_value{miaow::make_bmi_model_config(
-                        config_512_days, forcing_1_day, forcing_names_map)},
+                    miaow::bmi_pipeline_config_to_value(miaow::make_bmi_model_config(
+                        config_512_days, forcing_1_day, forcing_names_map)),
                     miaow::TaskMetadata{{"label", "short-forcing"},
                                         {"config_path", config_512_days},
                                         {"forcing_file", forcing_1_day}}},
         miaow::Task{soil_freeze_thaw,
-                    caf::config_value{miaow::make_bmi_model_config(
-                        config_1_day, forcing_512_days, forcing_names_map)},
+                    miaow::bmi_pipeline_config_to_value(miaow::make_bmi_model_config(
+                        config_1_day, forcing_512_days, forcing_names_map)),
                     miaow::TaskMetadata{{"label", "long-forcing"},
                                         {"config_path", config_1_day},
                                         {"forcing_file", forcing_512_days}}},
