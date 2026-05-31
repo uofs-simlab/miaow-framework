@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Select the realization file requested by CLI options
+    // Use the packaged realization when no CLI path is provided
     const std::string realization_path = runtime_options.realization_path_.empty()
                                              ? std::string("data/realization_config.json")
                                              : runtime_options.realization_path_;

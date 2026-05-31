@@ -52,8 +52,8 @@ bool ensure_expected_run_dir(const std::string& executable_name,
  * - `--task_request_timeout <seconds>`
  * - `--job_request_timeout <seconds>`
  * - `--output_root <path>`
- * - `--realization <path>` (used by realization-driven workflows; left empty
- *   when absent so callers may substitute their own default)
+ * - `--realization <path>` (used by realization-driven workflows; empty when
+ *   absent)
  *
  * @param argc Number of CLI arguments.
  * @param argv CLI argument vector.

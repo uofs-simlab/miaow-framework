@@ -108,7 +108,7 @@ struct BmiPipelineConfig {
     /**
      * @brief Construct a pipeline config from model modules and optional inputs.
      * @param module_configs Model modules included in the pipeline.
-     * @param forcing_file Optional CSV forcing file path.
+     * @param forcing_file CSV forcing file path. Empty string disables task forcing.
      * @param feature_id Optional feature identifier for realization-derived tasks.
      * @throws std::runtime_error if the module list is empty.
      */
@@ -121,7 +121,7 @@ struct BmiPipelineConfig {
     // Zero-based module index exposed through the pipeline BMI surface
     std::size_t output_module_{0};
 
-    // Optional CSV forcing file consumed by the internal forcing module
+    // CSV forcing file consumed by the internal forcing module when non-empty
     std::string forcing_file_;
 
     // Optional feature identifier for realization-derived tasks
@@ -136,7 +136,7 @@ struct BmiPipelineConfig {
  * executable or loaded through `DynamicBmiModel`.
  *
  * @param init_config BMI initialization config file path.
- * @param forcing_file Optional CSV forcing file path.
+ * @param forcing_file CSV forcing file path. Empty string disables task forcing.
  * @param variables_names_map Optional BMI input to forcing CSV header map.
  * @return Top-level `BmiPipelineConfig`.
  * @throws std::runtime_error if required path or mapping entries are empty.

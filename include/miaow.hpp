@@ -415,7 +415,7 @@ struct RuntimeOptions {
     std::string output_root_;
 
     // Path to a NextGen-style realization file for realization-driven workflows
-    // Empty string lets realization-driven callers choose their own fallback path
+    // Empty string means no realization path has been configured
     std::string realization_path_;
 
     /**
@@ -426,7 +426,7 @@ struct RuntimeOptions {
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      * @param realization_path Path to a realization file. Empty string (default)
-     *                   lets realization-driven callers choose a fallback path.
+     *                   means no realization path has been configured.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::seconds(5),
