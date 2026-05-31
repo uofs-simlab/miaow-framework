@@ -1,8 +1,9 @@
 #pragma once
 
 #include <atomic>
-#include <cstddef>
 #include <chrono>
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <functional>
@@ -335,11 +336,10 @@ class SimulationUnitRegistry {
      * @return `SimulationUnitId` assigned to this registered unit.
      */
     template <class SimulationUnitType, class... ConstructorArgs>
+        requires std::derived_from<SimulationUnitType, SimulationUnit> &&
+                 std::constructible_from<
+                     SimulationUnitType, const std::decay_t<ConstructorArgs>&...>
     SimulationUnitId add(ConstructorArgs... constructor_args) {
-        // Check that `SimulationUnitType` is a valid simulation unit class
-        static_assert(std::is_base_of_v<SimulationUnit, SimulationUnitType>,
-                      "SimulationUnitType must derive from miaow::SimulationUnit");
-
         // Store constructor arguments in a tuple
         std::tuple<std::decay_t<ConstructorArgs>...> stored_constructor_args(
             std::move(constructor_args)...);
@@ -415,7 +415,7 @@ struct RuntimeOptions {
     std::string output_root_;
 
     // Path to a NextGen-style realization file for realization-driven workflows
-    // When empty (the default), the caller may substitute its own default path
+    // Empty string lets realization-driven callers choose their own fallback path
     std::string realization_path_;
 
     /**
@@ -426,7 +426,7 @@ struct RuntimeOptions {
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      * @param realization_path Path to a realization file. Empty string (default)
-     *                   lets realization-driven callers fall back to their own default.
+     *                   lets realization-driven callers choose a fallback path.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::seconds(5),

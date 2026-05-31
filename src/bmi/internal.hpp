@@ -195,8 +195,7 @@ make_subprocess_result_path(const std::filesystem::path& task_path) {
     const std::string task_filename = task_path.filename().string();
     const std::string input_suffix = "_input.json";
     if (task_filename.size() > input_suffix.size() &&
-        task_filename.compare(task_filename.size() - input_suffix.size(),
-                              input_suffix.size(), input_suffix) == 0) {
+        task_filename.ends_with(input_suffix)) {
         return task_path.parent_path() /
                (task_filename.substr(0, task_filename.size() - input_suffix.size()) +
                 "_result.json");

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -11,23 +12,9 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <tuple>
 #include <vector>
 
 namespace {
-
-bool is_leap_year(int year) {
-    return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
-}
-
-int days_in_month(int year, int month) {
-    static constexpr int days_per_month[] = {31, 28, 31, 30, 31, 30,
-                                             31, 31, 30, 31, 30, 31};
-    if (month == 2 && is_leap_year(year)) {
-        return 29;
-    }
-    return days_per_month[month - 1];
-}
 
 int parse_int_component(const std::string& raw_timestamp, std::size_t start,
                         std::size_t length) {
@@ -37,34 +24,6 @@ int parse_int_component(const std::string& raw_timestamp, std::size_t start,
         throw std::runtime_error("invalid");
     }
     return std::stoi(component);
-}
-
-std::int64_t days_since_unix_epoch(int year, unsigned month, unsigned day) {
-    year -= month <= 2 ? 1 : 0;
-    const int era = (year >= 0 ? year : year - 399) / 400;
-    const unsigned year_of_era = static_cast<unsigned>(year - era * 400);
-    const unsigned day_of_year = (153 * (month + (month > 2 ? -3U : 9U)) + 2) / 5 + day - 1;
-    const unsigned day_of_era =
-        year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    return static_cast<std::int64_t>(era) * 146097 + static_cast<std::int64_t>(day_of_era) -
-           719468;
-}
-
-std::tuple<int, unsigned, unsigned> civil_from_days(std::int64_t days_since_epoch) {
-    days_since_epoch += 719468;
-    const std::int64_t era =
-        (days_since_epoch >= 0 ? days_since_epoch : days_since_epoch - 146096) / 146097;
-    const unsigned day_of_era = static_cast<unsigned>(days_since_epoch - era * 146097);
-    const unsigned year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365;
-    int year = static_cast<int>(year_of_era) + static_cast<int>(era) * 400;
-    const unsigned day_of_year =
-        day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    const unsigned month_prime = (5 * day_of_year + 2) / 153;
-    const unsigned day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    const unsigned month = month_prime + (month_prime < 10 ? 3U : -9U);
-    year += month <= 2 ? 1 : 0;
-    return {year, month, day};
 }
 
 } // namespace
@@ -106,21 +65,20 @@ std::int64_t parse_timestamp_seconds(const std::string& raw_timestamp) {
     const int minute = parse_int_component(timestamp, 14, 2);
     const int second = parse_int_component(timestamp, 17, 2);
 
-    if (month < 1 || month > 12) {
-        throw std::runtime_error("invalid");
-    }
-    if (day < 1 || day > days_in_month(year, month)) {
+    const std::chrono::year_month_day calendar_date{
+        std::chrono::year{year} / std::chrono::month{static_cast<unsigned>(month)} /
+        std::chrono::day{static_cast<unsigned>(day)}};
+    if (!calendar_date.ok()) {
         throw std::runtime_error("invalid");
     }
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
         throw std::runtime_error("invalid");
     }
 
-    return days_since_unix_epoch(year, static_cast<unsigned>(month),
-                                 static_cast<unsigned>(day)) *
-               86400 +
-           static_cast<std::int64_t>(hour) * 3600 + static_cast<std::int64_t>(minute) * 60 +
-           second;
+    const std::chrono::sys_seconds time_point =
+        std::chrono::sys_days{calendar_date} + std::chrono::hours{hour} +
+        std::chrono::minutes{minute} + std::chrono::seconds{second};
+    return time_point.time_since_epoch().count();
 }
 
 std::string format_timestamp_seconds(std::int64_t seconds_since_epoch,
@@ -129,23 +87,25 @@ std::string format_timestamp_seconds(std::int64_t seconds_since_epoch,
         throw std::runtime_error("invalid");
     }
 
-    std::int64_t days = seconds_since_epoch / 86400;
-    std::int64_t seconds_of_day = seconds_since_epoch % 86400;
-    if (seconds_of_day < 0) {
-        seconds_of_day += 86400;
-        --days;
-    }
+    const std::chrono::sys_seconds time_point{
+        std::chrono::seconds{seconds_since_epoch}};
+    const std::chrono::sys_days date = std::chrono::floor<std::chrono::days>(time_point);
+    const std::chrono::year_month_day calendar_date{date};
+    const std::chrono::seconds seconds_of_day = time_point - date;
+    const std::chrono::hours hours =
+        std::chrono::duration_cast<std::chrono::hours>(seconds_of_day);
+    const std::chrono::minutes minutes =
+        std::chrono::duration_cast<std::chrono::minutes>(seconds_of_day - hours);
+    const std::chrono::seconds seconds = seconds_of_day - hours - minutes;
 
-    const auto [year, month, day] = civil_from_days(days);
-    const int hour = static_cast<int>(seconds_of_day / 3600);
-    const int minute = static_cast<int>((seconds_of_day % 3600) / 60);
-    const int second = static_cast<int>(seconds_of_day % 60);
-
-    std::ostringstream timestamp;
-    timestamp << std::setfill('0') << std::setw(4) << year << date_separator << std::setw(2)
-              << month << date_separator << std::setw(2) << day << " " << std::setw(2)
-              << hour << ":" << std::setw(2) << minute << ":" << std::setw(2) << second;
-    return timestamp.str();
+    std::ostringstream output;
+    output << std::setfill('0') << std::setw(4)
+           << static_cast<int>(calendar_date.year()) << date_separator << std::setw(2)
+           << static_cast<unsigned>(calendar_date.month()) << date_separator
+           << std::setw(2) << static_cast<unsigned>(calendar_date.day()) << " "
+           << std::setw(2) << hours.count() << ":" << std::setw(2) << minutes.count()
+           << ":" << std::setw(2) << seconds.count();
+    return output.str();
 }
 
 } // namespace miaow::io

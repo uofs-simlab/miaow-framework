@@ -6,7 +6,7 @@ heterogeneous hardware can feel like herding cats. **MIAOW** embraces that
 reality by using actor-based asynchronous orchestration so tasks run when they
 are ready, maximizing utilization across available resources.
 
-MIAOW targets the `C++17 standard <https://en.cppreference.com/w/cpp/17.html>`_,
+MIAOW targets the `C++20 standard <https://en.cppreference.com/w/cpp/20.html>`_,
 uses the `C++ Actor Framework (CAF) <https://www.actor-framework.org/>`_ as its
 actor orchestration backend, and employs the
 `Basic Model Interface (BMI) <https://bmi.csdms.io/en/stable/>`_ for Earth

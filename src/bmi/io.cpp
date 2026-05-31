@@ -132,10 +132,9 @@ std::string bmi_pipeline_config_filename(const Task& task) {
 std::filesystem::path make_temporary_bmi_pipeline_config_path() {
     const unsigned long long id =
         next_bmi_pipeline_config_file_id.fetch_add(1, std::memory_order_relaxed);
-    const std::chrono::steady_clock::duration elapsed =
-        std::chrono::steady_clock::now().time_since_epoch();
-    const long long stamp =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
+    const auto stamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count();
     const std::filesystem::path directory =
         std::filesystem::temp_directory_path() /
         (std::string(bmi_pipeline_config_temp_dir_prefix) + "_" + std::to_string(stamp) +
@@ -161,8 +160,7 @@ void write_var_values(::bmi::Bmi& model, const std::string& name, std::size_t n_
 
 // C++ dynamic BMI modules accept historical and current module spellings
 bool is_cpp_module_name(const std::string& name) {
-    return name == "bmi_c++" || name == "bmi_cpp" || name.rfind("bmi_c++", 0) == 0 ||
-           name.rfind("bmi_cpp", 0) == 0;
+    return name.starts_with("bmi_c++") || name.starts_with("bmi_cpp");
 }
 
 // Convert CAF task argument values into standard JSON values
@@ -437,9 +435,8 @@ void write_bmi_pipeline_config_file(const Task& task, const std::filesystem::pat
                                  "BmiPipelineConfig argument");
     }
 
-    const caf::config_value::dictionary* pipeline_config =
-        caf::get_if<caf::config_value::dictionary>(&task.args_.front());
-    if (pipeline_config == nullptr) {
+    const caf::config_value& pipeline_config_value = task.args_.front();
+    if (caf::get_if<caf::config_value::dictionary>(&pipeline_config_value) == nullptr) {
         throw std::runtime_error(
             "BMI pipeline config error: first task argument must be a BmiPipelineConfig");
     }
@@ -449,7 +446,7 @@ void write_bmi_pipeline_config_file(const Task& task, const std::filesystem::pat
         throw std::runtime_error("unable to open BMI pipeline config file '" +
                                  path.string() + "'");
     }
-    output << json::serialize(config_value_to_json(task.args_.front())) << "\n";
+    output << json::serialize(config_value_to_json(pipeline_config_value)) << "\n";
 }
 
 // Read the BMI pipeline config JSON consumed by the BMI pipeline

@@ -17,13 +17,13 @@ namespace {
 // Preserve useful domain context while normalizing generic BMI failures
 std::string format_bmi_error_message(const std::string& error_message) {
     const bool has_known_prefix =
-        error_message.rfind("Forcing config error: ", 0) == 0 ||
-        error_message.rfind("Forcing data error: ", 0) == 0 ||
-        error_message.rfind("Forcing alignment error: ", 0) == 0 ||
-        error_message.rfind("BMI coupling error: ", 0) == 0 ||
-        error_message.rfind("BMI forcing error: ", 0) == 0 ||
-        error_message.rfind("BMI pipeline config error: ", 0) == 0 ||
-        error_message.rfind("BMI pipeline error: ", 0) == 0;
+        error_message.starts_with("Forcing config error: ") ||
+        error_message.starts_with("Forcing data error: ") ||
+        error_message.starts_with("Forcing alignment error: ") ||
+        error_message.starts_with("BMI coupling error: ") ||
+        error_message.starts_with("BMI forcing error: ") ||
+        error_message.starts_with("BMI pipeline config error: ") ||
+        error_message.starts_with("BMI pipeline error: ");
     if (has_known_prefix) {
         return error_message;
     }

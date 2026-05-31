@@ -180,7 +180,7 @@ add_executable(${EXECUTABLE_TARGET}
     main.cpp
 )
 
-target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_17)
+target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_20)
 target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
 target_include_directories(${EXECUTABLE_TARGET} PRIVATE
     "${MIAOW_ROOT}/src"
@@ -234,18 +234,6 @@ if(BUILD_TESTING)
     list(JOIN noah_owp_expected_job_record_snippets ";"
         noah_owp_job_record_snippets_arg)
     set(noah_owp_expected_result_paths
-        "bmi_subprocess_cat-552_input.json"
-        "bmi_subprocess_cat-552_result.json"
-        "bmi_subprocess_cat-552_stdout.log"
-        "bmi_subprocess_cat-552_stderr.log"
-        "bmi_subprocess_cat-562_input.json"
-        "bmi_subprocess_cat-562_result.json"
-        "bmi_subprocess_cat-562_stdout.log"
-        "bmi_subprocess_cat-562_stderr.log"
-        "bmi_subprocess_cat-585_input.json"
-        "bmi_subprocess_cat-585_result.json"
-        "bmi_subprocess_cat-585_stdout.log"
-        "bmi_subprocess_cat-585_stderr.log"
         "cat-552.json"
         "cat-562.json"
         "cat-585.json"

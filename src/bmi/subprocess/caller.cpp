@@ -11,6 +11,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #define BOOST_PROCESS_USE_STD_FS
@@ -45,6 +46,9 @@ struct BmiSubprocessPaths {
 
     // Child stderr log used when subprocess setup or execution fails
     std::filesystem::path stderr_path_;
+
+    // True when the control directory was created only for this task
+    bool temporary_control_dir_{false};
 };
 
 // Reuse the job directory when the runtime has assigned result output
@@ -60,10 +64,9 @@ std::filesystem::path make_control_dir(const Task& task) {
     // Generate a unique temporary control directory when no output directory exists
     const unsigned long long id =
         next_control_dir_id.fetch_add(1, std::memory_order_relaxed);
-    const std::chrono::steady_clock::duration elapsed =
-        std::chrono::steady_clock::now().time_since_epoch();
-    const long long stamp =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
+    const auto stamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count();
     const std::filesystem::path control_dir =
         std::filesystem::temp_directory_path() /
         (std::string(bmi_temp_dir_prefix) + "_" + std::to_string(stamp) + "_" +
@@ -84,6 +87,7 @@ BmiSubprocessPaths make_subprocess_paths(const Task& task) {
     paths.result_path_ = bmi::make_subprocess_result_path(paths.task_path_);
     paths.stdout_path_ = control_dir / (control_stem + "_stdout.log");
     paths.stderr_path_ = control_dir / (control_stem + "_stderr.log");
+    paths.temporary_control_dir_ = task.task_output_dir_.empty();
     return paths;
 }
 
@@ -119,6 +123,18 @@ TaskResult read_subprocess_result(const std::filesystem::path& result_path) {
     return task_result;
 }
 
+// Remove parent-child control files after a succeeded task result
+void remove_subprocess_files(const BmiSubprocessPaths& paths) {
+    std::error_code ignored_error;
+    std::filesystem::remove(paths.task_path_, ignored_error);
+    std::filesystem::remove(paths.result_path_, ignored_error);
+    std::filesystem::remove(paths.stdout_path_, ignored_error);
+    std::filesystem::remove(paths.stderr_path_, ignored_error);
+    if (paths.temporary_control_dir_) {
+        std::filesystem::remove(paths.task_path_.parent_path(), ignored_error);
+    }
+}
+
 // Return the configured subprocess executable path
 std::string configured_subprocess_path() {
     const char* env_path = std::getenv("MIAOW_SUBPROCESS_PATH");
@@ -148,7 +164,11 @@ TaskResult execute_subprocess_task(const BmiSubprocessPaths& paths,
 
     // If the subprocess wrote a result file, parse it into the task result contract
     if (std::filesystem::exists(paths.result_path_)) {
-        return read_subprocess_result(paths.result_path_);
+        TaskResult task_result = read_subprocess_result(paths.result_path_);
+        if (task_result.status_ == TaskStatus::succeeded) {
+            remove_subprocess_files(paths);
+        }
+        return task_result;
     }
 
     // If the subprocess did not write a result file, capture stderr and rethrow

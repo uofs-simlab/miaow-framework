@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(miaow CXX Fortran)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -122,10 +122,12 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
 endif()
 
 if(MIAOW_ISO_C_FORTRAN_BMI_ROOT)
-    message(STATUS "MIAOW: using iso_c_fortran_bmi source root ${MIAOW_ISO_C_FORTRAN_BMI_ROOT}")
+    message(STATUS
+        "MIAOW: using iso_c_fortran_bmi source root ${MIAOW_ISO_C_FORTRAN_BMI_ROOT}")
     if(NOT EXISTS "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}/CMakeLists.txt")
         message(FATAL_ERROR
-            "MIAOW_ISO_C_FORTRAN_BMI_ROOT must point to a NOAA-OWP/iso_c_fortran_bmi checkout")
+            "MIAOW_ISO_C_FORTRAN_BMI_ROOT must point to a "
+            "NOAA-OWP/iso_c_fortran_bmi checkout")
     endif()
     add_subdirectory(
         "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}"
@@ -133,7 +135,8 @@ if(MIAOW_ISO_C_FORTRAN_BMI_ROOT)
     )
 else()
     set(iso_c_fortran_bmi_source_dir "${MIAOW_DEFAULT_MODEL_BASE_DIR}/iso_c_fortran_bmi")
-    message(STATUS "MIAOW: using iso_c_fortran_bmi source root ${iso_c_fortran_bmi_source_dir}")
+    message(STATUS
+        "MIAOW: using iso_c_fortran_bmi source root ${iso_c_fortran_bmi_source_dir}")
     if(EXISTS "${iso_c_fortran_bmi_source_dir}/CMakeLists.txt")
         add_subdirectory(
             "${iso_c_fortran_bmi_source_dir}"
@@ -180,7 +183,8 @@ target_include_directories(miaow
 )
 
 if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
-    message(FATAL_ERROR "CAF targets not available. Ensure CAF is installed with core/io modules.")
+    message(FATAL_ERROR
+        "CAF targets not available. Ensure CAF is installed with core/io modules.")
 endif()
 
 target_link_libraries(miaow
@@ -203,7 +207,7 @@ set_source_files_properties(src/bmi/subprocess/caller.cpp PROPERTIES
 add_executable(miaow_subprocess
     src/bmi/subprocess/runner.cpp
 )
-target_compile_features(miaow_subprocess PRIVATE cxx_std_17)
+target_compile_features(miaow_subprocess PRIVATE cxx_std_20)
 target_include_directories(miaow_subprocess PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )

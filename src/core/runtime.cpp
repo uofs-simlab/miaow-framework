@@ -41,7 +41,7 @@ static std::optional<std::uint64_t>
 parse_run_directory_id(const std::string& directory_name) {
     constexpr const char* run_prefix = "run_";
     constexpr std::size_t run_prefix_size = 4;
-    if (directory_name.rfind(run_prefix, 0) != 0 ||
+    if (!directory_name.starts_with(run_prefix) ||
         directory_name.size() == run_prefix_size) {
         return std::nullopt;
     }
@@ -56,6 +56,7 @@ parse_run_directory_id(const std::string& directory_name) {
     return run_id;
 }
 
+// Create a unique run ID by scanning existing run directories and claiming the next one
 static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
     if (runtime_options.output_root_.empty()) {
         return next_run_id.fetch_add(1, std::memory_order_relaxed);

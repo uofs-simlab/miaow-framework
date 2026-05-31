@@ -14,7 +14,7 @@ heterogeneous hardware can feel like herding cats. **MIAOW** embraces that
 reality by using actor-based asynchronous orchestration so tasks run when they
 are ready, maximizing utilization across available resources.
 
-MIAOW targets the [C++17 standard](https://en.cppreference.com/w/cpp/17.html),
+MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html),
 uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its
 actor orchestration backend, and employs the
 [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) for Earth
@@ -393,11 +393,13 @@ contents. If a task has non-empty `metadata_["feature_id"]`, that value becomes
 the output file stem; otherwise the runtime uses `task_<task_id>`. Output stems
 must be unique within one job and cannot contain path separators.
 
-Subprocess BMI tasks also write task-specific `bmi_subprocess_*_input.json`,
+Subprocess BMI tasks use task-specific `bmi_subprocess_*_input.json`,
 `bmi_subprocess_*_result.json`, `bmi_subprocess_*_stdout.log`, and
-`bmi_subprocess_*_stderr.log` files beside `job_record.json`. When no task
-output directory is assigned, these subprocess control files use a temporary
-directory instead.
+`bmi_subprocess_*_stderr.log` files as parent-child control files. These files
+are removed after the parent reads a succeeded child result; if setup, launch,
+result parsing, or task execution fails, remaining control files are left in
+place for diagnostics. When no task output directory is assigned, these
+subprocess control files use a temporary directory instead.
 
 ## Examples
 

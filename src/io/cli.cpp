@@ -32,7 +32,7 @@ void require_option_value(int argc, char* argv[], int& index, std::string_view o
     }
 
     value = argv[index + 1];
-    if (value.rfind("--", 0) == 0) {
+    if (value.starts_with("--")) {
         throw std::runtime_error("Error: " + std::string(option_name) +
                                  " requires a value");
     }

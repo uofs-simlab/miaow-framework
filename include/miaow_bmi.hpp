@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <exception>
 #include <functional>
@@ -397,38 +398,36 @@ TaskResult execute_bmi_lifecycle_in_subprocess(const Task& task);
  *
  * @tparam BmiModelType BMI model type derived from `bmi_api::Bmi`.
  */
-template <class BmiModelType> class BmiSimulationUnit : public SimulationUnit {
+template <class BmiModelType>
+    requires std::derived_from<BmiModelType, bmi_api::Bmi>
+class BmiSimulationUnit : public SimulationUnit {
   public:
-    static_assert(std::is_base_of_v<bmi_api::Bmi, BmiModelType>,
-                  "BmiModelType must derive from bmi::Bmi");
+    /**
+     * @brief Construct a full-pipeline simulation unit with in-process execution.
+     */
+    BmiSimulationUnit()
+        requires std::same_as<BmiModelType, BmiPipeline>
+    = default;
 
     /**
      * @brief Construct a BMI simulation unit for a default-constructible model.
      */
-    BmiSimulationUnit() {
-        if constexpr (std::is_same_v<BmiModelType, BmiPipeline>) {
-            execution_mode_ = BmiExecutionMode::in_process;
-        } else {
-            static_assert(std::is_default_constructible_v<BmiModelType>,
-                          "BmiModelType must be default constructible");
-            model_factory_ = []() -> std::unique_ptr<BmiModelType> {
-                return std::make_unique<BmiModelType>();
-            };
-        }
+    BmiSimulationUnit()
+        requires (!std::same_as<BmiModelType, BmiPipeline> &&
+                  std::default_initializable<BmiModelType>)
+    {
+        model_factory_ = []() -> std::unique_ptr<BmiModelType> {
+            return std::make_unique<BmiModelType>();
+        };
     }
 
     /**
      * @brief Construct a full-pipeline simulation unit.
-     * @tparam UnitType Constrained to `BmiPipeline`.
      * @param execution_mode Process isolation mode used by each task.
      */
-    template <class UnitType = BmiModelType,
-              std::enable_if_t<std::is_same_v<UnitType, BmiPipeline>, int> = 0>
     explicit BmiSimulationUnit(BmiExecutionMode execution_mode)
-        : execution_mode_(execution_mode) {
-        static_assert(std::is_same_v<UnitType, BmiModelType>,
-                      "UnitType must match BmiModelType");
-    }
+        requires std::same_as<BmiModelType, BmiPipeline>
+        : execution_mode_(execution_mode) {}
 
     /**
      * @brief Construct a model simulation unit from model constructor arguments.
@@ -438,19 +437,14 @@ template <class BmiModelType> class BmiSimulationUnit : public SimulationUnit {
      * reuses them to construct a fresh `SomeBmiModel` instance for each task when
      * `model_factory_()` is called inside `execute()`.
      *
-     * @tparam UnitType Constrained to non-pipeline BMI model types.
      * @tparam ModelConstructorArgs Constructor argument types for `BmiModelType`.
      * @param model_constructor_args Arguments forwarded to the BMI model constructor.
      */
-    template <class UnitType = BmiModelType,
-              std::enable_if_t<!std::is_same_v<UnitType, BmiPipeline>, int> = 0,
-              class... ModelConstructorArgs>
+    template <class... ModelConstructorArgs>
+        requires (!std::same_as<BmiModelType, BmiPipeline> &&
+                  std::constructible_from<
+                      BmiModelType, const std::decay_t<ModelConstructorArgs>&...>)
     explicit BmiSimulationUnit(ModelConstructorArgs... model_constructor_args) {
-        static_assert(std::is_same_v<UnitType, BmiModelType>,
-                      "UnitType must match BmiModelType");
-        static_assert(std::is_constructible_v<BmiModelType, ModelConstructorArgs...>,
-                      "BmiModelType must be constructible from ModelConstructorArgs");
-
         model_factory_ = make_model_factory(std::move(model_constructor_args)...);
     }
 
@@ -463,7 +457,7 @@ template <class BmiModelType> class BmiSimulationUnit : public SimulationUnit {
         const char* error_prefix = "BMI error";
         try {
             // Pipeline units run the task config directly
-            if constexpr (std::is_same_v<BmiModelType, BmiPipeline>) {
+            if constexpr (std::same_as<BmiModelType, BmiPipeline>) {
                 error_prefix = execution_mode_ == BmiExecutionMode::subprocess
                                    ? "BMI subprocess error"
                                    : "BMI error";

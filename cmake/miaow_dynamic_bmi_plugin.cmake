@@ -58,7 +58,7 @@ function(miaow_add_dynamic_bmi_plugin)
     endif()
 
     add_library(${MIAOW_PLUGIN_PLUGIN_TARGET} SHARED ${MIAOW_PLUGIN_SOURCES})
-    target_compile_features(${MIAOW_PLUGIN_PLUGIN_TARGET} PRIVATE cxx_std_17)
+    target_compile_features(${MIAOW_PLUGIN_PLUGIN_TARGET} PRIVATE cxx_std_20)
 
     set(plugin_include_dirs ${MIAOW_PLUGIN_INCLUDE_DIRS})
     if(MIAOW_PLUGIN_USE_MIAOW_BMI_INCLUDE)
