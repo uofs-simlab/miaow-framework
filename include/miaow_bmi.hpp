@@ -79,6 +79,9 @@ struct BmiModuleConfig {
 
     // Map from target BMI input names to source output names or CSV headers
     std::map<std::string, std::string> variables_names_map_;
+
+    // BMI output variables written to task CSV output in declaration order
+    std::vector<std::string> output_variables_;
 };
 
 /**
@@ -315,6 +318,8 @@ class BmiPipeline : public bmi_api::Bmi {
     TaskResult execute_bmi_lifecycle(const Task& task);
 
   private:
+    const std::vector<std::string>& output_variables() const;
+
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

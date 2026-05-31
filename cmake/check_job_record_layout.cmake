@@ -103,3 +103,19 @@ if(DEFINED EXPECTED_RESULT_PATHS)
         endif()
     endforeach()
 endif()
+
+# Validate an example CSV header when the test provides one
+if(DEFINED EXPECTED_CSV_HEADER_PATH AND DEFINED EXPECTED_CSV_HEADER)
+    set(expected_csv_path
+        "${OUTPUT_ROOT}/run_0/job_0/${EXPECTED_CSV_HEADER_PATH}")
+    if(NOT EXISTS "${expected_csv_path}")
+        message(FATAL_ERROR "Expected CSV file not found: ${expected_csv_path}")
+    endif()
+
+    file(STRINGS "${expected_csv_path}" actual_csv_header LIMIT_COUNT 1)
+    if(NOT actual_csv_header STREQUAL EXPECTED_CSV_HEADER)
+        message(FATAL_ERROR
+            "Unexpected CSV header in ${expected_csv_path}: "
+            "'${actual_csv_header}'")
+    endif()
+endif()

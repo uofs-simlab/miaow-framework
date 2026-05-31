@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
@@ -253,7 +254,15 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                 } // mutex unlocks automatically here
 
                 try {
-                    io::write_job_record(runtime_options, job_record);
+                    if (!runtime_options.output_root_.empty()) {
+                        const std::filesystem::path job_directory =
+                            std::filesystem::path(runtime_options.output_root_) /
+                            ("run_" + std::to_string(job_record.run_id_)) /
+                            ("job_" + std::to_string(job_record.job_id_));
+                        std::filesystem::create_directories(job_directory);
+                        io::write_json_file(job_directory / "job_record.json",
+                                            job_record, false);
+                    }
                 } catch (...) {
                     // Output record failures are reported without changing task status
                     promise.set_exception(std::current_exception());

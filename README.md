@@ -199,9 +199,9 @@ cmake --build build --config Release
 
 ## Basic Model Interface (BMI) integration
 
-Use `BmiSimulationUnit<BmiModelType>` from `include/miaow_bmi.hpp` to run BMI-compatible 
-models. The simulation unit creates the task-level model or pipeline, executes the
-BMI lifecycle, writes artifacts, and returns a `TaskResult`.
+Use `BmiSimulationUnit<BmiModelType>` from `include/miaow_bmi.hpp` to run
+BMI-compatible models. The simulation unit creates one task-level model or
+pipeline, runs the BMI lifecycle, writes artifacts, and returns a `TaskResult`.
 
 There are three common ways to use it:
 
@@ -212,25 +212,22 @@ There are three common ways to use it:
 - `BmiSimulationUnit<BmiPipeline>` runs a complete pipeline described by the
   task config, which may be obtained from partitioning of a NextGen-style realization file.
 
-Each BMI task starts from one typed `BmiPipelineConfig`. Task arguments are
-`caf::config_value` entries, so the typed config is converted before being
-stored in the task:
+Each BMI task starts from one typed `BmiPipelineConfig`, converted to a
+`caf::config_value` before being stored in the task:
 
 ```cpp
 task.args_[0] = miaow::bmi_pipeline_config_to_value(pipeline_config);
 ```
 
-During execution, MIAOW writes that `BmiPipelineConfig` beside the task results
-as `<task_output_name>.json`, which serves as the top-level config file used for
-the BMI pipeline lifecycle:
+During execution, MIAOW writes that config beside the task results as
+`<task_output_name>.json`. The pipeline uses that file for the BMI lifecycle:
 
 1. `Initialize(<task_output_name>.json)`
 2. zero or more `Update()` calls
 3. `Finalize()`
 
-Within the `Initialize(...)`, `Update()`, and `Finalize()` calls, the pipeline
-calls the corresponding BMI methods for each module in the pipeline, in order (for
-single-model runs, the pipeline consists of just one module).
+Within those calls, the pipeline calls the corresponding BMI methods for each
+module in order. Single-model runs contain one module.
 
 ### Executing a static BMI model
 
@@ -259,7 +256,8 @@ BMI work.
 Use `BmiSimulationUnit<DynamicBmiModel>` when the task should run one BMI model
 loaded from a plugin library. `BmiModuleConfig` describes how to load the plugin.
 The task config still comes from `make_bmi_model_config(...)` because the task
-runs one model.
+runs one model. The dynamic model is configured when registered; the task config
+supplies the per-task initialization and forcing paths.
 
 ```cpp
 const miaow::BmiModuleConfig module_config(
@@ -307,7 +305,8 @@ example uses subprocess mode.
 
 For hand-built dynamic pipelines, construct a `BmiPipelineConfig` from a vector
 of `BmiModuleConfig` entries. Each module config carries the module name,
-backend, plugin path, initialization config, and optional variable map.
+backend, plugin path, initialization config, optional variable map, and optional
+CSV output variable list.
 
 ### Reading forcing data
 
@@ -334,6 +333,10 @@ map is interpreted as `BMI input variable -> CSV header`.
 If `variables_names_map` is omitted, MIAOW derives a model-authoritative
 identity map from `GetInputVarNames()` and expects same-named CSV headers.
 Explicit map entries override that identity behaviour completely.
+
+Each BMI module may also include `output_variables`, an ordered list of BMI
+output names written to task CSV output. When omitted, CSV output uses all names
+returned by `GetOutputVarNames()`.
 
 MIAOW's external forcing reader supports CSV only. The file must define a
 `time` or `Time` column plus all required numeric data columns. Supported
@@ -378,15 +381,19 @@ one so as not to overwrite any existing output.
 Each task receives `Task::task_output_dir_` for the job `results/` directory
 and `Task::task_output_name_` for task-specific artifact filenames. BMI tasks
 write the resolved BMI pipeline config in the job directory and one CSV file
-per task under `results/`, with BMI output variables as columns. They report
-job-relative filenames such as `cat-552.json` and `results/cat-552.csv` in
-`TaskResult::artifact_paths_`. `job_record.json` records those paths under each
-task record's `result` field and records each task's descriptive
-`Task::metadata_`, but it does not embed artifact file contents. If a task has
-non-empty `metadata_["feature_id"]`, that value becomes the output file stem;
-otherwise the runtime uses `task_<task_id>`. Output stems must be unique within
-one job and cannot contain path separators. Subprocess BMI tasks also write
-task-specific `bmi_subprocess_*_input.json`,
+per task under `results/`. When a module declares `output_variables`, those BMI
+variables are written as CSV columns in declaration order; otherwise all
+`GetOutputVarNames()` variables are written.
+
+Tasks report job-relative filenames such as `cat-552.json` and
+`results/cat-552.csv` in `TaskResult::artifact_paths_`. `job_record.json`
+records those paths under each task record's `result` field and records each
+task's descriptive `Task::metadata_`, but it does not embed artifact file
+contents. If a task has non-empty `metadata_["feature_id"]`, that value becomes
+the output file stem; otherwise the runtime uses `task_<task_id>`. Output stems
+must be unique within one job and cannot contain path separators.
+
+Subprocess BMI tasks also write task-specific `bmi_subprocess_*_input.json`,
 `bmi_subprocess_*_result.json`, `bmi_subprocess_*_stdout.log`, and
 `bmi_subprocess_*_stderr.log` files beside `job_record.json`. When no task
 output directory is assigned, these subprocess control files use a temporary

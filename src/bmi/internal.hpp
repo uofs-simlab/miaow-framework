@@ -182,9 +182,10 @@ std::filesystem::path bmi_pipeline_config_file_path(const Task& task);
 
 std::vector<std::string> bmi_pipeline_config_artifact_paths(const Task& task);
 
-// Output CSV writing
+// Output CSV writing; an empty output variable list writes all model outputs
 OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
-                            const std::string& output_name);
+                            const std::string& output_name,
+                            const std::vector<std::string>& output_variables);
 
 void write_output_step(::bmi::Bmi& model, OutputFile& output_file, double time);
 

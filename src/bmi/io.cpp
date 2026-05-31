@@ -1,6 +1,7 @@
 #include "bmi/internal.hpp"
 #include "io/internal.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -289,10 +290,36 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
         }
     }
 
+    // CSV output variables preserve the order declared by the module config
+    std::vector<std::string> output_variables;
+    if (const json::value* output_value = module_params.if_contains("output_variables")) {
+        if (!output_value->is_array()) {
+            io::throw_config_error(error_prefix,
+                                   "output_variables must be an array of strings");
+        }
+        for (const json::value& output_variable_value : output_value->as_array()) {
+            if (!output_variable_value.is_string()) {
+                io::throw_config_error(
+                    error_prefix,
+                    "output_variables entries must be non-empty strings");
+            }
+            const std::string output_variable =
+                io::trim(std::string(output_variable_value.as_string()));
+            if (output_variable.empty()) {
+                io::throw_config_error(
+                    error_prefix,
+                    "output_variables entries must be non-empty strings");
+            }
+            output_variables.push_back(output_variable);
+        }
+    }
+
     // Supplied model modules are bound to a model from BmiSimulationUnit
     if (module_name == "supplied_model") {
-        return BmiModuleConfig{std::move(module_name), std::move(config_file),
-                               std::move(variables_names_map)};
+        BmiModuleConfig module_config{std::move(module_name), std::move(config_file),
+                                      std::move(variables_names_map)};
+        module_config.output_variables_ = std::move(output_variables);
+        return module_config;
     }
 
     // Otherwise, it's a dynamic module that requires a plugin library path
@@ -301,9 +328,12 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
 
     // Fortran backend
     if (module_name == "bmi_fortran") {
-        return BmiModuleConfig{std::move(module_name), DynamicBmiBackend::fortran,
-                               std::move(plugin_path), std::move(config_file),
-                               std::move(variables_names_map)};
+        BmiModuleConfig module_config{std::move(module_name),
+                                      DynamicBmiBackend::fortran,
+                                      std::move(plugin_path), std::move(config_file),
+                                      std::move(variables_names_map)};
+        module_config.output_variables_ = std::move(output_variables);
+        return module_config;
     }
 
     // C++ backend
@@ -311,6 +341,7 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
         BmiModuleConfig module_config{std::move(module_name), DynamicBmiBackend::cpp,
                                       std::move(plugin_path), std::move(config_file),
                                       std::move(variables_names_map)};
+        module_config.output_variables_ = std::move(output_variables);
         module_config.cpp_create_function_ = "bmi_model_create";
         module_config.cpp_destroy_function_ = "bmi_model_destroy";
         if (const json::value* create_function =
@@ -357,6 +388,16 @@ make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
         }
         add_variables_names_map_to_params(module_params,
                                           module_config.variables_names_map_);
+
+        // Store explicit CSV output selection only when configured
+        if (!module_config.output_variables_.empty()) {
+            caf::config_value::list output_variables;
+            output_variables.reserve(module_config.output_variables_.size());
+            for (const std::string& output_variable : module_config.output_variables_) {
+                output_variables.emplace_back(output_variable);
+            }
+            module_params.insert("output_variables", std::move(output_variables));
+        }
 
         caf::config_value::dictionary module_value;
         module_value.insert("name", module_config.name_);
@@ -440,9 +481,10 @@ std::vector<std::string> bmi_pipeline_config_artifact_paths(const Task& task) {
     return {bmi_pipeline_config_filename(task)};
 }
 
-// Open one CSV file that contains all BMI output variables
+// Open one CSV file for the selected BMI output variables
 OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
-                            const std::string& output_name) {
+                            const std::string& output_name,
+                            const std::vector<std::string>& output_variables) {
     if (output_name.empty()) {
         throw std::runtime_error("BMI output error: task output name is empty");
     }
@@ -451,7 +493,22 @@ OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
     const std::filesystem::path output_filename = output_name + ".csv";
     const std::filesystem::path output_path = output_directory / output_filename;
 
-    const std::vector<std::string> var_names = model.GetOutputVarNames();
+    const std::vector<std::string> model_var_names = model.GetOutputVarNames();
+
+    // Use model output order unless the config requests a CSV subset
+    const std::vector<std::string>& var_names =
+        output_variables.empty() ? model_var_names : output_variables;
+
+    // Configured CSV output variables must exist on the exposed BMI model
+    for (const std::string& name : var_names) {
+        const std::vector<std::string>::const_iterator it =
+            std::find(model_var_names.begin(), model_var_names.end(), name);
+        if (it == model_var_names.end()) {
+            throw std::runtime_error("BMI output error: output variable '" + name +
+                                     "' not found");
+        }
+    }
+
     OutputFile output_file;
     output_file.artifact_path_ = (output_directory.filename() / output_filename).string();
     output_file.variables_.reserve(var_names.size());

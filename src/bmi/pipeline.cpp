@@ -78,6 +78,7 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
 
     std::string config_path_string() const;
     std::vector<std::string> artifact_paths() const;
+    const std::vector<std::string>& output_variables() const;
 
   private:
     std::size_t add_model_module(const BmiModuleConfig& module_config);
@@ -110,6 +111,9 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
 
     // Scalar source-to-target transfers applied before target module updates
     std::vector<BmiCoupling> couplings_;
+
+    // BMI output variables selected for task CSV output
+    std::vector<std::string> output_variables_;
 
     // Module whose BMI surface is exposed by the pipeline
     std::size_t output_module_{0};
@@ -172,6 +176,7 @@ void BmiPipeline::Impl::reset_pipeline() {
     modules_.clear();
     configs_.clear();
     couplings_.clear();
+    output_variables_.clear();
     output_module_ = 0;
     initialized_count_ = 0;
 }
@@ -265,6 +270,9 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
 
     // Add the configured model module before attaching optional forcing
     const BmiModuleConfig& module_config = pipeline_config.module_configs_.front();
+
+    // The model module defines task CSV output selection
+    output_variables_ = module_config.output_variables_;
     const std::size_t model_module = add_model_module(module_config);
 
     if (output_module_ >= modules_.size()) {
@@ -287,6 +295,7 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
     }
 }
 
+// Apply one scalar coupling from a source module output to a target module input
 void BmiPipeline::Impl::apply_coupling(const BmiCoupling& coupling) {
     double source_value = 0.0;
     modules_.at(coupling.source_module_)
@@ -314,8 +323,8 @@ void BmiPipeline::Impl::apply_coupling(const BmiCoupling& coupling) {
                              coupling.target_variable_ + "'");
 }
 
+// Update each module in order, applying couplings before each target module update
 void BmiPipeline::Impl::Update() {
-    // Each module receives its coupled inputs immediately before it advances
     for (std::size_t module_index = 0; module_index < modules_.size(); ++module_index) {
         for (const BmiCoupling& coupling : couplings_) {
             if (coupling.target_module_ == module_index) {
@@ -518,6 +527,11 @@ std::vector<std::string> BmiPipeline::Impl::artifact_paths() const {
     return artifact_paths_;
 }
 
+// Expose selected CSV variables to lifecycle output writing
+const std::vector<std::string>& BmiPipeline::Impl::output_variables() const {
+    return output_variables_;
+}
+
 BmiPipeline::BmiPipeline(std::unique_ptr<bmi_api::Bmi> model)
     : impl_(std::make_unique<Impl>(std::move(model))) {}
 
@@ -696,6 +710,11 @@ std::string BmiPipeline::config_path_string() const {
 
 std::vector<std::string> BmiPipeline::artifact_paths() const {
     return impl_->artifact_paths();
+}
+
+// Forward selected CSV variables from the implementation
+const std::vector<std::string>& BmiPipeline::output_variables() const {
+    return impl_->output_variables();
 }
 
 } // namespace miaow

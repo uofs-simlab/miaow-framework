@@ -89,9 +89,9 @@ if(NOT NOAH_OWP_NETCDF_INCLUDE_DIR OR
         "NOAH_OWP_NETCDF_C_LIBRARY, and NOAH_OWP_NETCDF_FORTRAN_LIBRARY")
 endif()
 
-# Fortran modules must be compiled before the modules that `use` them. 
-# The order below is the topological order published by the upstream 
-# NOAA-OWP/noah-owp-modular CMake build.
+# Fortran modules must be compiled before the modules that `use` them
+# The order below is the topological order published by the upstream
+# NOAA-OWP/noah-owp-modular CMake build
 set(noah_owp_plugin_sources
     "${noah_owp_source_dir}/src/ErrorCheckModule.f90"
     "${noah_owp_source_dir}/src/NamelistRead.f90"
@@ -265,6 +265,8 @@ if(BUILD_TESTING)
             -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
             "-DEXPECTED_METADATA_SNIPPETS=${noah_owp_job_record_snippets_arg}"
             "-DEXPECTED_RESULT_PATHS=${noah_owp_result_paths_arg}"
+            -DEXPECTED_CSV_HEADER_PATH=results/cat-552.csv
+            -DEXPECTED_CSV_HEADER=time,QINSUR,EVAPOTRANS,ETRAN,ECAN,QSEVA
             -P
             ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
     )

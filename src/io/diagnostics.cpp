@@ -1,15 +1,14 @@
 #include "miaow_io.hpp"
 
-#include "io/internal.hpp"
-
 #include <cstddef>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <string>
 
 namespace miaow {
 
-namespace io {
+namespace {
 
 std::string format_diagnostics(const JobRecord& job_record) {
     double sum_task_times = 0.0;
@@ -36,10 +35,10 @@ std::string format_diagnostics(const JobRecord& job_record) {
     return output.str();
 }
 
-} // namespace io
+} // namespace
 
 void print_diagnostics(const JobRecord& job_record) {
-    std::cout << io::format_diagnostics(job_record);
+    std::cout << format_diagnostics(job_record);
 }
 
 void print_task_results(const JobRecord& job_record) {
