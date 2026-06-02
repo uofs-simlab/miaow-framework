@@ -38,14 +38,10 @@ int main(int argc, char* argv[]) {
     miaow::Runtime runtime(registry, runtime_options);
 
     // Get config and forcing file paths for this SoilFreezeThaw workload
-    const std::string config_512_days =
-        "./data/configs/laramie_config_512_days.txt";
-    const std::string config_1_day =
-        "./data/configs/laramie_config_1_day.txt";
-    const std::string forcing_1_day =
-        "./data/forcings/Laramie_14Jun09_to_15Jun09.csv";
-    const std::string forcing_512_days =
-        "./data/forcings/Laramie_14Jun09_to_08Nov10.csv";
+    const std::string config_512_days = "./data/configs/laramie_config_512_days.txt";
+    const std::string config_1_day = "./data/configs/laramie_config_1_day.txt";
+    const std::string forcing_1_day = "./data/forcings/Laramie_14Jun09_to_15Jun09.csv";
+    const std::string forcing_512_days = "./data/forcings/Laramie_14Jun09_to_08Nov10.csv";
     const std::map<std::string, std::string> forcing_names_map{
         {"ground_temperature", "TMP_ground_surface"},
     };
@@ -55,33 +51,25 @@ int main(int argc, char* argv[]) {
     //   1: 512-day model, 1-day forcing (forcing exhausts before end time)
     //   2: 1-day model, 512-day forcing (model stops before forcing ends)
     std::vector<miaow::Task> tasks{
-        {soil_freeze_thaw,
-         std::vector<caf::config_value>{
-             caf::config_value{config_512_days},
-             miaow::make_forcing_config(forcing_512_days, forcing_names_map),
-         }},
-        {soil_freeze_thaw,
-         std::vector<caf::config_value>{
-             caf::config_value{config_512_days},
-             miaow::make_forcing_config(forcing_1_day, forcing_names_map),
-         }},
-        {soil_freeze_thaw,
-         std::vector<caf::config_value>{
-             caf::config_value{config_1_day},
-             miaow::make_forcing_config(forcing_512_days, forcing_names_map),
-         }},
+        miaow::Task{soil_freeze_thaw,
+                    miaow::bmi_pipeline_config_to_value(miaow::make_bmi_model_config(
+                        config_512_days, forcing_512_days, forcing_names_map)),
+                    miaow::TaskMetadata{{"label", "matched-duration"},
+                                        {"config_path", config_512_days},
+                                        {"forcing_file", forcing_512_days}}},
+        miaow::Task{soil_freeze_thaw,
+                    miaow::bmi_pipeline_config_to_value(miaow::make_bmi_model_config(
+                        config_512_days, forcing_1_day, forcing_names_map)),
+                    miaow::TaskMetadata{{"label", "short-forcing"},
+                                        {"config_path", config_512_days},
+                                        {"forcing_file", forcing_1_day}}},
+        miaow::Task{soil_freeze_thaw,
+                    miaow::bmi_pipeline_config_to_value(miaow::make_bmi_model_config(
+                        config_1_day, forcing_512_days, forcing_names_map)),
+                    miaow::TaskMetadata{{"label", "long-forcing"},
+                                        {"config_path", config_1_day},
+                                        {"forcing_file", forcing_512_days}}},
     };
-
-    // Task metadata records case labels and input provenance
-    tasks[0].metadata_["label"] = "matched-duration";
-    tasks[0].metadata_["config_path"] = config_512_days;
-    tasks[0].metadata_["forcing_file"] = forcing_512_days;
-    tasks[1].metadata_["label"] = "short-forcing";
-    tasks[1].metadata_["config_path"] = config_512_days;
-    tasks[1].metadata_["forcing_file"] = forcing_1_day;
-    tasks[2].metadata_["label"] = "long-forcing";
-    tasks[2].metadata_["config_path"] = config_1_day;
-    tasks[2].metadata_["forcing_file"] = forcing_512_days;
 
     // Submit tasks and wait for results
     miaow::JobHandle job = runtime.submit_job(tasks);

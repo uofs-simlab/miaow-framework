@@ -1,0 +1,45 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "cat-11223",
+      "properties": {
+        "id": "cat-11223"
+      },
+      "geometry": null
+    },
+    {
+      "type": "Feature",
+      "id": "cat-11224",
+      "properties": {
+        "id": "cat-11224"
+      },
+      "geometry": null
+    },
+    {
+      "type": "Feature",
+      "id": "cat-11371",
+      "properties": {
+        "id": "cat-11371"
+      },
+      "geometry": null
+    },
+    {
+      "type": "Feature",
+      "id": "cat-11410",
+      "properties": {
+        "id": "cat-11410"
+      },
+      "geometry": null
+    },
+    {
+      "type": "Feature",
+      "id": "cat-11509",
+      "properties": {
+        "id": "cat-11509"
+      },
+      "geometry": null
+    }
+  ]
+}

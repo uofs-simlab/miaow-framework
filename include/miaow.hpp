@@ -1,8 +1,9 @@
 #pragma once
 
 #include <atomic>
-#include <cstddef>
 #include <chrono>
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <functional>
@@ -74,9 +75,18 @@ struct Task {
      * @param task_args Positional arguments for this task.
      */
     Task(SimulationUnitId task_simulation_unit_id, std::vector<caf::config_value> task_args)
-        : simulation_unit_id_(task_simulation_unit_id),
-          args_(std::move(task_args)) {
-    }
+        : simulation_unit_id_(task_simulation_unit_id), args_(std::move(task_args)) {}
+
+    /**
+     * @brief Construct a `Task` from config values and descriptive metadata.
+     * @param task_simulation_unit_id `SimulationUnitId` for this task.
+     * @param task_args Positional arguments for this task.
+     * @param task_metadata Metadata preserved for reporting and postprocessing.
+     */
+    Task(SimulationUnitId task_simulation_unit_id, std::vector<caf::config_value> task_args,
+         TaskMetadata task_metadata)
+        : simulation_unit_id_(task_simulation_unit_id), args_(std::move(task_args)),
+          metadata_(std::move(task_metadata)) {}
 
     /**
      * @brief Construct a `Task` for a specific simulation unit from one config value.
@@ -84,9 +94,18 @@ struct Task {
      * @param arg Single `caf::config_value` for this task.
      */
     Task(SimulationUnitId task_simulation_unit_id, caf::config_value arg)
-        : simulation_unit_id_(task_simulation_unit_id),
-          args_{std::move(arg)} {
-    }
+        : simulation_unit_id_(task_simulation_unit_id), args_{std::move(arg)} {}
+
+    /**
+     * @brief Construct a `Task` from one config value and descriptive metadata.
+     * @param task_simulation_unit_id `SimulationUnitId` for this task.
+     * @param arg Single `caf::config_value` for this task.
+     * @param task_metadata Metadata preserved for reporting and postprocessing.
+     */
+    Task(SimulationUnitId task_simulation_unit_id, caf::config_value arg,
+         TaskMetadata task_metadata)
+        : simulation_unit_id_(task_simulation_unit_id), args_{std::move(arg)},
+          metadata_(std::move(task_metadata)) {}
 
     /**
      * @brief Construct a `Task` for a specific simulation unit from one string.
@@ -95,8 +114,7 @@ struct Task {
      */
     Task(SimulationUnitId task_simulation_unit_id, std::string arg)
         : simulation_unit_id_(task_simulation_unit_id),
-          args_{caf::config_value{std::move(arg)}} {
-    }
+          args_{caf::config_value{std::move(arg)}} {}
 
     /**
      * @brief Construct a `Task` for a specific simulation unit from string arguments.
@@ -128,10 +146,7 @@ struct Task {
 /**
  * @brief Per-task completion status.
  */
-enum class TaskStatus : std::uint8_t {
-    succeeded = 0,
-    failed = 1
-};
+enum class TaskStatus : std::uint8_t { succeeded = 0, failed = 1 };
 
 /**
  * @brief Convert a `TaskStatus` to a stable string value.
@@ -157,13 +172,10 @@ struct TaskResult {
      * @param message Message interpreted by `status` as output or failure detail.
      * @param artifact_paths Relative paths to artifacts under the job directory.
      */
-    TaskResult(TaskStatus status,
-               std::string message,
+    TaskResult(TaskStatus status, std::string message,
                std::vector<std::string> artifact_paths = {})
-        : status_{status},
-          message_{std::move(message)},
-          artifact_paths_{std::move(artifact_paths)} {
-    }
+        : status_{status}, message_{std::move(message)},
+          artifact_paths_{std::move(artifact_paths)} {}
 
     // Simulation-unit status for this task execution
     TaskStatus status_{TaskStatus::failed};
@@ -188,16 +200,9 @@ struct TaskRecord {
      * @param result Terminal simulation unit result for this task.
      * @param run_time_s Wall-clock runtime for this task in seconds.
      */
-    TaskRecord(const Task& task,
-               TaskId task_id,
-               TaskResult result,
-               double run_time_s)
-        : task_id_{task_id},
-          simulation_unit_id_{task.simulation_unit_id_},
-          metadata_{task.metadata_},
-          result_{std::move(result)},
-          run_time_s_{run_time_s} {
-    }
+    TaskRecord(const Task& task, TaskId task_id, TaskResult result, double run_time_s)
+        : task_id_{task_id}, simulation_unit_id_{task.simulation_unit_id_},
+          metadata_{task.metadata_}, result_{std::move(result)}, run_time_s_{run_time_s} {}
 
     // `TaskId` within the submitted job
     TaskId task_id_{0};
@@ -228,15 +233,10 @@ struct JobRecord {
      * @param tasks Task records in submitted task order.
      * @param run_time_s Wall-clock runtime for this job in seconds.
      */
-    JobRecord(std::uint64_t run_id,
-              JobId job_id,
-              std::vector<TaskRecord> tasks = {},
+    JobRecord(std::uint64_t run_id, JobId job_id, std::vector<TaskRecord> tasks = {},
               double run_time_s = 0.0)
-        : run_id_{run_id},
-          job_id_{job_id},
-          tasks_{std::move(tasks)},
-          run_time_s_{run_time_s} {
-    }
+        : run_id_{run_id}, job_id_{job_id}, tasks_{std::move(tasks)},
+          run_time_s_{run_time_s} {}
 
     // Runtime identifier for this `Runtime` instance
     std::uint64_t run_id_{0};
@@ -264,9 +264,8 @@ inline TaskResult make_failed_task_result(const std::string& message,
         prefix_end != std::string::npos &&
         message.substr(0, prefix_end).find("error") != std::string::npos;
 
-    std::string result_message = prefix.empty() || message_has_error_prefix
-        ? message
-        : prefix + ": " + message;
+    std::string result_message =
+        prefix.empty() || message_has_error_prefix ? message : prefix + ": " + message;
     return TaskResult{TaskStatus::failed, std::move(result_message)};
 }
 
@@ -299,7 +298,7 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
  * `Runtime` dispatch occurs through subclasses overriding `execute()`.
  */
 class SimulationUnit {
-public:
+  public:
     virtual ~SimulationUnit() = default;
 
     /**
@@ -308,7 +307,6 @@ public:
      * @return Structured `TaskResult` for this execution.
      */
     virtual TaskResult execute(const Task& task) = 0;
-
 };
 
 /**
@@ -324,7 +322,7 @@ using SimulationUnitExecutor = std::function<TaskResult(const Task& task)>;
  * Tracks `simulation_unit_id -> executor` for runtime task routing.
  */
 class SimulationUnitRegistry {
-public:
+  public:
     SimulationUnitRegistry() = default;
 
     /**
@@ -338,29 +336,29 @@ public:
      * @return `SimulationUnitId` assigned to this registered unit.
      */
     template <class SimulationUnitType, class... ConstructorArgs>
+        requires std::derived_from<SimulationUnitType, SimulationUnit> &&
+                 std::constructible_from<
+                     SimulationUnitType, const std::decay_t<ConstructorArgs>&...>
     SimulationUnitId add(ConstructorArgs... constructor_args) {
-        // Check that `SimulationUnitType` is a valid simulation unit class
-        static_assert(std::is_base_of_v<SimulationUnit, SimulationUnitType>,
-                      "SimulationUnitType must derive from miaow::SimulationUnit");
-
         // Store constructor arguments in a tuple
         std::tuple<std::decay_t<ConstructorArgs>...> stored_constructor_args(
             std::move(constructor_args)...);
 
         // Build a `SimulationUnitExecutor` that constructs a fresh unit per task
         SimulationUnitExecutor simulation_unit_executor =
-            [stored_constructor_args = std::move(stored_constructor_args)](
-                const Task& task) -> TaskResult {
-                // Create a new `SimulationUnitType` instance for this task
-                std::unique_ptr<SimulationUnit> simulation_unit = std::apply(
-                    [](const std::decay_t<ConstructorArgs>&... args)
-                        -> std::unique_ptr<SimulationUnit> {
-                        return std::make_unique<SimulationUnitType>(args...);
-                    }, stored_constructor_args);
+            [stored_constructor_args =
+                 std::move(stored_constructor_args)](const Task& task) -> TaskResult {
+            // Create a new `SimulationUnitType` instance for this task
+            std::unique_ptr<SimulationUnit> simulation_unit = std::apply(
+                [](const std::decay_t<ConstructorArgs>&... args)
+                    -> std::unique_ptr<SimulationUnit> {
+                    return std::make_unique<SimulationUnitType>(args...);
+                },
+                stored_constructor_args);
 
-                // Execute the simulation unit with the given task and return the result
-                return simulation_unit->execute(task);
-            };
+            // Execute the simulation unit with the given task and return the result
+            return simulation_unit->execute(task);
+        };
 
         const SimulationUnitId simulation_unit_id = next_simulation_unit_id_++;
         simulation_unit_executors_by_id_.emplace(simulation_unit_id,
@@ -391,7 +389,7 @@ public:
         return &simulation_unit_entry->second;
     }
 
-private:
+  private:
     std::unordered_map<SimulationUnitId, SimulationUnitExecutor>
         simulation_unit_executors_by_id_;
     SimulationUnitId next_simulation_unit_id_{1};
@@ -417,7 +415,7 @@ struct RuntimeOptions {
     std::string output_root_;
 
     // Path to a NextGen-style realization file for realization-driven workflows
-    // When empty (the default), the caller may substitute its own default path
+    // Empty string means no realization path has been configured
     std::string realization_path_;
 
     /**
@@ -428,19 +426,15 @@ struct RuntimeOptions {
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      * @param realization_path Path to a realization file. Empty string (default)
-     *                   lets realization-driven callers fall back to their own default.
+     *                   means no realization path has been configured.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::seconds(5),
                    std::chrono::milliseconds job_timeout = std::chrono::minutes(5),
-                   std::string output_root = "",
-                   std::string realization_path = "")
-        : max_workers_(workers == 0 ? 1 : workers),
-          task_request_timeout_(task_timeout),
-          job_request_timeout_(job_timeout),
-          output_root_(std::move(output_root)),
-          realization_path_(std::move(realization_path)) {
-    }
+                   std::string output_root = "", std::string realization_path = "")
+        : max_workers_(workers == 0 ? 1 : workers), task_request_timeout_(task_timeout),
+          job_request_timeout_(job_timeout), output_root_(std::move(output_root)),
+          realization_path_(std::move(realization_path)) {}
 };
 
 /**
@@ -468,8 +462,7 @@ using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
  * @param task `Task` payload to inspect.
  * @return true when all fields were inspected successfully.
  */
-template <class Inspector>
-bool inspect(Inspector& inspector, Task& task) {
+template <class Inspector> bool inspect(Inspector& inspector, Task& task) {
     // Defines how CAF serializes/deserializes `Task` for actor messaging
     return inspector.object(task).fields(
         inspector.field("simulation_unit_id", task.simulation_unit_id_),
@@ -486,17 +479,14 @@ bool inspect(Inspector& inspector, Task& task) {
  * @param task_status `TaskStatus` payload to inspect.
  * @return true when the status value was inspected successfully.
  */
-template <class Inspector>
-bool inspect(Inspector& inspector, TaskStatus& task_status) {
+template <class Inspector> bool inspect(Inspector& inspector, TaskStatus& task_status) {
     // Task status serializes as a stable string in actor messages and JSON
     std::string status_value = task_status_to_string(task_status);
     const bool inspected = inspector.apply(status_value);
     if (!inspected) {
         return false;
     }
-    task_status = status_value == "succeeded"
-        ? TaskStatus::succeeded
-        : TaskStatus::failed;
+    task_status = status_value == "succeeded" ? TaskStatus::succeeded : TaskStatus::failed;
     return true;
 }
 
@@ -507,13 +497,12 @@ bool inspect(Inspector& inspector, TaskStatus& task_status) {
  * @param task_result `TaskResult` payload to inspect.
  * @return true when all fields were inspected successfully.
  */
-template <class Inspector>
-bool inspect(Inspector& inspector, TaskResult& task_result) {
+template <class Inspector> bool inspect(Inspector& inspector, TaskResult& task_result) {
     // Defines how CAF serializes/deserializes `TaskResult` for actor messaging
-    return inspector.object(task_result).fields(
-        inspector.field("status", task_result.status_),
-        inspector.field("message", task_result.message_),
-        inspector.field("artifact_paths", task_result.artifact_paths_));
+    return inspector.object(task_result)
+        .fields(inspector.field("status", task_result.status_),
+                inspector.field("message", task_result.message_),
+                inspector.field("artifact_paths", task_result.artifact_paths_));
 }
 
 /**
@@ -523,15 +512,14 @@ bool inspect(Inspector& inspector, TaskResult& task_result) {
  * @param task_record `TaskRecord` payload to inspect.
  * @return true when all fields were inspected successfully.
  */
-template <class Inspector>
-bool inspect(Inspector& inspector, TaskRecord& task_record) {
+template <class Inspector> bool inspect(Inspector& inspector, TaskRecord& task_record) {
     // Defines how CAF serializes/deserializes `TaskRecord` for actor messaging
-    return inspector.object(task_record).fields(
-        inspector.field("task_id", task_record.task_id_),
-        inspector.field("simulation_unit_id", task_record.simulation_unit_id_),
-        inspector.field("metadata", task_record.metadata_),
-        inspector.field("result", task_record.result_),
-        inspector.field("run_time_s", task_record.run_time_s_));
+    return inspector.object(task_record)
+        .fields(inspector.field("task_id", task_record.task_id_),
+                inspector.field("simulation_unit_id", task_record.simulation_unit_id_),
+                inspector.field("metadata", task_record.metadata_),
+                inspector.field("result", task_record.result_),
+                inspector.field("run_time_s", task_record.run_time_s_));
 }
 
 /**
@@ -541,14 +529,13 @@ bool inspect(Inspector& inspector, TaskRecord& task_record) {
  * @param job_record `JobRecord` payload to inspect.
  * @return true when all fields were inspected successfully.
  */
-template <class Inspector>
-bool inspect(Inspector& inspector, JobRecord& job_record) {
+template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_record) {
     // Defines how CAF serializes/deserializes `JobRecord` for actor messaging
-    return inspector.object(job_record).fields(
-        inspector.field("run_id", job_record.run_id_),
-        inspector.field("job_id", job_record.job_id_),
-        inspector.field("tasks", job_record.tasks_),
-        inspector.field("run_time_s", job_record.run_time_s_));
+    return inspector.object(job_record)
+        .fields(inspector.field("run_id", job_record.run_id_),
+                inspector.field("job_id", job_record.job_id_),
+                inspector.field("tasks", job_record.tasks_),
+                inspector.field("run_time_s", job_record.run_time_s_));
 }
 
 /**
@@ -558,7 +545,7 @@ bool inspect(Inspector& inspector, JobRecord& job_record) {
  * Tasks with unknown `SimulationUnitId` values fail individually.
  */
 class Runtime {
-public:
+  public:
     /**
      * @brief Construct `Runtime` from a registry with default options.
      * @param simulation_unit_registry Registry mapping `simulation_unit_id` to executor.
@@ -586,32 +573,19 @@ public:
     JobHandle submit_job(const Task& task) const;
 
     /**
-     * @brief Submit a multi-task asynchronous job with copied tasks.
+     * @brief Submit a multi-task asynchronous job.
      *
-     * This `const&` overload accepts caller-owned vectors (lvalues) and copies
-     * tasks so the caller keeps ownership unchanged.
+     * Lvalue inputs are copied, while rvalue inputs transfer ownership into
+     * `Runtime`.
      * The returned handle may rethrow if final `job_record.json` output fails.
      * @param tasks Generic `Task` arguments.
      * @return `JobHandle` for retrieving the final `JobRecord`.
      * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */
-    JobHandle submit_job(const std::vector<Task>& tasks) const;
+    JobHandle submit_job(std::vector<Task> tasks) const;
 
-    /**
-     * @brief Submit a multi-task asynchronous job with moved tasks.
-     *
-     * This `&&` overload accepts rvalues (temporaries or `std::move(...)`) and
-     * transfers task ownership into `Runtime` to avoid an extra copy.
-     * The returned handle may rethrow if final `job_record.json` output fails.
-     * @param tasks Generic `Task` arguments.
-     * @return `JobHandle` for retrieving the final `JobRecord`.
-     * @throws std::filesystem::filesystem_error if runtime output directories
-     * cannot be created.
-     */
-    JobHandle submit_job(std::vector<Task>&& tasks) const;
-
-private:
+  private:
     // Shared simulation unit registry used by all `simulation_unit_actor`s in this runtime
     std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry_;
 

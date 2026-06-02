@@ -1,96 +1,190 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <map>
-#include <memory>
-#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include <boost/json.hpp>
 #include <caf/config_value.hpp>
 
-#include "miaow.hpp"
+#include "miaow_bmi.hpp"
 #include "third_party/bmi/bmi.hxx"
 
 namespace miaow::bmi {
 
-inline constexpr const char* bmi_file_prefix = "bmi_subprocess";
-
-// JSON task payload passed from the parent process to the subprocess executable
-struct BmiSubprocessTaskSpec {
-    std::string backend_;
-    std::string plugin_path_;
-    std::string config_file_;
-    std::string output_dir_;
-    std::string output_name_;
-    std::optional<std::string> cpp_create_function_;
-    std::optional<std::string> cpp_destroy_function_;
-    std::optional<std::string> forcing_file_;
-    std::optional<std::map<std::string, std::string>> variables_names_map_;
-};
-
-// Serialize the subprocess task payload
-template <class Inspector>
-bool inspect(Inspector& inspector, BmiSubprocessTaskSpec& subprocess_task) {
-    return inspector.object(subprocess_task).fields(
-        inspector.field("backend", subprocess_task.backend_),
-        inspector.field("plugin_path", subprocess_task.plugin_path_),
-        inspector.field("config", subprocess_task.config_file_),
-        inspector.field("output_dir", subprocess_task.output_dir_),
-        inspector.field("output_name", subprocess_task.output_name_),
-        inspector.field("cpp_create_function",
-                        subprocess_task.cpp_create_function_),
-        inspector.field("cpp_destroy_function",
-                        subprocess_task.cpp_destroy_function_),
-        inspector.field("forcing_file", subprocess_task.forcing_file_),
-        inspector.field("variables_names_map",
-                        subprocess_task.variables_names_map_));
-}
-
-// Return the result path that corresponds to a subprocess spec path
-inline std::filesystem::path make_subprocess_result_path(
-    const std::filesystem::path& spec_path) {
-    const std::string spec_filename = spec_path.filename().string();
-    const std::string spec_suffix = "_spec.json";
-    if (spec_filename.size() > spec_suffix.size() &&
-        spec_filename.compare(spec_filename.size() - spec_suffix.size(),
-                              spec_suffix.size(),
-                              spec_suffix) == 0) {
-        return spec_path.parent_path() /
-               (spec_filename.substr(0, spec_filename.size() - spec_suffix.size()) +
-                "_result.json");
-    }
-    return spec_path.parent_path() / (std::string(bmi_file_prefix) + "_result.json");
-}
-
-// BMI output variable metadata used to write combined CSV rows
 struct OutputVariable {
-    std::string name_;              // BMI output variable name
-    std::size_t n_items_;           // Number of scalar items in the variable value
+    // BMI output variable name
+    std::string name_;
+
+    // Number of scalar items in the variable value
+    std::size_t n_items_;
 };
 
-// Open stream-backed CSV output for one task
 struct OutputFile {
-    std::string artifact_path_;             // Artifact path relative to the job directory
-    std::vector<OutputVariable> variables_; // BMI output variables written as columns
-    std::ofstream stream_;                  // CSV output stream for this task
+    // Artifact path relative to the job directory
+    std::string artifact_path_;
+
+    // BMI output variables written as columns
+    std::vector<OutputVariable> variables_;
+
+    // CSV output stream for this task
+    std::ofstream stream_;
 };
 
-// Construct an initialized BMI-compliant forcing source from the structured
-// forcing dictionary in `Task.args_[1]`
-std::unique_ptr<::bmi::Bmi> make_forcing_bmi(
-    const caf::config_value::dictionary& forcing_config,
-    ::bmi::Bmi& model);
+struct ForcingColumn {
+    // BMI output name and source CSV header
+    std::string csv_header_;
 
-// Open one CSV output file for all BMI output variables in output_dir
-OutputFile open_output_file(
-    ::bmi::Bmi& model,
-    const std::string& output_dir,
-    const std::string& output_name);
+    // Zero-based CSV column index
+    std::size_t csv_column_index_;
+};
 
-// Write one timestep row to a task CSV stream
+struct ForcingRow {
+    // Parsed timestamp from the time column
+    std::int64_t timestamp_seconds_{0};
+
+    // Physical one-based line number
+    std::size_t row_number_{0};
+
+    // Values ordered like forcing_columns_
+    std::vector<double> values_;
+};
+
+struct BmiCoupling {
+    // Index of the module that provides the scalar value
+    std::size_t source_module_;
+
+    // BMI variable read from the source module
+    std::string source_variable_;
+
+    // Index of the module that receives the scalar value
+    std::size_t target_module_;
+
+    // BMI variable set on the target module
+    std::string target_variable_;
+};
+
+// Internal BMI model adapters
+class ForcingBmi : public ::bmi::Bmi {
+  public:
+    explicit ForcingBmi(::bmi::Bmi& target_model);
+
+    ForcingBmi(const ForcingBmi&) = delete;
+    ForcingBmi& operator=(const ForcingBmi&) = delete;
+
+    ~ForcingBmi() override = default;
+
+    void Initialize(std::string config_file) override;
+    void Update() override;
+    void UpdateUntil(double time) override;
+    void Finalize() override;
+
+    std::string GetComponentName() override;
+    int GetInputItemCount() override;
+    int GetOutputItemCount() override;
+    std::vector<std::string> GetInputVarNames() override;
+    std::vector<std::string> GetOutputVarNames() override;
+    int GetVarGrid(std::string name) override;
+    std::string GetVarType(std::string name) override;
+    std::string GetVarUnits(std::string name) override;
+    int GetVarItemsize(std::string name) override;
+    int GetVarNbytes(std::string name) override;
+    std::string GetVarLocation(std::string name) override;
+    double GetCurrentTime() override;
+    double GetStartTime() override;
+    double GetEndTime() override;
+    std::string GetTimeUnits() override;
+    double GetTimeStep() override;
+    void GetValue(std::string name, void* dest) override;
+    void* GetValuePtr(std::string name) override;
+    void GetValueAtIndices(std::string name, void* dest, int* inds, int count) override;
+    void SetValue(std::string name, void* src) override;
+    void SetValueAtIndices(std::string name, int* inds, int count, void* src) override;
+    int GetGridRank(const int grid) override;
+    int GetGridSize(const int grid) override;
+    std::string GetGridType(const int grid) override;
+    void GetGridShape(const int grid, int* shape) override;
+    void GetGridSpacing(const int grid, double* spacing) override;
+    void GetGridOrigin(const int grid, double* origin) override;
+    void GetGridX(const int grid, double* x) override;
+    void GetGridY(const int grid, double* y) override;
+    void GetGridZ(const int grid, double* z) override;
+    int GetGridNodeCount(const int grid) override;
+    int GetGridEdgeCount(const int grid) override;
+    int GetGridFaceCount(const int grid) override;
+    void GetGridEdgeNodes(const int grid, int* edge_nodes) override;
+    void GetGridFaceEdges(const int grid, int* face_edges) override;
+    void GetGridFaceNodes(const int grid, int* face_nodes) override;
+    void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
+
+  private:
+    void open_stream(const std::filesystem::path& forcing_path);
+    bool read_next_row(ForcingRow& row);
+    std::size_t find_output_index(const std::string& name) const;
+    void check_grid_id(int grid) const;
+
+    // Receiving model supplies timestep constraints for the forcing stream
+    ::bmi::Bmi& target_model_;
+
+    // Streaming CSV source positioned after the current forcing row
+    std::ifstream csv_stream_;
+
+    // Time column metadata from the CSV header
+    std::string time_column_name_;
+    std::size_t csv_time_column_index_{0};
+
+    // Forcing CSV columns exposed as BMI outputs in this order
+    std::vector<ForcingColumn> forcing_columns_;
+
+    // Current row exposed through GetValue until Update reads the next row
+    ForcingRow current_row_;
+
+    // Last physical CSV row number read from the stream
+    std::size_t last_csv_row_number_{1};
+
+    // Current timestep index returned by GetValue
+    std::size_t step_{0};
+
+    // Current forcing time exposed through the BMI clock methods
+    double current_time_seconds_{0.0};
+
+    // Expected forcing timestep from the target model BMI clock
+    double time_step_seconds_{0.0};
+
+    // True after Update reaches the end of the forcing CSV
+    bool exhausted_{true};
+
+    // False for the no-op forcing module used when a pipeline config has no forcing
+    bool active_{false};
+};
+
+// BMI pipeline config and module IO
+BmiPipelineConfig read_bmi_pipeline_config_file(const std::filesystem::path& path);
+
+void write_bmi_pipeline_config_file(const Task& task,
+                                    const std::filesystem::path& path);
+
+caf::config_value::dictionary
+make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
+                             const std::string& forcing_file,
+                             std::size_t output_module = 0);
+
+BmiModuleConfig parse_bmi_module_config(const boost::json::object& module_object,
+                                        std::string_view error_prefix);
+
+std::filesystem::path bmi_pipeline_config_file_path(const Task& task);
+
+std::vector<std::string> bmi_pipeline_config_artifact_paths(const Task& task);
+
+// Output CSV writing; an empty output variable list writes all model outputs
+OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
+                            const std::string& output_name,
+                            const std::vector<std::string>& output_variables);
+
 void write_output_step(::bmi::Bmi& model, OutputFile& output_file, double time);
 
 } // namespace miaow::bmi

@@ -37,11 +37,11 @@ static std::filesystem::path run_directory_path(const RuntimeOptions& runtime_op
            ("run_" + std::to_string(run_id));
 }
 
-static std::optional<std::uint64_t> parse_run_directory_id(
-    const std::string& directory_name) {
+static std::optional<std::uint64_t>
+parse_run_directory_id(const std::string& directory_name) {
     constexpr const char* run_prefix = "run_";
     constexpr std::size_t run_prefix_size = 4;
-    if (directory_name.rfind(run_prefix, 0) != 0 ||
+    if (!directory_name.starts_with(run_prefix) ||
         directory_name.size() == run_prefix_size) {
         return std::nullopt;
     }
@@ -49,14 +49,14 @@ static std::optional<std::uint64_t> parse_run_directory_id(
     std::uint64_t run_id = 0;
     const char* run_id_begin = directory_name.data() + run_prefix_size;
     const char* run_id_end = directory_name.data() + directory_name.size();
-    const std::from_chars_result result =
-        std::from_chars(run_id_begin, run_id_end, run_id);
+    const std::from_chars_result result = std::from_chars(run_id_begin, run_id_end, run_id);
     if (result.ec != std::errc() || result.ptr != run_id_end) {
         return std::nullopt;
     }
     return run_id;
 }
 
+// Create a unique run ID by scanning existing run directories and claiming the next one
 static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
     if (runtime_options.output_root_.empty()) {
         return next_run_id.fetch_add(1, std::memory_order_relaxed);
@@ -80,8 +80,8 @@ static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
 
     // Claim the run directory in case another runtime creates one first
     std::uint64_t run_id = found_run_id ? max_run_id + 1 : 0;
-    while (!std::filesystem::create_directory(
-        run_directory_path(runtime_options, run_id))) {
+    while (
+        !std::filesystem::create_directory(run_directory_path(runtime_options, run_id))) {
         ++run_id;
     }
     return run_id;
@@ -89,10 +89,8 @@ static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
 
 // Get directory path for a job, which is a subdirectory of the run directory
 static std::filesystem::path job_directory_path(const RuntimeOptions& runtime_options,
-                                                std::uint64_t run_id,
-                                                JobId job_id) {
-    return run_directory_path(runtime_options, run_id) /
-           ("job_" + std::to_string(job_id));
+                                                std::uint64_t run_id, JobId job_id) {
+    return run_directory_path(runtime_options, run_id) / ("job_" + std::to_string(job_id));
 }
 
 // Get directory name for a task output, prioritizing "feature_id" metadata when available,
@@ -113,8 +111,7 @@ static std::string task_output_name(const Task& task, TaskId task_id) {
 
 static void assign_task_output_directories(std::vector<Task>& tasks,
                                            const RuntimeOptions& runtime_options,
-                                           std::uint64_t run_id,
-                                           JobId job_id) {
+                                           std::uint64_t run_id, JobId job_id) {
     if (runtime_options.output_root_.empty()) {
         for (Task& task : tasks) {
             task.task_output_dir_.clear();
@@ -137,12 +134,10 @@ static void assign_task_output_directories(std::vector<Task>& tasks,
         const TaskId task_id = static_cast<TaskId>(task_index);
         task.task_output_dir_ = results_directory.string();
         task.task_output_name_ = task_output_name(task, task_id);
-        if (std::find(assigned_output_names.begin(),
-                      assigned_output_names.end(),
+        if (std::find(assigned_output_names.begin(), assigned_output_names.end(),
                       task.task_output_name_) != assigned_output_names.end()) {
-            throw std::runtime_error(
-                "Output path error: duplicate task output name '" +
-                task.task_output_name_ + "'");
+            throw std::runtime_error("Output path error: duplicate task output name '" +
+                                     task.task_output_name_ + "'");
         }
         assigned_output_names.push_back(task.task_output_name_);
     }
@@ -165,8 +160,7 @@ static void initialize_caf_once() {
 
 // Construct a Runtime with default runtime options
 Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry)
-    : Runtime(simulation_unit_registry, RuntimeOptions{}) {
-}
+    : Runtime(simulation_unit_registry, RuntimeOptions{}) {}
 
 // Construct a Runtime with one shared actor system and orchestrator
 Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
@@ -188,26 +182,18 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
     actor_system_ = std::make_shared<caf::actor_system>(*actor_system_config_);
 
     // Spawn the shared orchestrator actor to handle job requests and job completion
-    orchestrator_ = actor_system_->spawn(core::orchestrator_actor,
-                                         runtime_options_,
-                                         run_id_,
-                                         simulation_unit_registry_,
-                                         &pending_jobs_mutex_,
-                                         &pending_jobs_);
+    orchestrator_ = actor_system_->spawn(core::orchestrator_actor, runtime_options_,
+                                         run_id_, simulation_unit_registry_,
+                                         &pending_jobs_mutex_, &pending_jobs_);
 }
 
-// Submitting one task is a wrapper around the multi-task submission path
+// Submit one task through the multi-task path
 JobHandle Runtime::submit_job(const Task& task) const {
     return submit_job(std::vector<Task>{task});
 }
 
-// `const&` copy path: lvalue input is copied, so caller retains ownership
-JobHandle Runtime::submit_job(const std::vector<Task>& tasks) const {
-    return submit_job(std::vector<Task>{tasks});
-}
-
-// `&&` move path: rvalue input transfers ownership into the Runtime message path
-JobHandle Runtime::submit_job(std::vector<Task>&& tasks) const {
+// Submit a full task collection into the Runtime message path
+JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
     // If there are no tasks, return a ready future with an empty result immediately

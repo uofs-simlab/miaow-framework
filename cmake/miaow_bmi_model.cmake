@@ -138,7 +138,7 @@ function(miaow_add_bmi_model)
     endif()
 
     add_library(${MIAOW_MODEL_TARGET} STATIC ${model_sources})
-    target_compile_features(${MIAOW_MODEL_TARGET} PUBLIC cxx_std_17)
+    target_compile_features(${MIAOW_MODEL_TARGET} PUBLIC cxx_std_20)
     target_include_directories(${MIAOW_MODEL_TARGET} PUBLIC ${model_include_dirs})
 
     if(MIAOW_MODEL_COMPILE_DEFINITIONS)
@@ -150,7 +150,7 @@ function(miaow_add_bmi_model)
     endif()
 
     add_executable(${MIAOW_EXECUTABLE_TARGET} ${MIAOW_EXECUTABLE_SOURCES})
-    target_compile_features(${MIAOW_EXECUTABLE_TARGET} PRIVATE cxx_std_17)
+    target_compile_features(${MIAOW_EXECUTABLE_TARGET} PRIVATE cxx_std_20)
     target_link_libraries(${MIAOW_EXECUTABLE_TARGET} PRIVATE miaow ${MIAOW_MODEL_TARGET})
     set_target_properties(${MIAOW_EXECUTABLE_TARGET} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${MIAOW_OUTPUT_DIR}"

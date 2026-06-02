@@ -3,21 +3,21 @@
  * and runtime. This example defines a HelloSimulationUnit that echoes string task inputs
  * and uses the Runtime API to execute two async jobs, each with two tasks, that simply
  * pass string messages through the simulation unit and print the results and diagnostics.
-*/
+ */
 
 #include <exception>
 #include <iostream>
 #include <string>
 #include <vector>
 
-#include "miaow.hpp"     // Core MIAOW runtime API
-#include "miaow_io.hpp"  // I/O helpers for example programs
+#include "miaow.hpp"    // Core MIAOW runtime API
+#include "miaow_io.hpp" // I/O helpers for example programs
 
 /**
  * @brief A simple simulation unit that returns a string task argument.
  */
 class HelloSimulationUnit : public miaow::SimulationUnit {
-public:
+  public:
     /**
      * @brief Override execute to return the first task string argument.
      * In a real simulation unit, this is where you would implement the logic to initialize
@@ -80,5 +80,7 @@ int main(int argc, char* argv[]) {
 
     // Return 1 if any task failed, or 0 if all tasks succeeded
     return miaow::all_tasks_succeeded(first_job_record) &&
-            miaow::all_tasks_succeeded(second_job_record) ? 0 : 1;
+                   miaow::all_tasks_succeeded(second_job_record)
+               ? 0
+               : 1;
 }

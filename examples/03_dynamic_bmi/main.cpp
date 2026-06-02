@@ -2,7 +2,7 @@
  * This example runs C++ and Fortran BMI heat models through MIAOW's dynamic
  * BMI plugin path in one job. The two upstream heat examples do not solve the
  * same discrete update, so the example checks that both languages run through
- * the standard BMI simulation-unit path rather than comparing numeric output.
+ * the single-model BMI pipeline path rather than comparing numeric output.
  */
 
 #include <exception>
@@ -29,29 +29,36 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Print the dynamic libraries that will be loaded by each BMI wrapper
+    // Print the dynamic libraries that will be loaded by each dynamic unit
     const std::string cpp_heat_plugin_path = MIAOW_CPP_HEAT_PLUGIN_PATH;
     const std::string fortran_heat_plugin_path = MIAOW_FORTRAN_HEAT_PLUGIN_PATH;
     std::cout << "C++ dynamic BMI plugin: " << cpp_heat_plugin_path << "\n";
     std::cout << "Fortran dynamic BMI plugin: " << fortran_heat_plugin_path << "\n";
 
-    // Register dynamic C++ and Fortran BMI simulation units
+    // Describe each dynamic plugin loader
+    const miaow::BmiModuleConfig cpp_heat_module(
+        "bmi_cpp", miaow::DynamicBmiBackend::cpp, cpp_heat_plugin_path);
+
+    const miaow::BmiModuleConfig fortran_heat_module(
+        "bmi_fortran", miaow::DynamicBmiBackend::fortran, fortran_heat_plugin_path);
+
+    // Register dynamic BMI units that construct plugin models in this process
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId cpp_heat =
-        registry.add<miaow::BmiSimulationUnit<miaow::DynamicCppBmi>>(
-            cpp_heat_plugin_path);
+        registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(cpp_heat_module);
     const miaow::SimulationUnitId fortran_heat =
-        registry.add<miaow::BmiSimulationUnit<miaow::DynamicFortranBmi>>(
-            fortran_heat_plugin_path);
+        registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(fortran_heat_module);
     miaow::Runtime runtime(registry, runtime_options);
 
-    // Get the shared config file path for this dynamic heat workload
+    // Build the task config shared by both dynamic plugin models
     const std::string heat_config = "./data/configs/config_dynamic_heat.txt";
+    const miaow::BmiPipelineConfig heat_pipeline_config =
+        miaow::make_bmi_model_config(heat_config);
 
     // Run one C++ heat task and one Fortran heat task in the same job
     const std::vector<miaow::Task> tasks{
-        {cpp_heat, heat_config},
-        {fortran_heat, heat_config},
+        {cpp_heat, miaow::bmi_pipeline_config_to_value(heat_pipeline_config)},
+        {fortran_heat, miaow::bmi_pipeline_config_to_value(heat_pipeline_config)},
     };
 
     // Submit tasks and wait for results

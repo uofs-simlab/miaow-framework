@@ -59,10 +59,12 @@ foreach(run_directory IN LISTS run_directories)
         endif()
 
         file(GLOB task_directories LIST_DIRECTORIES true "${job_directory}/task_*")
-        if(task_directories)
-            message(FATAL_ERROR
-                "Unexpected task_* directory found under ${job_directory}")
-        endif()
+        foreach(task_directory IN LISTS task_directories)
+            if(IS_DIRECTORY "${task_directory}")
+                message(FATAL_ERROR
+                    "Unexpected task_* directory found under ${job_directory}")
+            endif()
+        endforeach()
     endforeach()
 endforeach()
 
@@ -100,4 +102,20 @@ if(DEFINED EXPECTED_RESULT_PATHS)
                 "${OUTPUT_ROOT}/run_0/job_0/${expected_result_path}")
         endif()
     endforeach()
+endif()
+
+# Validate an example CSV header when the test provides one
+if(DEFINED EXPECTED_CSV_HEADER_PATH AND DEFINED EXPECTED_CSV_HEADER)
+    set(expected_csv_path
+        "${OUTPUT_ROOT}/run_0/job_0/${EXPECTED_CSV_HEADER_PATH}")
+    if(NOT EXISTS "${expected_csv_path}")
+        message(FATAL_ERROR "Expected CSV file not found: ${expected_csv_path}")
+    endif()
+
+    file(STRINGS "${expected_csv_path}" actual_csv_header LIMIT_COUNT 1)
+    if(NOT actual_csv_header STREQUAL EXPECTED_CSV_HEADER)
+        message(FATAL_ERROR
+            "Unexpected CSV header in ${expected_csv_path}: "
+            "'${actual_csv_header}'")
+    endif()
 endif()

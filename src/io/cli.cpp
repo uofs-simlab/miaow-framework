@@ -13,34 +13,28 @@ namespace miaow {
 
 namespace {
 
-void parse_positive_integer_option(std::string_view value,
-                                   std::string_view option_name,
+void parse_positive_integer_option(std::string_view value, std::string_view option_name,
                                    std::size_t& output) {
     const std::from_chars_result parse_result =
         std::from_chars(value.data(), value.data() + value.size(), output);
-    if (parse_result.ec != std::errc() ||
-        parse_result.ptr != value.data() + value.size() ||
+    if (parse_result.ec != std::errc() || parse_result.ptr != value.data() + value.size() ||
         output == 0) {
-        throw std::runtime_error(
-            "Error: " + std::string(option_name) +
-            " requires a positive integer");
+        throw std::runtime_error("Error: " + std::string(option_name) +
+                                 " requires a positive integer");
     }
 }
 
-void require_option_value(int argc,
-                          char* argv[],
-                          int& index,
-                          std::string_view option_name,
+void require_option_value(int argc, char* argv[], int& index, std::string_view option_name,
                           std::string& value) {
     if (index + 1 >= argc) {
-        throw std::runtime_error(
-            "Error: " + std::string(option_name) + " requires a value");
+        throw std::runtime_error("Error: " + std::string(option_name) +
+                                 " requires a value");
     }
 
     value = argv[index + 1];
-    if (value.rfind("--", 0) == 0) {
-        throw std::runtime_error(
-            "Error: " + std::string(option_name) + " requires a value");
+    if (value.starts_with("--")) {
+        throw std::runtime_error("Error: " + std::string(option_name) +
+                                 " requires a value");
     }
     index += 2;
 }
@@ -59,19 +53,16 @@ bool ensure_expected_run_dir(const std::string& executable_name,
         return true;
     }
 
-    std::cerr
-        << "Run directory error: " << executable_name << " must be run from '"
-        << expected_path.string() << "'\n"
-        << "Current directory: '" << actual_path.string() << "'\n"
-        << "Use:\n"
-        << "  cd " << expected_path.string() << "\n"
-        << "  ./" << executable_name << "\n";
+    std::cerr << "Run directory error: " << executable_name << " must be run from '"
+              << expected_path.string() << "'\n"
+              << "Current directory: '" << actual_path.string() << "'\n"
+              << "Use:\n"
+              << "  cd " << expected_path.string() << "\n"
+              << "  ./" << executable_name << "\n";
     return false;
 }
 
-void parse_runtime_cli_options(int argc,
-                               char* argv[],
-                               RuntimeOptions& runtime_options) {
+void parse_runtime_cli_options(int argc, char* argv[], RuntimeOptions& runtime_options) {
     int index = 1;
     while (index < argc) {
         const std::string_view option_name = argv[index];
@@ -112,8 +103,8 @@ void parse_runtime_cli_options(int argc,
             runtime_options.realization_path_ = option_value;
             continue;
         }
-        throw std::runtime_error(
-            "Error: unrecognized argument: " + std::string(option_name));
+        throw std::runtime_error("Error: unrecognized argument: " +
+                                 std::string(option_name));
     }
 }
 

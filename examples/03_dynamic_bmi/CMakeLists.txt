@@ -124,7 +124,7 @@ add_executable(${EXECUTABLE_TARGET}
     main.cpp
 )
 
-target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_17)
+target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_20)
 target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
 target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
     MIAOW_DYNAMIC_BMI_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"

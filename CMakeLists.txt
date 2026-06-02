@@ -2,14 +2,14 @@ cmake_minimum_required(VERSION 3.16)
 
 project(miaow CXX Fortran)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(CTest)
 
-set(MIAOW_BOOST_PROVIDER "system" CACHE STRING "Boost provider: auto, system, fetch")
+set(MIAOW_BOOST_PROVIDER "auto" CACHE STRING "Boost provider: auto, system, fetch")
 set(MIAOW_BOOST_VERSION "1.86.0" CACHE STRING "Boost version for FetchContent")
 set_property(CACHE MIAOW_BOOST_PROVIDER PROPERTY STRINGS auto system fetch)
 set(MIAOW_CAF_PROVIDER "auto" CACHE STRING "CAF provider: auto, system, fetch")
@@ -33,21 +33,21 @@ miaow_validate_provider(MIAOW_BOOST_PROVIDER)
 miaow_validate_provider(MIAOW_CAF_PROVIDER)
 
 if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
-    find_package(Boost CONFIG QUIET COMPONENTS process)
-    if(NOT TARGET Boost::process)
-        find_package(Boost QUIET COMPONENTS process)
+    find_package(Boost CONFIG QUIET COMPONENTS process json)
+    if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
+        find_package(Boost QUIET COMPONENTS process json)
     endif()
 endif()
 
-if(NOT TARGET Boost::process)
+if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
     if(MIAOW_BOOST_PROVIDER STREQUAL "system")
         message(FATAL_ERROR
-            "Boost.Process not found. Use Conan, install Boost, or set "
+            "Boost.Process or Boost.JSON not found. Use Conan, install Boost, or set "
             "MIAOW_BOOST_PROVIDER to auto or fetch.")
     endif()
 
     include(FetchContent)
-    set(BOOST_INCLUDE_LIBRARIES process CACHE STRING
+    set(BOOST_INCLUDE_LIBRARIES process json CACHE STRING
         "Boost libraries included by FetchContent" FORCE)
     set(BOOST_ENABLE_CMAKE ON CACHE BOOL "Enable Boost CMake support" FORCE)
     set(miaow_boost_release_url
@@ -57,7 +57,7 @@ if(NOT TARGET Boost::process)
     string(CONCAT miaow_boost_url
         "${miaow_boost_release_url}/boost-${MIAOW_BOOST_VERSION}"
         "/${miaow_boost_cmake_archive}")
-    message(STATUS "Boost.Process not found. Fetching Boost ${MIAOW_BOOST_VERSION}...")
+    message(STATUS "Boost components not found. Fetching Boost ${MIAOW_BOOST_VERSION}...")
     FetchContent_Declare(
         boost
         URL ${miaow_boost_url}
@@ -65,8 +65,8 @@ if(NOT TARGET Boost::process)
     FetchContent_MakeAvailable(boost)
 endif()
 
-if(NOT TARGET Boost::process)
-    message(FATAL_ERROR "Boost did not provide the expected Boost::process target.")
+if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
+    message(FATAL_ERROR "Boost did not provide the expected Boost targets.")
 endif()
 
 set(MIAOW_CAF_CORE_TARGET "")
@@ -122,10 +122,12 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
 endif()
 
 if(MIAOW_ISO_C_FORTRAN_BMI_ROOT)
-    message(STATUS "MIAOW: using iso_c_fortran_bmi source root ${MIAOW_ISO_C_FORTRAN_BMI_ROOT}")
+    message(STATUS
+        "MIAOW: using iso_c_fortran_bmi source root ${MIAOW_ISO_C_FORTRAN_BMI_ROOT}")
     if(NOT EXISTS "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}/CMakeLists.txt")
         message(FATAL_ERROR
-            "MIAOW_ISO_C_FORTRAN_BMI_ROOT must point to a NOAA-OWP/iso_c_fortran_bmi checkout")
+            "MIAOW_ISO_C_FORTRAN_BMI_ROOT must point to a "
+            "NOAA-OWP/iso_c_fortran_bmi checkout")
     endif()
     add_subdirectory(
         "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}"
@@ -133,7 +135,8 @@ if(MIAOW_ISO_C_FORTRAN_BMI_ROOT)
     )
 else()
     set(iso_c_fortran_bmi_source_dir "${MIAOW_DEFAULT_MODEL_BASE_DIR}/iso_c_fortran_bmi")
-    message(STATUS "MIAOW: using iso_c_fortran_bmi source root ${iso_c_fortran_bmi_source_dir}")
+    message(STATUS
+        "MIAOW: using iso_c_fortran_bmi source root ${iso_c_fortran_bmi_source_dir}")
     if(EXISTS "${iso_c_fortran_bmi_source_dir}/CMakeLists.txt")
         add_subdirectory(
             "${iso_c_fortran_bmi_source_dir}"
@@ -161,7 +164,8 @@ add_library(miaow STATIC
     src/bmi/execute.cpp
     src/bmi/dynamic.cpp
     src/bmi/forcing.cpp
-    src/bmi/output.cpp
+    src/bmi/io.cpp
+    src/bmi/pipeline.cpp
     src/bmi/realization.cpp
     src/bmi/subprocess/caller.cpp
     src/core/actors.cpp
@@ -169,7 +173,6 @@ add_library(miaow STATIC
     src/io/cli.cpp
     src/io/csv.cpp
     src/io/diagnostics.cpp
-    src/io/job_record.cpp
 )
 
 target_include_directories(miaow
@@ -180,7 +183,8 @@ target_include_directories(miaow
 )
 
 if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
-    message(FATAL_ERROR "CAF targets not available. Ensure CAF is installed with core/io modules.")
+    message(FATAL_ERROR
+        "CAF targets not available. Ensure CAF is installed with core/io modules.")
 endif()
 
 target_link_libraries(miaow
@@ -191,6 +195,7 @@ target_link_libraries(miaow
         ${CMAKE_DL_LIBS}
     PRIVATE
         Boost::process
+        Boost::json
 )
 
 set(MIAOW_SUBPROCESS_PATH
@@ -202,7 +207,7 @@ set_source_files_properties(src/bmi/subprocess/caller.cpp PROPERTIES
 add_executable(miaow_subprocess
     src/bmi/subprocess/runner.cpp
 )
-target_compile_features(miaow_subprocess PRIVATE cxx_std_17)
+target_compile_features(miaow_subprocess PRIVATE cxx_std_20)
 target_include_directories(miaow_subprocess PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
@@ -218,5 +223,5 @@ if(BUILD_EXAMPLES)
     add_subdirectory(examples/01_heat)
     add_subdirectory(examples/02_soil_freeze_thaw)
     add_subdirectory(examples/03_dynamic_bmi)
-    add_subdirectory(examples/04_noah_owp)
+    add_subdirectory(examples/04_summa)
 endif()
