@@ -61,8 +61,8 @@ On Ubuntu, install the additional packages with:
 sudo apt-get install libnetcdf-dev libnetcdff-dev libopenblas-dev
 ```
 
-On macOS, we default to the built-in Accelerate framework for BLAS/LAPACK. With Homebrew,
-install the NetCDF packages as follows:
+On macOS, MIAOW defaults to the built-in Accelerate framework for BLAS/LAPACK.
+With Homebrew, install the NetCDF packages as follows:
 
 ```sh
 brew install netcdf netcdf-fortran

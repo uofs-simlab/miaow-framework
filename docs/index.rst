@@ -15,14 +15,13 @@ system model integration.
 Quick start
 -----------
 
-From the repository root, using `CMake <https://cmake.org/>`_ (requires C++ and
-Fortran compilers plus
-`Boost.Process <https://www.boost.org/doc/libs/release/libs/process/>`_ and
-`Boost.JSON <https://www.boost.org/doc/libs/release/libs/json/>`_):
+See the repository README for platform-specific dependency installation
+commands. From the repository root, build the core library and subprocess
+runner with:
 
 .. code-block:: sh
 
-   cmake -S . -B build
+   cmake -S . -B build -DBUILD_EXAMPLES=OFF
    cmake --build build
 
 Run each example from its own ``examples/<example_name>`` directory:
