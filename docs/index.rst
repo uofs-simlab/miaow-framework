@@ -15,36 +15,32 @@ system model integration.
 Quick start
 -----------
 
-See the repository README for platform-specific dependency installation
-commands. From the repository root, build the core library and subprocess
-runner with:
+See the repository README for platform-specific dependency installation. Build
+the core library and subprocess runner:
 
 .. code-block:: sh
 
    cmake -S . -B build -DBUILD_EXAMPLES=OFF
    cmake --build build
 
-Run each example from its own ``examples/<example_name>`` directory:
+Build all examples and run the test suite:
 
 .. code-block:: sh
 
-   cd examples/00_hello
-   ./miaow_hello
-   cd ../01_heat
-   ./miaow_heat
-   cd ../02_soil_freeze_thaw
-   ./miaow_soil_freeze_thaw --output_root ./output --max_workers 2
-   cd ../03_dynamic_bmi
-   ./miaow_dynamic_bmi --output_root ./output --max_workers 2
-   cd ../04_summa
-   ./miaow_summa --realization data/realization_config.json --output_root ./output
+   cmake -S . -B build -DBUILD_EXAMPLES=ON
+   cmake --build build
+   ctest --test-dir build --output-on-failure
 
-Reference
----------
+Guides
+------
 
 .. toctree::
    :maxdepth: 2
 
+   architecture
+   bmi
+   examples
+   development
    api
 
 Authors and funding
