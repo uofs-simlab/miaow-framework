@@ -89,8 +89,7 @@ std::vector<std::string> read_feature_ids(const std::filesystem::path& path) {
             throw_realization_config_error("feature id must be present");
         }
 
-        const std::string feature_id =
-            io::trim(std::string(id_value->as_string()));
+        const std::string feature_id = io::trim(std::string(id_value->as_string()));
         if (feature_id.empty()) {
             throw_realization_config_error("feature id must be non-empty");
         }
@@ -169,8 +168,9 @@ BmiModuleConfig parse_fortran_module_config(const json::object& global_object) {
         throw_realization_config_error("bmi_multi modules must contain one entry");
     }
 
-    BmiModuleConfig module_config = bmi::parse_bmi_module_config(
-        modules.at(0).as_object(), "Realization config error: ");
+    BmiModuleConfig module_config =
+        bmi::parse_bmi_module_config(modules.at(0).as_object(),
+                                     "Realization config error: ");
     if (module_config.name_ != "bmi_fortran") {
         throw_realization_config_error("unsupported module '" + module_config.name_ + "'");
     }
@@ -200,8 +200,7 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
     const json::object& global = root.at("global").as_object();
     BmiModuleConfig module_config = parse_fortran_module_config(global);
     const json::object& forcing = global.at("forcing").as_object();
-    const std::string provider =
-        io::trim(std::string(forcing.at("provider").as_string()));
+    const std::string provider = io::trim(std::string(forcing.at("provider").as_string()));
     if (provider != "CsvPerFeature") {
         throw_realization_config_error("unsupported forcing provider '" + provider + "'");
     }
@@ -251,9 +250,9 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         BmiModuleConfig task_module_config = module_config;
         task_module_config.config_file_ = init_config_path;
 
-        feature_pipeline_configs_.emplace_back(
-            std::vector<BmiModuleConfig>{std::move(task_module_config)}, forcing_file,
-            feature_id);
+        feature_pipeline_configs_.emplace_back(std::vector<BmiModuleConfig>{std::move(
+                                                   task_module_config)},
+                                               forcing_file, feature_id);
     }
 }
 
@@ -263,8 +262,7 @@ std::vector<Task> build_bmi_realization_tasks(const PartitionedBmiRealization& r
     // Build one task for each feature in realization order
     std::vector<Task> tasks;
     tasks.reserve(realization.feature_pipeline_configs_.size());
-    for (const BmiPipelineConfig& pipeline_config :
-         realization.feature_pipeline_configs_) {
+    for (const BmiPipelineConfig& pipeline_config : realization.feature_pipeline_configs_) {
         const std::string feature_id = io::trim(pipeline_config.feature_id_);
         if (feature_id.empty()) {
             throw_realization_config_error(

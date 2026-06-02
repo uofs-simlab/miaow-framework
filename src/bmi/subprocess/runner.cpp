@@ -76,8 +76,7 @@ Task read_subprocess_task(const std::filesystem::path& task_path) {
             "config argument");
     }
     if (caf::get_if<caf::config_value::dictionary>(&task.args_.front()) == nullptr) {
-        throw std::runtime_error(
-            "subprocess task argument must be a BmiPipelineConfig");
+        throw std::runtime_error("subprocess task argument must be a BmiPipelineConfig");
     }
     if (!task.task_output_dir_.empty() && task.task_output_name_.empty()) {
         throw std::runtime_error(

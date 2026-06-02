@@ -36,11 +36,12 @@ int main(int argc, char* argv[]) {
     std::cout << "Fortran dynamic BMI plugin: " << fortran_heat_plugin_path << "\n";
 
     // Describe each dynamic plugin loader
-    const miaow::BmiModuleConfig cpp_heat_module(
-        "bmi_cpp", miaow::DynamicBmiBackend::cpp, cpp_heat_plugin_path);
+    const miaow::BmiModuleConfig cpp_heat_module("bmi_cpp", miaow::DynamicBmiBackend::cpp,
+                                                 cpp_heat_plugin_path);
 
-    const miaow::BmiModuleConfig fortran_heat_module(
-        "bmi_fortran", miaow::DynamicBmiBackend::fortran, fortran_heat_plugin_path);
+    const miaow::BmiModuleConfig fortran_heat_module("bmi_fortran",
+                                                     miaow::DynamicBmiBackend::fortran,
+                                                     fortran_heat_plugin_path);
 
     // Register dynamic BMI units that construct plugin models in this process
     miaow::SimulationUnitRegistry registry;

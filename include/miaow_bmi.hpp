@@ -409,8 +409,8 @@ class BmiSimulationUnit : public SimulationUnit {
      * types store a factory for fresh per-task model instances.
      */
     BmiSimulationUnit()
-        requires (std::same_as<BmiModelType, BmiPipeline> ||
-                  std::default_initializable<BmiModelType>)
+        requires(std::same_as<BmiModelType, BmiPipeline> ||
+                 std::default_initializable<BmiModelType>)
     {
         if constexpr (!std::same_as<BmiModelType, BmiPipeline>) {
             model_factory_ = []() -> std::unique_ptr<BmiModelType> {
@@ -439,9 +439,9 @@ class BmiSimulationUnit : public SimulationUnit {
      * @param model_constructor_args Arguments forwarded to the BMI model constructor.
      */
     template <class... ModelConstructorArgs>
-        requires (!std::same_as<BmiModelType, BmiPipeline> &&
-                  std::constructible_from<
-                      BmiModelType, const std::decay_t<ModelConstructorArgs>&...>)
+        requires(!std::same_as<BmiModelType, BmiPipeline> &&
+                 std::constructible_from<BmiModelType,
+                                         const std::decay_t<ModelConstructorArgs>&...>)
     explicit BmiSimulationUnit(ModelConstructorArgs... model_constructor_args) {
         model_factory_ = make_model_factory(std::move(model_constructor_args)...);
     }

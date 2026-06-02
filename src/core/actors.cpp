@@ -260,8 +260,8 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                             ("run_" + std::to_string(job_record.run_id_)) /
                             ("job_" + std::to_string(job_record.job_id_));
                         std::filesystem::create_directories(job_directory);
-                        io::write_json_file(job_directory / "job_record.json",
-                                            job_record, false);
+                        io::write_json_file(job_directory / "job_record.json", job_record,
+                                            false);
                     }
                 } catch (...) {
                     // Output record failures are reported without changing task status

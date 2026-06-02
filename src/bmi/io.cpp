@@ -20,15 +20,14 @@
 
 namespace miaow {
 
-BmiModuleConfig::BmiModuleConfig(
-    std::string name, std::string config_file,
-    std::map<std::string, std::string> variables_names_map)
+BmiModuleConfig::BmiModuleConfig(std::string name, std::string config_file,
+                                 std::map<std::string, std::string> variables_names_map)
     : name_(std::move(name)), config_file_(std::move(config_file)),
       variables_names_map_(std::move(variables_names_map)) {}
 
-BmiModuleConfig::BmiModuleConfig(
-    std::string name, DynamicBmiBackend dynamic_backend, std::string plugin_path,
-    std::string config_file, std::map<std::string, std::string> variables_names_map)
+BmiModuleConfig::BmiModuleConfig(std::string name, DynamicBmiBackend dynamic_backend,
+                                 std::string plugin_path, std::string config_file,
+                                 std::map<std::string, std::string> variables_names_map)
     : name_(std::move(name)), dynamic_backend_(dynamic_backend),
       plugin_path_(std::move(plugin_path)), config_file_(std::move(config_file)),
       variables_names_map_(std::move(variables_names_map)) {}
@@ -75,11 +74,10 @@ caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline
         feature.insert("id", feature_id);
         config_dictionary.insert("feature", std::move(feature));
     }
-    config_dictionary.insert("global",
-                             bmi::make_bmi_multi_global_config(
-                                 pipeline_config.module_configs_,
-                                 pipeline_config.forcing_file_,
-                                 pipeline_config.output_module_));
+    config_dictionary.insert(
+        "global", bmi::make_bmi_multi_global_config(pipeline_config.module_configs_,
+                                                    pipeline_config.forcing_file_,
+                                                    pipeline_config.output_module_));
     return caf::config_value{std::move(config_dictionary)};
 }
 
@@ -168,8 +166,7 @@ json::value config_value_to_json(const caf::config_value& value) {
     if (const caf::config_value::dictionary* dictionary =
             caf::get_if<caf::config_value::dictionary>(&value)) {
         json::object object;
-        for (const std::pair<const std::string, caf::config_value>& entry :
-             *dictionary) {
+        for (const std::pair<const std::string, caf::config_value>& entry : *dictionary) {
             object.emplace(entry.first, config_value_to_json(entry.second));
         }
         return object;
@@ -242,14 +239,12 @@ BmiPipelineConfig parse_bmi_pipeline_config(const json::object& pipeline_config,
             io::throw_config_error(error_prefix,
                                    "unsupported forcing provider '" + provider + "'");
         }
-        parsed_config.forcing_file_ =
-            io::trim(std::string(forcing.at("file").as_string()));
+        parsed_config.forcing_file_ = io::trim(std::string(forcing.at("file").as_string()));
     }
 
     if (const json::value* feature_value = pipeline_config.if_contains("feature")) {
         const json::object& feature = feature_value->as_object();
-        parsed_config.feature_id_ =
-            io::trim(std::string(feature.at("id").as_string()));
+        parsed_config.feature_id_ = io::trim(std::string(feature.at("id").as_string()));
     }
 
     return parsed_config;
@@ -259,8 +254,7 @@ BmiPipelineConfig parse_bmi_pipeline_config(const json::object& pipeline_config,
 
 BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
                                         std::string_view error_prefix) {
-    std::string module_name =
-        io::trim(std::string(module_object.at("name").as_string()));
+    std::string module_name = io::trim(std::string(module_object.at("name").as_string()));
 
     const json::object& module_params = module_object.at("params").as_object();
     std::string config_file =
@@ -298,15 +292,13 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
         for (const json::value& output_variable_value : output_value->as_array()) {
             if (!output_variable_value.is_string()) {
                 io::throw_config_error(
-                    error_prefix,
-                    "output_variables entries must be non-empty strings");
+                    error_prefix, "output_variables entries must be non-empty strings");
             }
             const std::string output_variable =
                 io::trim(std::string(output_variable_value.as_string()));
             if (output_variable.empty()) {
                 io::throw_config_error(
-                    error_prefix,
-                    "output_variables entries must be non-empty strings");
+                    error_prefix, "output_variables entries must be non-empty strings");
             }
             output_variables.push_back(output_variable);
         }
@@ -326,8 +318,7 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
 
     // Fortran backend
     if (module_name == "bmi_fortran") {
-        BmiModuleConfig module_config{std::move(module_name),
-                                      DynamicBmiBackend::fortran,
+        BmiModuleConfig module_config{std::move(module_name), DynamicBmiBackend::fortran,
                                       std::move(plugin_path), std::move(config_file),
                                       std::move(variables_names_map)};
         module_config.output_variables_ = std::move(output_variables);
@@ -344,16 +335,14 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
         module_config.cpp_destroy_function_ = "bmi_model_destroy";
         if (const json::value* create_function =
                 module_params.if_contains("cpp_create_function")) {
-            const std::string parsed =
-                io::trim(std::string(create_function->as_string()));
+            const std::string parsed = io::trim(std::string(create_function->as_string()));
             if (!parsed.empty()) {
                 module_config.cpp_create_function_ = parsed;
             }
         }
         if (const json::value* destroy_function =
                 module_params.if_contains("cpp_destroy_function")) {
-            const std::string parsed =
-                io::trim(std::string(destroy_function->as_string()));
+            const std::string parsed = io::trim(std::string(destroy_function->as_string()));
             if (!parsed.empty()) {
                 module_config.cpp_destroy_function_ = parsed;
             }
@@ -367,8 +356,7 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
 // Build the serialized bmi_multi global block for one pipeline config
 caf::config_value::dictionary
 make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
-                             const std::string& forcing_file,
-                             std::size_t output_module) {
+                             const std::string& forcing_file, std::size_t output_module) {
     caf::config_value::list modules;
     for (const BmiModuleConfig& module_config : module_configs) {
         caf::config_value::dictionary module_params;
@@ -404,9 +392,9 @@ make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
     }
 
     caf::config_value::dictionary formulation_params;
-    formulation_params.insert(
-        "output_module",
-        caf::config_value::integer{static_cast<caf::config_value::integer>(output_module)});
+    formulation_params.insert("output_module",
+                              caf::config_value::integer{
+                                  static_cast<caf::config_value::integer>(output_module)});
     formulation_params.insert("modules", std::move(modules));
 
     caf::config_value::dictionary formulation;

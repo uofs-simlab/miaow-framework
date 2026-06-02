@@ -83,8 +83,7 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
   private:
     std::size_t add_model_module(const BmiModuleConfig& module_config);
     bool add_forcing_module(const BmiPipelineConfig& pipeline_config,
-                            std::size_t model_module,
-                            std::size_t& forcing_module);
+                            std::size_t model_module, std::size_t& forcing_module);
     ::bmi::Bmi& output_model();
     void reset_pipeline();
     void build_couplings(std::size_t source_module, std::size_t target_module,
@@ -280,8 +279,8 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
     }
 
     std::size_t forcing_module = 0;
-    const bool has_forcing = add_forcing_module(pipeline_config, model_module,
-                                                forcing_module);
+    const bool has_forcing =
+        add_forcing_module(pipeline_config, model_module, forcing_module);
 
     // Initialize modules in update order so downstream metadata is available
     for (std::size_t module_index = 0; module_index < modules_.size(); ++module_index) {

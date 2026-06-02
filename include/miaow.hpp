@@ -337,8 +337,8 @@ class SimulationUnitRegistry {
      */
     template <class SimulationUnitType, class... ConstructorArgs>
         requires std::derived_from<SimulationUnitType, SimulationUnit> &&
-                 std::constructible_from<
-                     SimulationUnitType, const std::decay_t<ConstructorArgs>&...>
+                 std::constructible_from<SimulationUnitType,
+                                         const std::decay_t<ConstructorArgs>&...>
     SimulationUnitId add(ConstructorArgs... constructor_args) {
         // Store constructor arguments in a tuple
         std::tuple<std::decay_t<ConstructorArgs>...> stored_constructor_args(

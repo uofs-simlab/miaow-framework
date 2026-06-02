@@ -165,8 +165,7 @@ class ForcingBmi : public ::bmi::Bmi {
 // BMI pipeline config and module IO
 BmiPipelineConfig read_bmi_pipeline_config_file(const std::filesystem::path& path);
 
-void write_bmi_pipeline_config_file(const Task& task,
-                                    const std::filesystem::path& path);
+void write_bmi_pipeline_config_file(const Task& task, const std::filesystem::path& path);
 
 caf::config_value::dictionary
 make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
