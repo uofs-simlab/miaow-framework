@@ -1,6 +1,5 @@
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
-#include "bmi/internal.hpp"
 #include "io/internal.hpp"
 
 #include <atomic>
@@ -29,6 +28,7 @@ namespace {
 #define MIAOW_SUBPROCESS_PATH ""
 #endif
 
+constexpr const char* bmi_file_prefix = "bmi_subprocess";
 constexpr const char* bmi_temp_dir_prefix = "miaow_bmi_subprocess";
 
 // Generate unique temporary control directories for tasks without output directories
@@ -80,11 +80,11 @@ BmiSubprocessPaths make_subprocess_paths(const Task& task) {
     const std::filesystem::path control_dir = make_control_dir(task);
     const std::string output_name =
         task.task_output_name_.empty() ? "task" : task.task_output_name_;
-    const std::string control_stem = std::string(bmi::bmi_file_prefix) + "_" + output_name;
+    const std::string control_stem = std::string(bmi_file_prefix) + "_" + output_name;
 
     BmiSubprocessPaths paths;
     paths.task_path_ = control_dir / (control_stem + "_input.json");
-    paths.result_path_ = bmi::make_subprocess_result_path(paths.task_path_);
+    paths.result_path_ = control_dir / (control_stem + "_result.json");
     paths.stdout_path_ = control_dir / (control_stem + "_stdout.log");
     paths.stderr_path_ = control_dir / (control_stem + "_stderr.log");
     paths.temporary_control_dir_ = task.task_output_dir_.empty();

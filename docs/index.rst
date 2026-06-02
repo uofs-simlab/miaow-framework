@@ -37,8 +37,8 @@ Run each example from its own ``examples/<example_name>`` directory:
    ./miaow_soil_freeze_thaw --output_root ./output --max_workers 2
    cd ../03_dynamic_bmi
    ./miaow_dynamic_bmi --output_root ./output --max_workers 2
-   cd ../04_noah_owp
-   ./miaow_noah_owp --realization data/realization_config.json --output_root ./output
+   cd ../04_summa
+   ./miaow_summa --realization data/realization_config.json --output_root ./output
 
 Reference
 ---------

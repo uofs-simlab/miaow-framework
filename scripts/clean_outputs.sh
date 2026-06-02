@@ -10,7 +10,7 @@ generated_paths=(
     "examples/01_heat/output"
     "examples/02_soil_freeze_thaw/output"
     "examples/03_dynamic_bmi/output"
-    "examples/04_noah_owp/output"
+    "examples/04_summa/output"
 )
 
 removed_any=false

@@ -16,8 +16,6 @@
 
 namespace miaow::bmi {
 
-inline constexpr const char* bmi_file_prefix = "bmi_subprocess";
-
 struct OutputVariable {
     // BMI output variable name
     std::string name_;
@@ -188,19 +186,5 @@ OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
                             const std::vector<std::string>& output_variables);
 
 void write_output_step(::bmi::Bmi& model, OutputFile& output_file, double time);
-
-// Subprocess path helpers
-inline std::filesystem::path
-make_subprocess_result_path(const std::filesystem::path& task_path) {
-    const std::string task_filename = task_path.filename().string();
-    const std::string input_suffix = "_input.json";
-    if (task_filename.size() > input_suffix.size() &&
-        task_filename.ends_with(input_suffix)) {
-        return task_path.parent_path() /
-               (task_filename.substr(0, task_filename.size() - input_suffix.size()) +
-                "_result.json");
-    }
-    return task_path.parent_path() / (task_path.stem().string() + "_result.json");
-}
 
 } // namespace miaow::bmi

@@ -1,6 +1,5 @@
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
-#include "bmi/internal.hpp"
 #include "io/internal.hpp"
 
 #include <exception>
@@ -112,8 +111,17 @@ int main(int argc, char* argv[]) {
         }
 
         // Write the result file that the parent process will read
-        miaow::io::write_json_file(miaow::bmi::make_subprocess_result_path(task_path),
-                                   task_result, false);
+        const std::string task_filename = task_path.filename().string();
+        const std::string input_suffix = "_input.json";
+        std::filesystem::path result_path =
+            task_path.parent_path() / (task_path.stem().string() + "_result.json");
+        if (task_filename.size() > input_suffix.size() &&
+            task_filename.ends_with(input_suffix)) {
+            const std::string result_stem =
+                task_filename.substr(0, task_filename.size() - input_suffix.size());
+            result_path = task_path.parent_path() / (result_stem + "_result.json");
+        }
+        miaow::io::write_json_file(result_path, task_result, false);
         return 0;
     } catch (const std::exception& exception) {
         // The result-file contract may not be available at this point

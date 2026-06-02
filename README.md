@@ -44,8 +44,8 @@ cd ../02_soil_freeze_thaw
 ./miaow_soil_freeze_thaw --output_root ./output --max_workers 2
 cd ../03_dynamic_bmi
 ./miaow_dynamic_bmi --output_root ./output --max_workers 2
-cd ../04_noah_owp
-./miaow_noah_owp --realization data/realization_config.json --output_root ./output
+cd ../04_summa
+./miaow_summa --realization data/realization_config.json --output_root ./output
 ```
 
 ## Documentation
@@ -155,7 +155,7 @@ examples/
   01_heat/
   02_soil_freeze_thaw/
   03_dynamic_bmi/
-  04_noah_owp/
+  04_summa/
 ```
 
 ## Namespace layout
@@ -300,7 +300,7 @@ const std::vector<miaow::Task> tasks =
 feature configs into MIAOW tasks for the registered pipeline unit.
 
 Subprocess mode runs one BMI lifecycle in a child process, which is useful for
-BMI models that are not safe to run concurrently in one process. The Noah
+BMI models that are not safe to run concurrently in one process. The SUMMA
 example uses subprocess mode.
 
 For hand-built dynamic pipelines, construct a `BmiPipelineConfig` from a vector
@@ -413,27 +413,23 @@ Run examples from their own `examples/<example_name>` directory:
   per-task forcing, including matched, short, and long forcing cases
 - `examples/03_dynamic_bmi`: dynamic C++ and Fortran BMI plugin integration
   using the CSDMS heat examples
-- `examples/04_noah_owp`: [Noah-OWP-Modular](https://github.com/NOAA-OWP/noah-owp-modular)
+- `examples/04_summa`: [SUMMA](https://github.com/tristanmontoya/summa)
   run using subprocess pipeline execution and one MIAOW task per staged
-  catchment feature described by a NextGen-style realization. Noah-OWP runs in
-  a subprocess because the model is not thread safe. The plugin is compiled
-  with `NGEN_ACTIVE`,
-  `NGEN_OUTPUT_ACTIVE`, and `NGEN_FORCING_ACTIVE` defined so Noah-OWP receives
-  forcing through MIAOW's BMI `SetValue` path and writes outputs through
-  MIAOW's BMI `GetValue` pipeline when `--output_root` is set.
+  catchment feature described by a NextGen-style realization. SUMMA runs in a
+  subprocess and is built through its upstream `summabmi` target. The example
+  CMake file fetches the `develop` branch into `third_party/summa` and builds
+  directly from SUMMA's `build/CMakeLists.txt`.
 
-The Noah-OWP example provides a very small smoke test configuration with three
-catchments from the Bow River basin, consisting of the following files produced using
-[SYMFLUENCE](https://github.com/symfluence-org/SYMFLUENCE):
+The SUMMA example provides a small smoke test configuration with five
+catchments from the Oyster River `gauge_01073000` case, consisting of:
 `data/configs/cat-*.input`, `data/forcings/*_forcing.csv`,
-`data/parameters/*`, `data/catchments.geojson`, and
-`data/realization_config.json`. Regenerate those files manually from the
-repository root with:
+`data/settings/SUMMA/*`, `data/catchments.geojson`, and
+`data/realization_config.json`. Regenerate the forcing CSVs manually from the
+repository root after fetching SUMMA with:
 
 ```sh
 ./scripts/preprocessing/.venv/bin/python \
-  ./scripts/preprocessing/stage_symfluence_noah_owp_inputs.py \
-  --config ./scripts/preprocessing/example_symfluence_bow_02b_smoke.yaml
+  ./scripts/preprocessing/stage_summa_gauge_forcing_csvs.py
 ```
 
 Each example directory follows a common layout:
@@ -443,7 +439,7 @@ examples/<example_name>/
   data/             # example input data (tracked in repo)
     configs/        # configuration files
     forcings/       # forcing data files (when needed)
-    parameters/     # parameter tables (when needed)
+    settings/        # model settings and parameter files (when needed)
   extern/           # model-backed examples: symlinks to model sources (created by CMake)
   output/           # runtime/model output data (generated, not tracked)
 ```
@@ -480,7 +476,7 @@ All examples accept the following runtime command-line options:
 | `--task_request_timeout` | `5` | Timeout for task requests sent to worker actors (seconds) |
 | `--job_request_timeout` | `300` | Timeout for job result requests (seconds) |
 | `--output_root` | `""` | Root directory path for runtime-managed output folders (disabled by default) |
-| `--realization` | `data/realization_config.json` | Noah realization path |
+| `--realization` | `data/realization_config.json` | BMI realization path |
 
 Public CLI parsers throw `std::runtime_error` for unrecognized arguments,
 missing option values, and invalid option values. Example executables catch

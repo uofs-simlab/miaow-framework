@@ -1,8 +1,9 @@
 /**
- * This example demonstrates how to run Noah-OWP-Modular through MIAOW using a
- * staged SYMFLUENCE realization file.
+ * This example demonstrates how to run SUMMA through MIAOW using a small NextGen-style 
+ * realization file.
  */
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -13,7 +14,16 @@
 
 int main(int argc, char* argv[]) {
     // Check that we're running from the expected directory for proper relative paths
-    if (!miaow::ensure_expected_run_dir("miaow_noah_owp", MIAOW_NOAH_OWP_RUN_DIR)) {
+    if (!miaow::ensure_expected_run_dir("miaow_summa", MIAOW_SUMMA_RUN_DIR)) {
+        return 1;
+    }
+
+    // Ensure SUMMA can write its internal run files under the example output root
+    try {
+        std::filesystem::create_directories("output");
+    } catch (const std::exception& exception) {
+        std::cerr << "Unable to create SUMMA output directory: " << exception.what()
+                  << "\n";
         return 1;
     }
 

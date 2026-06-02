@@ -40,7 +40,7 @@ fort.*
 examples/*/miaow_*
 examples/*/build*/
 examples/*/extern/
-examples/04_noah_owp/data/plugins/
+examples/*/data/plugins/
 
 # Locally fetched vendored code
 /third_party/
