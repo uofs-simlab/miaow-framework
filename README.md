@@ -21,15 +21,57 @@ actor orchestration backend, and employs the
 system model integration.
 
 
-## Quick start
+## Installation
 
-From the repository root, using [CMake](https://cmake.org/) (requires C++ and
-Fortran compilers plus
-[Boost.Process](https://www.boost.org/doc/libs/release/libs/process/) and
-[Boost.JSON](https://www.boost.org/doc/libs/release/libs/json/)):
+### Core library
+
+The core build requires [CMake](https://cmake.org/) 3.16 or newer plus C++ and
+Fortran compilers, which must be installed beforehand. On Ubuntu, install the
+core dependencies with:
 
 ```sh
-cmake -S . -B build
+sudo apt-get install build-essential cmake gfortran
+```
+
+On macOS with [Homebrew](https://brew.sh/), install:
+
+```sh
+sudo xcode-select --install  # if you do not already have Command Line Tools
+brew install cmake gcc
+```
+
+From the repository root, build the core library and subprocess runner with:
+
+```sh
+cmake -S . -B build -DBUILD_EXAMPLES=OFF
+cmake --build build
+```
+
+By default, CMake tries to find Boost and CAF on the system, then falls back to
+`FetchContent` if either is not found. Set the provider options to change this
+behaviour; see [Build options](#build-options).
+
+### Examples
+
+Building all examples requires CMake 3.21 or newer, NetCDF C/Fortran, and
+BLAS/LAPACK support.
+On Ubuntu, install the additional packages with:
+
+```sh
+sudo apt-get install libnetcdf-dev libnetcdff-dev libopenblas-dev
+```
+
+On macOS, we default to the built-in Accelerate framework for BLAS/LAPACK. With Homebrew,
+install the NetCDF packages as follows:
+
+```sh
+brew install netcdf netcdf-fortran
+```
+
+Then build with:
+
+```sh
+cmake -S . -B build -DBUILD_EXAMPLES=ON
 cmake --build build
 ```
 
@@ -174,7 +216,7 @@ Top-level CMake options:
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-DBUILD_EXAMPLES` | `ON` | Build all example programs |
-| `-DMIAOW_BOOST_PROVIDER` | `system` | Boost provider: `system`, `fetch`, or `auto` |
+| `-DMIAOW_BOOST_PROVIDER` | `auto` | Boost provider: `system`, `fetch`, or `auto` |
 | `-DMIAOW_BOOST_VERSION` | `1.86.0` | Boost version used by the `FetchContent` fallback |
 | `-DMIAOW_CAF_PROVIDER` | `auto` | CAF provider: `system`, `fetch`, or `auto` |
 | `-DMIAOW_CAF_VERSION` | `1.1.0` | CAF version used by `find_package` and `FetchContent` |
@@ -424,8 +466,8 @@ The SUMMA example provides a small smoke test configuration with five
 catchments from the Oyster River `gauge_01073000` case, consisting of:
 `data/configs/cat-*.input`, `data/forcings/*_forcing.csv`,
 `data/settings/SUMMA/*`, `data/catchments.geojson`, and
-`data/realization_config.json`. Regenerate the forcing CSVs manually from the
-repository root after fetching SUMMA with:
+`data/realization_config.json`. Regenerate the forcing CSVs manually after
+fetching SUMMA and creating the preprocessing environment with:
 
 ```sh
 ./scripts/preprocessing/.venv/bin/python \

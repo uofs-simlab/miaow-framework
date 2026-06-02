@@ -9,7 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(CTest)
 
-set(MIAOW_BOOST_PROVIDER "system" CACHE STRING "Boost provider: auto, system, fetch")
+set(MIAOW_BOOST_PROVIDER "auto" CACHE STRING "Boost provider: auto, system, fetch")
 set(MIAOW_BOOST_VERSION "1.86.0" CACHE STRING "Boost version for FetchContent")
 set_property(CACHE MIAOW_BOOST_PROVIDER PROPERTY STRINGS auto system fetch)
 set(MIAOW_CAF_PROVIDER "auto" CACHE STRING "CAF provider: auto, system, fetch")
