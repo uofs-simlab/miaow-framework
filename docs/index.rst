@@ -2,7 +2,7 @@ MIAOW: Model-Independent Actor Orchestration Workflows for Scientific Computing
 ===============================================================================
 
 Managing concurrent numerical simulation tasks with dynamic workloads and
-heterogeneous hardware can feel like herding cats. **MIAOW** embraces that
+heterogeneous hardware can feel like herding cats. [MIAOW](https://github.com/uofs-simlab/miaow-framework) embraces that
 reality by using actor-based asynchronous orchestration so tasks run when they
 are ready, maximizing utilization across available resources.
 
