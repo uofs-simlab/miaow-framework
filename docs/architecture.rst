@@ -4,11 +4,11 @@ Overview
 Orchestration model
 -------------------
 
-MIAOW executes simulation workflows with the following actor hierarchy, which is inspired
-by [SUMMA-Actors](https://github.com/uofs-simlab/Summa-Actors) 
-([Klenk and Spiteri, 2024](https://doi.org/10.1007/s10586-024-04318-5)), but differs in 
-that simulation units write their own outputs rather than using a centralized file access
-actor:
+MIAOW executes simulation workflows with the following actor hierarchy, which is
+inspired by `SUMMA-Actors <https://github.com/uofs-simlab/Summa-Actors>`_
+(`Klenk and Spiteri, 2024 <https://doi.org/10.1007/s10586-024-04318-5>`_),
+but differs in that simulation units write their own outputs rather than using
+a centralized file access actor:
 
 .. code-block:: text
 

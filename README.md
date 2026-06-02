@@ -33,8 +33,10 @@ paths.
 | Examples | CMake 3.21+, NetCDF C/Fortran, BLAS/LAPACK support |
 
 CMake tries to find Boost and CAF on the system, then fetches them from source
-when the provider option is `auto`. See the 
-[Development](https://tjbmontoya.com/miaow-framework/development.html) section in the [documentation](https://tjbmontoya.com/miaow-framework/index.html) for a description of the provider options.
+when the provider option is `auto`. See the
+[Development](https://tjbmontoya.com/miaow-framework/development.html) section
+in the [documentation](https://tjbmontoya.com/miaow-framework/index.html) for a
+description of the provider options.
 
 On Ubuntu, install core dependencies:
 
@@ -55,8 +57,9 @@ sudo xcode-select --install  # if Command Line Tools are not installed
 brew install cmake gcc
 ```
 
-On macOS with Homebrew, install the example dependencies. By default, MIAOW uses
-Apple's built-in Accelerate framework for BLAS/LAPACK, so only NetCDF is needed:
+On macOS with Homebrew, install the example dependencies. By default, Apple's
+built-in Accelerate framework is used for BLAS/LAPACK, so only NetCDF is
+needed:
 
 ```sh
 brew install netcdf netcdf-fortran
@@ -99,13 +102,15 @@ cd ../04_summa
 The examples cover minimal task orchestration, static BMI models, dynamic C++
 and Fortran BMI plugins, and a [SUMMA](https://github.com/CH-Earth/summa)
 workflow using subprocess execution. See the
-[Examples](https://tjbmontoya.com/miaow-framework/examples.html) page in the documentation for model
-sources, data layout, and command-line options.
+[Examples](https://tjbmontoya.com/miaow-framework/examples.html) page in the
+documentation for model sources, data layout, and command line options.
 
 ## Authors and funding
 
-MIAOW was developed at the University of Saskatchewan by Tristan Montoya and
-Raymond Spiteri, with funding support from the
+MIAOW was developed at the University of Saskatchewan by
+[Tristan Montoya](https://tjbmontoya.com/) and
+[Raymond Spiteri](https://www.cs.usask.ca/people/faculty%20profiles/ray-spiteri.php),
+with funding support from the
 [Cooperative Institute for Research to Operations in Hydrology
 (CIROH)](https://ciroh.ua.edu/).
 

@@ -32,28 +32,6 @@ Included examples
   execution and one MIAOW task per staged catchment feature described by a
   NextGen-style realization
 
-The SUMMA example runs in a subprocess and is built through its upstream
-``summabmi`` target. The example CMake file fetches the ``develop`` branch into
-``third_party/summa`` and builds directly from SUMMA's ``build/CMakeLists.txt``.
-
-SUMMA test data
----------------------
-
-The SUMMA example provides a small test configuration with five
-catchments from the Oyster River ``gauge_01073000`` case. The configuration
-consists of these files:
-``data/configs/cat-*.input``, ``data/forcings/*_forcing.csv``,
-``data/settings/SUMMA/*``, ``data/catchments.geojson``, and
-``data/realization_config.json``.
-
-After fetching SUMMA and creating the preprocessing environment, regenerate the
-forcing CSVs manually with this command:
-
-.. code-block:: sh
-
-   ./scripts/preprocessing/.venv/bin/python \
-     ./scripts/preprocessing/stage_summa_gauge_forcing_csvs.py
-
 Example layout
 --------------
 
