@@ -1,6 +1,6 @@
 /**
- * This example demonstrates how to run SUMMA through MIAOW using a small NextGen-style 
- * realization file.
+ * This example demonstrates how to run SUMMA through MIAOW using a small
+ * NextGen-style realization file.
  */
 #include <exception>
 #include <filesystem>

@@ -10,10 +10,20 @@ fixtures. The active example helper is the SUMMA gauge forcing converter.
 per-catchment CSV files consumed by `examples/04_summa`.
 
 Assume commands are run from the repository root after SUMMA has been fetched
-or supplied under `third_party/summa`:
+or supplied under `third_party/summa`.
+
+Create the preprocessing environment with:
 
 ```bash
-python3 scripts/preprocessing/stage_summa_gauge_forcing_csvs.py
+python3 -m venv scripts/preprocessing/.venv
+scripts/preprocessing/.venv/bin/pip install -r scripts/preprocessing/requirements.txt
+```
+
+Regenerate the forcing CSVs with:
+
+```bash
+scripts/preprocessing/.venv/bin/python \
+  scripts/preprocessing/stage_summa_gauge_forcing_csvs.py
 ```
 
 The script writes:
@@ -25,26 +35,3 @@ The script writes:
 - `examples/04_summa/data/forcings/cat-11509_forcing.csv`
 
 The converter requires the Python `netCDF4` package in the active environment.
-
-## Legacy SYMFLUENCE helper
-
-`stage_symfluence_noah_owp_inputs.py` and
-`example_symfluence_bow_02b_smoke.yaml` are retained as a reference for the
-previous Noah-OWP example workflow. They are not used by the active example
-suite.
-
-Use Python 3.12 for that legacy environment. SYMFLUENCE `0.8.2` supports
-`>=3.11,<3.14`, while newer system Python versions may be outside that range.
-
-```bash
-/opt/homebrew/bin/python3.12 -m venv scripts/preprocessing/.venv
-scripts/preprocessing/.venv/bin/pip install -r scripts/preprocessing/requirements.txt
-```
-
-SYMFLUENCE expects these host libraries to be available:
-
-- `GDAL`
-- `NetCDF-C`
-- `HDF5`
-- `PROJ`
-- `GEOS`
