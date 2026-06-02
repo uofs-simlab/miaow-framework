@@ -1,4 +1,4 @@
-Basic Model Interface (BMI) integration
+BMI integration
 =======================================
 
 Use ``BmiSimulationUnit<BmiModelType>`` from ``include/miaow_bmi.hpp`` to run

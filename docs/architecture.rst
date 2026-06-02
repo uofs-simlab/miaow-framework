@@ -1,10 +1,14 @@
-Architecture
-============
+Overview
+========
 
 Orchestration model
 -------------------
 
-MIAOW executes simulation workflows with the following actor hierarchy:
+MIAOW executes simulation workflows with the following actor hierarchy, which is inspired
+by [SUMMA-Actors](https://github.com/uofs-simlab/Summa-Actors) 
+([Klenk and Spiteri, 2024](https://doi.org/10.1007/s10586-024-04318-5)), but differs in 
+that simulation units write their own outputs rather than using a centralized file access
+actor:
 
 .. code-block:: text
 
@@ -13,7 +17,7 @@ MIAOW executes simulation workflows with the following actor hierarchy:
        `-- job_actor (one per submitted job)
            `-- simulation_unit_actor (many per job, up to max_workers)
 
-A typical workflow has these steps:
+A typical workflow includes the following steps:
 
 1. Caller invokes ``Runtime::submit_job(tasks)``.
 2. Runtime assigns a ``job_id`` and sends ``(job_id, tasks)`` to
@@ -62,4 +66,4 @@ Limitations
 - Distributed-memory parallelism is not currently supported.
 - Target workloads are embarrassingly parallel tasks without inter-task
   communication.
-- Windows is not supported and there is no plan to add such support.
+- Windows is not supported, and there is no plan to add such support.
