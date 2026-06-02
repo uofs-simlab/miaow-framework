@@ -9,9 +9,10 @@ ready, maximizing utilization across available resources.
 
 MIAOW targets the `C++20 standard <https://en.cppreference.com/w/cpp/20.html>`_,
 uses the `C++ Actor Framework (CAF) <https://www.actor-framework.org/>`_ as its
-actor orchestration backend, and employs the
-`Basic Model Interface (BMI) <https://bmi.csdms.io/en/stable/>`_ for Earth
-system model integration.
+actor backend, relies on `Boost <https://www.boost.org/>`_ for process
+management and JSON support, and includes C++/Fortran
+`Basic Model Interface (BMI) <https://bmi.csdms.io/en/stable/>`_ integration
+paths.
 
 Quick start
 -----------

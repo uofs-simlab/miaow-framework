@@ -102,7 +102,8 @@ cd ../04_summa
 The examples cover minimal task orchestration, static BMI models, dynamic C++
 and Fortran BMI plugins, and a [SUMMA](https://github.com/CH-Earth/summa)
 workflow using subprocess execution. See the
-[Examples](https://tjbmontoya.com/miaow-framework/examples.html) page for model sources, data layout, and command line options.
+[Examples](https://tjbmontoya.com/miaow-framework/examples.html) page for
+model sources, data layout, and command line options.
 
 ## Authors and funding
 
