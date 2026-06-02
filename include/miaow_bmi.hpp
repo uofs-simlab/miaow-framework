@@ -403,22 +403,20 @@ template <class BmiModelType>
 class BmiSimulationUnit : public SimulationUnit {
   public:
     /**
-     * @brief Construct a full-pipeline simulation unit with in-process execution.
+     * @brief Construct a BMI simulation unit with in-process execution.
+     *
+     * For `BmiPipeline`, the unit executes the full task pipeline. Other model
+     * types store a factory for fresh per-task model instances.
      */
     BmiSimulationUnit()
-        requires std::same_as<BmiModelType, BmiPipeline>
-    = default;
-
-    /**
-     * @brief Construct a BMI simulation unit for a default-constructible model.
-     */
-    BmiSimulationUnit()
-        requires (!std::same_as<BmiModelType, BmiPipeline> &&
+        requires (std::same_as<BmiModelType, BmiPipeline> ||
                   std::default_initializable<BmiModelType>)
     {
-        model_factory_ = []() -> std::unique_ptr<BmiModelType> {
-            return std::make_unique<BmiModelType>();
-        };
+        if constexpr (!std::same_as<BmiModelType, BmiPipeline>) {
+            model_factory_ = []() -> std::unique_ptr<BmiModelType> {
+                return std::make_unique<BmiModelType>();
+            };
+        }
     }
 
     /**
