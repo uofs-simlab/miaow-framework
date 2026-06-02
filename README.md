@@ -33,8 +33,8 @@ paths.
 | Examples | CMake 3.21+, NetCDF C/Fortran, BLAS/LAPACK support |
 
 CMake tries to find Boost and CAF on the system, then fetches them from source
-when the provider option is `auto`. See
-[Build options](docs/development.rst#build-options) for provider controls.
+when the provider option is `auto`. See the 
+[Development](https://tjbmontoya.com/miaow-framework/development.html) section in the [documentation](https://tjbmontoya.com/miaow-framework/index.html) for a description of the provider options.
 
 On Ubuntu, install core dependencies:
 
@@ -55,7 +55,8 @@ sudo xcode-select --install  # if Command Line Tools are not installed
 brew install cmake gcc
 ```
 
-On macOS with Homebrew, install the example dependencies (by default, we use Apple's built-in Accelerate framework for BLAS/LAPACK, so only NetCDF is needed):
+On macOS with Homebrew, install the example dependencies. By default, MIAOW uses
+Apple's built-in Accelerate framework for BLAS/LAPACK, so only NetCDF is needed:
 
 ```sh
 brew install netcdf netcdf-fortran
@@ -97,8 +98,9 @@ cd ../04_summa
 
 The examples cover minimal task orchestration, static BMI models, dynamic C++
 and Fortran BMI plugins, and a [SUMMA](https://github.com/CH-Earth/summa)
-workflow using subprocess execution. See [Examples](docs/examples.rst) for
-model sources, data layout, and command-line options.
+workflow using subprocess execution. See the
+[Examples](https://tjbmontoya.com/miaow-framework/examples.html) page in the documentation for model
+sources, data layout, and command-line options.
 
 ## Authors and funding
 

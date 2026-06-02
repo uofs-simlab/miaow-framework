@@ -1,4 +1,4 @@
-Development notes
+Development
 =================
 
 Build and test

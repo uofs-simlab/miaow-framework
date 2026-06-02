@@ -32,7 +32,7 @@ Build all examples and run the test suite:
    ctest --test-dir build --output-on-failure
 
 Documentation
-------
+-------------
 
 .. toctree::
    :maxdepth: 2
