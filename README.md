@@ -55,8 +55,7 @@ sudo xcode-select --install  # if Command Line Tools are not installed
 brew install cmake gcc
 ```
 
-On macOS, Apple's Accelerate framework provides BLAS/LAPACK support by default.
-Install the example dependencies:
+On macOS with Homebrew, install the example dependencies (by default, we use Apple's built-in Accelerate framework for BLAS/LAPACK, so only NetCDF is needed):
 
 ```sh
 brew install netcdf netcdf-fortran

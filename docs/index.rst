@@ -31,7 +31,7 @@ Build all examples and run the test suite:
    cmake --build build
    ctest --test-dir build --output-on-failure
 
-Guides
+Documentation
 ------
 
 .. toctree::
