@@ -1,5 +1,5 @@
 Basic Model Interface (BMI) integration
-===============
+=======================================
 
 Use ``BmiSimulationUnit<BmiModelType>`` from ``include/miaow_bmi.hpp`` to run
 BMI-compatible models. The simulation unit creates one task-level model or
@@ -86,7 +86,7 @@ Use the C++ backend for plugins that export ``bmi_model_create()`` and
 ``register_bmi(void**)`` for the linked procedural BMI bridge.
 
 Executing a realization-driven BMI pipeline
---------------------------------
+-------------------------------------------
 
 Use ``BmiSimulationUnit<BmiPipeline>`` when the task's ``BmiPipelineConfig``
 describes the model modules directly. This is the path used by realization

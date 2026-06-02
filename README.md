@@ -55,15 +55,12 @@ sudo xcode-select --install  # if Command Line Tools are not installed
 brew install cmake gcc
 ```
 
-On macOS, install the example dependencies:
+On macOS, Apple's Accelerate framework provides BLAS/LAPACK support by default.
+Install the example dependencies:
 
 ```sh
 brew install netcdf netcdf-fortran
 ```
-
-The [SUMMA](https://github.com/CH-Earth/summa) example defaults to the macOS
-Accelerate framework for BLAS/LAPACK. OpenBLAS or another provider can be used
-by setting `MIAOW_SUMMA_LIBRARY_LINKS`.
 
 ## Quick start
 
@@ -100,43 +97,9 @@ cd ../04_summa
 ```
 
 The examples cover minimal task orchestration, static BMI models, dynamic C++
-and Fortran BMI plugins, and a SUMMA workflow using subprocess execution. See
-[Examples](docs/examples.rst) for model sources, data layout, and command-line
-options.
-
-## Documentation
-
-Generated API documentation uses [Doxygen](https://www.doxygen.nl/) for C++
-docstring extraction and [Sphinx](https://www.sphinx-doc.org/) with
-[Breathe](https://www.breathe-doc.org/) for HTML rendering. Doxygen must be
-installed separately and available on `PATH`.
-
-Build the docs from a dedicated Python environment:
-
-```sh
-python3 -m venv docs/.venv
-docs/.venv/bin/pip install -r docs/requirements.txt
-rm -rf docs/_build/html docs/_build/doctrees
-docs/.venv/bin/sphinx-build -b html -d docs/_build/doctrees docs docs/_build/html
-```
-
-The generated HTML entry point is `docs/_build/html/index.html`. The public
-documentation is deployed from GitHub Actions to
-[https://tjbmontoya.com/miaow-framework/](https://tjbmontoya.com/miaow-framework/).
-
-## More information
-
-- [Architecture](docs/architecture.rst): runtime actors, scheduling, and API shape
-- [BMI integration](docs/bmi.rst): static, dynamic, pipeline, and forcing workflows
-- [Examples](docs/examples.rst): example programs, data layout, and CLI options
-- [Development notes](docs/development.rst): build options, Conan setup, and layout
-- [API reference](docs/api.rst): generated public API documentation
-
-## Current limitations
-
-- Distributed-memory parallelism is not currently supported.
-- Target workloads are embarrassingly parallel tasks without inter-task communication.
-- Windows is not supported, and there is currently no plan to add such support.
+and Fortran BMI plugins, and a [SUMMA](https://github.com/CH-Earth/summa)
+workflow using subprocess execution. See [Examples](docs/examples.rst) for
+model sources, data layout, and command-line options.
 
 ## Authors and funding
 
