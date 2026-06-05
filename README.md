@@ -58,7 +58,7 @@ brew install cmake gcc
 ```
 
 On macOS with Homebrew, install the example dependencies. By default, Apple's
-built-in Accelerate framework is used for BLAS/LAPACK, so only NetCDF is
+built-in [Accelerate framework](https://developer.apple.com/documentation/accelerate) is used for BLAS/LAPACK, so only NetCDF is
 needed:
 
 ```sh
@@ -67,7 +67,7 @@ brew install netcdf netcdf-fortran
 
 ## Quick start
 
-Build the core library and BMI subprocess runner:
+Build the core library and subprocess runner using [CMake](https://cmake.org/):
 
 ```sh
 cmake -S . -B build -DBUILD_EXAMPLES=OFF
