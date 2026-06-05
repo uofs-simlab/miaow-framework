@@ -29,8 +29,8 @@ paths.
 
 | Build | Requirements |
 | --- | --- |
-| Core library | CMake 3.16+, C++20 compiler, Fortran compiler |
-| Examples | CMake 3.21+, NetCDF C/Fortran, BLAS/LAPACK support |
+| Core library | [CMake](https://cmake.org/) 3.16+, C++20 compiler, Fortran compiler |
+| Examples | CMake 3.21+, [NetCDF](https://www.unidata.ucar.edu/software/netcdf/) C/Fortran, BLAS/LAPACK support |
 
 CMake tries to find Boost and CAF on the system, then fetches them from source
 when the provider option is `auto`. See the
@@ -67,7 +67,7 @@ brew install netcdf netcdf-fortran
 
 ## Quick start
 
-Build the core library and subprocess runner using [CMake](https://cmake.org/):
+Build the core library and subprocess runner without examples or tests:
 
 ```sh
 cmake -S . -B build -DBUILD_EXAMPLES=OFF
