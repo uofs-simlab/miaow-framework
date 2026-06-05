@@ -58,12 +58,15 @@ int main(int argc, char* argv[]) {
     // Register the pipeline model that will execute each realization feature task
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId bmi_pipeline_unit =
-        registry.add<miaow::BmiSimulationUnit<miaow::BmiPipeline>>(
-            miaow::BmiExecutionMode::subprocess);
+        registry.add<miaow::BmiSimulationUnit<miaow::BmiPipeline>>();
 
     // Build one task per feature using the registered pipeline unit
-    const std::vector<miaow::Task> tasks =
+    std::vector<miaow::Task> tasks =
         miaow::build_bmi_realization_tasks(realization, bmi_pipeline_unit);
+    for (miaow::Task& task : tasks) {
+        // SUMMA tasks run in subprocesses because the model has global state
+        task.execution_mode_ = miaow::ExecutionMode::single_task_subprocess;
+    }
     miaow::Runtime runtime(registry, runtime_options);
 
     // Submit tasks and wait for results

@@ -32,6 +32,58 @@ Multiple ``submit_job(...)`` calls can be running concurrently. Tasks with
 unknown ``SimulationUnitId`` values fail individually; other tasks in the same
 job continue through the normal scheduler.
 
+Subprocess actor system
+-----------------------
+
+``ExecutionMode::single_task_subprocess`` keeps the parent scheduler unchanged
+while moving one BMI task lifecycle into a fresh subprocess. The parent process
+still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal
+``simulation_unit_actor`` workers. When a BMI pipeline task selects subprocess
+execution, the parent worker launches the configured subprocess executable and
+uses CAF remote actor messaging for the task exchange.
+
+The current subprocess implementation is POSIX-specific: the parent passes an
+inherited file descriptor to the child process for the endpoint exchange.
+
+The subprocess path has two CAF actor systems:
+
+.. code-block:: text
+
+   Parent process
+   `-- Runtime actor_system
+       `-- simulation_unit_actor
+           `-- launches subprocess executable for one task
+
+   Subprocess
+   `-- subprocess actor_system
+       `-- BMI worker actor
+
+A single-task subprocess run follows this sequence:
+
+1. The parent creates a one-way POSIX pipe, which is an anonymous byte buffer
+   managed by the operating system kernel. The pipe is exposed through two
+   `file descriptors <https://en.wikipedia.org/wiki/File_descriptor>`_: a read
+   end and a write end. Note that these just describe the two ends of the pipe and 
+   are not "files" in the sense of the filesystem. The parent launches the subprocess 
+   with ``--connection-fd`` naming the write end as it appears inside the subprocess.
+   The parent keeps the read end.
+2. The subprocess initializes its own CAF actor system, spawns the BMI worker
+   actor, and publishes that worker on ``127.0.0.1`` through the CAF middleman.
+3. The subprocess writes one newline-delimited JSON endpoint message to the
+   inherited write descriptor. The message contains the host and TCP port where
+   the BMI worker actor is published, and the parent reads those bytes from the
+   pipe's read end.
+4. The parent reads the endpoint, connects to the published worker with
+   ``remote_actor(...)``, and sends the serialized ``Task`` over CAF.
+5. The BMI worker validates the task, constructs the ``BmiPipeline`` inside the
+   subprocess, runs the BMI lifecycle, returns one ``TaskResult``, and quits.
+6. The parent waits for subprocess exit, then lets the normal ``job_actor``
+   aggregation path record the task result.
+
+This design isolates BMI model construction and execution from the parent
+process without changing job scheduling or ``JobRecord`` aggregation. Subprocess
+stdout, stderr, and endpoint diagnostics are described in :doc:`bmi`.
+
 Scheduling behaviour
 --------------------
 

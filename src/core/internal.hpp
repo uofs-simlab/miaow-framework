@@ -18,6 +18,7 @@
 
 // Register MIAOW CAF type IDs for actor message serialization
 CAF_BEGIN_TYPE_ID_BLOCK(miaow_module, caf::first_custom_type_id)
+CAF_ADD_TYPE_ID(miaow_module, (miaow::ExecutionMode))
 CAF_ADD_TYPE_ID(miaow_module, (miaow::Task))
 CAF_ADD_TYPE_ID(miaow_module, (miaow::TaskResult))
 CAF_ADD_TYPE_ID(miaow_module, (miaow::TaskRecord))
@@ -27,6 +28,23 @@ CAF_ADD_TYPE_ID(miaow_module, (miaow::JobRecord))
 CAF_END_TYPE_ID_BLOCK(miaow_module)
 
 namespace miaow::core {
+
+inline constexpr int subprocess_connection_fd = 3;
+inline constexpr const char* subprocess_connection_host = "127.0.0.1";
+inline constexpr const char* subprocess_error_prefix = "Subprocess error";
+
+using SingleTaskSubprocessWorker = caf::behavior (*)(caf::event_based_actor*);
+
+TaskResult execute_single_task_subprocess(caf::actor_system& actor_system,
+                                          const Task& task,
+                                          const std::string& subprocess_path);
+
+int run_single_task_subprocess(int argc, char* argv[],
+                               SingleTaskSubprocessWorker worker_factory);
+
+int parse_subprocess_connection_fd(int argc, char* argv[]);
+
+void write_subprocess_connection_pipe(int connection_fd, std::uint16_t port);
 
 // Root actor owned by Runtime: receives job submissions, spawns one job_actor per
 // JobId, and delivers each completed JobRecord back to the user-facing future

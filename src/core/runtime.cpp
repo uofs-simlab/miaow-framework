@@ -19,6 +19,7 @@
 #include <caf/ipv6_address.hpp>
 #include <caf/ipv6_endpoint.hpp>
 #include <caf/ipv6_subnet.hpp>
+#include <caf/io/middleman.hpp>
 #include <caf/json_array.hpp>
 #include <caf/json_object.hpp>
 #include <caf/json_value.hpp>
@@ -155,6 +156,7 @@ static void initialize_caf_once() {
     std::call_once(caf_init_flag, [] {
         caf::init_global_meta_objects<caf::id_block::core_module>();
         caf::init_global_meta_objects<caf::id_block::miaow_module>();
+        caf::io::middleman::init_global_meta_objects();
     });
 }
 
@@ -179,6 +181,7 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
 
     // Keep one actor system and one shared orchestrator for this Runtime
     actor_system_config_ = std::make_shared<caf::actor_system_config>();
+    actor_system_config_->load<caf::io::middleman>();
     actor_system_ = std::make_shared<caf::actor_system>(*actor_system_config_);
 
     // Spawn the shared orchestrator actor to handle job requests and job completion

@@ -86,18 +86,6 @@ struct BmiModuleConfig {
 };
 
 /**
- * @brief Process isolation mode for `BmiSimulationUnit<BmiPipeline>` tasks.
- *
- * Subprocess execution uses
- * [Boost.Process](https://www.boost.org/doc/libs/release/libs/process/) to run
- * one BMI lifecycle in a child process.
- */
-enum class BmiExecutionMode {
-    in_process,
-    subprocess,
-};
-
-/**
  * @brief Typed task-level BMI pipeline configuration.
  *
  * `BmiPipelineConfig` stores the model modules, forcing source, and optional
@@ -372,14 +360,16 @@ namespace bmi {
  * @brief Execute a `BmiPipeline` task in the configured subprocess executable.
  *
  * The parent process launches the subprocess with
- * [Boost.Process](https://www.boost.org/doc/libs/release/libs/process/) and
- * reads the `TaskResult` JSON file written by the child.
+ * [Boost.Process](https://www.boost.org/doc/libs/release/libs/process/),
+ * connects to the subprocess with CAF, and receives the `TaskResult` remotely.
  *
+ * @param actor_system Runtime actor system used for subprocess communication.
  * @param task Task whose first argument stores a serialized `BmiPipelineConfig`.
- * @return Structured `TaskResult` read from the subprocess result file.
- * @throws std::runtime_error if subprocess setup, launch, or result parsing fails.
+ * @return Structured `TaskResult` returned by the subprocess worker.
+ * @throws std::runtime_error if the task is not a `BmiPipelineConfig` task.
  */
-TaskResult execute_bmi_lifecycle_in_subprocess(const Task& task);
+TaskResult execute_bmi_lifecycle_in_subprocess(caf::actor_system& actor_system,
+                                               const Task& task);
 
 } // namespace bmi
 
@@ -393,8 +383,8 @@ TaskResult execute_bmi_lifecycle_in_subprocess(const Task& task);
  * converted with `bmi_pipeline_config_to_value(...)`.
  *
  * For `BmiPipeline`, `BmiSimulationUnit` runs the complete pipeline from
- * the task's serialized `BmiPipelineConfig`. This is the path for
- * realization-derived pipelines and subprocess execution.
+ * the task's serialized `BmiPipelineConfig`. Subprocess execution is selected
+ * per task with `Task::execution_mode_`.
  *
  * @tparam BmiModelType BMI model type derived from `bmi_api::Bmi`.
  */
@@ -403,7 +393,7 @@ template <class BmiModelType>
 class BmiSimulationUnit : public SimulationUnit {
   public:
     /**
-     * @brief Construct a BMI simulation unit with in-process execution.
+     * @brief Construct a BMI simulation unit.
      *
      * For `BmiPipeline`, the unit executes the full task pipeline. Other model
      * types store a factory for fresh per-task model instances.
@@ -418,14 +408,6 @@ class BmiSimulationUnit : public SimulationUnit {
             };
         }
     }
-
-    /**
-     * @brief Construct a full-pipeline simulation unit.
-     * @param execution_mode Process isolation mode used by each task.
-     */
-    explicit BmiSimulationUnit(BmiExecutionMode execution_mode)
-        requires std::same_as<BmiModelType, BmiPipeline>
-        : execution_mode_(execution_mode) {}
 
     /**
      * @brief Construct a model simulation unit from model constructor arguments.
@@ -449,26 +431,38 @@ class BmiSimulationUnit : public SimulationUnit {
     /**
      * @brief Execute a BMI model instance for a single task.
      * @param task `Task` whose first argument is a BMI pipeline config.
+     * @param actor_system Runtime actor system used for subprocess communication.
      * @return Structured `TaskResult` for this BMI task execution.
      */
-    TaskResult execute(const Task& task) override {
-        const char* error_prefix = "BMI error";
+    TaskResult execute(const Task& task, caf::actor_system& actor_system) override {
+        const bool is_subprocess_mode =
+            task.execution_mode_ == ExecutionMode::single_task_subprocess ||
+            task.execution_mode_ == ExecutionMode::persistent_subprocess;
+        const char* error_prefix = is_subprocess_mode ? "Subprocess error" : "BMI error";
         try {
             // Pipeline units run the task config directly
             if constexpr (std::same_as<BmiModelType, BmiPipeline>) {
-                error_prefix = execution_mode_ == BmiExecutionMode::subprocess
-                                   ? "BMI subprocess error"
-                                   : "BMI error";
+                if (task.execution_mode_ == ExecutionMode::persistent_subprocess) {
+                    return make_failed_task_result(
+                        "persistent subprocess execution is not implemented",
+                        "Subprocess error");
+                }
 
-                // Subprocess mode defers pipeline construction to the child process
-                if (execution_mode_ == BmiExecutionMode::subprocess) {
-                    return bmi::execute_bmi_lifecycle_in_subprocess(task);
+                if (task.execution_mode_ == ExecutionMode::single_task_subprocess) {
+                    // Single-task subprocess mode routes BMI work to a subprocess actor
+                    return bmi::execute_bmi_lifecycle_in_subprocess(actor_system, task);
                 }
 
                 // In-process mode constructs and executes the pipeline in this process
                 BmiPipeline pipeline(task);
                 return pipeline.execute_bmi_lifecycle(task);
             } else {
+                if (is_subprocess_mode) {
+                    return make_failed_task_result(
+                        "subprocess execution is only supported for BmiPipeline tasks",
+                        "Subprocess error");
+                }
+
                 // Model units run one model inside a task-level pipeline
                 std::unique_ptr<BmiModelType> bmi_model = model_factory_();
                 BmiPipeline pipeline(task, std::move(bmi_model));
@@ -501,7 +495,6 @@ class BmiSimulationUnit : public SimulationUnit {
     }
 
     ModelFactory model_factory_;
-    BmiExecutionMode execution_mode_{BmiExecutionMode::in_process};
 };
 
 } // namespace miaow

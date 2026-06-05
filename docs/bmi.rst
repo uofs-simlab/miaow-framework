@@ -13,8 +13,8 @@ There are three common ways to use it:
 - ``BmiSimulationUnit<DynamicBmiModel>`` runs one BMI model loaded from a
   dynamic plugin per task.
 - ``BmiSimulationUnit<BmiPipeline>`` runs a complete pipeline described by the
-  task config, which may be obtained from partitioning a NextGen-style
-  realization file.
+  task config, which may be obtained from partitioning a
+  `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization file.
 
 Each BMI task starts from one typed ``BmiPipelineConfig``, converted to a
 ``caf::config_value`` before being stored in the task:
@@ -81,9 +81,50 @@ paths.
    const std::vector<miaow::Task> tasks{
        {model, miaow::bmi_pipeline_config_to_value(pipeline_config)}};
 
-Use the C++ backend for plugins that export ``bmi_model_create()`` and
-``bmi_model_destroy(...)``. Use the Fortran backend for plugins that export
-``register_bmi(void**)`` for the linked procedural BMI bridge.
+For consistency with NextGen, the C++ backend expects plugins to export
+C-linkage symbols named ``bmi_model_create()`` and ``bmi_model_destroy(...)``.
+The Fortran backend expects plugins to export ``register_bmi(void**)`` for the linked
+`NOAA-OWP iso_c_fortran_bmi bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_.
+
+For C++ plugins, export the creation and destruction functions with C linkage:
+
+.. code-block:: cpp
+
+   extern "C" bmi::Bmi* bmi_model_create() {
+       return new YourBmiModel();
+   }
+
+   extern "C" void bmi_model_destroy(bmi::Bmi* model) {
+       delete model;
+   }
+
+For Fortran plugins, export ``register_bmi`` with ``bind(C)``:
+
+.. code-block:: fortran
+
+   function register_bmi(this) result(bmi_status) bind(C, name="register_bmi")
+       use, intrinsic :: iso_c_binding, only: c_int, c_loc, c_ptr
+       use bmif_2_0_iso, only: BMI_FAILURE, BMI_SUCCESS
+       use your_model_module, only: your_bmi_model
+       use iso_c_bmif_2_0, only: box
+       implicit none
+
+       type(c_ptr) :: this
+       integer(kind=c_int) :: bmi_status
+       type(your_bmi_model), pointer :: bmi_model
+       type(box), pointer :: bmi_box
+
+       allocate(bmi_model)
+       allocate(bmi_box)
+       bmi_box%ptr => bmi_model
+
+       if (associated(bmi_box) .and. associated(bmi_box%ptr)) then
+           this = c_loc(bmi_box)
+           bmi_status = BMI_SUCCESS
+       else
+           bmi_status = BMI_FAILURE
+       end if
+   end function register_bmi
 
 Executing a realization-driven BMI pipeline
 -------------------------------------------
@@ -98,19 +139,22 @@ workflows and by pipelines with more than one model module.
 
    miaow::SimulationUnitRegistry registry;
    const miaow::SimulationUnitId pipeline =
-       registry.add<miaow::BmiSimulationUnit<miaow::BmiPipeline>>(
-           miaow::BmiExecutionMode::subprocess);
+       registry.add<miaow::BmiSimulationUnit<miaow::BmiPipeline>>();
 
-   const std::vector<miaow::Task> tasks =
+   std::vector<miaow::Task> tasks =
        miaow::build_bmi_realization_tasks(realization, pipeline);
+   for (miaow::Task& task : tasks) {
+       task.execution_mode_ = miaow::ExecutionMode::single_task_subprocess;
+   }
 
-``PartitionedBmiRealization`` reads a NextGen-style realization and produces
-one ``BmiPipelineConfig`` per feature. ``build_bmi_realization_tasks(...)``
-turns those feature configs into MIAOW tasks for the registered pipeline unit.
+``PartitionedBmiRealization`` reads a
+`NextGen <https://noaa-owp.github.io/ngen/>`_-style realization and produces one
+``BmiPipelineConfig`` per feature. ``build_bmi_realization_tasks(...)`` turns
+those feature configs into MIAOW tasks for the registered pipeline unit.
 
-Subprocess mode runs one BMI lifecycle in a child process, which is useful for
-BMI models that are not safe to run concurrently in one process. The SUMMA
-example uses subprocess mode.
+``ExecutionMode::single_task_subprocess`` runs one BMI lifecycle in a subprocess,
+which is useful for BMI models that are not safe to run concurrently in one
+process. The SUMMA example uses single-task subprocess mode.
 
 For hand-built dynamic pipelines, construct a ``BmiPipelineConfig`` from a
 vector of ``BmiModuleConfig`` entries. Each module config carries the module
@@ -168,9 +212,10 @@ matched and mismatched combinations of model end time and forcing series
 length: a matched 512-day run, a 512-day run whose 1-day forcing is exhausted
 early, and a 1-day run that stops well before its 512-day forcing ends.
 
-In global NextGen-style realization files, ``CsvPerFeature`` forcing enables
-MIAOW-managed CSV forcing for each feature. Partitioning resolves that global
-forcing entry to per-task ``CsvFile`` forcing.
+In global `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization
+files, ``CsvPerFeature`` forcing enables MIAOW-managed CSV forcing for each
+feature. Partitioning resolves that global forcing entry to per-task ``CsvFile``
+forcing.
 
 Diagnostics and artifacts
 -------------------------
@@ -210,10 +255,13 @@ contents. If a task has non-empty ``metadata_["feature_id"]``, that value
 becomes the output file stem; otherwise the runtime uses ``task_<task_id>``.
 Output stems must be unique within one job and cannot contain path separators.
 
-Subprocess BMI tasks use task-specific ``bmi_subprocess_*_input.json``,
-``bmi_subprocess_*_result.json``, ``bmi_subprocess_*_stdout.log``, and
-``bmi_subprocess_*_stderr.log`` files as parent-child control files. These
-files are removed after the parent reads a succeeded child result; if setup,
-launch, result parsing, or task execution fails, remaining control files are
-left in place for diagnostics. When no task output directory is assigned, these
-subprocess control files use a temporary directory instead.
+Subprocess tasks use a dedicated subprocess-to-parent pipe for the CAF endpoint
+exchange, plus task-specific ``subprocess_*_stdout.log`` and
+``subprocess_*_stderr.log`` files for diagnostics. The parent launches the
+subprocess, reads one endpoint JSON line from the pipe, sends the ``Task`` to
+the subprocess actor over CAF, and receives one ``TaskResult`` reply. Diagnostic
+logs are removed after a succeeded subprocess result; if setup, launch, actor
+exchange, or task execution fails, remaining logs are left in place for
+diagnostics. Parent-side process failures report ``Subprocess error``. When no
+task output directory is assigned, these subprocess logs use a temporary
+directory instead.

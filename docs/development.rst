@@ -113,6 +113,7 @@ Code structure
      core/
        runtime.cpp          # Runtime submit path and output tree setup
        actors.cpp           # orchestrator/job/worker actor behaviour
+       process.cpp          # single-task subprocess launch and connection
        internal.hpp         # core-private actor declarations and JobState
 
      bmi/
@@ -122,10 +123,8 @@ Code structure
        io.cpp               # BMI config, artifact, and output CSV helpers
        pipeline.cpp         # ordered BMI module pipeline and coupling application
        realization.cpp      # BMI realization parsing, task, and registration helpers
-       subprocess/
-         caller.cpp         # parent-side BMI subprocess launcher
-         runner.cpp         # BMI subprocess executable entry point
-       internal.hpp         # BMI-private subprocess, forcing, and output types
+       subprocess.cpp       # BMI subprocess executable entry point
+       internal.hpp         # BMI-private forcing and output declarations
 
      io/
        cli.cpp              # runtime command-line option parsing

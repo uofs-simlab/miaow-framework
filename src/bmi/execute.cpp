@@ -1,5 +1,6 @@
 #include "miaow_bmi.hpp"
 
+#include <cstdlib>
 #include <exception>
 #include <memory>
 #include <sstream>
@@ -8,11 +9,19 @@
 #include <utility>
 #include <vector>
 
+#include <caf/actor_system.hpp>
+#include <caf/config_value.hpp>
+
 #include "bmi/internal.hpp"
+#include "core/internal.hpp"
 
 namespace miaow {
 
 namespace {
+
+#ifndef MIAOW_SUBPROCESS_PATH
+#define MIAOW_SUBPROCESS_PATH ""
+#endif
 
 // Preserve useful domain context while normalizing generic BMI failures
 std::string format_bmi_error_message(const std::string& error_message) {
@@ -42,6 +51,27 @@ std::string format_bmi_error_message(std::exception_ptr exception) {
         return format_bmi_error_message(caught_exception.what());
     } catch (...) {
         return "BMI error: unknown exception";
+    }
+}
+
+// Return the configured subprocess executable path
+std::string configured_subprocess_path() {
+    const char* env_path = std::getenv("MIAOW_SUBPROCESS_PATH");
+    if (env_path != nullptr && env_path[0] != '\0') {
+        return env_path;
+    }
+    return MIAOW_SUBPROCESS_PATH;
+}
+
+// Validate constraints that actor deserialization cannot express
+void validate_bmi_subprocess_task(const Task& task) {
+    if (task.args_.size() != 1) {
+        throw std::runtime_error(
+            "subprocess task must contain exactly one top-level BMI pipeline "
+            "config argument");
+    }
+    if (caf::get_if<caf::config_value::dictionary>(&task.args_.front()) == nullptr) {
+        throw std::runtime_error("subprocess task argument must be a BmiPipelineConfig");
     }
 }
 
@@ -111,5 +141,18 @@ TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
     return TaskResult{TaskStatus::succeeded, message.str(),
                       std::move(runtime_artifact_paths)};
 }
+
+namespace bmi {
+
+TaskResult execute_bmi_lifecycle_in_subprocess(caf::actor_system& actor_system,
+                                               const Task& task) {
+    validate_bmi_subprocess_task(task);
+
+    // Resolve the runner path before delegating to generic subprocess execution
+    const std::string subprocess_path = configured_subprocess_path();
+    return core::execute_single_task_subprocess(actor_system, task, subprocess_path);
+}
+
+} // namespace bmi
 
 } // namespace miaow

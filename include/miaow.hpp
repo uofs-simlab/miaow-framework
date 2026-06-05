@@ -47,6 +47,15 @@ using JobId = std::uint64_t;
 using TaskMetadata = std::map<std::string, std::string>;
 
 /**
+ * @brief Execution location and process lifetime selected per `Task`.
+ */
+enum class ExecutionMode {
+    in_process,
+    single_task_subprocess,
+    persistent_subprocess,
+};
+
+/**
  * @brief Generic task input specification.
  *
  * Arguments are positional and interpreted by the concrete `SimulationUnit`.
@@ -55,7 +64,10 @@ struct Task {
     // `SimulationUnitId` that selects which registered executor handles this task
     SimulationUnitId simulation_unit_id_{0};
 
-    // Generic arguments for this task to pass into `SimulationUnit::execute(args)`
+    // Execution mode selected for this task
+    ExecutionMode execution_mode_{ExecutionMode::in_process};
+
+    // Generic arguments for this task to pass into `SimulationUnit::execute()`
     std::vector<caf::config_value> args_;
 
     // Directory injected by `Runtime` where this task should write artifacts
@@ -304,17 +316,19 @@ class SimulationUnit {
     /**
      * @brief Execute the simulation unit for a single task.
      * @param task Generic `Task` arguments.
+     * @param actor_system Runtime CAF actor system used for actor communication.
      * @return Structured `TaskResult` for this execution.
      */
-    virtual TaskResult execute(const Task& task) = 0;
+    virtual TaskResult execute(const Task& task, caf::actor_system& actor_system) = 0;
 };
 
 /**
  * @brief Callable behaviour used by each `simulation_unit_actor`.
  *
- * The executor receives generic task arguments and returns a structured result.
+ * The executor receives generic task arguments and the runtime actor system.
  */
-using SimulationUnitExecutor = std::function<TaskResult(const Task& task)>;
+using SimulationUnitExecutor =
+    std::function<TaskResult(const Task& task, caf::actor_system& actor_system)>;
 
 /**
  * @brief Registry for simulation unit executors.
@@ -347,7 +361,8 @@ class SimulationUnitRegistry {
         // Build a `SimulationUnitExecutor` that constructs a fresh unit per task
         SimulationUnitExecutor simulation_unit_executor =
             [stored_constructor_args =
-                 std::move(stored_constructor_args)](const Task& task) -> TaskResult {
+                 std::move(stored_constructor_args)](
+                const Task& task, caf::actor_system& actor_system) -> TaskResult {
             // Create a new `SimulationUnitType` instance for this task
             std::unique_ptr<SimulationUnit> simulation_unit = std::apply(
                 [](const std::decay_t<ConstructorArgs>&... args)
@@ -357,7 +372,7 @@ class SimulationUnitRegistry {
                 stored_constructor_args);
 
             // Execute the simulation unit with the given task and return the result
-            return simulation_unit->execute(task);
+            return simulation_unit->execute(task, actor_system);
         };
 
         const SimulationUnitId simulation_unit_id = next_simulation_unit_id_++;
@@ -456,6 +471,38 @@ using JobHandle = std::future<JobRecord>;
 using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
 
 /**
+ * @brief Serialize or deserialize an `ExecutionMode` for CAF actor messaging.
+ * @tparam Inspector CAF inspector type.
+ * @param inspector Inspector driving serialization or deserialization.
+ * @param execution_mode `ExecutionMode` value to inspect.
+ * @return true when the execution mode value was inspected successfully.
+ */
+template <class Inspector>
+bool inspect(Inspector& inspector, ExecutionMode& execution_mode) {
+    // Execution mode serializes as a stable string in actor messages and JSON
+    std::string mode_value = "in_process";
+    if (execution_mode == ExecutionMode::single_task_subprocess) {
+        mode_value = "single_task_subprocess";
+    } else if (execution_mode == ExecutionMode::persistent_subprocess) {
+        mode_value = "persistent_subprocess";
+    }
+
+    const bool inspected = inspector.apply(mode_value);
+    if (!inspected) {
+        return false;
+    }
+
+    if (mode_value == "single_task_subprocess") {
+        execution_mode = ExecutionMode::single_task_subprocess;
+    } else if (mode_value == "persistent_subprocess") {
+        execution_mode = ExecutionMode::persistent_subprocess;
+    } else {
+        execution_mode = ExecutionMode::in_process;
+    }
+    return true;
+}
+
+/**
  * @brief Serialize or deserialize a `Task` for CAF actor messaging.
  * @tparam Inspector CAF inspector type.
  * @param inspector Inspector driving serialization or deserialization.
@@ -466,6 +513,7 @@ template <class Inspector> bool inspect(Inspector& inspector, Task& task) {
     // Defines how CAF serializes/deserializes `Task` for actor messaging
     return inspector.object(task).fields(
         inspector.field("simulation_unit_id", task.simulation_unit_id_),
+        inspector.field("execution_mode", task.execution_mode_),
         inspector.field("args", task.args_),
         inspector.field("task_output_dir", task.task_output_dir_),
         inspector.field("task_output_name", task.task_output_name_),

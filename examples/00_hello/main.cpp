@@ -25,7 +25,8 @@ class HelloSimulationUnit : public miaow::SimulationUnit {
      * @param task Task payload; args[0] is expected to be a string.
      * @return Structured task result with status and message.
      */
-    miaow::TaskResult execute(const miaow::Task& task) override {
+    miaow::TaskResult execute(const miaow::Task& task,
+                              caf::actor_system& /*actor_system*/) override {
         const std::string* message = task.string_arg(0);
         if (message == nullptr) {
             return miaow::TaskResult{miaow::TaskStatus::failed, "missing message"};

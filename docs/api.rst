@@ -22,6 +22,9 @@ Identifiers and task status
 .. doxygenenum:: miaow::TaskStatus
    :project: MIAOW
 
+.. doxygenenum:: miaow::ExecutionMode
+   :project: MIAOW
+
 .. doxygenfunction:: miaow::task_status_to_string
    :project: MIAOW
 
@@ -81,9 +84,6 @@ BMI model types
 ~~~~~~~~~~~~~~~
 
 .. doxygenenum:: miaow::DynamicBmiBackend
-   :project: MIAOW
-
-.. doxygenenum:: miaow::BmiExecutionMode
    :project: MIAOW
 
 .. doxygenclass:: miaow::DynamicBmiModel

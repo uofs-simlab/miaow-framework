@@ -117,9 +117,9 @@ static void dispatch_tasks(caf::event_based_actor* self,
 
 // Leaf simulation_unit actors used as workers by each job actor
 caf::behavior simulation_unit_actor(
-    caf::event_based_actor* /*self*/,
+    caf::event_based_actor* self,
     std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry) {
-    return {[simulation_unit_registry = std::move(simulation_unit_registry)](
+    return {[self, simulation_unit_registry = std::move(simulation_unit_registry)](
                 caf::get_atom, const Task& task) -> caf::result<TaskResult> {
         // Error if simulation unit registry is missing
         if (!simulation_unit_registry) {
@@ -138,7 +138,7 @@ caf::behavior simulation_unit_actor(
 
         // If valid simulation unit, execute its behaviour and return the result
         try {
-            return (*simulation_unit_executor)(task);
+            return (*simulation_unit_executor)(task, self->system());
         } catch (const std::exception& exception) {
             return caf::make_error(caf::sec::runtime_error, exception.what());
         } catch (...) {
