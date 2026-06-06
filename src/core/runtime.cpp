@@ -94,29 +94,42 @@ static std::filesystem::path job_directory_path(const RuntimeOptions& runtime_op
     return run_directory_path(runtime_options, run_id) / ("job_" + std::to_string(job_id));
 }
 
-// Get directory name for a task output, prioritizing "feature_id" metadata when available,
-// and falling back to "task_{task_id}" when not. The "feature_id" value is validated to
-// not contain path separators to prevent directory traversal issues.
-static std::string task_output_name(const Task& task, TaskId task_id) {
+// Get the stable task label, prioritizing realization feature metadata
+static std::string task_name(const Task& task, TaskId task_id) {
     const TaskMetadata::const_iterator feature_id = task.metadata_.find("feature_id");
     if (feature_id != task.metadata_.end() && !feature_id->second.empty()) {
         if (feature_id->second.find('/') != std::string::npos ||
             feature_id->second.find('\\') != std::string::npos) {
             throw std::runtime_error(
-                "Output path error: feature_id must not contain path separators");
+                "Task name error: feature_id must not contain path separators");
         }
         return feature_id->second;
     }
     return "task_" + std::to_string(task_id);
 }
 
-static void assign_task_output_directories(std::vector<Task>& tasks,
-                                           const RuntimeOptions& runtime_options,
-                                           std::uint64_t run_id, JobId job_id) {
+static void assign_task_runtime_fields(std::vector<Task>& tasks,
+                                       const RuntimeOptions& runtime_options,
+                                       std::uint64_t run_id, JobId job_id) {
+    // Track task names so logs and artifacts can identify tasks unambiguously
+    std::vector<std::string> assigned_task_names;
+    assigned_task_names.reserve(tasks.size());
+
+    for (std::size_t task_index = 0; task_index < tasks.size(); ++task_index) {
+        Task& task = tasks.at(task_index);
+        const TaskId task_id = static_cast<TaskId>(task_index);
+        task.task_name_ = task_name(task, task_id);
+        if (std::find(assigned_task_names.begin(), assigned_task_names.end(),
+                      task.task_name_) != assigned_task_names.end()) {
+            throw std::runtime_error("Task name error: duplicate task name '" +
+                                     task.task_name_ + "'");
+        }
+        assigned_task_names.push_back(task.task_name_);
+    }
+
     if (runtime_options.output_root_.empty()) {
         for (Task& task : tasks) {
             task.task_output_dir_.clear();
-            task.task_output_name_.clear();
         }
         return;
     }
@@ -126,21 +139,8 @@ static void assign_task_output_directories(std::vector<Task>& tasks,
     const std::filesystem::path results_directory = job_directory / "results";
     std::filesystem::create_directories(results_directory);
 
-    // Track output stems so tasks do not overwrite each other
-    std::vector<std::string> assigned_output_names;
-    assigned_output_names.reserve(tasks.size());
-
-    for (std::size_t task_index = 0; task_index < tasks.size(); ++task_index) {
-        Task& task = tasks.at(task_index);
-        const TaskId task_id = static_cast<TaskId>(task_index);
+    for (Task& task : tasks) {
         task.task_output_dir_ = results_directory.string();
-        task.task_output_name_ = task_output_name(task, task_id);
-        if (std::find(assigned_output_names.begin(), assigned_output_names.end(),
-                      task.task_output_name_) != assigned_output_names.end()) {
-            throw std::runtime_error("Output path error: duplicate task output name '" +
-                                     task.task_output_name_ + "'");
-        }
-        assigned_output_names.push_back(task.task_output_name_);
     }
 }
 
@@ -204,7 +204,7 @@ JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
         return make_ready_job_handle(JobRecord{run_id_, job_id});
     }
 
-    assign_task_output_directories(tasks, runtime_options_, run_id_, job_id);
+    assign_task_runtime_fields(tasks, runtime_options_, run_id_, job_id);
 
     // Create a promise/future pair for this submitted job
     std::promise<JobRecord> promise;

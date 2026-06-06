@@ -215,7 +215,7 @@ if(BUILD_TESTING)
     )
     string(CONCAT summa_run_regex
         "Parsed realization with 5 feature pipeline config\\(s\\)(.|\\n)*"
-        "\\[0\\] succeeded: BMI workflow complete"
+        "\\[cat-11223\\] succeeded: BMI workflow complete"
     )
     set_tests_properties(miaow_example_04_summa_run PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"

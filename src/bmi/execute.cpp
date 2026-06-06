@@ -94,7 +94,7 @@ TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
                 // Output variable selection comes from the initialized pipeline config
                 output_file = std::make_unique<bmi::OutputFile>(
                     bmi::open_output_file(*this, task.task_output_dir_,
-                                          task.task_output_name_, output_variables()));
+                                          task.task_name_, output_variables()));
                 runtime_artifact_paths.push_back(output_file->artifact_path_);
             }
 

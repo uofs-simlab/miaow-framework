@@ -122,7 +122,7 @@ void add_variables_names_map_to_params(
 // Build the BMI pipeline config filename written beside task results
 std::string bmi_pipeline_config_filename(const Task& task) {
     const std::string output_name =
-        task.task_output_name_.empty() ? "task" : task.task_output_name_;
+        task.task_name_.empty() ? "task" : task.task_name_;
     return output_name + ".json";
 }
 

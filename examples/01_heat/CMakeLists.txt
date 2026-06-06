@@ -56,11 +56,16 @@ if(BUILD_TESTING)
             ${MIAOW_ROOT}/cmake/check_symlink.cmake
     )
 
+    string(CONCAT heat_pass_regex
+        "\\[task_0\\] succeeded: BMI workflow complete(.|\\n)*"
+        "\\[task_1\\] succeeded: BMI workflow complete"
+    )
+
     miaow_add_workflow_test(
         TEST_NAME miaow_example_01_heat
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete(.|\\n)*\\[1\\] succeeded: BMI workflow complete"
+        PASS_REGULAR_EXPRESSION "${heat_pass_regex}"
         CLI_ARGS
             --max_workers
             2

@@ -164,8 +164,8 @@ if(BUILD_TESTING)
     string(CONCAT dynamic_bmi_pass_regex
         "C\\+\\+ dynamic BMI plugin: .*miaow_dynamic_cpp_heat_plugin(.|\\n)*"
         "Fortran dynamic BMI plugin: .*miaow_dynamic_fortran_heat_plugin(.|\\n)*"
-        "\\[0\\] succeeded: BMI workflow complete(.|\\n)*"
-        "\\[1\\] succeeded: BMI workflow complete"
+        "\\[task_0\\] succeeded: BMI workflow complete(.|\\n)*"
+        "\\[task_1\\] succeeded: BMI workflow complete"
     )
 
     add_test(

@@ -144,7 +144,7 @@ std::filesystem::path make_control_dir(const Task& task) {
 SubprocessPaths make_subprocess_paths(const Task& task) {
     const std::filesystem::path control_dir = make_control_dir(task);
     const std::string output_name =
-        task.task_output_name_.empty() ? "task" : task.task_output_name_;
+        task.task_name_.empty() ? "task" : task.task_name_;
     const std::string control_stem =
         std::string(subprocess_file_prefix) + "_" + output_name;
 
@@ -340,6 +340,9 @@ TaskResult launch_single_task_subprocess(caf::actor_system& actor_system,
     close_file_descriptor(connection_pipe.write_fd_);
 
     try {
+        const std::string task_label =
+            task.task_name_.empty() ? "task" : task.task_name_;
+
         // Read subprocess connection details from the dedicated pipe
         const SubprocessConnection connection =
             read_connection_pipe(connection_pipe.read_fd_);
@@ -347,10 +350,19 @@ TaskResult launch_single_task_subprocess(caf::actor_system& actor_system,
 
         // Connect to the published subprocess actor
         const caf::actor remote_worker = connect_remote_worker(actor_system, connection);
+        std::cerr << "[" << task_label << "] MIAOW subprocess: connected to actor at "
+                  << connection.host_ << ":" << connection.port_ << "\n";
         TaskResult task_result = request_remote_task(actor_system, remote_worker, task);
 
         const int status = subprocess.wait();
         if (status != 0) {
+            // Preserve completed work if teardown fails after the task result arrives
+            if (task_result.status_ == TaskStatus::succeeded) {
+                task_result.message_ += " (subprocess exited with status " +
+                                        std::to_string(status) +
+                                        " after returning task result)";
+                return task_result;
+            }
             throw std::runtime_error("subprocess exited with status " +
                                      std::to_string(status));
         }

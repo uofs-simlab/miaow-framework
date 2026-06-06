@@ -61,7 +61,7 @@ if(BUILD_TESTING)
         TEST_NAME miaow_example_02_soil_freeze_thaw
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "\\[2\\] succeeded: BMI workflow complete"
+        PASS_REGULAR_EXPRESSION "\\[task_2\\] succeeded: BMI workflow complete"
         CLI_ARGS
             --output_root
             "${CMAKE_CURRENT_LIST_DIR}/output"
@@ -80,7 +80,7 @@ if(BUILD_TESTING)
         TEST_NAME miaow_example_02_soil_freeze_thaw_forcing_matched
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "\\[0\\] succeeded: BMI workflow complete"
+        PASS_REGULAR_EXPRESSION "\\[task_0\\] succeeded: BMI workflow complete"
         CLI_ARGS
             --max_workers
             1
@@ -90,11 +90,16 @@ if(BUILD_TESTING)
             600
     )
 
+    string(CONCAT soil_freeze_thaw_exhausted_regex
+        "\\[task_1\\] failed: Forcing alignment error: forcing series exhausted "
+        "at step 24 \\(updates: 24\\)"
+    )
+
     miaow_add_workflow_test(
         TEST_NAME miaow_example_02_soil_freeze_thaw_forcing_exhausted
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "\\[1\\] failed: Forcing alignment error: forcing series exhausted at step 24 \\(updates: 24\\)"
+        PASS_REGULAR_EXPRESSION "${soil_freeze_thaw_exhausted_regex}"
         CLI_ARGS
             --max_workers
             1

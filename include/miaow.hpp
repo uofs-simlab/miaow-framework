@@ -73,8 +73,8 @@ struct Task {
     // Directory injected by `Runtime` where this task should write artifacts
     std::string task_output_dir_;
 
-    // File stem injected by `Runtime` for task-specific output artifacts
-    std::string task_output_name_;
+    // Stable task label injected by `Runtime` and used as an artifact file stem
+    std::string task_name_;
 
     // Metadata preserves labels used by reporting and postprocessing tools
     TaskMetadata metadata_;
@@ -214,13 +214,17 @@ struct TaskRecord {
      */
     TaskRecord(const Task& task, TaskId task_id, TaskResult result, double run_time_s)
         : task_id_{task_id}, simulation_unit_id_{task.simulation_unit_id_},
-          metadata_{task.metadata_}, result_{std::move(result)}, run_time_s_{run_time_s} {}
+          task_name_{task.task_name_}, metadata_{task.metadata_},
+          result_{std::move(result)}, run_time_s_{run_time_s} {}
 
     // `TaskId` within the submitted job
     TaskId task_id_{0};
 
     // `SimulationUnitId` that executed this task
     SimulationUnitId simulation_unit_id_{0};
+
+    // Stable task label assigned by `Runtime`
+    std::string task_name_;
 
     // Metadata copied from the submitted task
     TaskMetadata metadata_;
@@ -516,7 +520,7 @@ template <class Inspector> bool inspect(Inspector& inspector, Task& task) {
         inspector.field("execution_mode", task.execution_mode_),
         inspector.field("args", task.args_),
         inspector.field("task_output_dir", task.task_output_dir_),
-        inspector.field("task_output_name", task.task_output_name_),
+        inspector.field("task_name", task.task_name_),
         inspector.field("metadata", task.metadata_));
 }
 
@@ -565,6 +569,7 @@ template <class Inspector> bool inspect(Inspector& inspector, TaskRecord& task_r
     return inspector.object(task_record)
         .fields(inspector.field("task_id", task_record.task_id_),
                 inspector.field("simulation_unit_id", task_record.simulation_unit_id_),
+                inspector.field("task_name", task_record.task_name_),
                 inspector.field("metadata", task_record.metadata_),
                 inspector.field("result", task_record.result_),
                 inspector.field("run_time_s", task_record.run_time_s_));

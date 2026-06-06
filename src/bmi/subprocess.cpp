@@ -21,9 +21,9 @@ void validate_subprocess_task(const Task& task) {
     if (caf::get_if<caf::config_value::dictionary>(&task.args_.front()) == nullptr) {
         throw std::runtime_error("subprocess task argument must be a BmiPipelineConfig");
     }
-    if (!task.task_output_dir_.empty() && task.task_output_name_.empty()) {
+    if (!task.task_output_dir_.empty() && task.task_name_.empty()) {
         throw std::runtime_error(
-            "subprocess task key 'task_output_name' must be a non-empty string");
+            "subprocess task key 'task_name' must be a non-empty string");
     }
 }
 
