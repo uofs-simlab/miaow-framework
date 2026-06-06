@@ -448,7 +448,7 @@ struct RuntimeOptions {
      *                   means no realization path has been configured.
      */
     RuntimeOptions(std::size_t workers = 1,
-                   std::chrono::milliseconds task_timeout = std::chrono::seconds(5),
+                   std::chrono::milliseconds task_timeout = std::chrono::minutes(1),
                    std::chrono::milliseconds job_timeout = std::chrono::minutes(5),
                    std::string output_root = "", std::string realization_path = "")
         : max_workers_(workers == 0 ? 1 : workers), task_request_timeout_(task_timeout),
