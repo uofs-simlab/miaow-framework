@@ -26,7 +26,7 @@ class HelloSimulationUnit : public miaow::SimulationUnit {
      * @return Structured task result with status and message.
      */
     miaow::TaskResult execute(const miaow::Task& task,
-                              caf::actor_system& /*actor_system*/) override {
+                              miaow::ExecutionContext& /*context*/) override {
         const std::string* message = task.string_arg(0);
         if (message == nullptr) {
             return miaow::TaskResult{miaow::TaskStatus::failed, "missing message"};

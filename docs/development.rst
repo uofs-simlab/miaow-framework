@@ -113,7 +113,7 @@ Code structure
      core/
        runtime.cpp          # Runtime submit path and output tree setup
        actors.cpp           # orchestrator/job/worker actor behaviour
-       process.cpp          # single-task subprocess launch and connection
+       process.cpp          # subprocess launch, connection, and process reuse
        internal.hpp         # core-private actor declarations and JobState
 
      bmi/

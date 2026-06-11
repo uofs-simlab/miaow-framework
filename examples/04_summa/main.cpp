@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
         miaow::build_bmi_realization_tasks(realization, bmi_pipeline_unit);
     for (miaow::Task& task : tasks) {
         // SUMMA tasks run in subprocesses because the model has global state
-        task.execution_mode_ = miaow::ExecutionMode::single_task_subprocess;
+        task.execution_mode_ = miaow::ExecutionMode::persistent_subprocess;
     }
     miaow::Runtime runtime(registry, runtime_options);
 

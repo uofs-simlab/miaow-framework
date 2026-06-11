@@ -128,6 +128,7 @@ target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_20)
 target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
 target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
     MIAOW_DYNAMIC_BMI_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
+    MIAOW_SUBPROCESS_PATH="${MIAOW_SUBPROCESS_PATH}"
 )
 
 miaow_attach_plugin_paths(${EXECUTABLE_TARGET}
@@ -142,6 +143,26 @@ set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
 )
 
 if(BUILD_TESTING)
+    set(invalid_subprocess_path_target
+        "${EXECUTABLE_TARGET}_invalid_subprocess_path")
+    set(invalid_persistent_subprocess_path
+        "/definitely/missing/miaow_subprocess")
+    add_executable(${invalid_subprocess_path_target}
+        main.cpp
+    )
+    target_compile_features(${invalid_subprocess_path_target} PRIVATE cxx_std_20)
+    target_link_libraries(${invalid_subprocess_path_target} PRIVATE miaow)
+    target_compile_definitions(${invalid_subprocess_path_target} PRIVATE
+        MIAOW_DYNAMIC_BMI_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
+        MIAOW_SUBPROCESS_PATH="${MIAOW_SUBPROCESS_PATH}"
+        MIAOW_FIRST_PERSISTENT_SUBPROCESS_PATH="${invalid_persistent_subprocess_path}"
+        MIAOW_EXPECT_FIRST_PERSISTENT_FAILURE=1
+    )
+    miaow_attach_plugin_paths(${invalid_subprocess_path_target}
+        MIAOW_CPP_HEAT_PLUGIN_PATH      miaow_dynamic_cpp_heat_plugin
+        MIAOW_FORTRAN_HEAT_PLUGIN_PATH  miaow_dynamic_fortran_heat_plugin
+    )
+
     add_test(
         NAME miaow_example_03_dynamic_bmi_extern_symlink_cpp
         COMMAND
@@ -162,10 +183,14 @@ if(BUILD_TESTING)
     )
 
     string(CONCAT dynamic_bmi_pass_regex
-        "C\\+\\+ dynamic BMI plugin: .*miaow_dynamic_cpp_heat_plugin(.|\\n)*"
-        "Fortran dynamic BMI plugin: .*miaow_dynamic_fortran_heat_plugin(.|\\n)*"
-        "\\[task_0\\] succeeded: BMI workflow complete(.|\\n)*"
-        "\\[task_1\\] succeeded: BMI workflow complete"
+        "\\[task_2\\] MIAOW subprocess: connected to actor(.|\\n)*"
+        "\\[task_3\\] MIAOW subprocess: connected to actor(.|\\n)*"
+        "\\[task_4\\] succeeded: BMI workflow complete"
+    )
+
+    string(CONCAT dynamic_bmi_invalid_subprocess_pass_regex
+        "\\[task_3\\] MIAOW subprocess: connected to actor(.|\\n)*"
+        "\\[task_4\\] succeeded: BMI workflow complete"
     )
 
     add_test(
@@ -173,7 +198,7 @@ if(BUILD_TESTING)
         COMMAND
             $<TARGET_FILE:${EXECUTABLE_TARGET}>
             --max_workers
-            2
+            1
             --task_request_timeout
             60
             --job_request_timeout
@@ -182,5 +207,22 @@ if(BUILD_TESTING)
     set_tests_properties(miaow_example_03_dynamic_bmi PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
         PASS_REGULAR_EXPRESSION "${dynamic_bmi_pass_regex}"
+    )
+
+    add_test(
+        NAME miaow_example_03_dynamic_bmi_invalid_subprocess_path
+        COMMAND
+            $<TARGET_FILE:${invalid_subprocess_path_target}>
+            --max_workers
+            1
+            --task_request_timeout
+            60
+            --job_request_timeout
+            600
+    )
+    set_tests_properties(miaow_example_03_dynamic_bmi_invalid_subprocess_path
+        PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+        PASS_REGULAR_EXPRESSION "${dynamic_bmi_invalid_subprocess_pass_regex}"
     )
 endif()

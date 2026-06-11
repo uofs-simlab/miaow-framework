@@ -26,6 +26,10 @@
 
 namespace miaow {
 
+namespace core {
+struct SubprocessState;
+}
+
 /**
  * @brief Monotonic identifier assigned to each registered `SimulationUnit`.
  */
@@ -50,8 +54,13 @@ using TaskMetadata = std::map<std::string, std::string>;
  * @brief Execution location and process lifetime selected per `Task`.
  */
 enum class ExecutionMode {
+    // Execute the task in a parent-process worker actor
     in_process,
+
+    // Launch one subprocess for one task and stop it after the result
     single_task_subprocess,
+
+    // Reuse one subprocess owned by a job worker for subprocess-routed tasks
     persistent_subprocess,
 };
 
@@ -61,11 +70,15 @@ enum class ExecutionMode {
  * Arguments are positional and interpreted by the concrete `SimulationUnit`.
  */
 struct Task {
-    // `SimulationUnitId` that selects which registered executor handles this task
+    // `SimulationUnitId` that selects which registered unit handles this task
     SimulationUnitId simulation_unit_id_{0};
 
     // Execution mode selected for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
+
+    // Optional subprocess executable path set on this task
+    // Empty uses the MIAOW_SUBPROCESS_PATH compile-time default
+    std::string subprocess_path_;
 
     // Generic arguments for this task to pass into `SimulationUnit::execute()`
     std::vector<caf::config_value> args_;
@@ -309,9 +322,41 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
 }
 
 /**
+ * @brief Runtime-local services available during `SimulationUnit::execute()`.
+ *
+ * `Runtime` dispatch constructs an instance for each task and calls `execute()`
+ * with a runtime-local `ExecutionContext`.
+ */
+class ExecutionContext {
+  public:
+    /**
+     * @brief Construct runtime services for one worker task execution.
+     * @param actor_system Runtime CAF actor system used for actor communication.
+     * @param active_subprocess Worker-owned subprocess state.
+     */
+    ExecutionContext(caf::actor_system& actor_system,
+                     core::SubprocessState& active_subprocess);
+
+    /**
+     * @brief Execute a task through this worker's subprocess slot.
+     * @param task Task to send to the subprocess worker.
+     * @return Structured `TaskResult` from subprocess execution.
+     */
+    TaskResult execute_subprocess(const Task& task) const;
+
+  private:
+    // Runtime actor system borrowed for the current worker task execution
+    caf::actor_system* actor_system_;
+
+    // Worker-owned subprocess state borrowed for subprocess task execution
+    core::SubprocessState* active_subprocess_;
+};
+
+/**
  * @brief Base class for model-specific simulation units.
  *
- * `Runtime` dispatch occurs through subclasses overriding `execute()`.
+ * Implementations decide how to handle `Task::execution_mode_`. Subprocess
+ * execution is available through `ExecutionContext::execute_subprocess()`.
  */
 class SimulationUnit {
   public:
@@ -320,24 +365,23 @@ class SimulationUnit {
     /**
      * @brief Execute the simulation unit for a single task.
      * @param task Generic `Task` arguments.
-     * @param actor_system Runtime CAF actor system used for actor communication.
+     * @param context Runtime-local services for this worker task execution.
      * @return Structured `TaskResult` for this execution.
      */
-    virtual TaskResult execute(const Task& task, caf::actor_system& actor_system) = 0;
+    virtual TaskResult execute(const Task& task, ExecutionContext& context) = 0;
 };
 
 /**
- * @brief Callable behaviour used by each `simulation_unit_actor`.
+ * @brief Factory used by each `simulation_unit_actor`.
  *
- * The executor receives generic task arguments and the runtime actor system.
+ * Workers use this to construct in-process `SimulationUnit` instances.
  */
-using SimulationUnitExecutor =
-    std::function<TaskResult(const Task& task, caf::actor_system& actor_system)>;
+using SimulationUnitFactory = std::function<std::unique_ptr<SimulationUnit>()>;
 
 /**
- * @brief Registry for simulation unit executors.
+ * @brief Registry for simulation unit factories.
  *
- * Tracks `simulation_unit_id -> executor` for runtime task routing.
+ * Tracks `simulation_unit_id -> factory` for runtime task routing.
  */
 class SimulationUnitRegistry {
   public:
@@ -346,7 +390,7 @@ class SimulationUnitRegistry {
     /**
      * @brief Register a concrete `SimulationUnit` type and return its assigned ID.
      *
-     * Builds an executor that constructs a fresh `SimulationUnitType` for each task.
+     * Builds a factory that workers use for `SimulationUnitType` instances.
      *
      * @tparam SimulationUnitType Concrete `SimulationUnit` type.
      * @tparam ConstructorArgs Constructor argument types for `SimulationUnitType`.
@@ -362,26 +406,21 @@ class SimulationUnitRegistry {
         std::tuple<std::decay_t<ConstructorArgs>...> stored_constructor_args(
             std::move(constructor_args)...);
 
-        // Build a `SimulationUnitExecutor` that constructs a fresh unit per task
-        SimulationUnitExecutor simulation_unit_executor =
+        // Build a factory for in-process simulation unit instances
+        SimulationUnitFactory simulation_unit_factory =
             [stored_constructor_args =
-                 std::move(stored_constructor_args)](
-                const Task& task, caf::actor_system& actor_system) -> TaskResult {
-            // Create a new `SimulationUnitType` instance for this task
-            std::unique_ptr<SimulationUnit> simulation_unit = std::apply(
+                 std::move(stored_constructor_args)]() -> std::unique_ptr<SimulationUnit> {
+            return std::apply(
                 [](const std::decay_t<ConstructorArgs>&... args)
                     -> std::unique_ptr<SimulationUnit> {
                     return std::make_unique<SimulationUnitType>(args...);
                 },
                 stored_constructor_args);
-
-            // Execute the simulation unit with the given task and return the result
-            return simulation_unit->execute(task, actor_system);
         };
 
         const SimulationUnitId simulation_unit_id = next_simulation_unit_id_++;
-        simulation_unit_executors_by_id_.emplace(simulation_unit_id,
-                                                 std::move(simulation_unit_executor));
+        simulation_unit_factories_by_id_.emplace(simulation_unit_id,
+                                                 std::move(simulation_unit_factory));
         return simulation_unit_id;
     }
 
@@ -390,27 +429,27 @@ class SimulationUnitRegistry {
      * @return true when the registry contains no simulation units.
      */
     bool empty() const {
-        return simulation_unit_executors_by_id_.empty();
+        return simulation_unit_factories_by_id_.empty();
     }
 
     /**
-     * @brief Look up executor for a simulation unit ID.
+     * @brief Look up factory for a simulation unit ID.
      * @param simulation_unit_id Registered ID to resolve.
-     * @return Pointer to executor, or null when ID is unknown.
+     * @return Pointer to factory, or null when ID is unknown.
      */
-    const SimulationUnitExecutor* find_executor(SimulationUnitId simulation_unit_id) const {
-        const std::unordered_map<SimulationUnitId, SimulationUnitExecutor>::const_iterator
+    const SimulationUnitFactory* find_factory(SimulationUnitId simulation_unit_id) const {
+        const std::unordered_map<SimulationUnitId, SimulationUnitFactory>::const_iterator
             simulation_unit_entry =
-                simulation_unit_executors_by_id_.find(simulation_unit_id);
-        if (simulation_unit_entry == simulation_unit_executors_by_id_.end()) {
+                simulation_unit_factories_by_id_.find(simulation_unit_id);
+        if (simulation_unit_entry == simulation_unit_factories_by_id_.end()) {
             return nullptr;
         }
         return &simulation_unit_entry->second;
     }
 
   private:
-    std::unordered_map<SimulationUnitId, SimulationUnitExecutor>
-        simulation_unit_executors_by_id_;
+    std::unordered_map<SimulationUnitId, SimulationUnitFactory>
+        simulation_unit_factories_by_id_;
     SimulationUnitId next_simulation_unit_id_{1};
 };
 
@@ -485,10 +524,15 @@ template <class Inspector>
 bool inspect(Inspector& inspector, ExecutionMode& execution_mode) {
     // Execution mode serializes as a stable string in actor messages and JSON
     std::string mode_value = "in_process";
-    if (execution_mode == ExecutionMode::single_task_subprocess) {
+    switch (execution_mode) {
+    case ExecutionMode::in_process:
+        break;
+    case ExecutionMode::single_task_subprocess:
         mode_value = "single_task_subprocess";
-    } else if (execution_mode == ExecutionMode::persistent_subprocess) {
+        break;
+    case ExecutionMode::persistent_subprocess:
         mode_value = "persistent_subprocess";
+        break;
     }
 
     const bool inspected = inspector.apply(mode_value);
@@ -518,6 +562,7 @@ template <class Inspector> bool inspect(Inspector& inspector, Task& task) {
     return inspector.object(task).fields(
         inspector.field("simulation_unit_id", task.simulation_unit_id_),
         inspector.field("execution_mode", task.execution_mode_),
+        inspector.field("subprocess_path", task.subprocess_path_),
         inspector.field("args", task.args_),
         inspector.field("task_output_dir", task.task_output_dir_),
         inspector.field("task_name", task.task_name_),
@@ -596,19 +641,20 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
  *
  * The runtime is model-agnostic and thread-safe.
  * Tasks with unknown `SimulationUnitId` values fail individually.
+ * Persistent subprocess workers are owned by one submitted job.
  */
 class Runtime {
   public:
     /**
      * @brief Construct `Runtime` from a registry with default options.
-     * @param simulation_unit_registry Registry mapping `simulation_unit_id` to executor.
+     * @param simulation_unit_registry Registry mapping `simulation_unit_id` to factory.
      * @throws std::invalid_argument if `simulation_unit_registry` is empty.
      */
     Runtime(const SimulationUnitRegistry& simulation_unit_registry);
 
     /**
      * @brief Construct `Runtime` from a registry and options.
-     * @param simulation_unit_registry Registry mapping `simulation_unit_id` to executor.
+     * @param simulation_unit_registry Registry mapping `simulation_unit_id` to factory.
      * @param options `Runtime` scheduling and timeout options.
      * @throws std::invalid_argument if `simulation_unit_registry` is empty.
      */

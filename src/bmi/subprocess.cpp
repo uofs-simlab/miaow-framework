@@ -27,22 +27,22 @@ void validate_subprocess_task(const Task& task) {
     }
 }
 
-// Run exactly one BMI pipeline task and then stop the worker actor
-caf::behavior bmi_worker_actor(caf::event_based_actor* self) {
-    return {[self](caf::get_atom, const Task& task) -> TaskResult {
-        TaskResult task_result;
-        try {
-            // Config-constructible pipelines build all models in the subprocess
-            validate_subprocess_task(task);
-            BmiPipeline pipeline(task);
-            task_result = pipeline.execute_bmi_lifecycle(task);
-        } catch (...) {
-            // Exceptions cannot propagate through the subprocess boundary
-            task_result = make_failed_task_result(std::current_exception(), "BMI error");
-        }
-        self->quit();
-        return task_result;
-    }};
+// Run BMI pipeline tasks until the parent process ends this subprocess
+caf::behavior bmi_worker_actor(caf::event_based_actor*) {
+    return {[](caf::get_atom, const Task& task) -> TaskResult {
+                TaskResult task_result;
+                try {
+                    // Config-constructible pipelines build all models in the subprocess
+                    validate_subprocess_task(task);
+                    BmiPipeline pipeline(task);
+                    task_result = pipeline.execute_bmi_lifecycle(task);
+                } catch (...) {
+                    // Exceptions cannot propagate through the subprocess boundary
+                    task_result =
+                        make_failed_task_result(std::current_exception(), "BMI error");
+                }
+                return task_result;
+            }};
 }
 
 } // namespace
@@ -51,5 +51,5 @@ caf::behavior bmi_worker_actor(caf::event_based_actor* self) {
 
 // Entry point for subprocess execution launched via Boost.Process
 int main(int argc, char* argv[]) {
-    return miaow::core::run_single_task_subprocess(argc, argv, miaow::bmi_worker_actor);
+    return miaow::core::run_subprocess_worker(argc, argv, miaow::bmi_worker_actor);
 }

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -12,6 +13,11 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/asio/io_context.hpp>
+#ifndef BOOST_PROCESS_USE_STD_FS
+#define BOOST_PROCESS_USE_STD_FS
+#endif
+#include <boost/process/v2/process.hpp>
 #include <caf/all.hpp>
 
 #include "miaow.hpp"
@@ -25,6 +31,7 @@ CAF_ADD_TYPE_ID(miaow_module, (miaow::TaskRecord))
 CAF_ADD_TYPE_ID(miaow_module, (std::vector<miaow::TaskRecord>))
 CAF_ADD_TYPE_ID(miaow_module, (std::vector<miaow::Task>))
 CAF_ADD_TYPE_ID(miaow_module, (miaow::JobRecord))
+CAF_ADD_ATOM(miaow_module, miaow::core, shutdown_atom, "shutdown")
 CAF_END_TYPE_ID_BLOCK(miaow_module)
 
 namespace miaow::core {
@@ -33,16 +40,47 @@ inline constexpr int subprocess_connection_fd = 3;
 inline constexpr const char* subprocess_connection_host = "127.0.0.1";
 inline constexpr const char* subprocess_error_prefix = "Subprocess error";
 
-using SingleTaskSubprocessWorker = caf::behavior (*)(caf::event_based_actor*);
+using SubprocessWorker = caf::behavior (*)(caf::event_based_actor*);
 
-TaskResult execute_single_task_subprocess(caf::actor_system& actor_system,
-                                          const Task& task,
-                                          const std::string& subprocess_path);
+struct SubprocessPaths {
+    // Subprocess stdout log used for diagnostics
+    std::filesystem::path stdout_path_;
 
-int run_single_task_subprocess(int argc, char* argv[],
-                               SingleTaskSubprocessWorker worker_factory);
+    // Subprocess stderr log used when setup or execution fails
+    std::filesystem::path stderr_path_;
 
-int parse_subprocess_connection_fd(int argc, char* argv[]);
+    // True when the control directory was created only for this task
+    bool temporary_control_dir_{false};
+};
+
+struct SubprocessState {
+    ~SubprocessState();
+
+    // IO context owned by the persistent subprocess process handle
+    boost::asio::io_context io_context_;
+
+    // Process handle for the active subprocess worker
+    std::optional<boost::process::v2::process> subprocess_;
+
+    // CAF actor published by the active subprocess worker
+    caf::actor remote_worker_;
+
+    // Path used to launch the active subprocess worker
+    std::string subprocess_path_;
+
+    // Diagnostic files for the active subprocess worker, when launched
+    std::optional<SubprocessPaths> paths_;
+
+    // True when diagnostic logs should be kept after shutdown
+    bool keep_logs_{false};
+};
+
+TaskResult execute_subprocess(caf::actor_system& actor_system,
+                              SubprocessState& state, const Task& task);
+
+void stop_subprocess(SubprocessState& state);
+
+int run_subprocess_worker(int argc, char* argv[], SubprocessWorker worker_factory);
 
 void write_subprocess_connection_pipe(int connection_fd, std::uint16_t port);
 
@@ -63,9 +101,8 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
           std::vector<Task> tasks, RuntimeOptions runtime_options,
           std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry);
 
-// Leaf worker actor: on each Task message, resolves the matching
-// SimulationUnitExecutor from the shared registry, runs it, and replies with a
-// TaskResult (or a CAF error if the executor throws or the ID is unknown).
+// Leaf worker actor: resolves SimulationUnitId, provides execution context, and
+// replies with a TaskResult
 caf::behavior simulation_unit_actor(
     caf::event_based_actor* self,
     std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry);

@@ -17,6 +17,13 @@ namespace miaow::core {
 static void dispatch_tasks(caf::event_based_actor* self,
                            const std::shared_ptr<JobState>& state);
 
+// Tell worker actors to release any process resources owned by this job
+static void stop_workers(const std::shared_ptr<JobState>& state) {
+    for (const caf::actor& worker : state->workers_) {
+        caf::anon_mail(shutdown_atom_v).send(worker);
+    }
+}
+
 // Complete only when all tasks have been dispatched and finished
 static void complete_job_if_all_tasks_finished(caf::event_based_actor* self,
                                                const std::shared_ptr<JobState>& state) {
@@ -46,6 +53,7 @@ static void complete_job_if_all_tasks_finished(caf::event_based_actor* self,
     JobRecord job_record{state->run_id_, state->job_id_, std::move(task_records),
                          job_run_time_s};
 
+    stop_workers(state);
     state->response_promise_->deliver(std::move(job_record));
     state->response_promise_.reset();
     self->quit();
@@ -65,8 +73,7 @@ static void complete_task(caf::event_based_actor* self,
     // Record the wall-clock duration and success/failure message for this task ID
     const double task_run_time_s =
         std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                      state->task_start_times_.at(task_id))
-            .count();
+                                      state->task_start_times_.at(task_id)).count();
 
     // Runtime creates a task record only after the task has completed
     state->completed_task_records_.push_back(
@@ -119,33 +126,49 @@ static void dispatch_tasks(caf::event_based_actor* self,
 caf::behavior simulation_unit_actor(
     caf::event_based_actor* self,
     std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry) {
-    return {[self, simulation_unit_registry = std::move(simulation_unit_registry)](
-                caf::get_atom, const Task& task) -> caf::result<TaskResult> {
-        // Error if simulation unit registry is missing
-        if (!simulation_unit_registry) {
-            return caf::make_error(caf::sec::runtime_error,
-                                   "SimulationUnitRegistry is null");
-        }
+    // Create a slot for the subprocess state - this will be empty for in-process execution
+    std::shared_ptr<SubprocessState> active_subprocess =
+        std::make_shared<SubprocessState>();
 
-        // Resolve the simulation unit executor for this task's simulation_unit_id
-        const SimulationUnitExecutor* simulation_unit_executor =
-            simulation_unit_registry->find_executor(task.simulation_unit_id_);
-        if (!simulation_unit_executor) {
-            return caf::make_error(caf::sec::runtime_error,
-                                   "unknown SimulationUnitId: " +
-                                       std::to_string(task.simulation_unit_id_));
-        }
+    return {
+        [self, simulation_unit_registry = std::move(simulation_unit_registry),
+         active_subprocess](caf::get_atom,
+                            const Task& task) -> caf::result<TaskResult> {
+            // Error if simulation unit registry is missing
+            if (!simulation_unit_registry) {
+                return caf::make_error(caf::sec::runtime_error,
+                                       "SimulationUnitRegistry is null");
+            }
 
-        // If valid simulation unit, execute its behaviour and return the result
-        try {
-            return (*simulation_unit_executor)(task, self->system());
-        } catch (const std::exception& exception) {
-            return caf::make_error(caf::sec::runtime_error, exception.what());
-        } catch (...) {
-            return caf::make_error(caf::sec::runtime_error,
-                                   "unknown SimulationUnitExecutor exception");
-        }
-    }};
+            // Resolve the simulation unit factory for this task's SimulationUnitId
+            const SimulationUnitFactory* simulation_unit_factory =
+                simulation_unit_registry->find_factory(task.simulation_unit_id_);
+            if (!simulation_unit_factory) {
+                return caf::make_error(caf::sec::runtime_error,
+                                       "unknown SimulationUnitId: " +
+                                           std::to_string(task.simulation_unit_id_));
+            }
+
+            try {
+                // Context gives the unit access to this worker's subprocess slot
+                ExecutionContext context{self->system(), *active_subprocess};
+
+                // Execute a fresh simulation unit instance for this task
+                std::unique_ptr<SimulationUnit> simulation_unit =
+                    (*simulation_unit_factory)();
+                return simulation_unit->execute(task, context);
+            } catch (const std::exception& exception) {
+                return caf::make_error(caf::sec::runtime_error, exception.what());
+            } catch (...) {
+                return caf::make_error(caf::sec::runtime_error,
+                                       "unknown SimulationUnit exception");
+            }
+        },
+        // Stop this worker's subprocess when it receives a shutdown message
+        [self, active_subprocess](shutdown_atom) {
+            stop_subprocess(*active_subprocess);
+            self->quit();
+        }};
 }
 
 // Per-job supervisor that owns simulation_unit actors
@@ -193,6 +216,11 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
 
                 dispatch_tasks(self, state);
                 return *state->response_promise_;
+            },
+            // Stop workers when the owning job actor is asked to shut down
+            [=](shutdown_atom) {
+                stop_workers(state);
+                self->quit();
             }};
 }
 
@@ -220,7 +248,9 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                                 .send(orchestrator);
                         },
                         // Convert timeout or error into a failed JobRecord
-                        [orchestrator, job_id, run_id, tasks](const caf::error& err) {
+                        [orchestrator, job, job_id, run_id,
+                         tasks](const caf::error& err) {
+                            caf::anon_mail(shutdown_atom_v).send(job);
                             std::vector<TaskRecord> task_records;
                             task_records.reserve(tasks.size());
                             for (std::size_t task_index = 0; task_index < tasks.size();
@@ -254,6 +284,7 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                 } // mutex unlocks automatically here
 
                 try {
+                    // Write the job record to disk if an output root is configured
                     if (!runtime_options.output_root_.empty()) {
                         const std::filesystem::path job_directory =
                             std::filesystem::path(runtime_options.output_root_) /

@@ -22,11 +22,8 @@
 #include <sys/select.h>
 #include <unistd.h>
 
-#define BOOST_PROCESS_USE_STD_FS
-#include <boost/asio/io_context.hpp>
 #include <boost/json.hpp>
 #include <boost/process/v2/posix/bind_fd.hpp>
-#include <boost/process/v2/process.hpp>
 #include <boost/process/v2/stdio.hpp>
 #include <boost/system/error_code.hpp>
 #include <caf/actor_system.hpp>
@@ -47,12 +44,18 @@ namespace miaow::core {
 
 namespace {
 
+// Subprocess executable resolution uses the task field before the built default
+// 1. Task::subprocess_path_ on the task being executed
+// 2. Compile-time MIAOW_SUBPROCESS_PATH macro, which defaults to an empty string
+#ifndef MIAOW_SUBPROCESS_PATH
+#define MIAOW_SUBPROCESS_PATH ""
+#endif
+
 constexpr const char* subprocess_file_prefix = "subprocess";
 constexpr const char* subprocess_temp_dir_prefix = "miaow_subprocess";
 constexpr auto subprocess_connection_timeout = std::chrono::seconds(30);
 constexpr auto subprocess_remote_task_timeout = std::chrono::hours(24);
 constexpr std::size_t subprocess_connection_max_bytes = 4096;
-
 std::atomic<unsigned long long> next_control_dir_id{0};
 
 // CAF actor messages require core and MIAOW meta objects
@@ -67,17 +70,6 @@ void write_subprocess_error(const std::string& message) {
     std::cerr << subprocess_error_prefix << ": subprocess setup error: "
               << message << "\n";
 }
-
-struct SubprocessPaths {
-    // Subprocess stdout log used for diagnostics
-    std::filesystem::path stdout_path_;
-
-    // Subprocess stderr log used when setup or execution fails
-    std::filesystem::path stderr_path_;
-
-    // True when the control directory was created only for this task
-    bool temporary_control_dir_{false};
-};
 
 struct SubprocessConnection {
     // Host address where the subprocess CAF actor is published
@@ -140,11 +132,10 @@ std::filesystem::path make_control_dir(const Task& task) {
     return control_dir;
 }
 
-// Create the task-local files used by one subprocess execution
-SubprocessPaths make_subprocess_paths(const Task& task) {
+// Create the control files used by one subprocess process
+SubprocessPaths make_subprocess_paths(const Task& task,
+                                      const std::string& output_name) {
     const std::filesystem::path control_dir = make_control_dir(task);
-    const std::string output_name =
-        task.task_name_.empty() ? "task" : task.task_name_;
     const std::string control_stem =
         std::string(subprocess_file_prefix) + "_" + output_name;
 
@@ -311,95 +302,105 @@ std::string format_subprocess_failure(const std::string& message,
     return failure_message;
 }
 
-// Launch the subprocess executable and exchange one task over CAF
-TaskResult launch_single_task_subprocess(caf::actor_system& actor_system,
-                                         const SubprocessPaths& paths,
-                                         const std::string& subprocess_path,
-                                         const Task& task) {
+// Launch and connect a subprocess worker
+void start_subprocess(caf::actor_system& actor_system, SubprocessState& state,
+                      const std::string& subprocess_path,
+                      const std::string& output_name, const Task& task) {
+    if (subprocess_path.empty()) {
+        throw std::runtime_error("subprocess executable path is not configured");
+    }
+
     // Pass only the endpoint pipe descriptor; the Task is sent later over CAF
     const std::vector<std::string> args{
         "--connection-fd",
         std::to_string(subprocess_connection_fd),
     };
 
-    // Create the endpoint pipe before binding it to the advertised descriptor
-    boost::asio::io_context io_context;
     int pipe_fds[2]{-1, -1};
     // POSIX pipe stores the read end in index 0 and the write end in index 1
     if (::pipe(pipe_fds) != 0) {
         throw std::runtime_error("failed to create subprocess connection pipe: " +
                                  std::string(std::strerror(errno)));
     }
-    // Keep descriptors owned until subprocess construction has bound the write end
+
     SubprocessConnectionPipe connection_pipe{pipe_fds[0], pipe_fds[1]};
-    boost::process::v2::process subprocess(
-        io_context, subprocess_path, args,
-        boost::process::v2::process_stdio{{}, paths.stdout_path_, paths.stderr_path_},
-        boost::process::v2::posix::bind_fd(subprocess_connection_fd,
-                                           connection_pipe.write_fd_));
-    close_file_descriptor(connection_pipe.write_fd_);
+
+    // Prepare state-owned diagnostics before launching the worker process
+    state.io_context_.restart();
+    state.paths_ = make_subprocess_paths(task, output_name);
+    state.keep_logs_ = false;
+    const SubprocessPaths& paths = *state.paths_;
 
     try {
-        const std::string task_label =
-            task.task_name_.empty() ? "task" : task.task_name_;
+        // Launch the worker with stdout and stderr redirected to diagnostics
+        state.subprocess_.emplace(
+            state.io_context_, subprocess_path, args,
+            boost::process::v2::process_stdio{{}, paths.stdout_path_,
+                                              paths.stderr_path_},
+            boost::process::v2::posix::bind_fd(subprocess_connection_fd,
+                                               connection_pipe.write_fd_));
+        close_file_descriptor(connection_pipe.write_fd_);
 
-        // Read subprocess connection details from the dedicated pipe
+        // Read the published CAF endpoint from the startup pipe
         const SubprocessConnection connection =
             read_connection_pipe(connection_pipe.read_fd_);
         close_file_descriptor(connection_pipe.read_fd_);
 
-        // Connect to the published subprocess actor
-        const caf::actor remote_worker = connect_remote_worker(actor_system, connection);
-        std::cerr << "[" << task_label << "] MIAOW subprocess: connected to actor at "
-                  << connection.host_ << ":" << connection.port_ << "\n";
-        TaskResult task_result = request_remote_task(actor_system, remote_worker, task);
+        // Store the remote worker actor for later task requests
+        state.remote_worker_ = connect_remote_worker(actor_system, connection);
+        state.subprocess_path_ = subprocess_path;
 
-        const int status = subprocess.wait();
-        if (status != 0) {
-            // Preserve completed work if teardown fails after the task result arrives
-            if (task_result.status_ == TaskStatus::succeeded) {
-                task_result.message_ += " (subprocess exited with status " +
-                                        std::to_string(status) +
-                                        " after returning task result)";
-                return task_result;
-            }
-            throw std::runtime_error("subprocess exited with status " +
-                                     std::to_string(status));
-        }
-        if (task_result.status_ == TaskStatus::succeeded) {
-            remove_subprocess_files(paths);
-        }
-        return task_result;
+        const std::string task_label =
+            task.task_name_.empty() ? "task" : task.task_name_;
+        std::cerr << "[" << task_label
+                  << "] MIAOW subprocess: connected to actor at "
+                  << connection.host_ << ":" << connection.port_ << "\n";
     } catch (const std::exception& exception) {
-        boost::system::error_code ignored_error;
+        const SubprocessPaths failure_paths = *state.paths_;
+        std::string message = exception.what();
+
+        // Preserve launch diagnostics when connection setup fails
         close_file_descriptor(connection_pipe.read_fd_);
         close_file_descriptor(connection_pipe.write_fd_);
-        if (subprocess.running(ignored_error)) {
-            subprocess.terminate(ignored_error);
-        }
-        const int status = subprocess.wait(ignored_error);
-        std::string message = exception.what();
-        if (status != 0) {
-            message += " (subprocess status: " + std::to_string(status) + ")";
-        }
-        throw std::runtime_error(format_subprocess_failure(message, paths));
+        state.keep_logs_ = true;
+        stop_subprocess(state);
+        throw std::runtime_error(format_subprocess_failure(message, failure_paths));
     }
 }
 
 } // namespace
 
-TaskResult execute_single_task_subprocess(caf::actor_system& actor_system,
-                                          const Task& task,
-                                          const std::string& subprocess_path) {
+TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& state,
+                              const Task& task) {
     try {
-        if (subprocess_path.empty()) {
-            throw std::runtime_error("subprocess executable path is not configured");
+        // Prefer the task-local subprocess path over the built default path
+        const std::string subprocess_path =
+            task.subprocess_path_.empty() ? std::string(MIAOW_SUBPROCESS_PATH)
+                                          : task.subprocess_path_;
+
+        // Check if this worker's subprocess is already running the correct executable
+        const bool path_changed =
+            state.subprocess_.has_value() && state.subprocess_path_ != subprocess_path;
+        boost::system::error_code ignored_error;
+        const bool process_running =
+            state.subprocess_.has_value() && state.subprocess_->running(ignored_error);
+
+        // A new process is needed if any of the following is true:
+        // 1. The subprocess executable path has changed since the last task
+        // 2. The subprocess executable is not running
+        // 3. The execution mode requires a new subprocess for each task
+        if (task.execution_mode_ == ExecutionMode::single_task_subprocess ||
+            path_changed || !process_running) {
+            stop_subprocess(state);
+            const std::string task_name =
+                task.task_name_.empty() ? "task" : task.task_name_;
+            const std::string output_name =
+                task.execution_mode_ == ExecutionMode::persistent_subprocess
+                    ? "persistent_" + task_name : task_name;
+            start_subprocess(actor_system, state, subprocess_path, output_name, task);
         }
 
-        // Create the subprocess control files before launching the subprocess
-        const SubprocessPaths paths = make_subprocess_paths(task);
-
-        // Send an absolute output directory so subprocess writes do not depend on cwd
+        // Send absolute output paths so subprocess writes do not depend on cwd
         Task task_payload = task;
         if (!task_payload.task_output_dir_.empty()) {
             task_payload.task_output_dir_ =
@@ -408,17 +409,83 @@ TaskResult execute_single_task_subprocess(caf::actor_system& actor_system,
                     .string();
         }
 
-        return launch_single_task_subprocess(actor_system, paths, subprocess_path,
-                                             task_payload);
+        // Send one task to the active remote worker
+        TaskResult task_result =
+            request_remote_task(actor_system, state.remote_worker_, task_payload);
+
+        // Keep logs when the subprocess reports a task failure
+        if (task_result.status_ == TaskStatus::failed) {
+            state.keep_logs_ = true;
+        }
+
+        // Task-scoped subprocess mode stops the worker after one task
+        if (task.execution_mode_ == ExecutionMode::single_task_subprocess) {
+            stop_subprocess(state);
+        }
+        return task_result;
+    } catch (const std::exception& exception) {
+        std::string message = exception.what();
+
+        // Convert parent-side subprocess errors into failed task results
+        if (state.paths_) {
+            const SubprocessPaths paths = *state.paths_;
+            state.keep_logs_ = true;
+            stop_subprocess(state);
+            message = format_subprocess_failure(message, paths);
+        }
+        return make_failed_task_result(message, subprocess_error_prefix);
     } catch (...) {
-        return make_failed_task_result(std::current_exception(), subprocess_error_prefix);
+        // Keep diagnostics when an unknown parent-side error escapes
+        if (state.paths_) {
+            state.keep_logs_ = true;
+            stop_subprocess(state);
+        }
+        return make_failed_task_result("unknown exception", subprocess_error_prefix);
     }
 }
 
-int parse_subprocess_connection_fd(int argc, char* argv[]) {
+void stop_subprocess(SubprocessState& state) {
+    // Clear stale actor handles when there is no active process
+    if (!state.subprocess_.has_value()) {
+        state.remote_worker_ = caf::actor{};
+        state.subprocess_path_.clear();
+        state.paths_.reset();
+        state.keep_logs_ = false;
+        return;
+    }
+
+    // Terminate the owned process before clearing state
+    boost::system::error_code ignored_error;
+    if (state.subprocess_->running(ignored_error)) {
+        state.subprocess_->terminate(ignored_error);
+    }
+
+    // Remove diagnostics only after clean subprocess shutdown
+    const bool remove_logs = !state.keep_logs_ && state.paths_.has_value();
+    state.subprocess_->wait(ignored_error);
+
+    if (remove_logs) {
+        remove_subprocess_files(*state.paths_);
+    }
+
+    // Clear all parent-side handles after shutdown
+    state.subprocess_.reset();
+    state.remote_worker_ = caf::actor{};
+    state.subprocess_path_.clear();
+    state.paths_.reset();
+    state.keep_logs_ = false;
+}
+
+SubprocessState::~SubprocessState() {
+    // Preserve diagnostics when cleanup happens from state destruction
+    keep_logs_ = true;
+    stop_subprocess(*this);
+}
+
+static int parse_subprocess_connection_fd(int argc, char* argv[]) {
     std::string connection_fd;
 
-    // argv[0] is the executable path; the remaining argument names the pipe fd
+    // argv[0] is the executable path; the remaining arguments configure IPC
     for (int index = 1; index < argc; ++index) {
         const std::string arg = argv[index];
         if (arg == "--connection-fd") {
@@ -469,10 +536,9 @@ void write_subprocess_connection_pipe(int connection_fd, std::uint16_t port) {
     }
 }
 
-int run_single_task_subprocess(int argc, char* argv[],
-                               SingleTaskSubprocessWorker worker_factory) {
+int run_subprocess_worker(int argc, char* argv[], SubprocessWorker worker_factory) {
     try {
-        // argv carries only --connection-fd <fd>; task data arrives over CAF
+        // argv carries IPC settings; task data arrives over CAF
         initialize_subprocess_caf();
         const int connection_fd = parse_subprocess_connection_fd(argc, argv);
 
@@ -481,7 +547,7 @@ int run_single_task_subprocess(int argc, char* argv[],
         config.load<caf::io::middleman>();
         caf::actor_system actor_system(config);
 
-        // Publish the single-task worker and expose its endpoint to the parent
+        // Publish the worker and expose its endpoint to the parent
         const caf::actor worker = actor_system.spawn(worker_factory);
         auto port = actor_system.middleman().publish(
             worker, 0, subprocess_connection_host);
@@ -494,7 +560,7 @@ int run_single_task_subprocess(int argc, char* argv[],
         write_subprocess_connection_pipe(connection_fd, *port);
         ::close(connection_fd);
 
-        // Keep the subprocess alive until the single-task worker has returned
+        // Keep the subprocess alive until the worker has returned
         caf::scoped_actor self{actor_system};
         self->wait_for(worker);
         return 0;
@@ -510,3 +576,16 @@ int run_single_task_subprocess(int argc, char* argv[],
 }
 
 } // namespace miaow::core
+
+namespace miaow {
+
+ExecutionContext::ExecutionContext(caf::actor_system& actor_system,
+                                   core::SubprocessState& active_subprocess)
+    : actor_system_(&actor_system), active_subprocess_(&active_subprocess) {}
+
+// Execute through the worker-owned subprocess slot
+TaskResult ExecutionContext::execute_subprocess(const Task& task) const {
+    return core::execute_subprocess(*actor_system_, *active_subprocess_, task);
+}
+
+} // namespace miaow

@@ -101,9 +101,14 @@ cd ../04_summa
 
 The examples cover minimal task orchestration, static BMI models, dynamic C++
 and Fortran BMI plugins, and a [SUMMA](https://github.com/CH-Earth/summa)
-workflow using `miaow::ExecutionMode::single_task_subprocess`. Tasks use the
-single `miaow::ExecutionMode` enum for in-process and subprocess execution, and
-parent-side subprocess failures report `Subprocess error`. See the
+workflow using `miaow::ExecutionMode::persistent_subprocess`. Tasks use the
+single `miaow::ExecutionMode` enum for in-process, task-scoped subprocess, and
+per-job persistent subprocess execution. Subprocess modes use the same
+`miaow_subprocess` worker backend; task-scoped mode stops it after one task, and
+persistent mode reuses the subprocess process, not initialized BMI model
+instances. Each task can set `Task::subprocess_path_` to override the
+compile-time default `miaow_subprocess` runner path. Parent-side subprocess
+failures report `Subprocess error`. See the
 [Examples](https://tjbmontoya.com/miaow-framework/examples.html) page for
 model sources, data layout, and command line options.
 

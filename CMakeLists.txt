@@ -200,7 +200,7 @@ target_link_libraries(miaow
 
 set(MIAOW_SUBPROCESS_PATH
     "${PROJECT_BINARY_DIR}/miaow_subprocess${CMAKE_EXECUTABLE_SUFFIX}")
-set_source_files_properties(src/bmi/execute.cpp PROPERTIES
+set_source_files_properties(src/bmi/execute.cpp src/core/process.cpp PROPERTIES
     COMPILE_DEFINITIONS "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\""
 )
 

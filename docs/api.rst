@@ -50,11 +50,15 @@ Task and job data
 Runtime orchestration
 ~~~~~~~~~~~~~~~~~~~~~
 
+.. doxygenclass:: miaow::ExecutionContext
+   :project: MIAOW
+   :members:
+
 .. doxygenclass:: miaow::SimulationUnit
    :project: MIAOW
    :members:
 
-.. doxygentypedef:: miaow::SimulationUnitExecutor
+.. doxygentypedef:: miaow::SimulationUnitFactory
    :project: MIAOW
 
 .. doxygenclass:: miaow::SimulationUnitRegistry
@@ -97,10 +101,11 @@ BMI model types
 Simulation units
 ~~~~~~~~~~~~~~~~
 
-Use ``BmiSimulationUnit<DynamicBmiModel>`` for one dynamic plugin model. The
-simulation unit still runs that model inside a task-level ``BmiPipeline``. Use
-``BmiSimulationUnit<BmiPipeline>`` when the task argument stores a serialized
-``BmiPipelineConfig`` and the pipeline should build its own model modules.
+Use ``BmiSimulationUnit<BmiPipeline>`` when the task argument stores a
+serialized ``BmiPipelineConfig`` and the pipeline should build its own model
+modules, including dynamic plugin modules and subprocess tasks. Use
+``BmiSimulationUnit<YourModel>`` when a linked model instance should be
+supplied directly to the task-level pipeline in the parent process.
 
 .. doxygenstruct:: miaow::BmiPipelineConfig
    :project: MIAOW
@@ -110,9 +115,6 @@ simulation unit still runs that model inside a task-level ``BmiPipeline``. Use
    :project: MIAOW
 
 .. doxygenfunction:: miaow::bmi_pipeline_config_to_value
-   :project: MIAOW
-
-.. doxygenfunction:: miaow::bmi::execute_bmi_lifecycle_in_subprocess
    :project: MIAOW
 
 .. doxygenstruct:: miaow::BmiModuleConfig

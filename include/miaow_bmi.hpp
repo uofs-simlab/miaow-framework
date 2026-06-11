@@ -121,7 +121,7 @@ struct BmiPipelineConfig {
  *
  * The generated `BmiPipelineConfig` is used with
  * `BmiSimulationUnit<BmiModelType>` for a single model linked into the
- * executable or loaded through `DynamicBmiModel`.
+ * executable and supplied directly to the pipeline.
  *
  * @param init_config BMI initialization config file path.
  * @param forcing_file CSV forcing file path. Empty string disables task forcing.
@@ -145,9 +145,9 @@ caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline
  * @brief BMI model backed by a single dynamically loaded C++ or Fortran BMI plugin.
  *
  * `DynamicBmiModel` is one model module. It does not own task-level forcing,
- * coupling, output writing, artifact tracking, or execution. Use
- * `BmiSimulationUnit<DynamicBmiModel>` to construct this model for each task
- * and run it inside a task-level `BmiPipeline`.
+ * coupling, output writing, artifact tracking, or execution. Dynamic plugin
+ * tasks usually register `BmiSimulationUnit<BmiPipeline>` and let the pipeline
+ * construct `DynamicBmiModel` modules from `BmiModuleConfig` entries.
  *
  * The wrapper exposes the
  * [CSDMS BMI C++ interface](https://github.com/csdms/bmi-cxx) for the loaded
@@ -230,9 +230,10 @@ class DynamicBmiModel : public bmi_api::Bmi {
  * model from `BmiSimulationUnit`, connects forcing to model inputs, writes
  * output, and reports artifacts through the task result.
  *
- * Use `BmiSimulationUnit<BmiPipeline>` for realization-derived tasks or
- * other full-pipeline configs. Use `BmiSimulationUnit<DynamicBmiModel>` for one
- * plugin model that should still run inside this pipeline machinery.
+ * Use `BmiSimulationUnit<BmiPipeline>` for realization-derived tasks, dynamic
+ * plugin modules, or other configs that describe their own model modules. Use
+ * `BmiSimulationUnit<YourModel>` when a linked model instance must be supplied
+ * directly to the pipeline.
  */
 class BmiPipeline : public bmi_api::Bmi {
   public:
@@ -354,37 +355,23 @@ struct PartitionedBmiRealization {
 std::vector<Task> build_bmi_realization_tasks(const PartitionedBmiRealization& realization,
                                               SimulationUnitId simulation_unit_id);
 
-namespace bmi {
-
-/**
- * @brief Execute a `BmiPipeline` task in the configured subprocess executable.
- *
- * The parent process launches the subprocess with
- * [Boost.Process](https://www.boost.org/doc/libs/release/libs/process/),
- * connects to the subprocess with CAF, and receives the `TaskResult` remotely.
- *
- * @param actor_system Runtime actor system used for subprocess communication.
- * @param task Task whose first argument stores a serialized `BmiPipelineConfig`.
- * @return Structured `TaskResult` returned by the subprocess worker.
- * @throws std::runtime_error if the task is not a `BmiPipelineConfig` task.
- */
-TaskResult execute_bmi_lifecycle_in_subprocess(caf::actor_system& actor_system,
-                                               const Task& task);
-
-} // namespace bmi
-
 /**
  * @brief Simulation unit that runs BMI models through the task pipeline.
  *
- * For ordinary BMI model types, including `DynamicBmiModel`,
- * `BmiSimulationUnit` constructs a fresh model per task and runs it inside a
- * `BmiPipeline`. The first task argument must store a serialized
- * `BmiPipelineConfig`, usually built by `make_bmi_model_config(...)` and
- * converted with `bmi_pipeline_config_to_value(...)`.
+ * For ordinary linked BMI model types, `BmiSimulationUnit` constructs a fresh
+ * model per task in the parent process and runs it inside a `BmiPipeline`. The
+ * first task argument must store a serialized `BmiPipelineConfig`, usually built
+ * by `make_bmi_model_config(...)` and converted with
+ * `bmi_pipeline_config_to_value(...)`.
  *
- * For `BmiPipeline`, `BmiSimulationUnit` runs the complete pipeline from
- * the task's serialized `BmiPipelineConfig`. Subprocess execution is selected
- * per task with `Task::execution_mode_`.
+ * For `BmiPipeline`, `BmiSimulationUnit` runs the complete pipeline from the
+ * task's serialized `BmiPipelineConfig`. Subprocess execution is selected per
+ * task with `Task::execution_mode_`, and the task's `Task::subprocess_path_`
+ * can select a specific subprocess executable. Subprocess modes use the same
+ * subprocess worker backend; `ExecutionMode::single_task_subprocess` stops the
+ * worker after one task, while `ExecutionMode::persistent_subprocess` reuses
+ * the worker process owned by a `Runtime` job worker. Reuse applies only to the
+ * subprocess process, not initialized BMI model instances.
  *
  * @tparam BmiModelType BMI model type derived from `bmi_api::Bmi`.
  */
@@ -395,18 +382,16 @@ class BmiSimulationUnit : public SimulationUnit {
     /**
      * @brief Construct a BMI simulation unit.
      *
-     * For `BmiPipeline`, the unit executes the full task pipeline. Other model
-     * types store a factory for fresh per-task model instances.
+     * Default-constructible linked model types store a factory for fresh
+     * per-task model instances.
      */
     BmiSimulationUnit()
-        requires(std::same_as<BmiModelType, BmiPipeline> ||
-                 std::default_initializable<BmiModelType>)
+        requires(std::default_initializable<BmiModelType>)
     {
-        if constexpr (!std::same_as<BmiModelType, BmiPipeline>) {
-            model_factory_ = []() -> std::unique_ptr<BmiModelType> {
-                return std::make_unique<BmiModelType>();
-            };
-        }
+        // Default-constructible linked models use the simplest per-task factory
+        model_factory_ = []() -> std::unique_ptr<BmiModelType> {
+            return std::make_unique<BmiModelType>();
+        };
     }
 
     /**
@@ -425,66 +410,47 @@ class BmiSimulationUnit : public SimulationUnit {
                  std::constructible_from<BmiModelType,
                                          const std::decay_t<ModelConstructorArgs>&...>)
     explicit BmiSimulationUnit(ModelConstructorArgs... model_constructor_args) {
+        // Constructor arguments are replayed for every fresh linked model
         model_factory_ = make_model_factory(std::move(model_constructor_args)...);
     }
 
     /**
      * @brief Execute a BMI model instance for a single task.
      * @param task `Task` whose first argument is a BMI pipeline config.
-     * @param actor_system Runtime actor system used for subprocess communication.
      * @return Structured `TaskResult` for this BMI task execution.
      */
-    TaskResult execute(const Task& task, caf::actor_system& actor_system) override {
-        const bool is_subprocess_mode =
-            task.execution_mode_ == ExecutionMode::single_task_subprocess ||
-            task.execution_mode_ == ExecutionMode::persistent_subprocess;
-        const char* error_prefix = is_subprocess_mode ? "Subprocess error" : "BMI error";
+    TaskResult execute(const Task& task, ExecutionContext&) override {
+        // Linked model units must supply the model instance in this process
+        if (task.execution_mode_ != ExecutionMode::in_process) {
+            return make_failed_task_result(
+                "subprocess execution requires BmiSimulationUnit<BmiPipeline>",
+                "Subprocess error");
+        }
+
         try {
-            // Pipeline units run the task config directly
-            if constexpr (std::same_as<BmiModelType, BmiPipeline>) {
-                if (task.execution_mode_ == ExecutionMode::persistent_subprocess) {
-                    return make_failed_task_result(
-                        "persistent subprocess execution is not implemented",
-                        "Subprocess error");
-                }
-
-                if (task.execution_mode_ == ExecutionMode::single_task_subprocess) {
-                    // Single-task subprocess mode routes BMI work to a subprocess actor
-                    return bmi::execute_bmi_lifecycle_in_subprocess(actor_system, task);
-                }
-
-                // In-process mode constructs and executes the pipeline in this process
-                BmiPipeline pipeline(task);
-                return pipeline.execute_bmi_lifecycle(task);
-            } else {
-                if (is_subprocess_mode) {
-                    return make_failed_task_result(
-                        "subprocess execution is only supported for BmiPipeline tasks",
-                        "Subprocess error");
-                }
-
-                // Model units run one model inside a task-level pipeline
-                std::unique_ptr<BmiModelType> bmi_model = model_factory_();
-                BmiPipeline pipeline(task, std::move(bmi_model));
-                return pipeline.execute_bmi_lifecycle(task);
-            }
+            // Construct a BMI pipeline with the BmiSimulationUnit's model factory
+            std::unique_ptr<BmiModelType> bmi_model = model_factory_();
+            BmiPipeline pipeline(task, std::move(bmi_model));
+            return pipeline.execute_bmi_lifecycle(task);
         } catch (...) {
-            // Any exception will lead to a failed TaskResult, but the job should not crash
-            return make_failed_task_result(std::current_exception(), error_prefix);
+            // Exceptions become failed task results so the job can keep running
+            return make_failed_task_result(std::current_exception(), "BMI error");
         }
     }
 
   private:
+    // Linked model units create one BMI model object per task
     using ModelFactory = std::function<std::unique_ptr<BmiModelType>()>;
 
     template <class... ModelConstructorArgs>
     static ModelFactory make_model_factory(ModelConstructorArgs... model_constructor_args) {
+        // Store constructor arguments outside the task payload
         std::tuple<std::decay_t<ModelConstructorArgs>...> stored_constructor_args(
             std::move(model_constructor_args)...);
 
-        // Store constructor arguments for fresh per-task model instances
         return [stored_constructor_args =
                     std::move(stored_constructor_args)]() -> std::unique_ptr<BmiModelType> {
+            // Reconstruct the concrete linked model from the captured arguments
             return std::apply(
                 [](const std::decay_t<ModelConstructorArgs>&... args)
                     -> std::unique_ptr<BmiModelType> {
@@ -495,6 +461,39 @@ class BmiSimulationUnit : public SimulationUnit {
     }
 
     ModelFactory model_factory_;
+};
+
+/**
+ * @brief Simulation unit specialization for serialized `BmiPipeline` tasks.
+ */
+template <>
+class BmiSimulationUnit<BmiPipeline> : public SimulationUnit {
+  public:
+    // Serialized pipeline tasks carry all model construction data in the task
+    BmiSimulationUnit() = default;
+
+    /**
+     * @brief Execute a serialized BMI pipeline task.
+     * @param task `Task` whose first argument is a BMI pipeline config.
+     * @param context Runtime-local services for this worker task execution.
+     * @return Structured `TaskResult` for this BMI pipeline task execution.
+     */
+    TaskResult execute(const Task& task, ExecutionContext& context) override {
+        // Subprocess modes run the serialized BMI pipeline in the subprocess
+        if (task.execution_mode_ == ExecutionMode::single_task_subprocess ||
+            task.execution_mode_ == ExecutionMode::persistent_subprocess) {
+            return context.execute_subprocess(task);
+        }
+
+        try {
+            // In-process pipeline tasks construct all configured model modules here
+            BmiPipeline pipeline(task);
+            return pipeline.execute_bmi_lifecycle(task);
+        } catch (...) {
+            // Exceptions become failed task results so the job can keep running
+            return make_failed_task_result(std::current_exception(), "BMI error");
+        }
+    }
 };
 
 } // namespace miaow

@@ -6,14 +6,14 @@ BMI-compatible models. The simulation unit creates one task-level model or
 pipeline, runs the BMI lifecycle, writes artifacts, and returns a
 ``TaskResult``.
 
-There are three common ways to use it:
+There are two common registration patterns:
 
 - ``BmiSimulationUnit<YourModel>`` runs one linked BMI model per task, where
-  ``YourModel`` is a subtype of ``miaow::bmi_api::Bmi`` defined in the code.
-- ``BmiSimulationUnit<DynamicBmiModel>`` runs one BMI model loaded from a
-  dynamic plugin per task.
+  ``YourModel`` is a subtype of ``miaow::bmi_api::Bmi`` linked into the
+  executable and supplied directly to the task pipeline.
 - ``BmiSimulationUnit<BmiPipeline>`` runs a complete pipeline described by the
-  task config, which may be obtained from partitioning a
+  task config. The config may contain dynamic plugin modules, multiple modules,
+  or modules obtained from partitioning a
   `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization file.
 
 Each BMI task starts from one typed ``BmiPipelineConfig``, converted to a
@@ -39,7 +39,9 @@ Executing a static BMI model
 Use ``BmiSimulationUnit<YourModel>`` when the BMI model class is linked into
 the executable. The simulation unit constructs one model object per task. The
 task config comes from ``make_bmi_model_config(...)``, which records the model
-initialization file plus optional forcing and variable mapping.
+initialization file plus optional forcing and variable mapping. Linked model
+units execute in the parent process because the subprocess worker only receives
+serialized ``BmiPipelineConfig`` task data.
 
 .. code-block:: cpp
 
@@ -53,37 +55,39 @@ initialization file plus optional forcing and variable mapping.
        {heat, miaow::bmi_pipeline_config_to_value(pipeline_config)}};
 
 At execution time, MIAOW wraps the model in ``BmiPipeline`` so the same
-lifecycle, forcing, output writing, and artifact tracking are used for static
-and dynamic BMI work.
+lifecycle, forcing, output writing, and artifact tracking are used for BMI
+work.
 
 Executing a dynamic BMI model
 -----------------------------
 
-Use ``BmiSimulationUnit<DynamicBmiModel>`` when the task should run one BMI
-model loaded from a plugin library. ``BmiModuleConfig`` describes how to load
-the plugin. The task config still comes from ``make_bmi_model_config(...)``
-because the task runs one model. The dynamic model is configured when
-registered; the task config supplies the per-task initialization and forcing
-paths.
+Use ``BmiSimulationUnit<BmiPipeline>`` when the task should run one or more BMI
+models loaded from plugin libraries. ``BmiModuleConfig`` describes each plugin
+module, including the initialization config path used for that task.
 
 .. code-block:: cpp
 
    const miaow::BmiModuleConfig module_config(
-       "bmi_fortran", miaow::DynamicBmiBackend::fortran, plugin_path);
+       "bmi_fortran", miaow::DynamicBmiBackend::fortran, plugin_path,
+       init_config);
 
    miaow::SimulationUnitRegistry registry;
-   const miaow::SimulationUnitId model =
-       registry.add<miaow::BmiSimulationUnit<miaow::DynamicBmiModel>>(
-           module_config);
+   const miaow::SimulationUnitId pipeline =
+       registry.add<miaow::BmiSimulationUnit<miaow::BmiPipeline>>();
 
    const miaow::BmiPipelineConfig pipeline_config =
-       miaow::make_bmi_model_config(init_config);
+       miaow::BmiPipelineConfig({module_config});
    const std::vector<miaow::Task> tasks{
-       {model, miaow::bmi_pipeline_config_to_value(pipeline_config)}};
+       {pipeline, miaow::bmi_pipeline_config_to_value(pipeline_config)}};
+
+At execution time, ``BmiPipeline`` constructs ``DynamicBmiModel`` modules from
+the serialized config. This is the same execution path used for realization
+workflows, hand-built multi-model pipelines, and subprocess tasks.
 
 For consistency with NextGen, the C++ backend expects plugins to export
 C-linkage symbols named ``bmi_model_create()`` and ``bmi_model_destroy(...)``.
-The Fortran backend expects plugins to export ``register_bmi(void**)`` for the linked
+The Fortran backend expects plugins to export ``register_bmi(void**)`` for the
+linked
 `NOAA-OWP iso_c_fortran_bmi bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_.
 
 For C++ plugins, export the creation and destruction functions with C linkage:
@@ -144,7 +148,7 @@ workflows and by pipelines with more than one model module.
    std::vector<miaow::Task> tasks =
        miaow::build_bmi_realization_tasks(realization, pipeline);
    for (miaow::Task& task : tasks) {
-       task.execution_mode_ = miaow::ExecutionMode::single_task_subprocess;
+       task.execution_mode_ = miaow::ExecutionMode::persistent_subprocess;
    }
 
 ``PartitionedBmiRealization`` reads a
@@ -152,9 +156,19 @@ workflows and by pipelines with more than one model module.
 ``BmiPipelineConfig`` per feature. ``build_bmi_realization_tasks(...)`` turns
 those feature configs into MIAOW tasks for the registered pipeline unit.
 
-``ExecutionMode::single_task_subprocess`` runs one BMI lifecycle in a subprocess,
-which is useful for BMI models that are not safe to run concurrently in one
-process. The SUMMA example uses single-task subprocess mode.
+``ExecutionMode::single_task_subprocess`` runs one BMI lifecycle in a subprocess
+and stops the subprocess after the task result. This is useful for BMI models
+that require a fresh process for every task. An empty ``Task::subprocess_path_``
+uses the compile-time default ``miaow_subprocess`` runner path; a non-empty
+value selects that subprocess executable for the task.
+
+``ExecutionMode::persistent_subprocess`` is available for serialized
+``BmiPipeline`` tasks. It uses the same subprocess worker backend as
+single-task mode and reuses one subprocess process per job worker, while each
+task still constructs and finalizes a fresh ``BmiPipeline`` inside that process.
+Persistent subprocesses are scoped to one submitted job and are bounded by
+``RuntimeOptions::max_workers_``. The SUMMA example uses persistent subprocess
+mode.
 
 For hand-built dynamic pipelines, construct a ``BmiPipelineConfig`` from a
 vector of ``BmiModuleConfig`` entries. Each module config carries the module
@@ -256,12 +270,13 @@ becomes the output file stem; otherwise the runtime uses ``task_<task_id>``.
 Output stems must be unique within one job and cannot contain path separators.
 
 Subprocess tasks use a dedicated subprocess-to-parent pipe for the CAF endpoint
-exchange, plus task-specific ``subprocess_*_stdout.log`` and
-``subprocess_*_stderr.log`` files for diagnostics. The parent launches the
-subprocess, reads one endpoint JSON line from the pipe, sends the ``Task`` to
-the subprocess actor over CAF, and receives one ``TaskResult`` reply. Diagnostic
-logs are removed after a succeeded subprocess result; if setup, launch, actor
-exchange, or task execution fails, remaining logs are left in place for
-diagnostics. Parent-side process failures report ``Subprocess error``. When no
-task output directory is assigned, these subprocess logs use a temporary
-directory instead.
+exchange, plus ``subprocess_*_stdout.log`` and ``subprocess_*_stderr.log`` files
+for diagnostics. The parent launches the subprocess, reads one endpoint JSON
+line from the pipe, sends ``Task`` values to the subprocess actor over CAF, and
+receives ``TaskResult`` replies. Task-scoped subprocess logs are removed after a
+succeeded task result and subprocess stop. Persistent subprocess logs are
+removed when the job worker stops the process after all tasks handled by that
+process succeeded. If setup, launch, actor exchange, subprocess shutdown, or
+task execution fails, remaining logs are left in place for diagnostics.
+Parent-side process failures report ``Subprocess error``. When no task output
+directory is assigned, these subprocess logs use a temporary directory instead.
