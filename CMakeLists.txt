@@ -217,11 +217,27 @@ set_target_properties(miaow_subprocess PROPERTIES
 )
 
 option(BUILD_EXAMPLES "Build example programs" ON)
+set(MIAOW_EXAMPLES
+    "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;04_summa"
+    CACHE STRING "Semicolon-separated list of examples to build"
+)
+set(miaow_known_examples
+    00_hello
+    01_heat
+    02_soil_freeze_thaw
+    03_dynamic_bmi
+    04_summa
+    05_libtrixi_bmi
+)
+set_property(CACHE MIAOW_EXAMPLES PROPERTY STRINGS ${miaow_known_examples})
 
 if(BUILD_EXAMPLES)
-    add_subdirectory(examples/00_hello)
-    add_subdirectory(examples/01_heat)
-    add_subdirectory(examples/02_soil_freeze_thaw)
-    add_subdirectory(examples/03_dynamic_bmi)
-    add_subdirectory(examples/04_summa)
+    foreach(miaow_example IN LISTS MIAOW_EXAMPLES)
+        if(NOT miaow_example IN_LIST miaow_known_examples)
+            message(FATAL_ERROR
+                "Unknown MIAOW example '${miaow_example}'. Known examples: "
+                "${miaow_known_examples}")
+        endif()
+        add_subdirectory("examples/${miaow_example}")
+    endforeach()
 endif()

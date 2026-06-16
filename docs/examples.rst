@@ -31,6 +31,14 @@ Included examples
   `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline
   execution and one MIAOW task per staged catchment feature described by a
   NextGen-style realization
+- ``examples/05_libtrixi_bmi``: optional libtrixi dynamic BMI plugin example
+  using the external ``libtrixi-bmi`` package. It is not built by default; enable
+  it by adding ``05_libtrixi_bmi`` to ``MIAOW_EXAMPLES`` and provide
+  ``LIBTRIXI_PREFIX`` plus ``LIBTRIXI_PROJECT_DIR``. CMake resolves
+  ``libtrixi-bmi`` under ``third_party/libtrixi-bmi`` unless
+  ``MIAOW_LIBTRIXI_BMI_ROOT`` points to a local checkout. The optional
+  ``LIBTRIXI_JULIA_DEPOT_PATH`` CMake option provides a ``JULIA_DEPOT_PATH``
+  fallback when the runtime environment does not already set one
 
 Example layout
 --------------

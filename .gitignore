@@ -41,6 +41,7 @@ examples/*/miaow_*
 examples/*/build*/
 examples/*/extern/
 examples/*/data/plugins/
+examples/*/out/
 
 # Locally fetched vendored code
 /third_party/

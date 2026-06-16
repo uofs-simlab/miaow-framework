@@ -142,6 +142,29 @@ make_bmi_model_config(const std::string& init_config, const std::string& forcing
 caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline_config);
 
 /**
+ * @brief Build a `Task` for one dynamically loaded BMI plugin module.
+ *
+ * The task argument stores a serialized single-module `BmiPipelineConfig` for
+ * use with `BmiSimulationUnit<BmiPipeline>`.
+ *
+ * @param simulation_unit_id `SimulationUnitId` for a registered BMI pipeline unit.
+ * @param module_name Module name written to the serialized pipeline config.
+ * @param dynamic_backend Dynamic plugin backend.
+ * @param plugin_path Dynamic plugin library path.
+ * @param config_file Optional BMI initialization config path.
+ * @param output_variables BMI output variables written to task CSV output.
+ * @param execution_mode Execution mode selected for the returned task.
+ * @return Task configured for the dynamic BMI pipeline.
+ * @throws std::runtime_error if the generated pipeline config is invalid.
+ */
+Task make_dynamic_bmi_task(
+    SimulationUnitId simulation_unit_id, const std::string& module_name,
+    DynamicBmiBackend dynamic_backend, const std::string& plugin_path,
+    const std::string& config_file,
+    const std::vector<std::string>& output_variables = {},
+    ExecutionMode execution_mode = ExecutionMode::in_process);
+
+/**
  * @brief BMI model backed by a single dynamically loaded C++ or Fortran BMI plugin.
  *
  * `DynamicBmiModel` is one model module. It does not own task-level forcing,

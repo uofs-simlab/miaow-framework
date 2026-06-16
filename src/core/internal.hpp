@@ -68,6 +68,12 @@ struct SubprocessState {
     // Path used to launch the active subprocess worker
     std::string subprocess_path_;
 
+    // Host address where the active subprocess actor is published
+    std::string connection_host_;
+
+    // TCP port where the active subprocess actor is published
+    std::uint16_t connection_port_{0};
+
     // Diagnostic files for the active subprocess worker, when launched
     std::optional<SubprocessPaths> paths_;
 

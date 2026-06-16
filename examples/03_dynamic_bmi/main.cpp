@@ -43,14 +43,8 @@ int main(int argc, char* argv[]) {
     std::cout << "C++ dynamic BMI plugin: " << cpp_heat_plugin_path << "\n";
     std::cout << "Fortran dynamic BMI plugin: " << fortran_heat_plugin_path << "\n";
 
-    // Describe each dynamic plugin module
+    // Describe the shared heat initialization config
     const std::string heat_config = "./data/configs/config_dynamic_heat.txt";
-    const miaow::BmiModuleConfig cpp_heat_module(
-        "bmi_cpp", miaow::DynamicBmiBackend::cpp, cpp_heat_plugin_path, heat_config);
-
-    const miaow::BmiModuleConfig fortran_heat_module(
-        "bmi_fortran", miaow::DynamicBmiBackend::fortran, fortran_heat_plugin_path,
-        heat_config);
 
     // Register one pipeline unit for every dynamic plugin-backed task
     miaow::SimulationUnitRegistry registry;
@@ -58,37 +52,35 @@ int main(int argc, char* argv[]) {
         registry.add<miaow::BmiSimulationUnit<miaow::BmiPipeline>>();
     miaow::Runtime runtime(registry, runtime_options);
 
-    // Build pipeline configs that can be constructed in-process or in a subprocess
-    const miaow::BmiPipelineConfig cpp_heat_config(
-        std::vector<miaow::BmiModuleConfig>{cpp_heat_module});
-    const miaow::BmiPipelineConfig fortran_heat_config(
-        std::vector<miaow::BmiModuleConfig>{fortran_heat_module});
-
     // Run plugin-backed pipelines in-process and through explicit subprocess paths
     std::vector<miaow::Task> tasks{
-        {heat_pipeline, miaow::bmi_pipeline_config_to_value(cpp_heat_config)},
-        {heat_pipeline, miaow::bmi_pipeline_config_to_value(fortran_heat_config)},
+        miaow::make_dynamic_bmi_task(heat_pipeline, "bmi_cpp",
+                                     miaow::DynamicBmiBackend::cpp,
+                                     cpp_heat_plugin_path, heat_config),
+        miaow::make_dynamic_bmi_task(heat_pipeline, "bmi_fortran",
+                                     miaow::DynamicBmiBackend::fortran,
+                                     fortran_heat_plugin_path, heat_config),
     };
 
-    miaow::Task first_cpp_heat_subprocess_task{
-        heat_pipeline, miaow::bmi_pipeline_config_to_value(cpp_heat_config)};
-    first_cpp_heat_subprocess_task.execution_mode_ =
-        miaow::ExecutionMode::persistent_subprocess;
+    miaow::Task first_cpp_heat_subprocess_task = miaow::make_dynamic_bmi_task(
+        heat_pipeline, "bmi_cpp", miaow::DynamicBmiBackend::cpp,
+        cpp_heat_plugin_path, heat_config, {},
+        miaow::ExecutionMode::persistent_subprocess);
     first_cpp_heat_subprocess_task.subprocess_path_ =
         MIAOW_FIRST_PERSISTENT_SUBPROCESS_PATH;
     tasks.push_back(first_cpp_heat_subprocess_task);
 
-    miaow::Task single_cpp_heat_subprocess_task{
-        heat_pipeline, miaow::bmi_pipeline_config_to_value(cpp_heat_config)};
-    single_cpp_heat_subprocess_task.execution_mode_ =
-        miaow::ExecutionMode::single_task_subprocess;
+    miaow::Task single_cpp_heat_subprocess_task = miaow::make_dynamic_bmi_task(
+        heat_pipeline, "bmi_cpp", miaow::DynamicBmiBackend::cpp,
+        cpp_heat_plugin_path, heat_config, {},
+        miaow::ExecutionMode::single_task_subprocess);
     single_cpp_heat_subprocess_task.subprocess_path_ = MIAOW_SUBPROCESS_PATH;
     tasks.push_back(single_cpp_heat_subprocess_task);
 
-    miaow::Task second_cpp_heat_subprocess_task{
-        heat_pipeline, miaow::bmi_pipeline_config_to_value(cpp_heat_config)};
-    second_cpp_heat_subprocess_task.execution_mode_ =
-        miaow::ExecutionMode::persistent_subprocess;
+    miaow::Task second_cpp_heat_subprocess_task = miaow::make_dynamic_bmi_task(
+        heat_pipeline, "bmi_cpp", miaow::DynamicBmiBackend::cpp,
+        cpp_heat_plugin_path, heat_config, {},
+        miaow::ExecutionMode::persistent_subprocess);
     second_cpp_heat_subprocess_task.subprocess_path_ = MIAOW_SUBPROCESS_PATH;
     tasks.push_back(second_cpp_heat_subprocess_task);
 

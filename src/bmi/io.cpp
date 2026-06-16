@@ -81,6 +81,21 @@ caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline
     return caf::config_value{std::move(config_dictionary)};
 }
 
+Task make_dynamic_bmi_task(
+    SimulationUnitId simulation_unit_id, const std::string& module_name,
+    DynamicBmiBackend dynamic_backend, const std::string& plugin_path,
+    const std::string& config_file,
+    const std::vector<std::string>& output_variables, ExecutionMode execution_mode) {
+    BmiModuleConfig module_config(module_name, dynamic_backend, plugin_path, config_file);
+    module_config.output_variables_ = output_variables;
+
+    const BmiPipelineConfig pipeline_config(
+        std::vector<BmiModuleConfig>{std::move(module_config)});
+    Task task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config)};
+    task.execution_mode_ = execution_mode;
+    return task;
+}
+
 } // namespace miaow
 
 namespace miaow::bmi {

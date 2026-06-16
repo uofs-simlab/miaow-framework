@@ -117,6 +117,9 @@ supplied directly to the task-level pipeline in the parent process.
 .. doxygenfunction:: miaow::bmi_pipeline_config_to_value
    :project: MIAOW
 
+.. doxygenfunction:: miaow::make_dynamic_bmi_task
+   :project: MIAOW
+
 .. doxygenstruct:: miaow::BmiModuleConfig
    :project: MIAOW
    :members:

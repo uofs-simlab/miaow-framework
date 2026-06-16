@@ -349,6 +349,8 @@ void start_subprocess(caf::actor_system& actor_system, SubprocessState& state,
         // Store the remote worker actor for later task requests
         state.remote_worker_ = connect_remote_worker(actor_system, connection);
         state.subprocess_path_ = subprocess_path;
+        state.connection_host_ = connection.host_;
+        state.connection_port_ = connection.port_;
 
         const std::string task_label =
             task.task_name_.empty() ? "task" : task.task_name_;
@@ -398,6 +400,12 @@ TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& 
                 task.execution_mode_ == ExecutionMode::persistent_subprocess
                     ? "persistent_" + task_name : task_name;
             start_subprocess(actor_system, state, subprocess_path, output_name, task);
+        } else if (task.execution_mode_ == ExecutionMode::persistent_subprocess) {
+            const std::string task_label =
+                task.task_name_.empty() ? "task" : task.task_name_;
+            std::cerr << "[" << task_label
+                      << "] MIAOW subprocess: reusing actor at "
+                      << state.connection_host_ << ":" << state.connection_port_ << "\n";
         }
 
         // Send absolute output paths so subprocess writes do not depend on cwd
@@ -472,6 +480,8 @@ void stop_subprocess(SubprocessState& state) {
     state.subprocess_.reset();
     state.remote_worker_ = caf::actor{};
     state.subprocess_path_.clear();
+    state.connection_host_.clear();
+    state.connection_port_ = 0;
     state.paths_.reset();
     state.keep_logs_ = false;
 }
