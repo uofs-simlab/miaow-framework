@@ -5,23 +5,14 @@ miaow_setup_example(libtrixi_bmi)
 
 set(MIAOW_LIBTRIXI_BMI_ROOT "" CACHE PATH
     "Path to a local tristanmontoya/libtrixi-bmi source tree")
-set(LIBTRIXI_PROJECT_DIR "" CACHE PATH
-    "Existing libtrixi Julia project directory passed to trixi_initialize")
-set(LIBTRIXI_JULIA_DEPOT_PATH "" CACHE PATH
-    "Optional Julia depot path used as a JULIA_DEPOT_PATH fallback")
-set(LIBTRIXI_CONFIG
-    "${CMAKE_CURRENT_LIST_DIR}/advection_basic_1d.jl"
-    CACHE FILEPATH
+set(libtrixi_config_default "${CMAKE_CURRENT_LIST_DIR}/advection_basic_1d.jl")
+set(LIBTRIXI_CONFIG "${libtrixi_config_default}" CACHE FILEPATH
     "Default libtrixi config run by the example")
+if(NOT LIBTRIXI_CONFIG)
+    set(LIBTRIXI_CONFIG "${libtrixi_config_default}" CACHE FILEPATH
+        "Default libtrixi config run by the example" FORCE)
+endif()
 
-if(NOT LIBTRIXI_PROJECT_DIR)
-    message(FATAL_ERROR
-        "LIBTRIXI_PROJECT_DIR must point to an existing libtrixi Julia project")
-endif()
-if(NOT EXISTS "${LIBTRIXI_PROJECT_DIR}/Project.toml")
-    message(FATAL_ERROR
-        "LIBTRIXI_PROJECT_DIR must contain a Julia Project.toml")
-endif()
 if(NOT EXISTS "${LIBTRIXI_CONFIG}")
     message(FATAL_ERROR "LIBTRIXI_CONFIG must point to a libtrixi config")
 endif()
@@ -48,6 +39,40 @@ if(NOT EXISTS "${libtrixi_bmi_root}/CMakeLists.txt")
     message(FATAL_ERROR
         "MIAOW_LIBTRIXI_BMI_ROOT must point to a tristanmontoya/libtrixi-bmi checkout")
 endif()
+
+set(libtrixi_install_dir_default "${libtrixi_bmi_root}/build/libtrixi-install")
+set(libtrixi_project_dir_default "${libtrixi_bmi_root}/build/libtrixi-julia")
+set(libtrixi_julia_depot_path_default "${libtrixi_bmi_root}/build/julia-depot")
+set(LIBTRIXI_INSTALL_DIR "${libtrixi_install_dir_default}" CACHE PATH
+    "Directory where libtrixi is installed")
+if(NOT LIBTRIXI_INSTALL_DIR)
+    set(LIBTRIXI_INSTALL_DIR "${libtrixi_install_dir_default}" CACHE PATH
+        "Directory where libtrixi is installed" FORCE)
+endif()
+set(LIBTRIXI_PROJECT_DIR "${libtrixi_project_dir_default}" CACHE PATH
+    "Existing libtrixi Julia project directory passed to trixi_initialize")
+if(NOT LIBTRIXI_PROJECT_DIR)
+    set(LIBTRIXI_PROJECT_DIR "${libtrixi_project_dir_default}" CACHE PATH
+        "Existing libtrixi Julia project directory passed to trixi_initialize" FORCE)
+endif()
+set(LIBTRIXI_JULIA_DEPOT_PATH "${libtrixi_julia_depot_path_default}" CACHE PATH
+    "Optional Julia depot path used as a JULIA_DEPOT_PATH fallback")
+if(NOT LIBTRIXI_JULIA_DEPOT_PATH)
+    set(LIBTRIXI_JULIA_DEPOT_PATH "${libtrixi_julia_depot_path_default}" CACHE PATH
+        "Optional Julia depot path used as a JULIA_DEPOT_PATH fallback" FORCE)
+endif()
+if(NOT EXISTS "${LIBTRIXI_INSTALL_DIR}/include/trixi.h")
+    message(FATAL_ERROR
+        "LIBTRIXI_INSTALL_DIR must point to the directory where libtrixi is "
+        "installed. Default: ${libtrixi_install_dir_default}")
+endif()
+if(NOT EXISTS "${LIBTRIXI_PROJECT_DIR}/Project.toml")
+    message(FATAL_ERROR
+        "LIBTRIXI_PROJECT_DIR must contain a Julia Project.toml. "
+        "Default: ${libtrixi_project_dir_default}")
+endif()
+set(LIBTRIXI_PREFIX "${LIBTRIXI_INSTALL_DIR}" CACHE PATH
+    "Installed libtrixi prefix used by libtrixi-bmi" FORCE)
 
 add_subdirectory(
     "${libtrixi_bmi_root}"

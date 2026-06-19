@@ -105,26 +105,6 @@ and Fortran BMI plugins, and a [SUMMA](https://github.com/CH-Earth/summa)
 workflow. See the [Examples](https://tjbmontoya.com/miaow-framework/examples.html)
 page for model sources, data layout, and command line options.
 
-The `examples/05_libtrixi_bmi` example is optional because it depends on the
-external [`libtrixi-bmi`](https://github.com/tristanmontoya/libtrixi-bmi)
-package, an installed libtrixi prefix, and a libtrixi Julia project:
-
-```sh
-cmake -S . -B build \
-  -DMIAOW_EXAMPLES=05_libtrixi_bmi \
-  -DLIBTRIXI_PREFIX=<libtrixi-install-prefix> \
-  -DLIBTRIXI_PROJECT_DIR=<libtrixi-julia-project> \
-  -DLIBTRIXI_JULIA_DEPOT_PATH=<julia-depot-path>
-cmake --build build --target miaow_libtrixi_bmi
-```
-
-By default, CMake resolves `libtrixi-bmi` under `third_party/libtrixi-bmi` and
-fetches it if it is missing. Set `MIAOW_LIBTRIXI_BMI_ROOT` to use a local
-checkout instead.
-
-`LIBTRIXI_JULIA_DEPOT_PATH` is optional; it is used as a `JULIA_DEPOT_PATH`
-fallback when the runtime environment does not already set one.
-
 ## Authors and funding
 
 MIAOW was developed at the University of Saskatchewan by

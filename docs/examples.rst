@@ -32,14 +32,68 @@ Included examples
   `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline
   execution and one MIAOW task per staged catchment feature described by a
   NextGen-style realization
-- ``examples/05_libtrixi_bmi``: optional libtrixi dynamic BMI plugin example
-  using the external ``libtrixi-bmi`` package. It is not built by default; enable
-  it by adding ``05_libtrixi_bmi`` to ``MIAOW_EXAMPLES`` and provide
-  ``LIBTRIXI_PREFIX`` plus ``LIBTRIXI_PROJECT_DIR``. CMake resolves
-  ``libtrixi-bmi`` under ``third_party/libtrixi-bmi`` unless
-  ``MIAOW_LIBTRIXI_BMI_ROOT`` points to a local checkout. The optional
-  ``LIBTRIXI_JULIA_DEPOT_PATH`` CMake option provides a ``JULIA_DEPOT_PATH``
-  fallback when the runtime environment does not already set one
+- ``examples/05_libtrixi_bmi``: optional
+  `libtrixi <https://github.com/trixi-framework/libtrixi>`_ dynamic BMI plugin
+  example
+
+SUMMA example
+-------------
+
+The ``examples/04_summa`` example builds a SUMMA BMI library from a SUMMA source
+tree and runs the packaged gauge realization by default.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 30 45
+
+   * - Flag
+     - Default
+     - Description
+   * - ``-DMIAOW_SUMMA_MODEL_ROOT``
+     - ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/summa``
+     - Local or fetched SUMMA source tree
+   * - ``-DMIAOW_SUMMA_LIBRARY_LINKS``
+     - ``-framework Accelerate`` on macOS, empty otherwise
+     - LAPACK/BLAS link flags passed to SUMMA
+
+``libtrixi`` example
+---------------------
+
+The ``examples/05_libtrixi_bmi`` example runs
+`libtrixi <https://github.com/trixi-framework/libtrixi>`_ through MIAOW's
+dynamic BMI plugin path. It is not built by default. Enable it by adding
+``05_libtrixi_bmi`` to ``MIAOW_EXAMPLES``:
+
+.. code-block:: sh
+
+   cmake -S . -B build \
+     -DMIAOW_EXAMPLES=05_libtrixi_bmi
+   cmake --build build --target miaow_libtrixi_bmi
+
+These flags control the ``libtrixi`` paths:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 30 45
+
+   * - Flag
+     - Default
+     - Description
+   * - ``-DMIAOW_LIBTRIXI_BMI_ROOT``
+     - ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/libtrixi-bmi``
+     - Local or fetched ``libtrixi-bmi`` checkout
+   * - ``-DLIBTRIXI_INSTALL_DIR``
+     - ``<libtrixi-bmi>/build/libtrixi-install``
+     - ``libtrixi`` installation root
+   * - ``-DLIBTRIXI_PROJECT_DIR``
+     - ``<libtrixi-bmi>/build/libtrixi-julia``
+     - Julia project directory
+   * - ``-DLIBTRIXI_JULIA_DEPOT_PATH``
+     - ``<libtrixi-bmi>/build/julia-depot``
+     - Julia depot fallback
+   * - ``-DLIBTRIXI_CONFIG``
+     - ``examples/05_libtrixi_bmi/advection_basic_1d.jl``
+     - Default ``libtrixi`` config path
 
 Example layout
 --------------
