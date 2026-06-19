@@ -1,6 +1,16 @@
 using LibTrixi
 using Trixi
 using OrdinaryDiffEqLowStorageRK
+using Random
+
+# Draw CFL numbers uniformly in log space for workload variationw
+function randomized_cfl()
+    cfl_min = parse(Float64, get(ENV, "MIAOW_LIBTRIXI_CFL_MIN", "1.0e-4"))
+    cfl_max = parse(Float64, get(ENV, "MIAOW_LIBTRIXI_CFL_MAX", "1.0e0"))
+    @assert cfl_min > 0.0 "MIAOW_LIBTRIXI_CFL_MIN must be positive"
+    @assert cfl_max >= cfl_min "MIAOW_LIBTRIXI_CFL_MAX must be at least cfl_min"
+    return exp(log(cfl_min) + rand() * (log(cfl_max) - log(cfl_min)))
+end
 
 # libtrixi loads this function by name when it initializes a simulation
 function init_simstate()
@@ -22,13 +32,12 @@ function init_simstate()
 
     ode = semidiscretize(semi, (0.0, 1.0))
 
-    summary_callback = SummaryCallback()
-    analysis_callback = AnalysisCallback(semi, interval = 100)
-    save_solution = SaveSolutionCallback(interval = 100,
-                                         solution_variables = cons2prim)
-    stepsize_callback = StepsizeCallback(cfl = 1.6)
-    callbacks = CallbackSet(summary_callback, analysis_callback,
-                            save_solution, stepsize_callback)
+    cfl = randomized_cfl()
+    println(stderr, "libtrixi advection config: cfl = ", cfl)
+    flush(stderr)
+
+    stepsize_callback = StepsizeCallback(cfl = cfl)
+    callbacks = CallbackSet(stepsize_callback)
 
     integrator = init(ode, CarpenterKennedy2N54(williamson_condition = false);
                       dt = 1.0,

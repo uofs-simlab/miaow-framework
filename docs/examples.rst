@@ -14,7 +14,8 @@ Run examples from their own ``examples/<example_name>`` directories:
    cd ../03_dynamic_bmi
    ./miaow_dynamic_bmi --output_root ./output --max_workers 2
    cd ../04_summa
-   ./miaow_summa --realization data/realization_config.json --output_root ./output
+   ./miaow_summa --realization data/gauge_01073000/realization_config.json \
+     --output_root ./output
 
 Included examples
 -----------------
@@ -117,7 +118,7 @@ Examples use the following runtime command-line options where applicable:
      - Root directory path for runtime-managed output folders, disabled by
        default
    * - ``--realization``
-     - ``data/realization_config.json``
+     - ``data/gauge_01073000/realization_config.json``
      - BMI realization path
 
 Public CLI parsers throw ``std::runtime_error`` for unrecognized arguments,

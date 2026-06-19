@@ -28,7 +28,7 @@ void validate_subprocess_task(const Task& task) {
 }
 
 // Run BMI pipeline tasks until the parent process ends this subprocess
-caf::behavior bmi_worker_actor(caf::event_based_actor*) {
+caf::behavior worker_actor(caf::event_based_actor*) {
     return {[](caf::get_atom, const Task& task) -> TaskResult {
                 TaskResult task_result;
                 try {
@@ -51,5 +51,5 @@ caf::behavior bmi_worker_actor(caf::event_based_actor*) {
 
 // Entry point for subprocess execution launched via Boost.Process
 int main(int argc, char* argv[]) {
-    return miaow::core::run_subprocess_worker(argc, argv, miaow::bmi_worker_actor);
+    return miaow::core::run_subprocess_worker(argc, argv, miaow::worker_actor);
 }

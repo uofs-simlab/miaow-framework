@@ -1,0 +1,103 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "hru-5",
+      "properties": {
+        "id": "hru-5"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "hru-6",
+      "properties": {
+        "id": "hru-6"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "hru-11",
+      "properties": {
+        "id": "hru-11"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "hru-13",
+      "properties": {
+        "id": "hru-13"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "hru-17",
+      "properties": {
+        "id": "hru-17"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "hru-18",
+      "properties": {
+        "id": "hru-18"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "hru-21",
+      "properties": {
+        "id": "hru-21"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.0,
+          0.0
+        ]
+      }
+    }
+  ]
+}

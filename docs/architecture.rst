@@ -66,7 +66,7 @@ The subprocess path has two CAF actor systems:
 
    Subprocess
    `-- subprocess actor_system
-       `-- BMI worker actor
+       `-- worker_actor
 
 A single-task subprocess run follows this sequence:
 
@@ -77,15 +77,15 @@ A single-task subprocess run follows this sequence:
    are not "files" in the sense of the filesystem. The parent launches the subprocess
    with ``--connection-fd`` naming the write end as it appears inside the subprocess.
    The parent keeps the read end.
-2. The subprocess initializes its own CAF actor system, spawns the BMI worker
+2. The subprocess initializes its own CAF actor system, spawns the worker
    actor, and publishes that worker on ``127.0.0.1`` through the CAF middleman.
 3. The subprocess writes one newline-delimited JSON endpoint message to the
    inherited write descriptor. The message contains the host and TCP port where
-   the BMI worker actor is published, and the parent reads those bytes from the
+   the worker actor is published, and the parent reads those bytes from the
    pipe's read end.
 4. The parent reads the endpoint, connects to the published worker with
    ``remote_actor(...)``, and sends the serialized ``Task`` over CAF.
-5. The BMI worker validates the task, constructs the ``BmiPipeline`` inside the
+5. The worker validates the task, constructs the ``BmiPipeline`` inside the
    subprocess, runs the BMI lifecycle, and returns one ``TaskResult``.
 6. The parent stops the subprocess and lets the normal ``job_actor``
    aggregation path record the task result.

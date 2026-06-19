@@ -38,7 +38,9 @@ int main(int argc, char* argv[]) {
 
     // Use the packaged realization when no CLI path is provided
     const std::string realization_path = runtime_options.realization_path_.empty()
-                                             ? std::string("data/realization_config.json")
+                                             ? std::string(
+                                                   "data/gauge_01073000/"
+                                                   "realization_config.json")
                                              : runtime_options.realization_path_;
 
     // Read and partition the realization file

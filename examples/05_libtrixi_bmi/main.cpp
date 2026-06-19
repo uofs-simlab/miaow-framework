@@ -17,6 +17,8 @@
 
 namespace {
 
+constexpr int default_random_cfl_runs = 12;
+
 std::vector<std::string> parse_cli_args(int argc, char* argv[],
                                         miaow::RuntimeOptions& runtime_options) {
     std::vector<std::string> runtime_arg_storage{argv[0]};
@@ -53,7 +55,10 @@ std::vector<std::string> parse_cli_args(int argc, char* argv[],
                                      runtime_argv.data(), runtime_options);
 
     if (configs.empty()) {
-        configs.emplace_back(LIBTRIXI_CONFIG);
+        // Repeat the default config so each task samples its own CFL number
+        for (int run = 0; run < default_random_cfl_runs; ++run) {
+            configs.emplace_back(LIBTRIXI_CONFIG);
+        }
     }
     return configs;
 }
@@ -90,14 +95,15 @@ int main(int argc, char* argv[]) {
         std::cerr << "failed to set libtrixi Julia environment\n";
         return 1;
     }
+    if (!std::string_view(LIBTRIXI_JULIA_DEPOT_PATH).empty() &&
+        setenv("LIBTRIXI_DEPOT_PATH", LIBTRIXI_JULIA_DEPOT_PATH, 0) != 0) {
+        std::cerr << "failed to set libtrixi Julia environment\n";
+        return 1;
+    }
 
     // Get the plugin path from the compile-time constant
     const std::string plugin_path = LIBTRIXI_BMI_PLUGIN_PATH;
     std::cout << "libtrixi BMI plugin: " << plugin_path << "\n";
-    std::cout << "libtrixi configs:\n";
-    for (const std::string& config : configs) {
-        std::cout << "  " << config << "\n";
-    }
 
     // Register the pipeline unit that can be constructed inside the subprocess
     miaow::SimulationUnitRegistry registry;

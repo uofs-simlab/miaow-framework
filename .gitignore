@@ -43,6 +43,10 @@ examples/*/extern/
 examples/*/data/plugins/
 examples/*/out/
 
+# Local helper scripts
+scripts/preprocessing/
+scripts/visualization/
+
 # Locally fetched vendored code
 /third_party/
 
@@ -76,11 +80,10 @@ _*/
 
 # Generated runtime and visualization outputs
 **/output/
+examples/04_summa/data/*/summa_output/
 *.mp4
 
 # Python cache files
 __pycache__/
 *.pyc
 docs/.venv/
-scripts/visualization/.venv/
-scripts/preprocessing/.venv/

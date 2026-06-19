@@ -31,7 +31,7 @@ During execution, MIAOW writes that config beside the task results as
 3. ``Finalize()``
 
 Within those calls, the pipeline calls the corresponding BMI methods for each
-module in order. Single-model runs contain one module.
+module in order.
 
 Executing a static BMI model
 ----------------------------

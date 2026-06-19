@@ -253,7 +253,7 @@ if(BUILD_TESTING)
             ${CMAKE_COMMAND}
             -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
+            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output/gauge_01073000
             "-DEXPECTED_METADATA_SNIPPETS=${summa_job_record_snippets_arg}"
             "-DEXPECTED_RESULT_PATHS=${summa_result_paths_arg}"
             -P

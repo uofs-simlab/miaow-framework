@@ -96,7 +96,8 @@ cd ../02_soil_freeze_thaw
 cd ../03_dynamic_bmi
 ./miaow_dynamic_bmi --output_root ./output --max_workers 2
 cd ../04_summa
-./miaow_summa --realization data/realization_config.json --output_root ./output
+./miaow_summa --realization data/gauge_01073000/realization_config.json \
+  --output_root ./output
 ```
 
 The examples cover minimal task orchestration, static BMI models, dynamic C++
