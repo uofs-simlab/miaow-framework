@@ -27,42 +27,24 @@ paths.
 
 ## Requirements
 
-| Build | Requirements |
-| --- | --- |
-| Core library | [CMake](https://cmake.org/) 3.16+, C++20 compiler, Fortran compiler |
-| Examples | CMake 3.21+, [NetCDF](https://www.unidata.ucar.edu/software/netcdf/) C/Fortran, BLAS/LAPACK support |
-
-CMake tries to find Boost and CAF on the system, then fetches them from source
-when the provider option is `auto`. See the
+MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a
+Fortran compiler. CMake tries to find Boost and CAF on the system, then fetches
+them from source when the provider option is `auto`. See the
 [Development](https://tjbmontoya.com/miaow-framework/development.html) section
 in the [documentation](https://tjbmontoya.com/miaow-framework/index.html) for a
 description of the provider options.
 
-On Ubuntu, install core dependencies:
+On Ubuntu:
 
 ```sh
 sudo apt-get install build-essential cmake gfortran
 ```
 
-On Ubuntu, install the example dependencies:
-
-```sh
-sudo apt-get install libnetcdf-dev libnetcdff-dev libopenblas-dev
-```
-
-On macOS with [Homebrew](https://brew.sh/), install core dependencies:
+On macOS with [Homebrew](https://brew.sh/):
 
 ```sh
 sudo xcode-select --install  # if Apple's Command Line Tools are not installed
 brew install cmake gcc
-```
-
-On macOS with Homebrew, install the example dependencies. By default, Apple's
-built-in [Accelerate framework](https://developer.apple.com/documentation/accelerate) is used for BLAS/LAPACK, so only NetCDF is
-needed:
-
-```sh
-brew install netcdf netcdf-fortran
 ```
 
 ## Quick start
@@ -74,7 +56,7 @@ cmake -S . -B build -DBUILD_EXAMPLES=OFF
 cmake --build build
 ```
 
-Build all examples and run the test suite:
+Build the default examples and run the test suite:
 
 ```sh
 cmake -S . -B build -DBUILD_EXAMPLES=ON
@@ -95,15 +77,14 @@ cd ../02_soil_freeze_thaw
 ./miaow_soil_freeze_thaw --output_root ./output --max_workers 2
 cd ../03_dynamic_bmi
 ./miaow_dynamic_bmi --output_root ./output --max_workers 2
-cd ../04_summa
-./miaow_summa --realization data/gauge_01073000/realization_config.json \
-  --output_root ./output
 ```
 
 The examples cover minimal task orchestration, static BMI models, dynamic C++
-and Fortran BMI plugins, and a [SUMMA](https://github.com/CH-Earth/summa)
-workflow. See the [Examples](https://tjbmontoya.com/miaow-framework/examples.html)
-page for model sources, data layout, and command line options.
+and Fortran BMI plugins, plus optional
+[SUMMA](https://github.com/CH-Earth/summa) and
+[Trixi.jl](https://github.com/trixi-framework/Trixi.jl) workflows. See the
+[Examples](https://tjbmontoya.com/miaow-framework/examples.html) page for model
+sources, data layout, and command line options.
 
 ## Authors and funding
 

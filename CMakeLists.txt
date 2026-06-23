@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 
 project(miaow CXX Fortran)
 
@@ -218,7 +218,7 @@ set_target_properties(miaow_subprocess PROPERTIES
 
 option(BUILD_EXAMPLES "Build example programs" ON)
 set(MIAOW_EXAMPLES
-    "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;04_summa"
+    "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi"
     CACHE STRING "Semicolon-separated list of examples to build"
 )
 set(miaow_known_examples

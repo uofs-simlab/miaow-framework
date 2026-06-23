@@ -1,7 +1,7 @@
 Examples
 ========
 
-Run examples from their own ``examples/<example_name>`` directories:
+Run built examples from their own ``examples/<example_name>`` directories:
 
 .. code-block:: sh
 
@@ -13,9 +13,6 @@ Run examples from their own ``examples/<example_name>`` directories:
    ./miaow_soil_freeze_thaw --output_root ./output --max_workers 2
    cd ../03_dynamic_bmi
    ./miaow_dynamic_bmi --output_root ./output --max_workers 2
-   cd ../04_summa
-   ./miaow_summa --realization data/gauge_01073000/realization_config.json \
-     --output_root ./output
 
 Included examples
 -----------------
@@ -28,19 +25,38 @@ Included examples
   with per-task forcing, including matched, short, and long forcing cases
 - ``examples/03_dynamic_bmi``: dynamic C++ and Fortran BMI plugin integration
   using the CSDMS heat examples
-- ``examples/04_summa``:
+- ``examples/04_summa``: optional
   `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline
   execution and one MIAOW task per staged catchment feature described by a
   NextGen-style realization
 - ``examples/05_libtrixi_bmi``: optional
-  `libtrixi <https://github.com/trixi-framework/libtrixi>`_ dynamic BMI plugin
-  example
+  `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the
+  ``libtrixi`` dynamic BMI plugin
 
 SUMMA example
 -------------
 
 The ``examples/04_summa`` example builds a SUMMA BMI library from a SUMMA source
-tree and runs the packaged gauge realization by default.
+tree and runs the packaged gauge realization by default. It is not built by
+default. SUMMA requires
+`NetCDF <https://www.unidata.ucar.edu/software/netcdf/>`_ C/Fortran and
+BLAS/LAPACK support. Enable it by adding ``04_summa`` to ``MIAOW_EXAMPLES``:
+
+.. code-block:: sh
+
+   cmake -S . -B build \
+     -DMIAOW_EXAMPLES=04_summa
+   cmake --build build --target miaow_summa
+
+Then run it from the example directory:
+
+.. code-block:: sh
+
+   cd examples/04_summa
+   ./miaow_summa --realization data/gauge_01073000/realization_config.json \
+     --output_root ./output
+
+These flags control the SUMMA build:
 
 .. list-table::
    :header-rows: 1
@@ -56,13 +72,13 @@ tree and runs the packaged gauge realization by default.
      - ``-framework Accelerate`` on macOS, empty otherwise
      - LAPACK/BLAS link flags passed to SUMMA
 
-``libtrixi`` example
----------------------
+Trixi.jl example
+----------------
 
 The ``examples/05_libtrixi_bmi`` example runs
-`libtrixi <https://github.com/trixi-framework/libtrixi>`_ through MIAOW's
-dynamic BMI plugin path. It is not built by default. Enable it by adding
-``05_libtrixi_bmi`` to ``MIAOW_EXAMPLES``:
+`Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ configs through
+MIAOW's ``libtrixi`` dynamic BMI plugin path. It is not built by default. Enable
+it by adding ``05_libtrixi_bmi`` to ``MIAOW_EXAMPLES``:
 
 .. code-block:: sh
 

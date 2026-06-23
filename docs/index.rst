@@ -25,7 +25,7 @@ the core library and subprocess runner:
    cmake -S . -B build -DBUILD_EXAMPLES=OFF
    cmake --build build
 
-Build all examples and run the test suite:
+Build the default examples and run the test suite:
 
 .. code-block:: sh
 
