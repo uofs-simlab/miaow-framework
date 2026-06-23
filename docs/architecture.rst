@@ -63,7 +63,7 @@ Scheduling behaviour
 .. figure:: images/task_scheduling_tikz.png
    :alt: MIAOW task scheduling queue and worker dispatch
    :align: center
-   :width: 70%
+   :width: 35%
 
    Greedy task dispatch from the pending task queue to available workers.
 
