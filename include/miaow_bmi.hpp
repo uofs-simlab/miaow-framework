@@ -213,9 +213,9 @@ class BmiPipeline : public bmi_api::Bmi {
  * one `bmi_fortran` module and `CsvPerFeature` forcing, resolves relative
  * paths and expands sibling `catchments.geojson` features.
  */
-class BmiRealization {
+class PartitionedBmiRealization {
   public:
-    BmiRealization() = default;
+    PartitionedBmiRealization() = default;
 
     /**
      * @brief Partition a NextGen-style realization file by feature.
@@ -226,7 +226,7 @@ class BmiRealization {
      * @throws std::filesystem::filesystem_error if a referenced path cannot be
      * resolved or inspected.
      */
-    explicit BmiRealization(const std::string& realization_path);
+    explicit PartitionedBmiRealization(const std::string& realization_path);
 
     /**
      * @brief Return the resolved runtime output root from the realization.
@@ -246,7 +246,7 @@ class BmiRealization {
     std::vector<FeatureConfig> feature_configs_;
 
     friend std::vector<Task> make_bmi_tasks(
-        SimulationUnitId simulation_unit_id, const BmiRealization& realization,
+        SimulationUnitId simulation_unit_id, const PartitionedBmiRealization& realization,
         ExecutionMode execution_mode);
 };
 
@@ -258,7 +258,7 @@ class BmiRealization {
  * @return `Task`s ready to submit through `Runtime::submit_job()`.
  */
 std::vector<Task>
-make_bmi_tasks(SimulationUnitId simulation_unit_id, const BmiRealization& realization,
+make_bmi_tasks(SimulationUnitId simulation_unit_id, const PartitionedBmiRealization& realization,
                ExecutionMode execution_mode = ExecutionMode::in_process);
 
 /**

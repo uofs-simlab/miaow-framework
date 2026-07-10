@@ -121,11 +121,11 @@ Simulation units
 Realization workflows
 ---------------------
 
-.. doxygenclass:: miaow::BmiRealization
+.. doxygenclass:: miaow::PartitionedBmiRealization
    :project: MIAOW
    :members:
 
-.. doxygenfunction:: miaow::make_bmi_tasks(SimulationUnitId, const BmiRealization&, ExecutionMode)
+.. doxygenfunction:: miaow::make_bmi_tasks(SimulationUnitId, const PartitionedBmiRealization&, ExecutionMode)
    :project: MIAOW
 
 I/O and CLI helpers

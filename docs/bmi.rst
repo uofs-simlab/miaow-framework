@@ -84,7 +84,7 @@ one dynamic BMI task per feature (e.g., per catchment).
 
 .. code-block:: cpp
 
-   const miaow::BmiRealization realization(realization_path);
+   const miaow::PartitionedBmiRealization realization(realization_path);
 
    miaow::SimulationUnitRegistry registry;
    const miaow::SimulationUnitId dynamic_bmi =
@@ -94,7 +94,7 @@ one dynamic BMI task per feature (e.g., per catchment).
        dynamic_bmi, realization,
        miaow::ExecutionMode::persistent_subprocess);
 
-``BmiRealization`` resolves the plugin, initialization, forcing, feature, and
+``PartitionedBmiRealization`` resolves the plugin, initialization, forcing, feature, and
 output-root values. ``make_bmi_tasks(...)`` builds the dynamic task set without
 requiring post-construction task mutation.
 

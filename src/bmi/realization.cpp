@@ -182,7 +182,7 @@ BmiModuleConfig parse_fortran_module_config(const json::object& global_object) {
 } // namespace
 
 // Partition a global NextGen-style realization file into per-feature configs
-BmiRealization::BmiRealization(const std::string& realization_path) {
+PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realization_path) {
     if (io::trim(realization_path).empty()) {
         throw_realization_path_error("empty realization path");
     }
@@ -259,18 +259,18 @@ BmiRealization::BmiRealization(const std::string& realization_path) {
     }
 }
 
-const std::string& BmiRealization::output_root() const {
+const std::string& PartitionedBmiRealization::output_root() const {
     return output_root_;
 }
 
 // Build one dynamic BMI task for every realization feature
 std::vector<Task>
-make_bmi_tasks(SimulationUnitId simulation_unit_id, const BmiRealization& realization,
+make_bmi_tasks(SimulationUnitId simulation_unit_id, const PartitionedBmiRealization& realization,
                ExecutionMode execution_mode) {
     // Build one task for each feature in realization order
     std::vector<Task> tasks;
     tasks.reserve(realization.feature_configs_.size());
-    for (const BmiRealization::FeatureConfig& feature :
+    for (const PartitionedBmiRealization::FeatureConfig& feature :
          realization.feature_configs_) {
         const std::string feature_id = io::trim(feature.feature_id_);
         if (feature_id.empty()) {

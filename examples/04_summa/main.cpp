@@ -44,9 +44,9 @@ int main(int argc, char* argv[]) {
                                              : runtime_options.realization_path_;
 
     // Read the realization and use its output root unless the CLI overrides it
-    miaow::BmiRealization realization;
+    miaow::PartitionedBmiRealization realization;
     try {
-        realization = miaow::BmiRealization(realization_path);
+        realization = miaow::PartitionedBmiRealization(realization_path);
         if (runtime_options.output_root_.empty() && !realization.output_root().empty()) {
             runtime_options.output_root_ = realization.output_root();
         }
