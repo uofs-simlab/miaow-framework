@@ -45,7 +45,7 @@ bool ensure_expected_run_dir(const std::string& executable_name,
                              const std::string& expected_run_dir);
 
 /**
- * @brief Parse runtime-wide CLI arguments without workflow task inputs.
+ * @brief Parse runtime CLI arguments without workflow task inputs.
  *
  * Supported arguments:
  * - `--max_workers <num_workers>`

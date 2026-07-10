@@ -7,11 +7,6 @@ include("${MIAOW_ROOT}/cmake/miaow_bmi_model.cmake")
 
 set(MIAOW_HEAT_MODEL_ROOT "" CACHE PATH
     "Path to a local csdms/bmi-example-cxx source tree")
-if(MIAOW_HEAT_MODEL_ROOT)
-    set(heat_model_root_override "${MIAOW_HEAT_MODEL_ROOT}")
-else()
-    set(heat_model_root_override "")
-endif()
 
 # Build csdms/bmi-example-cxx as a static model library and link it directly
 # into the example executable (no dynamic plugin loading).
@@ -19,7 +14,7 @@ set(heat_model_target "${EXECUTABLE_TARGET}_model")
 miaow_add_bmi_model(
     EXAMPLE_NAME heat
     MIAOW_ROOT "${MIAOW_ROOT}"
-    MODEL_ROOT "${heat_model_root_override}"
+    MODEL_ROOT "${MIAOW_HEAT_MODEL_ROOT}"
     EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
     MODEL_TARGET "${heat_model_target}"
     MODEL_LOCAL_SUBDIR bmi-example-cxx

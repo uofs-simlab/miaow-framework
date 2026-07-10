@@ -65,7 +65,7 @@ enum class ExecutionMode {
 };
 
 /**
- * @brief Generic task input specification.
+ * @brief Input payload routed to one registered simulation unit.
  *
  * Arguments are positional and interpreted by the concrete `SimulationUnit`.
  */
@@ -95,7 +95,7 @@ struct Task {
     Task() = default;
 
     /**
-     * @brief Construct a `Task` for a specific simulation unit from config values.
+     * @brief Construct a task from positional config values.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param task_args Positional arguments for this task.
      */
@@ -103,7 +103,7 @@ struct Task {
         : simulation_unit_id_(task_simulation_unit_id), args_(std::move(task_args)) {}
 
     /**
-     * @brief Construct a `Task` from config values and descriptive metadata.
+     * @brief Construct a task from positional config values and metadata.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param task_args Positional arguments for this task.
      * @param task_metadata Metadata preserved for reporting and postprocessing.
@@ -114,7 +114,7 @@ struct Task {
           metadata_(std::move(task_metadata)) {}
 
     /**
-     * @brief Construct a `Task` for a specific simulation unit from one config value.
+     * @brief Construct a task from one config value.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single `caf::config_value` for this task.
      */
@@ -122,7 +122,7 @@ struct Task {
         : simulation_unit_id_(task_simulation_unit_id), args_{std::move(arg)} {}
 
     /**
-     * @brief Construct a `Task` from one config value and descriptive metadata.
+     * @brief Construct a task from one config value and metadata.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single `caf::config_value` for this task.
      * @param task_metadata Metadata preserved for reporting and postprocessing.
@@ -133,7 +133,7 @@ struct Task {
           metadata_(std::move(task_metadata)) {}
 
     /**
-     * @brief Construct a `Task` for a specific simulation unit from one string.
+     * @brief Construct a task from one string argument.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single string argument for this task.
      */
@@ -142,7 +142,7 @@ struct Task {
           args_{caf::config_value{std::move(arg)}} {}
 
     /**
-     * @brief Construct a `Task` for a specific simulation unit from string arguments.
+     * @brief Construct a task from positional string arguments.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param string_args Positional string arguments for this task.
      */
@@ -186,7 +186,7 @@ inline std::string task_status_to_string(TaskStatus status) {
 }
 
 /**
- * @brief Simulation-unit result payload returned for one `Task` execution.
+ * @brief Result returned by one simulation unit task execution.
  */
 struct TaskResult {
     TaskResult() = default;
@@ -213,7 +213,7 @@ struct TaskResult {
 };
 
 /**
- * @brief Runtime-owned record for one completed task.
+ * @brief Runtime record for one completed task.
  */
 struct TaskRecord {
     TaskRecord() = default;
@@ -250,7 +250,7 @@ struct TaskRecord {
 };
 
 /**
- * @brief Runtime-owned record returned for one submitted job.
+ * @brief Runtime record returned for one submitted job.
  */
 struct JobRecord {
     JobRecord() = default;
@@ -322,10 +322,9 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
 }
 
 /**
- * @brief Runtime-local services available during `SimulationUnit::execute()`.
+ * @brief Runtime services available during `SimulationUnit::execute()`.
  *
- * `Runtime` dispatch constructs an instance for each task and calls `execute()`
- * with a runtime-local `ExecutionContext`.
+ * Runtime dispatch constructs one context for each worker task execution.
  */
 class ExecutionContext {
   public:
@@ -372,23 +371,23 @@ class SimulationUnit {
 };
 
 /**
- * @brief Factory used by each `simulation_unit_actor`.
+ * @brief Factory used by worker actors to create simulation units.
  *
  * Workers use this to construct in-process `SimulationUnit` instances.
  */
 using SimulationUnitFactory = std::function<std::unique_ptr<SimulationUnit>()>;
 
 /**
- * @brief Registry for simulation unit factories.
+ * @brief Registry of simulation unit factories.
  *
- * Tracks `simulation_unit_id -> factory` for runtime task routing.
+ * Tracks `simulation_unit_id -> factory` mappings for runtime task routing.
  */
 class SimulationUnitRegistry {
   public:
     SimulationUnitRegistry() = default;
 
     /**
-     * @brief Register a concrete `SimulationUnit` type and return its assigned ID.
+     * @brief Register a concrete `SimulationUnit` type.
      *
      * Builds a factory that workers use for `SimulationUnitType` instances.
      *
@@ -477,7 +476,7 @@ struct RuntimeOptions {
     std::string realization_path_;
 
     /**
-     * @brief Construct runtime options with safe defaults.
+     * @brief Construct runtime options.
      * @param workers Desired worker count. Values of zero are clamped to one.
      * @param task_timeout Timeout used for one simulation task request.
      * @param job_timeout Timeout used for whole-job requests.
@@ -503,10 +502,7 @@ struct RuntimeOptions {
 using JobHandle = std::future<JobRecord>;
 
 /**
- * @brief Runtime-owned registry of in-progress jobs.
- *
- * This is effectively a dictionary/hash map:
- * `job_id -> promise_for_that_job_record`.
+ * @brief Runtime-owned map of jobs waiting for actor completion.
  *
  * Each submitted `JobId` maps to the promise that will be fulfilled by the
  * orchestrator actor when that job finishes.
@@ -637,7 +633,7 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
 }
 
 /**
- * @brief Actor runtime for orchestrating simulation `Task`s.
+ * @brief Actor runtime for orchestrating simulation tasks.
  *
  * The runtime is model-agnostic and thread-safe.
  * Tasks with unknown `SimulationUnitId` values fail individually.

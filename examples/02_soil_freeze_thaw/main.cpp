@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Initialize runtime options and parse runtime-wide CLI arguments
+    // Initialize runtime options and parse runtime CLI arguments
     miaow::RuntimeOptions runtime_options;
     try {
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
     // Register simulation units and build runtime routing from the registry
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId soil_freeze_thaw =
-        registry.add<miaow::BmiSimulationUnit<BmiSoilFreezeThaw>>();
+        registry.add<miaow::StaticBmiSimulationUnit<BmiSoilFreezeThaw>>();
     miaow::Runtime runtime(registry, runtime_options);
 
     // Get config and forcing file paths for this SoilFreezeThaw workload
@@ -48,28 +48,20 @@ int main(int argc, char* argv[]) {
 
     // Three cases exercising matched and mismatched config/forcing durations:
     //   0: 512-day model, 512-day forcing (exact match)
-    //   1: 512-day model, 1-day forcing (forcing exhausts before end time)
-    //   2: 1-day model, 512-day forcing (model stops before forcing ends)
-    std::vector<miaow::Task> tasks{
-        miaow::Task{soil_freeze_thaw,
-                    miaow::bmi_pipeline_config_to_value(miaow::make_bmi_model_config(
-                        config_512_days, forcing_512_days, forcing_names_map)),
-                    miaow::TaskMetadata{{"label", "matched-duration"},
-                                        {"config_path", config_512_days},
-                                        {"forcing_file", forcing_512_days}}},
-        miaow::Task{soil_freeze_thaw,
-                    miaow::bmi_pipeline_config_to_value(miaow::make_bmi_model_config(
-                        config_512_days, forcing_1_day, forcing_names_map)),
-                    miaow::TaskMetadata{{"label", "short-forcing"},
-                                        {"config_path", config_512_days},
-                                        {"forcing_file", forcing_1_day}}},
-        miaow::Task{soil_freeze_thaw,
-                    miaow::bmi_pipeline_config_to_value(miaow::make_bmi_model_config(
-                        config_1_day, forcing_512_days, forcing_names_map)),
-                    miaow::TaskMetadata{{"label", "long-forcing"},
-                                        {"config_path", config_1_day},
-                                        {"forcing_file", forcing_512_days}}},
+    //   1: 512-day model, 1-day forcing (forcing exhausts before end time, expect failure)
+    //   2: 1-day model, 512-day forcing (model stops before forcing ends, expect success)
+    const std::vector<miaow::StaticBmiConfig> configs{
+        {.init_config_ = config_512_days,
+         .forcing_file_ = forcing_512_days,
+         .variables_names_map_ = forcing_names_map},
+        {.init_config_ = config_512_days,
+         .forcing_file_ = forcing_1_day,
+         .variables_names_map_ = forcing_names_map},
+        {.init_config_ = config_1_day,
+         .forcing_file_ = forcing_512_days,
+         .variables_names_map_ = forcing_names_map},
     };
+    const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(soil_freeze_thaw, configs);
 
     // Submit tasks and wait for results
     miaow::JobHandle job = runtime.submit_job(tasks);
@@ -81,6 +73,13 @@ int main(int argc, char* argv[]) {
     // Print timing diagnostics for this job run
     miaow::print_diagnostics(job_record);
 
-    // Return 1 if any task failed, or 0 if all tasks succeeded
-    return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
+    // Verify the two valid cases and the expected forcing exhaustion
+    const bool results_match =
+        job_record.tasks_.size() == 3 &&
+        job_record.tasks_.at(0).result_.status_ == miaow::TaskStatus::succeeded &&
+        job_record.tasks_.at(1).result_.status_ == miaow::TaskStatus::failed &&
+        job_record.tasks_.at(1).result_.message_.starts_with(
+            "Forcing alignment error: forcing series exhausted") &&
+        job_record.tasks_.at(2).result_.status_ == miaow::TaskStatus::succeeded;
+    return results_match ? 0 : 1;
 }

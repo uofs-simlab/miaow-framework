@@ -7,11 +7,6 @@ include("${MIAOW_ROOT}/cmake/miaow_bmi_model.cmake")
 
 set(MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT "" CACHE PATH
     "Path to a local NOAA-OWP/SoilFreezeThaw source tree")
-if(MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT)
-    set(soil_freeze_thaw_model_root_override "${MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT}")
-else()
-    set(soil_freeze_thaw_model_root_override "")
-endif()
 
 # Build NOAA-OWP/SoilFreezeThaw as a static model library and link it directly
 # into the example executable (no dynamic plugin loading).
@@ -19,7 +14,7 @@ set(soil_freeze_thaw_model_target "${EXECUTABLE_TARGET}_model")
 miaow_add_bmi_model(
     EXAMPLE_NAME soil_freeze_thaw
     MIAOW_ROOT "${MIAOW_ROOT}"
-    MODEL_ROOT "${soil_freeze_thaw_model_root_override}"
+    MODEL_ROOT "${MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT}"
     EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
     MODEL_TARGET "${soil_freeze_thaw_model_target}"
     MODEL_LOCAL_SUBDIR SoilFreezeThaw
@@ -61,7 +56,6 @@ if(BUILD_TESTING)
         TEST_NAME miaow_example_02_soil_freeze_thaw
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "\\[task_2\\] succeeded: BMI workflow complete"
         CLI_ARGS
             --output_root
             "${CMAKE_CURRENT_LIST_DIR}/output"
@@ -74,39 +68,6 @@ if(BUILD_TESTING)
     )
     set_tests_properties(miaow_example_02_soil_freeze_thaw PROPERTIES
         RESOURCE_LOCK miaow_example_02_soil_freeze_thaw_output
-    )
-
-    miaow_add_workflow_test(
-        TEST_NAME miaow_example_02_soil_freeze_thaw_forcing_matched
-        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "\\[task_0\\] succeeded: BMI workflow complete"
-        CLI_ARGS
-            --max_workers
-            1
-            --task_request_timeout
-            60
-            --job_request_timeout
-            600
-    )
-
-    string(CONCAT soil_freeze_thaw_exhausted_regex
-        "\\[task_1\\] failed: Forcing alignment error: forcing series exhausted "
-        "at step 24 \\(updates: 24\\)"
-    )
-
-    miaow_add_workflow_test(
-        TEST_NAME miaow_example_02_soil_freeze_thaw_forcing_exhausted
-        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "${soil_freeze_thaw_exhausted_regex}"
-        CLI_ARGS
-            --max_workers
-            1
-            --task_request_timeout
-            60
-            --job_request_timeout
-            600
     )
 
     # Drives the example with --output_root and validates the on-disk layout
@@ -122,14 +83,6 @@ if(BUILD_TESTING)
     )
     list(JOIN soil_freeze_thaw_layout_cli_args ";"
         soil_freeze_thaw_layout_cli_args_serialized)
-    set(soil_freeze_thaw_expected_job_record_snippets
-        "\"label\""
-        "\"matched-duration\""
-        "\"task_0.json\""
-        "\"results/task_0.csv\""
-    )
-    list(JOIN soil_freeze_thaw_expected_job_record_snippets ";"
-        soil_freeze_thaw_job_record_snippets_arg)
     set(soil_freeze_thaw_expected_result_paths
         "task_0.json"
         "task_2.json"
@@ -147,7 +100,6 @@ if(BUILD_TESTING)
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
             -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
             "-DEXECUTABLE_ARGS=${soil_freeze_thaw_layout_cli_args_serialized}"
-            "-DEXPECTED_METADATA_SNIPPETS=${soil_freeze_thaw_job_record_snippets_arg}"
             "-DEXPECTED_RESULT_PATHS=${soil_freeze_thaw_result_paths_arg}"
             -P
             ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake

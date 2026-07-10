@@ -18,13 +18,8 @@ endif()
 set(MIAOW_SUMMA_LIBRARY_LINKS "${miaow_summa_library_links_default}" CACHE STRING
     "LAPACK/BLAS link flags passed to SUMMA through LIBRARY_LINKS")
 
-if(MIAOW_SUMMA_MODEL_ROOT)
-    set(summa_model_root_override "${MIAOW_SUMMA_MODEL_ROOT}")
-else()
-    set(summa_model_root_override "")
-endif()
 miaow_resolve_model_root(summa_source_dir
-    MODEL_ROOT "${summa_model_root_override}"
+    MODEL_ROOT "${MIAOW_SUMMA_MODEL_ROOT}"
     MODEL_LOCAL_SUBDIR "summa"
     MODEL_LABEL "summa"
 )
@@ -44,7 +39,7 @@ if(NOT EXISTS "${summa_source_dir}")
 endif()
 
 if(NOT EXISTS "${summa_source_dir}/build/source/driver/summa_bmi.f90")
-    if(summa_model_root_override)
+    if(MIAOW_SUMMA_MODEL_ROOT)
         message(FATAL_ERROR
             "MIAOW_SUMMA_MODEL_ROOT must point to a tristanmontoya/summa source tree")
     else()
@@ -214,7 +209,7 @@ if(BUILD_TESTING)
             900
     )
     string(CONCAT summa_run_regex
-        "Parsed realization with 5 feature pipeline config\\(s\\)(.|\\n)*"
+        "Parsed realization with 5 feature task\\(s\\)(.|\\n)*"
         "\\[cat-11223\\] succeeded: BMI workflow complete"
     )
     set_tests_properties(miaow_example_04_summa_run PROPERTIES

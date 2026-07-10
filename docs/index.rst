@@ -14,24 +14,11 @@ management and JSON support, and includes C++/Fortran
 `Basic Model Interface (BMI) <https://bmi.csdms.io/en/stable/>`_ integration
 paths.
 
-Quick start
------------
+Getting started
+---------------
 
-See the repository README for platform-specific dependency installation. Build
-the core library and subprocess runner:
-
-.. code-block:: sh
-
-   cmake -S . -B build -DBUILD_EXAMPLES=OFF
-   cmake --build build
-
-Build the default examples and run the test suite:
-
-.. code-block:: sh
-
-   cmake -S . -B build -DBUILD_EXAMPLES=ON
-   cmake --build build
-   ctest --test-dir build --output-on-failure
+See :doc:`development` for requirements, build options, and testing. See
+:doc:`examples` for runnable workflows and model-specific setup.
 
 Documentation
 -------------

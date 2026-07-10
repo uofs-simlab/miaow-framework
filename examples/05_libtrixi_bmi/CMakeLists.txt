@@ -5,17 +5,6 @@ miaow_setup_example(libtrixi_bmi)
 
 set(MIAOW_LIBTRIXI_BMI_ROOT "" CACHE PATH
     "Path to a local tristanmontoya/libtrixi-bmi source tree")
-set(libtrixi_config_default "${CMAKE_CURRENT_LIST_DIR}/advection_basic_1d.jl")
-set(LIBTRIXI_CONFIG "${libtrixi_config_default}" CACHE FILEPATH
-    "Default libtrixi config run by the example")
-if(NOT LIBTRIXI_CONFIG)
-    set(LIBTRIXI_CONFIG "${libtrixi_config_default}" CACHE FILEPATH
-        "Default libtrixi config run by the example" FORCE)
-endif()
-
-if(NOT EXISTS "${LIBTRIXI_CONFIG}")
-    message(FATAL_ERROR "LIBTRIXI_CONFIG must point to a libtrixi config")
-endif()
 
 # Resolve/fetch the libtrixi BMI plugin source tree
 miaow_resolve_model_root(libtrixi_bmi_root
@@ -45,22 +34,10 @@ set(libtrixi_project_dir_default "${libtrixi_bmi_root}/build/libtrixi-julia")
 set(libtrixi_julia_depot_path_default "${libtrixi_bmi_root}/build/julia-depot")
 set(LIBTRIXI_INSTALL_DIR "${libtrixi_install_dir_default}" CACHE PATH
     "Directory where libtrixi is installed")
-if(NOT LIBTRIXI_INSTALL_DIR)
-    set(LIBTRIXI_INSTALL_DIR "${libtrixi_install_dir_default}" CACHE PATH
-        "Directory where libtrixi is installed" FORCE)
-endif()
 set(LIBTRIXI_PROJECT_DIR "${libtrixi_project_dir_default}" CACHE PATH
     "Existing libtrixi Julia project directory passed to trixi_initialize")
-if(NOT LIBTRIXI_PROJECT_DIR)
-    set(LIBTRIXI_PROJECT_DIR "${libtrixi_project_dir_default}" CACHE PATH
-        "Existing libtrixi Julia project directory passed to trixi_initialize" FORCE)
-endif()
-set(LIBTRIXI_JULIA_DEPOT_PATH "${libtrixi_julia_depot_path_default}" CACHE PATH
-    "Optional Julia depot path used as a JULIA_DEPOT_PATH fallback")
-if(NOT LIBTRIXI_JULIA_DEPOT_PATH)
-    set(LIBTRIXI_JULIA_DEPOT_PATH "${libtrixi_julia_depot_path_default}" CACHE PATH
-        "Optional Julia depot path used as a JULIA_DEPOT_PATH fallback" FORCE)
-endif()
+set(LIBTRIXI_DEPOT_PATH "${libtrixi_julia_depot_path_default}" CACHE PATH
+    "Optional Julia depot path passed to trixi_initialize")
 if(NOT EXISTS "${LIBTRIXI_INSTALL_DIR}/include/trixi.h")
     message(FATAL_ERROR
         "LIBTRIXI_INSTALL_DIR must point to the directory where libtrixi is "
@@ -94,8 +71,7 @@ target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
     MIAOW_LIBTRIXI_BMI_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
     LIBTRIXI_BMI_PLUGIN_PATH="$<TARGET_FILE:libtrixi_bmi::trixi_bmi>"
     LIBTRIXI_PROJECT_DIR="${LIBTRIXI_PROJECT_DIR}"
-    LIBTRIXI_JULIA_DEPOT_PATH="${LIBTRIXI_JULIA_DEPOT_PATH}"
-    LIBTRIXI_CONFIG="${LIBTRIXI_CONFIG}"
+    LIBTRIXI_DEPOT_PATH="${LIBTRIXI_DEPOT_PATH}"
 )
 add_dependencies(${EXECUTABLE_TARGET} miaow_subprocess libtrixi_bmi_plugin)
 

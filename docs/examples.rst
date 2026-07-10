@@ -104,12 +104,9 @@ These flags control the ``libtrixi`` paths:
    * - ``-DLIBTRIXI_PROJECT_DIR``
      - ``<libtrixi-bmi>/build/libtrixi-julia``
      - Julia project directory
-   * - ``-DLIBTRIXI_JULIA_DEPOT_PATH``
+   * - ``-DLIBTRIXI_DEPOT_PATH``
      - ``<libtrixi-bmi>/build/julia-depot``
-     - Julia depot fallback
-   * - ``-DLIBTRIXI_CONFIG``
-     - ``examples/05_libtrixi_bmi/advection_basic_1d.jl``
-     - Default ``libtrixi`` config path
+     - Optional Julia depot passed to ``trixi_initialize``
 
 Example layout
 --------------

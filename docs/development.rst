@@ -1,5 +1,5 @@
 Development
-=================
+===========
 
 Build and test
 --------------
@@ -98,51 +98,9 @@ Build the docs from a dedicated Python environment:
 
    python3 -m venv docs/.venv
    docs/.venv/bin/pip install -r docs/requirements.txt
-   rm -rf docs/_build/html docs/_build/doctrees
-   docs/.venv/bin/sphinx-build -b html -d docs/_build/doctrees docs docs/_build/html
+   docs/.venv/bin/sphinx-build -E -n -b html -d docs/_build/doctrees docs docs/_build/html
 
 The generated HTML entry point is ``docs/_build/html/index.html``.
-
-Code structure
---------------
-
-.. code-block:: text
-
-   include/
-     miaow.hpp              # public runtime/task API
-     miaow_bmi.hpp          # BMI simulation-unit wrapper and realization contracts
-     miaow_io.hpp           # public I/O, diagnostics, and CLI API
-
-   src/
-     core/
-       runtime.cpp          # Runtime submit path and output tree setup
-       actors.cpp           # orchestrator/job/worker actor behaviour
-       process.cpp          # subprocess launch, connection, and process reuse
-       internal.hpp         # core-private actor declarations and JobState
-
-     bmi/
-       execute.cpp          # BMI pipeline lifecycle execution
-       dynamic.cpp          # DynamicBmiModel adapter for C++/Fortran plugins
-       forcing.cpp          # streaming external BMI forcing CSV source
-       io.cpp               # BMI config, artifact, and output CSV helpers
-       pipeline.cpp         # ordered BMI module pipeline and coupling application
-       realization.cpp      # BMI realization parsing, task, and registration helpers
-       subprocess.cpp       # BMI subprocess executable entry point
-       internal.hpp         # BMI-private forcing and output declarations
-
-     io/
-       cli.cpp              # runtime command-line option parsing
-       csv.cpp              # CSV parsing plus shared forcing helper utilities
-       diagnostics.cpp      # diagnostics formatting and printing helpers
-       job_record.cpp       # runtime job record output writing
-       internal.hpp         # IO-private declarations and helpers
-
-   examples/
-     00_hello/
-     01_heat/
-     02_soil_freeze_thaw/
-     03_dynamic_bmi/
-     04_summa/
 
 Namespace layout
 ----------------

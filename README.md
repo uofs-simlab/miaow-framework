@@ -49,42 +49,28 @@ brew install cmake gcc
 
 ## Quick start
 
-Build the core library and subprocess runner without examples or tests:
+Configure MIAOW, build the Hello World example, and run it:
 
 ```sh
-cmake -S . -B build -DBUILD_EXAMPLES=OFF
-cmake --build build
-```
-
-Build the default examples and run the test suite:
-
-```sh
-cmake -S . -B build -DBUILD_EXAMPLES=ON
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-## Examples
-
-Run examples from their own `examples/<example_name>` directories:
-
-```sh
+cmake -S . -B build
+cmake --build build --target miaow_hello
 cd examples/00_hello
 ./miaow_hello
-cd ../01_heat
-./miaow_heat
-cd ../02_soil_freeze_thaw
-./miaow_soil_freeze_thaw --output_root ./output --max_workers 2
-cd ../03_dynamic_bmi
-./miaow_dynamic_bmi --output_root ./output --max_workers 2
 ```
 
-The examples cover minimal task orchestration, static BMI models, dynamic C++
-and Fortran BMI plugins, plus optional
-[SUMMA](https://github.com/CH-Earth/summa) and
-[Trixi.jl](https://github.com/trixi-framework/Trixi.jl) workflows. See the
-[Examples](https://tjbmontoya.com/miaow-framework/examples.html) page for model
-sources, data layout, and command line options.
+See the [development documentation](https://tjbmontoya.com/miaow-framework/development.html)
+for requirements, build options, and testing. See the
+[examples documentation](https://tjbmontoya.com/miaow-framework/examples.html)
+for the available workflows and model-specific setup.
+
+## Documentation
+
+The full documentation covers the
+[architecture](https://tjbmontoya.com/miaow-framework/architecture.html),
+[BMI integration](https://tjbmontoya.com/miaow-framework/bmi.html),
+[examples](https://tjbmontoya.com/miaow-framework/examples.html),
+[development workflow](https://tjbmontoya.com/miaow-framework/development.html),
+and [API reference](https://tjbmontoya.com/miaow-framework/api.html).
 
 ## Authors and funding
 

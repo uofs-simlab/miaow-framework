@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Initialize runtime options and parse runtime-wide CLI arguments
+    // Initialize runtime options and parse runtime CLI arguments
     miaow::RuntimeOptions runtime_options;
     try {
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
