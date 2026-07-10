@@ -62,7 +62,7 @@ settings for one task.
        registry.add<miaow::DynamicBmiSimulationUnit>();
 
    const miaow::DynamicBmiConfig config{
-       .backend_ = miaow::BmiPluginBackend::fortran,
+       .backend_ = miaow::DynamicBmiBackend::fortran,
        .plugin_path_ = plugin_path,
        .init_config_ = init_config,
        .execution_mode_ = miaow::ExecutionMode::persistent_subprocess,

@@ -25,7 +25,7 @@ namespace bmi_api = ::bmi;
  * Dynamic modules adapt plugins that implement the
  * [Basic Model Interface](https://bmi.csdms.io/en/stable/).
  */
-enum class BmiPluginBackend {
+enum class DynamicBmiBackend {
     cpp,
     fortran,
 };
@@ -52,7 +52,7 @@ struct StaticBmiConfig {
  */
 struct DynamicBmiConfig {
     // Backend implemented by the plugin
-    BmiPluginBackend backend_{BmiPluginBackend::cpp};
+    DynamicBmiBackend backend_{DynamicBmiBackend::cpp};
 
     // Dynamic plugin library path
     std::string plugin_path_;

@@ -25,7 +25,7 @@ BmiModuleConfig::BmiModuleConfig(std::string name, std::string config_file,
     : name_(std::move(name)), config_file_(std::move(config_file)),
       variables_names_map_(std::move(variables_names_map)) {}
 
-BmiModuleConfig::BmiModuleConfig(std::string name, BmiPluginBackend backend,
+BmiModuleConfig::BmiModuleConfig(std::string name, DynamicBmiBackend backend,
                                  std::string plugin_path, std::string config_file,
                                  std::map<std::string, std::string> variables_names_map)
     : name_(std::move(name)), backend_(backend),
@@ -100,7 +100,7 @@ Task make_dynamic_bmi_task(SimulationUnitId simulation_unit_id,
     }
 
     const std::string module_name =
-        config.backend_ == BmiPluginBackend::cpp ? "bmi_cpp" : "bmi_fortran";
+        config.backend_ == DynamicBmiBackend::cpp ? "bmi_cpp" : "bmi_fortran";
     BmiModuleConfig module_config(module_name, config.backend_, config.plugin_path_,
                                   config.init_config_, config.variables_names_map_);
     module_config.output_variables_ = config.output_variables_;
@@ -341,7 +341,7 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
 
     // Fortran backend
     if (module_name == "bmi_fortran") {
-        BmiModuleConfig module_config{std::move(module_name), BmiPluginBackend::fortran,
+        BmiModuleConfig module_config{std::move(module_name), DynamicBmiBackend::fortran,
                                       std::move(plugin_path), std::move(config_file),
                                       std::move(variables_names_map)};
         module_config.output_variables_ = std::move(output_variables);
@@ -350,7 +350,7 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
 
     // C++ backend
     if (module_name.starts_with("bmi_cpp")) {
-        BmiModuleConfig module_config{std::move(module_name), BmiPluginBackend::cpp,
+        BmiModuleConfig module_config{std::move(module_name), DynamicBmiBackend::cpp,
                                       std::move(plugin_path), std::move(config_file),
                                       std::move(variables_names_map)};
         module_config.output_variables_ = std::move(output_variables);

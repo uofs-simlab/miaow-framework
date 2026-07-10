@@ -46,20 +46,20 @@ int main(int argc, char* argv[]) {
 
     const std::vector<miaow::DynamicBmiConfig> configs{
         // Run the C++ plugin in the current process
-        {.backend_ = miaow::BmiPluginBackend::cpp,
+        {.backend_ = miaow::DynamicBmiBackend::cpp,
          .plugin_path_ = cpp_heat_plugin_path,
          .init_config_ = heat_config},
         // Run the Fortran plugin in the current process
-        {.backend_ = miaow::BmiPluginBackend::fortran,
+        {.backend_ = miaow::DynamicBmiBackend::fortran,
          .plugin_path_ = fortran_heat_plugin_path,
          .init_config_ = heat_config},
         // Run the C++ plugin in a persistent subprocess
-        {.backend_ = miaow::BmiPluginBackend::cpp,
+        {.backend_ = miaow::DynamicBmiBackend::cpp,
          .plugin_path_ = cpp_heat_plugin_path,
          .init_config_ = heat_config,
          .execution_mode_ = miaow::ExecutionMode::persistent_subprocess},
         // Run one C++ plugin task in a temporary subprocess
-        {.backend_ = miaow::BmiPluginBackend::cpp,
+        {.backend_ = miaow::DynamicBmiBackend::cpp,
          .plugin_path_ = cpp_heat_plugin_path,
          .init_config_ = heat_config,
          .execution_mode_ = miaow::ExecutionMode::single_task_subprocess},

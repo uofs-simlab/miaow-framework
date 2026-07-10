@@ -87,7 +87,7 @@ Realization-driven workflows follow the
 BMI configuration
 ~~~~~~~~~~~~~~~~~
 
-.. doxygenenum:: miaow::BmiPluginBackend
+.. doxygenenum:: miaow::DynamicBmiBackend
    :project: MIAOW
 
 .. doxygenstruct:: miaow::StaticBmiConfig

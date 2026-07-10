@@ -24,12 +24,12 @@ struct BmiModuleConfig {
     BmiModuleConfig(std::string name, std::string config_file,
                     std::map<std::string, std::string> variables_names_map = {});
 
-    BmiModuleConfig(std::string name, BmiPluginBackend backend,
+    BmiModuleConfig(std::string name, DynamicBmiBackend backend,
                     std::string plugin_path, std::string config_file = "",
                     std::map<std::string, std::string> variables_names_map = {});
 
     std::string name_;
-    std::optional<BmiPluginBackend> backend_;
+    std::optional<DynamicBmiBackend> backend_;
     std::string plugin_path_;
     std::string config_file_;
     std::optional<std::string> cpp_create_function_;
