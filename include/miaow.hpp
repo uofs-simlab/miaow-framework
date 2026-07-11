@@ -95,7 +95,7 @@ struct Task {
     Task() = default;
 
     /**
-     * @brief Construct a task from positional config values.
+     * @brief Construct a `Task` from positional config values.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param task_args Positional arguments for this task.
      */
@@ -103,7 +103,7 @@ struct Task {
         : simulation_unit_id_(task_simulation_unit_id), args_(std::move(task_args)) {}
 
     /**
-     * @brief Construct a task from positional config values and metadata.
+     * @brief Construct a `Task` from positional config values and metadata.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param task_args Positional arguments for this task.
      * @param task_metadata Metadata preserved for reporting and postprocessing.
@@ -114,7 +114,7 @@ struct Task {
           metadata_(std::move(task_metadata)) {}
 
     /**
-     * @brief Construct a task from one config value.
+     * @brief Construct a `Task` from one config value.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single `caf::config_value` for this task.
      */
@@ -122,7 +122,7 @@ struct Task {
         : simulation_unit_id_(task_simulation_unit_id), args_{std::move(arg)} {}
 
     /**
-     * @brief Construct a task from one config value and metadata.
+     * @brief Construct a `Task` from one config value and metadata.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single `caf::config_value` for this task.
      * @param task_metadata Metadata preserved for reporting and postprocessing.
@@ -133,7 +133,7 @@ struct Task {
           metadata_(std::move(task_metadata)) {}
 
     /**
-     * @brief Construct a task from one string argument.
+     * @brief Construct a `Task` from one string argument.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single string argument for this task.
      */
@@ -142,7 +142,7 @@ struct Task {
           args_{caf::config_value{std::move(arg)}} {}
 
     /**
-     * @brief Construct a task from positional string arguments.
+     * @brief Construct a `Task` from positional string arguments.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param string_args Positional string arguments for this task.
      */
@@ -186,13 +186,13 @@ inline std::string task_status_to_string(TaskStatus status) {
 }
 
 /**
- * @brief Result returned by one simulation unit task execution.
+ * @brief `TaskResult` returned by one simulation unit task execution.
  */
 struct TaskResult {
     TaskResult() = default;
 
     /**
-     * @brief Construct a task result from status, message, and artifact paths.
+     * @brief Construct a `TaskResult` from status, message, and artifact paths.
      * @param status Terminal status for this task execution.
      * @param message Message interpreted by `status` as output or failure detail.
      * @param artifact_paths Relative paths to artifacts under the job directory.
@@ -213,13 +213,13 @@ struct TaskResult {
 };
 
 /**
- * @brief Runtime record for one completed task.
+ * @brief Runtime `TaskRecord` for one completed task.
  */
 struct TaskRecord {
     TaskRecord() = default;
 
     /**
-     * @brief Construct a completed task record from task input and terminal result.
+     * @brief Construct a completed `TaskRecord` from task input and terminal result.
      * @param task Submitted task whose metadata and simulation unit ID are copied.
      * @param task_id `TaskId` within the submitted job.
      * @param result Terminal simulation unit result for this task.
@@ -250,13 +250,13 @@ struct TaskRecord {
 };
 
 /**
- * @brief Runtime record returned for one submitted job.
+ * @brief Runtime `JobRecord` returned for one submitted job.
  */
 struct JobRecord {
     JobRecord() = default;
 
     /**
-     * @brief Construct a final job record from job IDs, task records, and runtime.
+     * @brief Construct a final `JobRecord` from IDs, task records, and runtime.
      * @param run_id Runtime identifier for this `Runtime` instance.
      * @param job_id `JobId` assigned to this submitted job.
      * @param tasks Task records in submitted task order.
@@ -633,7 +633,7 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
 }
 
 /**
- * @brief Actor runtime for orchestrating simulation tasks.
+ * @brief Actor runtime for orchestrating simulation `Task`s.
  *
  * The runtime is model-agnostic and thread-safe.
  * Tasks with unknown `SimulationUnitId` values fail individually.

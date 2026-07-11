@@ -31,7 +31,7 @@ enum class DynamicBmiBackend {
 };
 
 /**
- * @brief Configuration for one statically typed BMI task.
+ * @brief `StaticBmiConfig` for one statically typed BMI task.
  */
 struct StaticBmiConfig {
     // BMI initialization config path
@@ -48,7 +48,7 @@ struct StaticBmiConfig {
 };
 
 /**
- * @brief Configuration for one dynamically loaded BMI plugin task.
+ * @brief `DynamicBmiConfig` for one dynamically loaded BMI plugin task.
  */
 struct DynamicBmiConfig {
     // Backend implemented by the plugin
@@ -80,7 +80,7 @@ struct DynamicBmiConfig {
  * @brief Build one task for a statically typed BMI model.
  * @param simulation_unit_id Registered static BMI simulation unit id.
  * @param config Static BMI task configuration.
- * @return Task ready to submit through `Runtime::submit_job()`.
+ * @return `Task` ready to submit through `Runtime::submit_job()`.
  */
 Task make_bmi_task(SimulationUnitId simulation_unit_id,
                    const StaticBmiConfig& config);
@@ -89,7 +89,7 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id,
  * @brief Build one task for a dynamically loaded BMI plugin.
  * @param simulation_unit_id Registered dynamic BMI simulation unit id.
  * @param config Dynamic BMI task configuration.
- * @return Task ready to submit through `Runtime::submit_job()`.
+ * @return `Task` ready to submit through `Runtime::submit_job()`.
  */
 Task make_bmi_task(SimulationUnitId simulation_unit_id,
                    const DynamicBmiConfig& config);
@@ -99,7 +99,7 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id,
  * @tparam BmiConfig `StaticBmiConfig` or `DynamicBmiConfig`.
  * @param simulation_unit_id Registered BMI simulation unit id.
  * @param configs BMI task configurations.
- * @return Tasks ready to submit through `Runtime::submit_job()`.
+ * @return `Task`s ready to submit through `Runtime::submit_job()`.
  */
 template <class BmiConfig>
     requires(std::same_as<BmiConfig, StaticBmiConfig> ||
@@ -115,16 +115,15 @@ std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
 }
 
 /**
- * @brief Internal task-level BMI execution pipeline.
+ * @brief BMI task execution pipeline.
  *
  * `BmiPipeline` owns the
- * [BMI lifecycle](https://bmi.csdms.io/en/stable/) for one task. It reads
- * internal task configuration, constructs a configured plugin model or
- * receives one model from `StaticBmiSimulationUnit`, connects forcing, writes
- * output, and reports artifacts through the task result.
- *
- * `StaticBmiSimulationUnit` and `DynamicBmiSimulationUnit` provide the public
- * task execution interface.
+ * [BMI lifecycle](https://bmi.csdms.io/en/stable/) for one `Task`. It receives
+ * a supplied statically typed model through the `bmi_api::Bmi` interface or
+ * constructs a dynamically loaded model from the task configuration. The
+ * pipeline currently supports one model component plus the BMI-controlled
+ * `bmi::ForcingBmi` forcing provider. It exposes the configured model's BMI
+ * surface, writes output, and reports artifacts through `TaskResult`.
  */
 class BmiPipeline : public bmi_api::Bmi {
   public:
@@ -136,7 +135,7 @@ class BmiPipeline : public bmi_api::Bmi {
 
     /**
      * @brief Construct a task pipeline and write its initialization file.
-     * @param task Task whose first argument stores internal BMI configuration.
+     * @param task `Task` whose first argument stores internal BMI configuration.
      * @param model Optional model provided by `StaticBmiSimulationUnit`.
      */
     explicit BmiPipeline(const Task& task, std::unique_ptr<bmi_api::Bmi> model = nullptr);
@@ -193,7 +192,7 @@ class BmiPipeline : public bmi_api::Bmi {
 
     /**
      * @brief Execute this pipeline through the standard BMI lifecycle.
-     * @param task Task whose output settings receive BMI artifacts.
+     * @param task `Task` whose output settings receive BMI artifacts.
      * @return Structured `TaskResult` for pipeline lifecycle execution.
      */
     TaskResult execute_bmi_lifecycle(const Task& task);
@@ -306,7 +305,7 @@ class StaticBmiSimulationUnit : public SimulationUnit {
 
     /**
      * @brief Execute a BMI model instance for a single task.
-     * @param task Task built from `StaticBmiConfig`.
+     * @param task `Task` built from `StaticBmiConfig`.
      * @return Structured `TaskResult` for this BMI task execution.
      */
     TaskResult execute(const Task& task, ExecutionContext&) override {
@@ -362,7 +361,7 @@ class DynamicBmiSimulationUnit : public SimulationUnit {
 
     /**
      * @brief Execute a dynamically loaded BMI plugin task.
-     * @param task Task built from `DynamicBmiConfig`.
+     * @param task `Task` built from `DynamicBmiConfig`.
      * @param context Runtime-local services for this worker task execution.
      * @return Structured `TaskResult` for this BMI pipeline task execution.
      */
