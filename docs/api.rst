@@ -47,12 +47,15 @@ Task and job data
    :project: MIAOW
    :members:
 
+.. doxygentypedef:: miaow::JobHandle
+   :project: MIAOW
+
 Runtime orchestration
 ~~~~~~~~~~~~~~~~~~~~~
 
 .. doxygenclass:: miaow::ExecutionContext
    :project: MIAOW
-   :members:
+   :members: execute_subprocess
 
 .. doxygenclass:: miaow::SimulationUnit
    :project: MIAOW

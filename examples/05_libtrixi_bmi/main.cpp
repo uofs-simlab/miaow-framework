@@ -1,9 +1,9 @@
 /**
- * This example demonstrates how to use the libtrixi BMI plugin with MIAOW, using the 
- * `advection_basic_1d.jl` setup file to run a simple 1D advection simulation a total of 
- * `default_random_cfl_runs` times, each with a different random CFL number. The example 
- * uses the dynamic BMI simulation unit to load the libtrixi plugin and execute the BMI 
- * lifecycle in persistent subprocess mode, meaning that the Julia runtime is initialized 
+ * This example demonstrates how to use the libtrixi BMI plugin with MIAOW, using the
+ * `advection_basic_1d.jl` setup file to run a simple 1D advection simulation a total of
+ * `default_random_cfl_runs` times, each with a different random CFL number. The example
+ * uses the dynamic BMI simulation unit to load the libtrixi plugin and execute the BMI
+ * lifecycle in persistent subprocess mode, meaning that the Julia runtime is initialized
  * once per worker and reused for all tasks submitted to that worker.
  */
 
@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) {
     const std::vector<miaow::DynamicBmiConfig> bmi_configs(
         default_random_cfl_runs, bmi_config);
 
-    // Build one task per config using the dynamic_bmi simulation unit; these are all the 
+    // Build one task per config using the dynamic_bmi simulation unit; these are all the
     // same config, but each task will sample its own CFL number at runtime
     const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(dynamic_bmi, bmi_configs);
 

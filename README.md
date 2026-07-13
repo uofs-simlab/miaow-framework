@@ -19,7 +19,7 @@ MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), u
 
 ## Requirements
 
-MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. CMake tries to find Boost and CAF on the system, then fetches them from source when the provider option is `auto`. See the [Development](https://tjbmontoya.com/miaow-framework/development.html) section in the [documentation](https://tjbmontoya.com/miaow-framework/index.html) for a description of the provider options.
+MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. CMake tries to find Boost and CAF on the system, then fetches them from source when the provider option is `auto`. See the [Development](https://tjbmontoya.com/miaow-framework/development.html) section of the [MIAOW documentation](https://tjbmontoya.com/miaow-framework/index.html) for a description of the provider options.
 
 On Ubuntu:
 
@@ -36,7 +36,7 @@ brew install cmake gcc
 
 ## Quick start
 
-Configure MIAOW, build the Hello World example, and run it:
+Use the following commands to build MIAOW and run the `00_hello` example workflow:
 
 ```sh
 cmake -S . -B build
@@ -45,11 +45,7 @@ cd examples/00_hello
 ./miaow_hello
 ```
 
-See the [development documentation](https://tjbmontoya.com/miaow-framework/development.html) for requirements, build options, and testing. See the [examples documentation](https://tjbmontoya.com/miaow-framework/examples.html) for the available workflows and model-specific setup.
-
-## Documentation
-
-The full documentation covers the [architecture](https://tjbmontoya.com/miaow-framework/architecture.html), [BMI integration](https://tjbmontoya.com/miaow-framework/bmi.html), [examples](https://tjbmontoya.com/miaow-framework/examples.html), [development workflow](https://tjbmontoya.com/miaow-framework/development.html), and [API reference](https://tjbmontoya.com/miaow-framework/api.html).
+See the [Examples](https://tjbmontoya.com/miaow-framework/examples.html) section of the documentation for an overview of the available workflows and model-specific setup.
 
 ## Authors and funding
 
