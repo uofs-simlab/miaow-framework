@@ -98,6 +98,13 @@ BMI configuration
    :project: MIAOW
    :members:
 
+BMI pipeline
+~~~~~~~~~~~~
+
+.. doxygenclass:: miaow::BmiPipeline
+   :project: MIAOW
+   :members:
+
 Simulation units
 ~~~~~~~~~~~~~~~~
 

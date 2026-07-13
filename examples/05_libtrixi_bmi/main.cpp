@@ -20,8 +20,7 @@ constexpr int default_random_cfl_runs = 12;
 
 int main(int argc, char* argv[]) {
     // Check that local example data is resolved from the expected directory
-    if (!miaow::ensure_expected_run_dir("miaow_libtrixi_bmi",
-                                        MIAOW_LIBTRIXI_BMI_RUN_DIR)) {
+    if (!miaow::ensure_expected_run_dir(MIAOW_LIBTRIXI_BMI_RUN_DIR)) {
         return 1;
     }
 
@@ -32,9 +31,6 @@ int main(int argc, char* argv[]) {
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";
         return 1;
-    }
-    if (runtime_options.output_root_.empty()) {
-        runtime_options.output_root_ = "./output";
     }
 
     // Set the Julia context inherited by BMI subprocesses

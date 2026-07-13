@@ -53,8 +53,7 @@ Then run it from the example directory:
 .. code-block:: sh
 
    cd examples/04_summa
-   ./miaow_summa --realization data/gauge_01073000/realization_config.json \
-     --output_root ./output
+   ./miaow_summa --output_root ./output
 
 These flags control the SUMMA build:
 
@@ -107,21 +106,6 @@ These flags control the ``libtrixi`` paths:
    * - ``-DLIBTRIXI_DEPOT_PATH``
      - ``<libtrixi-bmi>/build/julia-depot``
      - Optional Julia depot passed to ``trixi_initialize``
-
-Example layout
---------------
-
-Each example directory follows a common layout:
-
-.. code-block:: text
-
-   examples/<example_name>/
-     data/             # example input data, tracked in the repository
-       configs/        # configuration files
-       forcings/       # forcing data files, when needed
-       settings/       # model settings and parameter files, when needed
-     extern/           # symlinks to model sources, created by CMake
-     output/           # runtime and model output, generated and not tracked
 
 Configuring model examples independently
 ----------------------------------------
@@ -184,10 +168,6 @@ Examples use the following runtime command-line options where applicable:
      - ``""``
      - Root directory path for runtime-managed output folders, disabled by
        default
-   * - ``--realization``
-     - ``data/gauge_01073000/realization_config.json``
-     - BMI realization path
-
 Public CLI parsers throw ``std::runtime_error`` for unrecognized arguments,
 missing option values, and invalid option values. Example executables catch
 these errors, print the message, and exit with status ``1``.

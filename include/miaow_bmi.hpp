@@ -16,63 +16,75 @@
 
 namespace miaow {
 
-// Avoid confusion with the `miaow::bmi` namespace
+// Alias to avoid confusion with the `miaow::bmi` namespace
 namespace bmi_api = ::bmi;
 
 /**
- * @brief Backend implemented by a dynamically loaded BMI plugin.
+ * @brief Plugin interface used to load and call a dynamic BMI plugin.
  *
- * Dynamic modules adapt plugins that implement the
- * [Basic Model Interface](https://bmi.csdms.io/en/stable/).
+ * Both interfaces follow the dynamic BMI plugin conventions used by
+ * [NextGen](https://github.com/NOAA-OWP/ngen). The C++ interface uses
+ * `bmi_model_create` and `bmi_model_destroy`, while the Fortran interface uses
+ * the [procedural BMI bridge](https://github.com/NOAA-OWP/iso_c_fortran_bmi).
  */
 enum class DynamicBmiBackend {
+    /// C++ `bmi_api::Bmi` object interface
     cpp,
+
+    /// Procedural Fortran BMI bridge
     fortran,
 };
 
 /**
- * @brief `StaticBmiConfig` for one statically typed BMI task.
+ * @brief Input and output configuration for one statically typed BMI task.
+ *
+ * The model implementation is supplied by `StaticBmiSimulationUnit`; this
+ * configuration provides only the model initialization, forcing, and output
+ * settings used by the task.
  */
 struct StaticBmiConfig {
-    // BMI initialization config path
+    /// BMI initialization config path
     std::string init_config_;
 
-    // Optional CSV forcing file path
+    /// Optional CSV forcing file path
     std::string forcing_file_;
 
-    // Map from BMI input names to forcing CSV headers
+    /// Map from BMI input names to forcing CSV headers
     std::map<std::string, std::string> variables_names_map_;
 
-    // BMI output variables written to task CSV output
+    /// BMI output variables written to task CSV output
     std::vector<std::string> output_variables_;
 };
 
 /**
- * @brief `DynamicBmiConfig` for one dynamically loaded BMI plugin task.
+ * @brief Plugin, execution, input, and output configuration for one dynamic BMI task.
+ *
+ * `backend_` selects the plugin interface used to load `plugin_path_`. Dynamic
+ * tasks may run in process or through either subprocess execution mode.
  */
 struct DynamicBmiConfig {
-    // Backend implemented by the plugin
+    /// Backend implemented by the plugin
     DynamicBmiBackend backend_{DynamicBmiBackend::cpp};
 
-    // Dynamic plugin library path
+    /// Dynamic plugin library path
     std::string plugin_path_;
 
-    // Optional BMI initialization config path
+    /// Optional BMI initialization config path
     std::string init_config_;
 
-    // Optional CSV forcing file path
+    /// Optional CSV forcing file path
     std::string forcing_file_;
 
-    // Map from BMI input names to forcing CSV headers
+    /// Map from BMI input names to forcing CSV headers
     std::map<std::string, std::string> variables_names_map_;
 
-    // BMI output variables written to task CSV output
+    /// BMI output variables written to task CSV output
     std::vector<std::string> output_variables_;
 
-    // Execution location for this task
+    /// Execution location for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
 
-    // Optional subprocess executable path
+    /// Optional subprocess executable path
     std::string subprocess_path_;
 };
 
@@ -95,7 +107,9 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id,
                    const DynamicBmiConfig& config);
 
 /**
- * @brief Build tasks from static or dynamic BMI configurations.
+ * @brief Build tasks that use the same registered BMI simulation unit.
+ *
+ * Internally, this function calls `make_bmi_task()` for each configuration.
  * @tparam BmiConfig `StaticBmiConfig` or `DynamicBmiConfig`.
  * @param simulation_unit_id Registered BMI simulation unit id.
  * @param configs BMI task configurations.
@@ -187,7 +201,16 @@ class BmiPipeline : public bmi_api::Bmi {
     void GetGridFaceNodes(const int grid, int* face_nodes) override;
     void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
 
+    /**
+     * @brief Return the generated BMI pipeline initialization file path.
+     * @return Path passed to `Initialize()` for this pipeline.
+     */
     std::string config_path_string() const;
+
+    /**
+     * @brief Return paths to runtime-managed pipeline configuration artifacts.
+     * @return Artifact paths relative to the job directory.
+     */
     std::vector<std::string> artifact_paths() const;
 
     /**
@@ -214,6 +237,7 @@ class BmiPipeline : public bmi_api::Bmi {
  */
 class PartitionedBmiRealization {
   public:
+    /// Construct an empty realization
     PartitionedBmiRealization() = default;
 
     /**
@@ -229,6 +253,7 @@ class PartitionedBmiRealization {
 
     /**
      * @brief Return the resolved runtime output root from the realization.
+     * @return Resolved output root, or an empty string when none is configured.
      */
     const std::string& output_root() const;
 
@@ -353,10 +378,14 @@ class StaticBmiSimulationUnit : public SimulationUnit {
 };
 
 /**
- * @brief Simulation unit for dynamically loaded BMI plugin tasks.
+ * @brief Simulation unit that runs dynamically loaded BMI plugin tasks.
+ *
+ * In-process tasks construct and execute `BmiPipeline` locally. Subprocess
+ * execution modes delegate the serialized `Task` through `ExecutionContext`.
  */
 class DynamicBmiSimulationUnit : public SimulationUnit {
   public:
+    /// Construct a dynamic BMI simulation unit
     DynamicBmiSimulationUnit() = default;
 
     /**

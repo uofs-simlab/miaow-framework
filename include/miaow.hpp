@@ -54,13 +54,13 @@ using TaskMetadata = std::map<std::string, std::string>;
  * @brief Execution location and process lifetime selected per `Task`.
  */
 enum class ExecutionMode {
-    // Execute the task in a parent-process worker actor
+    /// Execute the task in a parent-process worker actor
     in_process,
 
-    // Launch one subprocess for one task and stop it after the result
+    /// Launch one subprocess for one task and stop it after the result
     single_task_subprocess,
 
-    // Reuse one subprocess owned by a job worker for subprocess-routed tasks
+    /// Reuse one subprocess owned by a job worker for subprocess-routed tasks
     persistent_subprocess,
 };
 
@@ -70,28 +70,29 @@ enum class ExecutionMode {
  * Arguments are positional and interpreted by the concrete `SimulationUnit`.
  */
 struct Task {
-    // `SimulationUnitId` that selects which registered unit handles this task
+    /// `SimulationUnitId` that selects which registered unit handles this task
     SimulationUnitId simulation_unit_id_{0};
 
-    // Execution mode selected for this task
+    /// Execution mode selected for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
 
-    // Optional subprocess executable path set on this task
-    // Empty uses the MIAOW_SUBPROCESS_PATH compile-time default
+    /// Optional subprocess executable path set on this task
+    /// Empty uses the MIAOW_SUBPROCESS_PATH compile-time default
     std::string subprocess_path_;
 
-    // Generic arguments for this task to pass into `SimulationUnit::execute()`
+    /// Generic arguments for this task to pass into `SimulationUnit::execute()`
     std::vector<caf::config_value> args_;
 
-    // Directory injected by `Runtime` where this task should write artifacts
+    /// Directory injected by `Runtime` where this task should write artifacts
     std::string task_output_dir_;
 
-    // Stable task label injected by `Runtime` and used as an artifact file stem
+    /// Stable task label injected by `Runtime` and used as an artifact file stem
     std::string task_name_;
 
-    // Metadata preserves labels used by reporting and postprocessing tools
+    /// Metadata preserves labels used by reporting and postprocessing tools
     TaskMetadata metadata_;
 
+    /// Construct an empty task with in-process execution
     Task() = default;
 
     /**
@@ -171,7 +172,13 @@ struct Task {
 /**
  * @brief Per-task completion status.
  */
-enum class TaskStatus : std::uint8_t { succeeded = 0, failed = 1 };
+enum class TaskStatus : std::uint8_t {
+    /// Task execution completed successfully
+    succeeded = 0,
+
+    /// Task execution terminated with a failure
+    failed = 1,
+};
 
 /**
  * @brief Convert a `TaskStatus` to a stable string value.
@@ -189,6 +196,7 @@ inline std::string task_status_to_string(TaskStatus status) {
  * @brief `TaskResult` returned by one simulation unit task execution.
  */
 struct TaskResult {
+    /// Construct an empty failed task result
     TaskResult() = default;
 
     /**
@@ -202,13 +210,13 @@ struct TaskResult {
         : status_{status}, message_{std::move(message)},
           artifact_paths_{std::move(artifact_paths)} {}
 
-    // Simulation-unit status for this task execution
+    /// Simulation-unit status for this task execution
     TaskStatus status_{TaskStatus::failed};
 
-    // Message interpreted by `status_` as output or failure detail
+    /// Message interpreted by `status_` as output or failure detail
     std::string message_;
 
-    // Relative paths to task artifacts produced under the job directory
+    /// Relative paths to task artifacts produced under the job directory
     std::vector<std::string> artifact_paths_;
 };
 
@@ -216,6 +224,7 @@ struct TaskResult {
  * @brief Runtime `TaskRecord` for one completed task.
  */
 struct TaskRecord {
+    /// Construct an empty task record
     TaskRecord() = default;
 
     /**
@@ -230,22 +239,22 @@ struct TaskRecord {
           task_name_{task.task_name_}, metadata_{task.metadata_},
           result_{std::move(result)}, run_time_s_{run_time_s} {}
 
-    // `TaskId` within the submitted job
+    /// `TaskId` within the submitted job
     TaskId task_id_{0};
 
-    // `SimulationUnitId` that executed this task
+    /// `SimulationUnitId` that executed this task
     SimulationUnitId simulation_unit_id_{0};
 
-    // Stable task label assigned by `Runtime`
+    /// Stable task label assigned by `Runtime`
     std::string task_name_;
 
-    // Metadata copied from the submitted task
+    /// Metadata copied from the submitted task
     TaskMetadata metadata_;
 
-    // Simulation-unit result for this task
+    /// Simulation-unit result for this task
     TaskResult result_;
 
-    // Wall-clock runtime for this task in seconds
+    /// Wall-clock runtime for this task in seconds
     double run_time_s_{0.0};
 };
 
@@ -253,6 +262,7 @@ struct TaskRecord {
  * @brief Runtime `JobRecord` returned for one submitted job.
  */
 struct JobRecord {
+    /// Construct an empty job record
     JobRecord() = default;
 
     /**
@@ -267,16 +277,16 @@ struct JobRecord {
         : run_id_{run_id}, job_id_{job_id}, tasks_{std::move(tasks)},
           run_time_s_{run_time_s} {}
 
-    // Runtime identifier for this `Runtime` instance
+    /// Runtime identifier for this `Runtime` instance
     std::uint64_t run_id_{0};
 
-    // `JobId` assigned to this submitted job
+    /// `JobId` assigned to this submitted job
     JobId job_id_{0};
 
-    // Task records in submitted task order
+    /// Task records in submitted task order
     std::vector<TaskRecord> tasks_;
 
-    // Wall-clock runtime for this job in seconds
+    /// Wall-clock runtime for this job in seconds
     double run_time_s_{0.0};
 };
 
@@ -458,22 +468,18 @@ class SimulationUnitRegistry {
  * Solver-specific options should be passed in `Task` arguments.
  */
 struct RuntimeOptions {
-    // Maximum number of worker actors that may run concurrently
+    /// Maximum number of worker actors that may run concurrently
     std::size_t max_workers_;
 
-    // Timeout for a single task request from `job_actor` to `simulation_unit_actor`
+    /// Timeout for a single task request from `job_actor` to `simulation_unit_actor`
     std::chrono::milliseconds task_request_timeout_;
 
-    // Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
+    /// Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
     std::chrono::milliseconds job_request_timeout_;
 
-    // Root output directory where run/job artifact folders are created
-    // When empty (the default), no output directories or files are written
+    /// Root output directory where run/job artifact folders are created
+    /// When empty (the default), no output directories or files are written
     std::string output_root_;
-
-    // Path to a NextGen-style realization file for realization-driven workflows
-    // Empty string means no realization path has been configured
-    std::string realization_path_;
 
     /**
      * @brief Construct runtime options.
@@ -482,16 +488,13 @@ struct RuntimeOptions {
      * @param job_timeout Timeout used for whole-job requests.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
-     * @param realization_path Path to a realization file. Empty string (default)
-     *                   means no realization path has been configured.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::minutes(1),
                    std::chrono::milliseconds job_timeout = std::chrono::minutes(5),
-                   std::string output_root = "", std::string realization_path = "")
+                   std::string output_root = "")
         : max_workers_(workers == 0 ? 1 : workers), task_request_timeout_(task_timeout),
-          job_request_timeout_(job_timeout), output_root_(std::move(output_root)),
-          realization_path_(std::move(realization_path)) {}
+          job_request_timeout_(job_timeout), output_root_(std::move(output_root)) {}
 };
 
 /**

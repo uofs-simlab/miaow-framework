@@ -266,6 +266,6 @@ if(BUILD_TESTING)
     )
     set_tests_properties(miaow_example_04_summa_wrong_cwd PROPERTIES
         WORKING_DIRECTORY "${MIAOW_ROOT}"
-        PASS_REGULAR_EXPRESSION "Run directory error: miaow_summa must be run from"
+        PASS_REGULAR_EXPRESSION "Run directory error: expected"
     )
 endif()

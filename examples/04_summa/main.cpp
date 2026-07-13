@@ -14,7 +14,7 @@
 
 int main(int argc, char* argv[]) {
     // Check that we're running from the expected directory for proper relative paths
-    if (!miaow::ensure_expected_run_dir("miaow_summa", MIAOW_SUMMA_RUN_DIR)) {
+    if (!miaow::ensure_expected_run_dir(MIAOW_SUMMA_RUN_DIR)) {
         return 1;
     }
 
@@ -36,17 +36,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Use the packaged realization when no CLI path is provided
-    const std::string realization_path = runtime_options.realization_path_.empty()
-                                             ? std::string(
-                                                   "data/gauge_01073000/"
-                                                   "realization_config.json")
-                                             : runtime_options.realization_path_;
-
-    // Read the realization and use its output root unless the CLI overrides it
+    // Read the packaged realization and use its output root unless the CLI overrides it
     miaow::PartitionedBmiRealization realization;
     try {
-        realization = miaow::PartitionedBmiRealization(realization_path);
+        realization = miaow::PartitionedBmiRealization(
+            "data/gauge_01073000/realization_config.json");
         if (runtime_options.output_root_.empty() && !realization.output_root().empty()) {
             runtime_options.output_root_ = realization.output_root();
         }

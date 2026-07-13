@@ -17,8 +17,7 @@
 
 int main(int argc, char* argv[]) {
     // Check that we're running from the expected directory for proper relative paths
-    if (!miaow::ensure_expected_run_dir("miaow_soil_freeze_thaw",
-                                        MIAOW_SOIL_FREEZE_THAW_RUN_DIR)) {
+    if (!miaow::ensure_expected_run_dir(MIAOW_SOIL_FREEZE_THAW_RUN_DIR)) {
         return 1;
     }
 
