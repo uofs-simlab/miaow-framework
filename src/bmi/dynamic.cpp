@@ -1,4 +1,4 @@
-#include "miaow_bmi.hpp"
+#include "bmi/internal.hpp"
 
 #include <algorithm>
 #include <array>
@@ -170,11 +170,11 @@ void* resolve_required_dynamic_symbol(void* library_handle, const std::string& s
 }
 
 DynamicBmiBackend require_dynamic_backend(const BmiModuleConfig& module_config) {
-    if (!module_config.dynamic_backend_) {
+    if (!module_config.backend_) {
         throw std::runtime_error("BMI dynamic plugin error: module config is missing "
                                  "dynamic backend");
     }
-    return *module_config.dynamic_backend_;
+    return *module_config.backend_;
 }
 
 } // namespace
@@ -255,10 +255,13 @@ class DynamicBmiModel::Impl : public bmi_api::Bmi {
 
 DynamicBmiModel::Impl::Impl(const BmiModuleConfig& module_config)
     : backend_(require_dynamic_backend(module_config)) {
-    if (backend_ == DynamicBmiBackend::cpp) {
+    switch (backend_) {
+    case DynamicBmiBackend::cpp:
         open_cpp_plugin(module_config);
-    } else {
+        break;
+    case DynamicBmiBackend::fortran:
         open_fortran_plugin(module_config);
+        break;
     }
 }
 
@@ -341,6 +344,7 @@ void DynamicBmiModel::Impl::unregister_fortran_model() {
     fortran_model_handle_ = nullptr;
 }
 
+// Release the backend model before its dynamic library is closed
 void DynamicBmiModel::Impl::cleanup_model() {
     if (backend_ == DynamicBmiBackend::cpp) {
         if (cpp_model_ == nullptr) {

@@ -54,48 +54,49 @@ using TaskMetadata = std::map<std::string, std::string>;
  * @brief Execution location and process lifetime selected per `Task`.
  */
 enum class ExecutionMode {
-    // Execute the task in a parent-process worker actor
+    /// Execute the task in a parent-process worker actor
     in_process,
 
-    // Launch one subprocess for one task and stop it after the result
+    /// Launch one subprocess for one task and stop it after the result
     single_task_subprocess,
 
-    // Reuse one subprocess owned by a job worker for subprocess-routed tasks
+    /// Reuse one subprocess owned by a job worker for subprocess-routed tasks
     persistent_subprocess,
 };
 
 /**
- * @brief Generic task input specification.
+ * @brief Input payload routed to one registered simulation unit.
  *
  * Arguments are positional and interpreted by the concrete `SimulationUnit`.
  */
 struct Task {
-    // `SimulationUnitId` that selects which registered unit handles this task
+    /// `SimulationUnitId` that selects which registered unit handles this task
     SimulationUnitId simulation_unit_id_{0};
 
-    // Execution mode selected for this task
+    /// Execution mode selected for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
 
-    // Optional subprocess executable path set on this task
-    // Empty uses the MIAOW_SUBPROCESS_PATH compile-time default
+    /// Optional subprocess executable path set on this task
+    /// Empty uses the MIAOW_SUBPROCESS_PATH compile-time default
     std::string subprocess_path_;
 
-    // Generic arguments for this task to pass into `SimulationUnit::execute()`
+    /// Generic arguments for this task to pass into `SimulationUnit::execute()`
     std::vector<caf::config_value> args_;
 
-    // Directory injected by `Runtime` where this task should write artifacts
+    /// Directory injected by `Runtime` where this task should write artifacts
     std::string task_output_dir_;
 
-    // Stable task label injected by `Runtime` and used as an artifact file stem
+    /// Stable task label injected by `Runtime` and used as an artifact file stem
     std::string task_name_;
 
-    // Metadata preserves labels used by reporting and postprocessing tools
+    /// Metadata preserves labels used by reporting and postprocessing tools
     TaskMetadata metadata_;
 
+    /// Construct an empty task with in-process execution
     Task() = default;
 
     /**
-     * @brief Construct a `Task` for a specific simulation unit from config values.
+     * @brief Construct a `Task` from positional config values.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param task_args Positional arguments for this task.
      */
@@ -103,7 +104,7 @@ struct Task {
         : simulation_unit_id_(task_simulation_unit_id), args_(std::move(task_args)) {}
 
     /**
-     * @brief Construct a `Task` from config values and descriptive metadata.
+     * @brief Construct a `Task` from positional config values and metadata.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param task_args Positional arguments for this task.
      * @param task_metadata Metadata preserved for reporting and postprocessing.
@@ -114,7 +115,7 @@ struct Task {
           metadata_(std::move(task_metadata)) {}
 
     /**
-     * @brief Construct a `Task` for a specific simulation unit from one config value.
+     * @brief Construct a `Task` from one config value.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single `caf::config_value` for this task.
      */
@@ -122,7 +123,7 @@ struct Task {
         : simulation_unit_id_(task_simulation_unit_id), args_{std::move(arg)} {}
 
     /**
-     * @brief Construct a `Task` from one config value and descriptive metadata.
+     * @brief Construct a `Task` from one config value and metadata.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single `caf::config_value` for this task.
      * @param task_metadata Metadata preserved for reporting and postprocessing.
@@ -133,7 +134,7 @@ struct Task {
           metadata_(std::move(task_metadata)) {}
 
     /**
-     * @brief Construct a `Task` for a specific simulation unit from one string.
+     * @brief Construct a `Task` from one string argument.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param arg Single string argument for this task.
      */
@@ -142,7 +143,7 @@ struct Task {
           args_{caf::config_value{std::move(arg)}} {}
 
     /**
-     * @brief Construct a `Task` for a specific simulation unit from string arguments.
+     * @brief Construct a `Task` from positional string arguments.
      * @param task_simulation_unit_id `SimulationUnitId` for this task.
      * @param string_args Positional string arguments for this task.
      */
@@ -171,7 +172,13 @@ struct Task {
 /**
  * @brief Per-task completion status.
  */
-enum class TaskStatus : std::uint8_t { succeeded = 0, failed = 1 };
+enum class TaskStatus : std::uint8_t {
+    /// Task execution completed successfully
+    succeeded = 0,
+
+    /// Task execution terminated with a failure
+    failed = 1,
+};
 
 /**
  * @brief Convert a `TaskStatus` to a stable string value.
@@ -186,13 +193,14 @@ inline std::string task_status_to_string(TaskStatus status) {
 }
 
 /**
- * @brief Simulation-unit result payload returned for one `Task` execution.
+ * @brief `TaskResult` returned by one simulation unit task execution.
  */
 struct TaskResult {
+    /// Construct an empty failed task result
     TaskResult() = default;
 
     /**
-     * @brief Construct a task result from status, message, and artifact paths.
+     * @brief Construct a `TaskResult` from status, message, and artifact paths.
      * @param status Terminal status for this task execution.
      * @param message Message interpreted by `status` as output or failure detail.
      * @param artifact_paths Relative paths to artifacts under the job directory.
@@ -202,24 +210,25 @@ struct TaskResult {
         : status_{status}, message_{std::move(message)},
           artifact_paths_{std::move(artifact_paths)} {}
 
-    // Simulation-unit status for this task execution
+    /// Simulation-unit status for this task execution
     TaskStatus status_{TaskStatus::failed};
 
-    // Message interpreted by `status_` as output or failure detail
+    /// Message interpreted by `status_` as output or failure detail
     std::string message_;
 
-    // Relative paths to task artifacts produced under the job directory
+    /// Relative paths to task artifacts produced under the job directory
     std::vector<std::string> artifact_paths_;
 };
 
 /**
- * @brief Runtime-owned record for one completed task.
+ * @brief Runtime `TaskRecord` for one completed task.
  */
 struct TaskRecord {
+    /// Construct an empty task record
     TaskRecord() = default;
 
     /**
-     * @brief Construct a completed task record from task input and terminal result.
+     * @brief Construct a completed `TaskRecord` from task input and terminal result.
      * @param task Submitted task whose metadata and simulation unit ID are copied.
      * @param task_id `TaskId` within the submitted job.
      * @param result Terminal simulation unit result for this task.
@@ -230,33 +239,34 @@ struct TaskRecord {
           task_name_{task.task_name_}, metadata_{task.metadata_},
           result_{std::move(result)}, run_time_s_{run_time_s} {}
 
-    // `TaskId` within the submitted job
+    /// `TaskId` within the submitted job
     TaskId task_id_{0};
 
-    // `SimulationUnitId` that executed this task
+    /// `SimulationUnitId` that executed this task
     SimulationUnitId simulation_unit_id_{0};
 
-    // Stable task label assigned by `Runtime`
+    /// Stable task label assigned by `Runtime`
     std::string task_name_;
 
-    // Metadata copied from the submitted task
+    /// Metadata copied from the submitted task
     TaskMetadata metadata_;
 
-    // Simulation-unit result for this task
+    /// Simulation-unit result for this task
     TaskResult result_;
 
-    // Wall-clock runtime for this task in seconds
+    /// Wall-clock runtime for this task in seconds
     double run_time_s_{0.0};
 };
 
 /**
- * @brief Runtime-owned record returned for one submitted job.
+ * @brief Runtime `JobRecord` returned for one submitted job.
  */
 struct JobRecord {
+    /// Construct an empty job record
     JobRecord() = default;
 
     /**
-     * @brief Construct a final job record from job IDs, task records, and runtime.
+     * @brief Construct a final `JobRecord` from IDs, task records, and runtime.
      * @param run_id Runtime identifier for this `Runtime` instance.
      * @param job_id `JobId` assigned to this submitted job.
      * @param tasks Task records in submitted task order.
@@ -267,16 +277,16 @@ struct JobRecord {
         : run_id_{run_id}, job_id_{job_id}, tasks_{std::move(tasks)},
           run_time_s_{run_time_s} {}
 
-    // Runtime identifier for this `Runtime` instance
+    /// Runtime identifier for this `Runtime` instance
     std::uint64_t run_id_{0};
 
-    // `JobId` assigned to this submitted job
+    /// `JobId` assigned to this submitted job
     JobId job_id_{0};
 
-    // Task records in submitted task order
+    /// Task records in submitted task order
     std::vector<TaskRecord> tasks_;
 
-    // Wall-clock runtime for this job in seconds
+    /// Wall-clock runtime for this job in seconds
     double run_time_s_{0.0};
 };
 
@@ -322,10 +332,9 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
 }
 
 /**
- * @brief Runtime-local services available during `SimulationUnit::execute()`.
+ * @brief Runtime services available during `SimulationUnit::execute()`.
  *
- * `Runtime` dispatch constructs an instance for each task and calls `execute()`
- * with a runtime-local `ExecutionContext`.
+ * Runtime dispatch constructs one context for each worker task execution.
  */
 class ExecutionContext {
   public:
@@ -372,23 +381,23 @@ class SimulationUnit {
 };
 
 /**
- * @brief Factory used by each `simulation_unit_actor`.
+ * @brief Factory used by worker actors to create simulation units.
  *
  * Workers use this to construct in-process `SimulationUnit` instances.
  */
 using SimulationUnitFactory = std::function<std::unique_ptr<SimulationUnit>()>;
 
 /**
- * @brief Registry for simulation unit factories.
+ * @brief Registry of simulation unit factories.
  *
- * Tracks `simulation_unit_id -> factory` for runtime task routing.
+ * Tracks `simulation_unit_id -> factory` mappings for runtime task routing.
  */
 class SimulationUnitRegistry {
   public:
     SimulationUnitRegistry() = default;
 
     /**
-     * @brief Register a concrete `SimulationUnit` type and return its assigned ID.
+     * @brief Register a concrete `SimulationUnit` type.
      *
      * Builds a factory that workers use for `SimulationUnitType` instances.
      *
@@ -459,40 +468,33 @@ class SimulationUnitRegistry {
  * Solver-specific options should be passed in `Task` arguments.
  */
 struct RuntimeOptions {
-    // Maximum number of worker actors that may run concurrently
+    /// Maximum number of worker actors that may run concurrently
     std::size_t max_workers_;
 
-    // Timeout for a single task request from `job_actor` to `simulation_unit_actor`
+    /// Timeout for a single task request from `job_actor` to `simulation_unit_actor`
     std::chrono::milliseconds task_request_timeout_;
 
-    // Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
+    /// Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
     std::chrono::milliseconds job_request_timeout_;
 
-    // Root output directory where run/job artifact folders are created
-    // When empty (the default), no output directories or files are written
+    /// Root output directory where run/job artifact folders are created
+    /// When empty (the default), no output directories or files are written
     std::string output_root_;
 
-    // Path to a NextGen-style realization file for realization-driven workflows
-    // Empty string means no realization path has been configured
-    std::string realization_path_;
-
     /**
-     * @brief Construct runtime options with safe defaults.
+     * @brief Construct runtime options.
      * @param workers Desired worker count. Values of zero are clamped to one.
      * @param task_timeout Timeout used for one simulation task request.
      * @param job_timeout Timeout used for whole-job requests.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
-     * @param realization_path Path to a realization file. Empty string (default)
-     *                   means no realization path has been configured.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::minutes(1),
                    std::chrono::milliseconds job_timeout = std::chrono::minutes(5),
-                   std::string output_root = "", std::string realization_path = "")
+                   std::string output_root = "")
         : max_workers_(workers == 0 ? 1 : workers), task_request_timeout_(task_timeout),
-          job_request_timeout_(job_timeout), output_root_(std::move(output_root)),
-          realization_path_(std::move(realization_path)) {}
+          job_request_timeout_(job_timeout), output_root_(std::move(output_root)) {}
 };
 
 /**
@@ -503,10 +505,7 @@ struct RuntimeOptions {
 using JobHandle = std::future<JobRecord>;
 
 /**
- * @brief Runtime-owned registry of in-progress jobs.
- *
- * This is effectively a dictionary/hash map:
- * `job_id -> promise_for_that_job_record`.
+ * @brief Runtime-owned map of jobs waiting for actor completion.
  *
  * Each submitted `JobId` maps to the promise that will be fulfilled by the
  * orchestrator actor when that job finishes.

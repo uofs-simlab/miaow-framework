@@ -14,14 +14,12 @@
 
 namespace miaow {
 
-namespace internal_bmi = miaow::bmi;
-
-using internal_bmi::bmi_pipeline_config_artifact_paths;
-using internal_bmi::bmi_pipeline_config_file_path;
-using internal_bmi::BmiCoupling;
-using internal_bmi::ForcingBmi;
-using internal_bmi::read_bmi_pipeline_config_file;
-using internal_bmi::write_bmi_pipeline_config_file;
+using bmi::bmi_pipeline_config_artifact_paths;
+using bmi::bmi_pipeline_config_file_path;
+using bmi::BmiCoupling;
+using bmi::ForcingBmi;
+using bmi::read_bmi_pipeline_config_file;
+using bmi::write_bmi_pipeline_config_file;
 
 class BmiPipeline::Impl : public bmi_api::Bmi {
   public:
@@ -135,7 +133,7 @@ BmiPipeline::Impl::Impl(const Task& task, std::unique_ptr<::bmi::Bmi> supplied_m
 
 // Add a model module to the pipeline and return its module index
 std::size_t BmiPipeline::Impl::add_model_module(const BmiModuleConfig& module_config) {
-    if (!module_config.dynamic_backend_) {
+    if (!module_config.backend_) {
         // supplied_model modules are bound to the model passed by the caller
         if (!supplied_model_) {
             io::throw_config_error("BMI pipeline config error: ",

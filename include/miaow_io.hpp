@@ -35,25 +35,21 @@ bool all_tasks_succeeded(const JobRecord& job_record);
  * On mismatch, prints an actionable error message with the expected and current
  * directories and a suggested `cd` command.
  *
- * @param executable_name Executable name included in diagnostic output.
  * @param expected_run_dir Required current working directory.
  * @return true when the current directory matches `expected_run_dir`, false otherwise.
  * @throws std::filesystem::filesystem_error if the current working directory
  * cannot be resolved.
  */
-bool ensure_expected_run_dir(const std::string& executable_name,
-                             const std::string& expected_run_dir);
+bool ensure_expected_run_dir(const std::string& expected_run_dir);
 
 /**
- * @brief Parse runtime-wide CLI arguments without workflow task inputs.
+ * @brief Parse runtime CLI arguments without workflow task inputs.
  *
  * Supported arguments:
  * - `--max_workers <num_workers>`
  * - `--task_request_timeout <seconds>`
  * - `--job_request_timeout <seconds>`
  * - `--output_root <path>`
- * - `--realization <path>` (used by realization-driven workflows; empty when
- *   absent)
  *
  * @param argc Number of CLI arguments.
  * @param argv CLI argument vector.

@@ -70,7 +70,6 @@ TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
 
             // Update until the selected BMI clock reaches its configured end time
             const double end_time = GetEndTime();
-            update_steps = 0;
             while (GetCurrentTime() < end_time) {
                 // Update each model module and advance the forcing stream
                 Update();

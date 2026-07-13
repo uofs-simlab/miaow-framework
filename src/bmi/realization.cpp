@@ -9,6 +9,7 @@
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/json.hpp>
@@ -180,7 +181,7 @@ BmiModuleConfig parse_fortran_module_config(const json::object& global_object) {
 
 } // namespace
 
-// Partition a global NextGen-style realization file into per-feature pipeline configs
+// Partition a global NextGen-style realization file into per-feature configs
 PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realization_path) {
     if (io::trim(realization_path).empty()) {
         throw_realization_path_error("empty realization path");
@@ -233,7 +234,7 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         }
     }
 
-    feature_pipeline_configs_.reserve(feature_ids.size());
+    feature_configs_.reserve(feature_ids.size());
     for (const std::string& feature_id : feature_ids) {
         const std::string init_config =
             replace_id_template(init_template, feature_id, "module init_config");
@@ -247,35 +248,46 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         const std::string forcing_file =
             match_forcing_file(forcing_directory, forcing_pattern, feature_id);
 
-        BmiModuleConfig task_module_config = module_config;
-        task_module_config.config_file_ = init_config_path;
-
-        feature_pipeline_configs_.emplace_back(std::vector<BmiModuleConfig>{std::move(
-                                                   task_module_config)},
-                                               forcing_file, feature_id);
+        DynamicBmiConfig config;
+        config.backend_ = *module_config.backend_;
+        config.plugin_path_ = module_config.plugin_path_;
+        config.init_config_ = init_config_path;
+        config.forcing_file_ = forcing_file;
+        config.variables_names_map_ = module_config.variables_names_map_;
+        config.output_variables_ = module_config.output_variables_;
+        feature_configs_.push_back({std::move(config), feature_id});
     }
 }
 
-// Build one MIAOW task per partitioned realization feature
-std::vector<Task> build_bmi_realization_tasks(const PartitionedBmiRealization& realization,
-                                              SimulationUnitId simulation_unit_id) {
+const std::string& PartitionedBmiRealization::output_root() const {
+    return output_root_;
+}
+
+// Build one dynamic BMI task for every realization feature
+std::vector<Task>
+make_bmi_tasks(SimulationUnitId simulation_unit_id, const PartitionedBmiRealization& realization,
+               ExecutionMode execution_mode) {
     // Build one task for each feature in realization order
     std::vector<Task> tasks;
-    tasks.reserve(realization.feature_pipeline_configs_.size());
-    for (const BmiPipelineConfig& pipeline_config : realization.feature_pipeline_configs_) {
-        const std::string feature_id = io::trim(pipeline_config.feature_id_);
+    tasks.reserve(realization.feature_configs_.size());
+    for (const PartitionedBmiRealization::FeatureConfig& feature :
+         realization.feature_configs_) {
+        const std::string feature_id = io::trim(feature.feature_id_);
         if (feature_id.empty()) {
             throw_realization_config_error(
-                "pipeline config feature_id must be a non-empty string");
+                "feature id must be a non-empty string");
         }
 
+        DynamicBmiConfig config = feature.config_;
+        config.execution_mode_ = execution_mode;
+
         // Feature metadata provides the hydrofabric join key for map outputs
-        Task task(simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config),
-                  TaskMetadata{{"feature_id", feature_id},
-                               {"feature_type", "catchment"},
-                               {"hydrofabric_layer", "divides"},
-                               {"hydrofabric_id_field", "id"}});
-        tasks.push_back(task);
+        TaskMetadata metadata{{"feature_id", feature_id},
+                              {"feature_type", "catchment"},
+                              {"hydrofabric_layer", "divides"},
+                              {"hydrofabric_id_field", "id"}};
+        tasks.push_back(bmi::make_dynamic_bmi_task(
+            simulation_unit_id, config, feature_id, std::move(metadata)));
     }
 
     return tasks;

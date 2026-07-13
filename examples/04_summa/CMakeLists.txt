@@ -1,15 +1,25 @@
 cmake_minimum_required(VERSION 3.21)
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_setup_example.cmake")
-miaow_setup_example(summa Fortran)
+# If using a standalone build for this example, enable the required languages
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(miaow_summa_example LANGUAGES CXX Fortran)
+endif()
 
+# Load MIAOW and choose the executable name for this example
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_setup_example.cmake")
+miaow_setup_example(summa)
+
+# ExternalProject keeps SUMMA in its own configure and build process
 include(ExternalProject)
 
+# Allow a local checkout to override the pinned SUMMA source
 set(MIAOW_SUMMA_MODEL_ROOT "" CACHE PATH
     "Path to a local SUMMA source tree")
 set(summa_git_repository "https://github.com/tristanmontoya/summa.git")
-set(summa_git_tag "develop")
+# Pin the external build to the validated SUMMA revision
+set(summa_git_tag "f719ded11a4fb7be3abf05b85332f20744ae4f2c")
 
+# Supply the platform BLAS and LAPACK link flags expected by SUMMA
 if(APPLE)
     set(miaow_summa_library_links_default "-framework Accelerate")
 else()
@@ -18,13 +28,9 @@ endif()
 set(MIAOW_SUMMA_LIBRARY_LINKS "${miaow_summa_library_links_default}" CACHE STRING
     "LAPACK/BLAS link flags passed to SUMMA through LIBRARY_LINKS")
 
-if(MIAOW_SUMMA_MODEL_ROOT)
-    set(summa_model_root_override "${MIAOW_SUMMA_MODEL_ROOT}")
-else()
-    set(summa_model_root_override "")
-endif()
+# Choose the SUMMA path, fetching the pinned source when it is absent
 miaow_resolve_model_root(summa_source_dir
-    MODEL_ROOT "${summa_model_root_override}"
+    MODEL_ROOT "${MIAOW_SUMMA_MODEL_ROOT}"
     MODEL_LOCAL_SUBDIR "summa"
     MODEL_LABEL "summa"
 )
@@ -43,8 +49,9 @@ if(NOT EXISTS "${summa_source_dir}")
     )
 endif()
 
+# Validate the files required to configure SUMMA and build its BMI library
 if(NOT EXISTS "${summa_source_dir}/build/source/driver/summa_bmi.f90")
-    if(summa_model_root_override)
+    if(MIAOW_SUMMA_MODEL_ROOT)
         message(FATAL_ERROR
             "MIAOW_SUMMA_MODEL_ROOT must point to a tristanmontoya/summa source tree")
     else()
@@ -58,12 +65,7 @@ if(NOT EXISTS "${summa_source_dir}/build/CMakeLists.txt")
         "SUMMA source tree is missing build/CMakeLists.txt")
 endif()
 
-miaow_provision_example_extern_link(
-    EXAMPLE_DIR "${CMAKE_CURRENT_LIST_DIR}"
-    LINK_NAME "summa"
-    TARGET_DIR "${summa_source_dir}"
-)
-
+# Pass the same procedural BMI bridge source used by the parent MIAOW build
 if(MIAOW_ISO_C_FORTRAN_BMI_ROOT)
     set(summa_iso_c_fortran_bmi_source_dir "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}")
 else()
@@ -76,6 +78,7 @@ if(NOT EXISTS "${summa_iso_c_fortran_bmi_source_dir}/CMakeLists.txt")
         "${summa_iso_c_fortran_bmi_source_dir}")
 endif()
 
+# Translate the selected library flags into SUMMA configure arguments
 set(summa_configure_environment)
 set(summa_lapack_args)
 if(NOT MIAOW_SUMMA_LIBRARY_LINKS STREQUAL "")
@@ -85,7 +88,7 @@ if(NOT MIAOW_SUMMA_LIBRARY_LINKS STREQUAL "")
         -DSPECIFY_LAPACK_LINKS=ON)
 endif()
 
-# The parent project may not enable every language that SUMMA enables
+# Forward compilers so the separate SUMMA build uses the same toolchain
 set(summa_compiler_args)
 if(CMAKE_Fortran_COMPILER)
     list(APPEND summa_configure_environment
@@ -114,13 +117,13 @@ if(CMAKE_CXX_COMPILER)
         -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
 endif()
 
+# Predict the shared library path produced by the external build
 set(summa_build_dir "${CMAKE_CURRENT_BINARY_DIR}/summa-build")
 string(CONCAT summa_bmi_library
     "${summa_build_dir}/"
     "${CMAKE_SHARED_LIBRARY_PREFIX}summabmi${CMAKE_SHARED_LIBRARY_SUFFIX}")
 
-# Build SUMMA with its own CMake target instead of duplicating the large
-# Fortran source graph in this example
+# Configure and build only the SUMMA BMI shared library
 ExternalProject_Add(miaow_summa_external
     SOURCE_DIR "${summa_source_dir}/build"
     BINARY_DIR "${summa_build_dir}"
@@ -146,7 +149,7 @@ ExternalProject_Add(miaow_summa_external
     BUILD_BYPRODUCTS "${summa_bmi_library}"
 )
 
-# Keep realization library paths stable across build directories
+# Link the built library where realization_config.json expects to load it
 set(summa_realization_plugin_dir "${CMAKE_CURRENT_LIST_DIR}/data/plugins")
 set(summa_realization_plugin_link
     "${summa_realization_plugin_dir}/libsummabmi")
@@ -166,36 +169,25 @@ add_custom_target(miaow_summa_plugin_link
     DEPENDS "${summa_realization_plugin_link}"
 )
 
+# Build the driver after the realization plugin link is ready
 add_executable(${EXECUTABLE_TARGET}
     main.cpp
 )
 
 target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_20)
 target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
-target_include_directories(${EXECUTABLE_TARGET} PRIVATE
-    "${MIAOW_ROOT}/src"
-)
 target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
     MIAOW_SUMMA_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
 )
 add_dependencies(${EXECUTABLE_TARGET} miaow_summa_plugin_link)
 
-# Drop the binary next to the source so example data can be referenced locally
+# Place the binary beside the source so relative example paths remain stable
 set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
 
 if(BUILD_TESTING)
-    add_test(
-        NAME miaow_example_04_summa_extern_symlink
-        COMMAND
-            ${CMAKE_COMMAND}
-            -DLINK_PATH=${CMAKE_CURRENT_LIST_DIR}/extern/summa
-            -DEXPECT_TARGET=${summa_source_dir}
-            -P
-            ${MIAOW_ROOT}/cmake/check_symlink.cmake
-    )
-
+    # Confirm the runtime-critical realization plugin link targets this build
     add_test(
         NAME miaow_example_04_summa_plugin_symlink
         COMMAND
@@ -206,23 +198,7 @@ if(BUILD_TESTING)
             ${MIAOW_ROOT}/cmake/check_symlink.cmake
     )
 
-    add_test(
-        NAME miaow_example_04_summa_run
-        COMMAND
-            $<TARGET_FILE:${EXECUTABLE_TARGET}>
-            --job_request_timeout
-            900
-    )
-    string(CONCAT summa_run_regex
-        "Parsed realization with 5 feature pipeline config\\(s\\)(.|\\n)*"
-        "\\[cat-11223\\] succeeded: BMI workflow complete"
-    )
-    set_tests_properties(miaow_example_04_summa_run PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "${summa_run_regex}"
-        RESOURCE_LOCK miaow_example_04_summa_output
-    )
-
+    # Describe the metadata and result files required from a successful run
     set(summa_expected_job_record_snippets
         "\"feature_id\""
         "\"hydrofabric_layer\""
@@ -247,6 +223,7 @@ if(BUILD_TESTING)
     list(JOIN summa_expected_result_paths ";"
         summa_result_paths_arg)
 
+    # Run SUMMA once and validate its complete job-record layout
     add_test(
         NAME miaow_example_04_summa_job_record_layout
         COMMAND
@@ -254,6 +231,7 @@ if(BUILD_TESTING)
             -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
             -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
             -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output/gauge_01073000
+            -DREQUIRE_SUCCESS=TRUE
             "-DEXPECTED_METADATA_SNIPPETS=${summa_job_record_snippets_arg}"
             "-DEXPECTED_RESULT_PATHS=${summa_result_paths_arg}"
             -P
@@ -264,6 +242,7 @@ if(BUILD_TESTING)
         RESOURCE_LOCK miaow_example_04_summa_output
     )
 
+    # Confirm the example rejects a working directory with unresolved data paths
     add_test(
         NAME miaow_example_04_summa_wrong_cwd
         COMMAND
@@ -271,6 +250,6 @@ if(BUILD_TESTING)
     )
     set_tests_properties(miaow_example_04_summa_wrong_cwd PROPERTIES
         WORKING_DIRECTORY "${MIAOW_ROOT}"
-        PASS_REGULAR_EXPRESSION "Run directory error: miaow_summa must be run from"
+        PASS_REGULAR_EXPRESSION "Run directory error: expected"
     )
 endif()

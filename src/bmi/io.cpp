@@ -25,10 +25,10 @@ BmiModuleConfig::BmiModuleConfig(std::string name, std::string config_file,
     : name_(std::move(name)), config_file_(std::move(config_file)),
       variables_names_map_(std::move(variables_names_map)) {}
 
-BmiModuleConfig::BmiModuleConfig(std::string name, DynamicBmiBackend dynamic_backend,
+BmiModuleConfig::BmiModuleConfig(std::string name, DynamicBmiBackend backend,
                                  std::string plugin_path, std::string config_file,
                                  std::map<std::string, std::string> variables_names_map)
-    : name_(std::move(name)), dynamic_backend_(dynamic_backend),
+    : name_(std::move(name)), backend_(backend),
       plugin_path_(std::move(plugin_path)), config_file_(std::move(config_file)),
       variables_names_map_(std::move(variables_names_map)) {}
 
@@ -41,20 +41,6 @@ BmiPipelineConfig::BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs
     module_configs_ = std::move(module_configs);
     forcing_file_ = std::move(forcing_file);
     feature_id_ = std::move(feature_id);
-}
-
-miaow::BmiPipelineConfig
-make_bmi_model_config(const std::string& init_config, const std::string& forcing_file,
-                      const std::map<std::string, std::string>& variables_names_map) {
-    if (io::trim(init_config).empty()) {
-        throw std::runtime_error(
-            "BMI pipeline config error: init_config must be a non-empty string");
-    }
-
-    BmiModuleConfig module_config("supplied_model", init_config, variables_names_map);
-
-    return BmiPipelineConfig{std::vector<BmiModuleConfig>{std::move(module_config)},
-                             forcing_file};
 }
 
 caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline_config) {
@@ -81,19 +67,22 @@ caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline
     return caf::config_value{std::move(config_dictionary)};
 }
 
-Task make_dynamic_bmi_task(
-    SimulationUnitId simulation_unit_id, const std::string& module_name,
-    DynamicBmiBackend dynamic_backend, const std::string& plugin_path,
-    const std::string& config_file,
-    const std::vector<std::string>& output_variables, ExecutionMode execution_mode) {
-    BmiModuleConfig module_config(module_name, dynamic_backend, plugin_path, config_file);
-    module_config.output_variables_ = output_variables;
+Task make_bmi_task(SimulationUnitId simulation_unit_id, const StaticBmiConfig& config) {
+    if (io::trim(config.init_config_).empty()) {
+        throw std::runtime_error(
+            "BMI static config error: init_config must be a non-empty string");
+    }
 
+    BmiModuleConfig module_config("supplied_model", config.init_config_,
+                                  config.variables_names_map_);
+    module_config.output_variables_ = config.output_variables_;
     const BmiPipelineConfig pipeline_config(
-        std::vector<BmiModuleConfig>{std::move(module_config)});
-    Task task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config)};
-    task.execution_mode_ = execution_mode;
-    return task;
+        std::vector<BmiModuleConfig>{std::move(module_config)}, config.forcing_file_);
+    return Task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config)};
+}
+
+Task make_bmi_task(SimulationUnitId simulation_unit_id, const DynamicBmiConfig& config) {
+    return bmi::make_dynamic_bmi_task(simulation_unit_id, config);
 }
 
 } // namespace miaow
@@ -101,6 +90,30 @@ Task make_dynamic_bmi_task(
 namespace miaow::bmi {
 
 namespace json = boost::json;
+
+Task make_dynamic_bmi_task(SimulationUnitId simulation_unit_id,
+                           const DynamicBmiConfig& config,
+                           const std::string& feature_id, TaskMetadata metadata) {
+    if (io::trim(config.plugin_path_).empty()) {
+        throw std::runtime_error(
+            "BMI dynamic config error: plugin_path must be a non-empty string");
+    }
+
+    const std::string module_name =
+        config.backend_ == DynamicBmiBackend::cpp ? "bmi_cpp" : "bmi_fortran";
+    BmiModuleConfig module_config(module_name, config.backend_, config.plugin_path_,
+                                  config.init_config_, config.variables_names_map_);
+    module_config.output_variables_ = config.output_variables_;
+
+    const BmiPipelineConfig pipeline_config(
+        std::vector<BmiModuleConfig>{std::move(module_config)}, config.forcing_file_,
+        feature_id);
+    Task task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config),
+              std::move(metadata)};
+    task.execution_mode_ = config.execution_mode_;
+    task.subprocess_path_ = config.subprocess_path_;
+    return task;
+}
 
 namespace {
 
@@ -169,11 +182,6 @@ void write_var_values(::bmi::Bmi& model, const std::string& name, std::size_t n_
         }
         output_stream << value;
     }
-}
-
-// C++ dynamic BMI modules accept historical and current module spellings
-bool is_cpp_module_name(const std::string& name) {
-    return name.starts_with("bmi_c++") || name.starts_with("bmi_cpp");
 }
 
 // Convert CAF task argument values into standard JSON values
@@ -319,7 +327,7 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
         }
     }
 
-    // Supplied model modules are bound to a model from BmiSimulationUnit
+    // Supplied model modules are bound to a statically typed simulation unit
     if (module_name == "supplied_model") {
         BmiModuleConfig module_config{std::move(module_name), std::move(config_file),
                                       std::move(variables_names_map)};
@@ -341,7 +349,7 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
     }
 
     // C++ backend
-    if (is_cpp_module_name(module_name)) {
+    if (module_name.starts_with("bmi_cpp")) {
         BmiModuleConfig module_config{std::move(module_name), DynamicBmiBackend::cpp,
                                       std::move(plugin_path), std::move(config_file),
                                       std::move(variables_names_map)};
@@ -375,7 +383,7 @@ make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
     caf::config_value::list modules;
     for (const BmiModuleConfig& module_config : module_configs) {
         caf::config_value::dictionary module_params;
-        if (module_config.dynamic_backend_) {
+        if (module_config.backend_) {
             module_params.insert("library_file", module_config.plugin_path_);
         }
         module_params.insert("init_config", module_config.config_file_);

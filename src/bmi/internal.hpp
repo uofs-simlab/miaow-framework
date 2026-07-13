@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,6 +16,100 @@
 
 #include "miaow_bmi.hpp"
 #include "third_party/bmi/bmi.hxx"
+
+namespace miaow {
+
+// Internal model module representation used by pipeline serialization
+struct BmiModuleConfig {
+    BmiModuleConfig(std::string name, std::string config_file,
+                    std::map<std::string, std::string> variables_names_map = {});
+
+    BmiModuleConfig(std::string name, DynamicBmiBackend backend,
+                    std::string plugin_path, std::string config_file = "",
+                    std::map<std::string, std::string> variables_names_map = {});
+
+    std::string name_;
+    std::optional<DynamicBmiBackend> backend_;
+    std::string plugin_path_;
+    std::string config_file_;
+    std::optional<std::string> cpp_create_function_;
+    std::optional<std::string> cpp_destroy_function_;
+    std::map<std::string, std::string> variables_names_map_;
+    std::vector<std::string> output_variables_;
+};
+
+// Internal task payload consumed by BmiPipeline
+struct BmiPipelineConfig {
+    BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs,
+                      std::string forcing_file = "", std::string feature_id = "");
+
+    std::vector<BmiModuleConfig> module_configs_;
+    std::size_t output_module_{0};
+    std::string forcing_file_;
+    std::string feature_id_;
+};
+
+// Convert an internal pipeline config into the generic Task payload
+caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline_config);
+
+// Internal adapter for one dynamically loaded C++ or Fortran BMI plugin
+class DynamicBmiModel : public bmi_api::Bmi {
+  public:
+    explicit DynamicBmiModel(const BmiModuleConfig& module_config);
+
+    DynamicBmiModel(const DynamicBmiModel&) = delete;
+    DynamicBmiModel& operator=(const DynamicBmiModel&) = delete;
+
+    ~DynamicBmiModel() override;
+
+    void Initialize(std::string config_file) override;
+    void Update() override;
+    void UpdateUntil(double time) override;
+    void Finalize() override;
+    std::string GetComponentName() override;
+    int GetInputItemCount() override;
+    int GetOutputItemCount() override;
+    std::vector<std::string> GetInputVarNames() override;
+    std::vector<std::string> GetOutputVarNames() override;
+    int GetVarGrid(std::string name) override;
+    std::string GetVarType(std::string name) override;
+    std::string GetVarUnits(std::string name) override;
+    int GetVarItemsize(std::string name) override;
+    int GetVarNbytes(std::string name) override;
+    std::string GetVarLocation(std::string name) override;
+    double GetCurrentTime() override;
+    double GetStartTime() override;
+    double GetEndTime() override;
+    std::string GetTimeUnits() override;
+    double GetTimeStep() override;
+    void GetValue(std::string name, void* dest) override;
+    void* GetValuePtr(std::string name) override;
+    void GetValueAtIndices(std::string name, void* dest, int* inds, int count) override;
+    void SetValue(std::string name, void* src) override;
+    void SetValueAtIndices(std::string name, int* inds, int count, void* src) override;
+    int GetGridRank(const int grid) override;
+    int GetGridSize(const int grid) override;
+    std::string GetGridType(const int grid) override;
+    void GetGridShape(const int grid, int* shape) override;
+    void GetGridSpacing(const int grid, double* spacing) override;
+    void GetGridOrigin(const int grid, double* origin) override;
+    void GetGridX(const int grid, double* x) override;
+    void GetGridY(const int grid, double* y) override;
+    void GetGridZ(const int grid, double* z) override;
+    int GetGridNodeCount(const int grid) override;
+    int GetGridEdgeCount(const int grid) override;
+    int GetGridFaceCount(const int grid) override;
+    void GetGridEdgeNodes(const int grid, int* edge_nodes) override;
+    void GetGridFaceEdges(const int grid, int* face_edges) override;
+    void GetGridFaceNodes(const int grid, int* face_nodes) override;
+    void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
+
+  private:
+    class Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+} // namespace miaow
 
 namespace miaow::bmi {
 
@@ -174,6 +271,11 @@ make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
 
 BmiModuleConfig parse_bmi_module_config(const boost::json::object& module_object,
                                         std::string_view error_prefix);
+
+Task make_dynamic_bmi_task(SimulationUnitId simulation_unit_id,
+                           const DynamicBmiConfig& config,
+                           const std::string& feature_id = "",
+                           TaskMetadata metadata = {});
 
 std::filesystem::path bmi_pipeline_config_file_path(const Task& task);
 

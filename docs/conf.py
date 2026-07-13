@@ -18,6 +18,15 @@ source_suffix = {
 }
 master_doc = "index"
 exclude_patterns = ["_build", ".venv", "Thumbs.db", ".DS_Store"]
+nitpick_ignore = [
+    ("cpp:identifier", "bmi_api"),
+    ("cpp:identifier", "bmi_api::Bmi"),
+    ("cpp:identifier", "caf"),
+    ("cpp:identifier", "caf::actor_system"),
+    ("cpp:identifier", "caf::config_value"),
+    # Breathe does not create a standalone target for the enclosing namespace
+    ("cpp:identifier", "miaow"),
+]
 
 docs_dir = Path(__file__).parent.resolve()
 repo_root = docs_dir.parent
