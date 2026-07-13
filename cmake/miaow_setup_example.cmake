@@ -1,21 +1,14 @@
 include(CMakeParseArguments)
 
-# miaow_setup_example(<name> [extra_languages...])
+# miaow_setup_example(<name>)
 #
-# Boilerplate shared by every example CMakeLists.txt. Configures the file to
-# work both standalone (its own project()) and bundled into the parent miaow
-# build via add_subdirectory(). After this call the caller can rely on:
+# Boilerplate shared by every example CMakeLists.txt after its optional
+# standalone project declaration. After this call the caller can rely on:
 #   - MIAOW_ROOT      cache PATH pointing at the miaow source tree
 #   - EXECUTABLE_TARGET cache STRING set to "miaow_<name>"
 #   - the `miaow` target being available
-#
-# CXX is always enabled; pass extra languages (e.g. Fortran) as positional
-# arguments. Must be called as a macro because project() needs file scope.
 macro(miaow_setup_example example_name)
-    if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-        project(miaow_${example_name}_example CXX ${ARGN})
-    endif()
-
+    # Resolve the framework root relative to this helper unless supplied
     if(NOT DEFINED MIAOW_ROOT)
         get_filename_component(_miaow_root_default
             "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
@@ -24,11 +17,13 @@ macro(miaow_setup_example example_name)
         unset(_miaow_root_default)
     endif()
 
+    # Use the framework third_party directory for model sources by default
     if(NOT DEFINED MIAOW_DEFAULT_MODEL_BASE_DIR)
         set(MIAOW_DEFAULT_MODEL_BASE_DIR "${MIAOW_ROOT}/third_party" CACHE PATH
             "Default base directory containing external model source trees")
     endif()
 
+    # Keep the executable name configurable only in standalone builds
     if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         set(EXECUTABLE_TARGET "miaow_${example_name}" CACHE STRING
             "Executable target name for this example")
@@ -56,6 +51,7 @@ function(miaow_resolve_model_root out_var)
     set(one_value_args MODEL_ROOT MODEL_LOCAL_SUBDIR MODEL_LABEL)
     cmake_parse_arguments(MIAOW_MODEL "${options}" "${one_value_args}" "" ${ARGN})
 
+    # Prefer an explicit checkout over the default model directory
     if(MIAOW_MODEL_MODEL_ROOT)
         set(resolved_model_root "${MIAOW_MODEL_MODEL_ROOT}")
     elseif(MIAOW_MODEL_MODEL_LOCAL_SUBDIR)
@@ -66,9 +62,11 @@ function(miaow_resolve_model_root out_var)
             "miaow_resolve_model_root: set MODEL_ROOT or MODEL_LOCAL_SUBDIR")
     endif()
 
+    # Report the selected source path during configuration
     if(MIAOW_MODEL_MODEL_LABEL)
         message(STATUS
-            "MIAOW: resolved model root for ${MIAOW_MODEL_MODEL_LABEL}: ${resolved_model_root}")
+            "MIAOW: resolved model root for ${MIAOW_MODEL_MODEL_LABEL}: "
+            "${resolved_model_root}")
     else()
         message(STATUS "MIAOW: resolved model root: ${resolved_model_root}")
     endif()
@@ -76,49 +74,46 @@ function(miaow_resolve_model_root out_var)
     set(${out_var} "${resolved_model_root}" PARENT_SCOPE)
 endfunction()
 
-# miaow_provision_example_extern_link(EXAMPLE_DIR <dir> LINK_NAME <name>
-#     TARGET_DIR <dir>)
+# miaow_add_workflow_test(TEST_NAME <name> EXECUTABLE_TARGET <target>
+#     [WORKING_DIRECTORY <dir>] [PASS_REGULAR_EXPRESSION <regex>]
+#     [RESOURCE_LOCK <lock>] [CLI_ARGS <arg>...])
 #
-# Ensure EXAMPLE_DIR/extern/LINK_NAME is a symlink to TARGET_DIR. This keeps
-# example-local extern paths stable whether the backing model source was
-# supplied manually or fetched into third_party/.
-#
-# Existing symlinks at the destination are replaced. A non-symlink entry at the
-# same path is treated as an error to avoid clobbering user files.
-function(miaow_provision_example_extern_link)
+# Register an example executable as a CTest workflow
+function(miaow_add_workflow_test)
     set(options)
-    set(one_value_args EXAMPLE_DIR LINK_NAME TARGET_DIR)
-    cmake_parse_arguments(MIAOW_EXTERN "${options}" "${one_value_args}" "" ${ARGN})
+    set(one_value_args
+        TEST_NAME
+        EXECUTABLE_TARGET
+        WORKING_DIRECTORY
+        PASS_REGULAR_EXPRESSION
+        RESOURCE_LOCK
+    )
+    set(multi_value_args CLI_ARGS)
+    cmake_parse_arguments(MIAOW_TEST
+        "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
 
-    if(WIN32)
-        message(FATAL_ERROR
-            "MIAOW extern symlink workflow is POSIX-only (macOS/Linux)")
+    # Forward CLI arguments directly to the built example
+    add_test(
+        NAME ${MIAOW_TEST_TEST_NAME}
+        COMMAND
+            $<TARGET_FILE:${MIAOW_TEST_EXECUTABLE_TARGET}>
+            ${MIAOW_TEST_CLI_ARGS}
+    )
+
+    # Collect only the optional CTest properties supplied by the caller
+    set(test_properties)
+    if(MIAOW_TEST_WORKING_DIRECTORY)
+        list(APPEND test_properties
+            WORKING_DIRECTORY "${MIAOW_TEST_WORKING_DIRECTORY}")
     endif()
-    if(NOT MIAOW_EXTERN_EXAMPLE_DIR OR NOT MIAOW_EXTERN_LINK_NAME OR
-            NOT MIAOW_EXTERN_TARGET_DIR)
-        message(FATAL_ERROR
-            "miaow_provision_example_extern_link: EXAMPLE_DIR, LINK_NAME, and TARGET_DIR are required")
+    if(MIAOW_TEST_PASS_REGULAR_EXPRESSION)
+        list(APPEND test_properties
+            PASS_REGULAR_EXPRESSION "${MIAOW_TEST_PASS_REGULAR_EXPRESSION}")
     endif()
-
-    get_filename_component(example_dir_abs "${MIAOW_EXTERN_EXAMPLE_DIR}" ABSOLUTE)
-    get_filename_component(target_dir_abs "${MIAOW_EXTERN_TARGET_DIR}" ABSOLUTE)
-    set(example_extern_dir "${example_dir_abs}/extern")
-    set(example_extern_link_path "${example_extern_dir}/${MIAOW_EXTERN_LINK_NAME}")
-
-    file(MAKE_DIRECTORY "${example_extern_dir}")
-
-    if(EXISTS "${example_extern_link_path}" OR IS_SYMLINK "${example_extern_link_path}")
-        if(IS_SYMLINK "${example_extern_link_path}")
-            execute_process(
-                COMMAND "${CMAKE_COMMAND}" -E rm -f "${example_extern_link_path}"
-            )
-        else()
-            message(FATAL_ERROR
-                "MIAOW extern link path exists and is not a symlink: ${example_extern_link_path}")
-        endif()
+    if(MIAOW_TEST_RESOURCE_LOCK)
+        list(APPEND test_properties RESOURCE_LOCK "${MIAOW_TEST_RESOURCE_LOCK}")
     endif()
-
-    file(CREATE_LINK "${target_dir_abs}" "${example_extern_link_path}" SYMBOLIC)
-    message(STATUS
-        "MIAOW: linked ${example_extern_link_path} -> ${target_dir_abs}")
+    if(test_properties)
+        set_tests_properties(${MIAOW_TEST_TEST_NAME} PROPERTIES ${test_properties})
+    endif()
 endfunction()

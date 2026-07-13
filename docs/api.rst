@@ -76,13 +76,7 @@ Runtime orchestration
 BMI integration
 ---------------
 
-MIAOW's BMI support targets the
-`Basic Model Interface <https://bmi.csdms.io/en/stable/>`_ and the
-`CSDMS BMI C++ interface <https://github.com/csdms/bmi-cxx>`_.
-Dynamic Fortran plugins use the
-`NOAA-OWP BMI bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_.
-Realization-driven workflows follow the
-`NextGen <https://github.com/NOAA-OWP/ngen>`_ realization shape.
+MIAOW's BMI support targets the `Basic Model Interface <https://bmi.csdms.io/en/stable/>`_ and the `CSDMS BMI C++ interface <https://github.com/csdms/bmi-cxx>`_. Dynamic Fortran plugins use the `NOAA-OWP BMI bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_. Realization-driven workflows follow the `NextGen <https://github.com/NOAA-OWP/ngen>`_ realization shape.
 
 BMI configuration
 ~~~~~~~~~~~~~~~~~

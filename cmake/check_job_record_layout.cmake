@@ -1,3 +1,4 @@
+# Validate the inputs supplied by the calling CTest definition
 if(NOT DEFINED EXECUTABLE OR EXECUTABLE STREQUAL "")
     message(FATAL_ERROR "EXECUTABLE is required")
 endif()
@@ -8,15 +9,24 @@ if(NOT DEFINED OUTPUT_ROOT OR OUTPUT_ROOT STREQUAL "")
     message(FATAL_ERROR "OUTPUT_ROOT is required")
 endif()
 
+# Start with an empty output root so previous runs cannot satisfy the checks
 file(REMOVE_RECURSE "${OUTPUT_ROOT}")
 
+# Run the example and retain its output for useful failure messages
 execute_process(
     COMMAND "${EXECUTABLE}" ${EXECUTABLE_ARGS}
     WORKING_DIRECTORY "${WORKING_DIRECTORY}"
     OUTPUT_VARIABLE run_output
     ERROR_VARIABLE run_error
+    RESULT_VARIABLE run_result
 )
 
+if(DEFINED REQUIRE_SUCCESS AND REQUIRE_SUCCESS AND NOT run_result EQUAL 0)
+    message(FATAL_ERROR
+        "Example failed with exit code ${run_result}:\n${run_output}${run_error}")
+endif()
+
+# A second run verifies that run identifiers advance without overwriting output
 if(DEFINED CHECK_SECOND_RUN AND CHECK_SECOND_RUN)
     execute_process(
         COMMAND "${EXECUTABLE}" ${EXECUTABLE_ARGS}
@@ -26,8 +36,7 @@ if(DEFINED CHECK_SECOND_RUN AND CHECK_SECOND_RUN)
     )
 endif()
 
-# Non-zero exit codes are tolerated because this test asserts the output layout
-# contract, which must hold even when some tasks in a job fail
+# Unless REQUIRE_SUCCESS is set, tolerate failures while checking the output layout
 
 if(NOT IS_DIRECTORY "${OUTPUT_ROOT}/run_0")
     message(FATAL_ERROR "Expected ${OUTPUT_ROOT}/run_0 to exist")
@@ -38,6 +47,7 @@ if(DEFINED CHECK_SECOND_RUN AND CHECK_SECOND_RUN AND
     message(FATAL_ERROR "Expected ${OUTPUT_ROOT}/run_1 to exist after second run")
 endif()
 
+# Find every generated job record and reject the obsolete task-directory layout
 file(GLOB run_directories LIST_DIRECTORIES true "${OUTPUT_ROOT}/run_*")
 set(found_job_record FALSE)
 set(job_record_paths)
@@ -72,6 +82,7 @@ if(NOT found_job_record)
     message(FATAL_ERROR "No job_record.json found under ${OUTPUT_ROOT}/run_*/job_*/")
 endif()
 
+# Verify the common job-record fields and any example-specific metadata
 set(required_job_record_snippets
     "\"metadata\""
     "\"result\""
@@ -94,6 +105,7 @@ foreach(job_record_path IN LISTS job_record_paths)
     endforeach()
 endforeach()
 
+# Check each result artifact requested by the calling test
 if(DEFINED EXPECTED_RESULT_PATHS)
     foreach(expected_result_path IN LISTS EXPECTED_RESULT_PATHS)
         if(NOT EXISTS "${OUTPUT_ROOT}/run_0/job_0/${expected_result_path}")

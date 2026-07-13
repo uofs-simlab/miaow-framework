@@ -38,12 +38,14 @@ int main(int argc, char* argv[]) {
     // Describe the shared heat initialization config
     const std::string heat_config = "./data/configs/config_dynamic_heat.txt";
 
-    // Register one simulation unit for every dynamic plugin task
+    // Register one simulation unit, to be reused for all dynamic plugin tasks
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId dynamic_bmi =
         registry.add<miaow::DynamicBmiSimulationUnit>();
     miaow::Runtime runtime(registry, runtime_options);
 
+    // Create dynamic BMI configs that exercise different plugin backends and modes
+    // plugin backends and execution modes
     const std::vector<miaow::DynamicBmiConfig> configs{
         // Run the C++ plugin in the current process
         {.backend_ = miaow::DynamicBmiBackend::cpp,
@@ -53,19 +55,25 @@ int main(int argc, char* argv[]) {
         {.backend_ = miaow::DynamicBmiBackend::fortran,
          .plugin_path_ = fortran_heat_plugin_path,
          .init_config_ = heat_config},
-        // Run the C++ plugin in a persistent subprocess
-        {.backend_ = miaow::DynamicBmiBackend::cpp,
-         .plugin_path_ = cpp_heat_plugin_path,
-         .init_config_ = heat_config,
-         .execution_mode_ = miaow::ExecutionMode::persistent_subprocess},
         // Run one C++ plugin task in a temporary subprocess
         {.backend_ = miaow::DynamicBmiBackend::cpp,
          .plugin_path_ = cpp_heat_plugin_path,
          .init_config_ = heat_config,
          .execution_mode_ = miaow::ExecutionMode::single_task_subprocess},
+        // Start a persistent subprocess with the C++ plugin
+        {.backend_ = miaow::DynamicBmiBackend::cpp,
+         .plugin_path_ = cpp_heat_plugin_path,
+         .init_config_ = heat_config,
+         .execution_mode_ = miaow::ExecutionMode::persistent_subprocess},
+        // Reuse the persistent subprocess for another C++ plugin task
+        {.backend_ = miaow::DynamicBmiBackend::cpp,
+         .plugin_path_ = cpp_heat_plugin_path,
+         .init_config_ = heat_config,
+         .execution_mode_ = miaow::ExecutionMode::persistent_subprocess},
     };
-    const std::vector<miaow::Task> tasks =
-        miaow::make_bmi_tasks(dynamic_bmi, configs);
+
+    // Make a vector of tasks from the configs, all using the dynamic BMI simulation unit
+    const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(dynamic_bmi, configs);
 
     // Submit tasks and wait for results
     miaow::JobHandle job = runtime.submit_job(tasks);

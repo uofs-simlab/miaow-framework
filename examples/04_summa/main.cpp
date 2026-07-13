@@ -3,7 +3,6 @@
  * realization file.
  */
 #include <exception>
-#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -18,34 +17,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // SUMMA file managers write model-native output under the local `./output` directory
-    try {
-        std::filesystem::create_directories("output");
-    } catch (const std::exception& exception) {
-        std::cerr << "Unable to create SUMMA output directory: " << exception.what()
-                  << "\n";
-        return 1;
-    }
-
-    // Parse runtime CLI options
-    miaow::RuntimeOptions runtime_options;
-    try {
-        miaow::parse_runtime_cli_options(argc, argv, runtime_options);
-    } catch (const std::exception& exception) {
-        std::cerr << exception.what() << "\n";
-        return 1;
-    }
-
-    // Read the packaged realization and use its output root unless the CLI overrides it
+    // Use the realization output root as the default before parsing CLI overrides
     miaow::PartitionedBmiRealization realization;
+    miaow::RuntimeOptions runtime_options;
     try {
         realization = miaow::PartitionedBmiRealization(
             "data/gauge_01073000/realization_config.json");
-
-        // Use the realization's output root unless the CLI explicitly overrides it
-        if (runtime_options.output_root_.empty() && !realization.output_root().empty()) {
-            runtime_options.output_root_ = realization.output_root();
-        }
+        runtime_options.output_root_ = realization.output_root();
+        miaow::parse_runtime_cli_options(argc, argv, runtime_options);
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";
         return 1;
@@ -59,8 +38,7 @@ int main(int argc, char* argv[]) {
     // SUMMA tasks run in subprocesses because the model has global state
     const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(
         dynamic_bmi, realization, miaow::ExecutionMode::persistent_subprocess);
-    std::cout << "Parsed realization with " << tasks.size()
-              << " feature task(s)\n";
+    std::cout << "Parsed realization with " << tasks.size() << " feature task(s)\n";
     miaow::Runtime runtime(registry, runtime_options);
 
     // Submit tasks and wait for results

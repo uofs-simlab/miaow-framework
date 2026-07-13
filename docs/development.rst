@@ -42,8 +42,7 @@ These are the top-level CMake options:
      - Build selected example programs
    * - ``-DMIAOW_EXAMPLES``
      - ``00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi``
-     - Semicolon-separated list of examples to build when ``BUILD_EXAMPLES`` is
-       enabled
+     - Semicolon-separated list of examples to build when ``BUILD_EXAMPLES`` is enabled
    * - ``-DMIAOW_BOOST_PROVIDER``
      - ``auto``
      - Boost provider: ``system``, ``fetch``, or ``auto``
@@ -58,16 +57,12 @@ These are the top-level CMake options:
      - CAF version used by ``find_package`` and ``FetchContent``
    * - ``-DMIAOW_DEFAULT_MODEL_BASE_DIR``
      - ``${PROJECT_SOURCE_DIR}/third_party``
-     - Default base directory where external model sources are resolved or
-       fetched
+     - Default base directory where external model sources are resolved or fetched
    * - ``-DMIAOW_ISO_C_FORTRAN_BMI_ROOT``
      - empty
-     - Optional explicit path to a valid local
-       ``NOAA-OWP/iso_c_fortran_bmi`` checkout
+     - Optional explicit path to a valid local ``NOAA-OWP/iso_c_fortran_bmi`` checkout
 
-When ``MIAOW_ISO_C_FORTRAN_BMI_ROOT`` is empty, CMake looks for
-``iso_c_fortran_bmi`` under ``MIAOW_DEFAULT_MODEL_BASE_DIR`` and fetches it
-into that location if missing.
+When ``MIAOW_ISO_C_FORTRAN_BMI_ROOT`` is empty, CMake looks for ``iso_c_fortran_bmi`` under ``MIAOW_DEFAULT_MODEL_BASE_DIR`` and fetches it into that location if missing.
 
 Provider values are interpreted as follows:
 
@@ -75,22 +70,10 @@ Provider values are interpreted as follows:
 - ``fetch``: skip ``find_package(...)`` and use ``FetchContent``
 - ``auto``: try ``find_package(...)``, then use ``FetchContent`` if not found
 
-A Conan-based CI-style setup uses these commands:
-
-.. code-block:: sh
-
-   conan install . --output-folder=build/conan --build=missing
-   cmake -S . -B build \
-     -DMIAOW_BOOST_PROVIDER=system \
-     -DMIAOW_CAF_PROVIDER=system
-   cmake --build build --config Release
-
 Documentation build
 -------------------
 
-Generated API documentation uses Doxygen for C++ docstring extraction and
-Sphinx with Breathe for HTML rendering. Doxygen must be installed separately
-and available on ``PATH``.
+Generated API documentation uses Doxygen for C++ docstring extraction and Sphinx with Breathe for HTML rendering. Doxygen must be installed separately and available on ``PATH``.
 
 Build the docs from a dedicated Python environment:
 
@@ -109,5 +92,4 @@ Namespace layout
 - Core internals: ``miaow::core``
 - BMI internals: ``miaow::bmi``
 - Internal I/O helpers: ``miaow::io``
-- The external `BMI C++ API <https://github.com/csdms/bmi-cxx/tree/master>`_
-  is available through the ``miaow::bmi_api = ::bmi`` alias.
+- The external `BMI C++ API <https://github.com/csdms/bmi-cxx/tree/master>`_ is available through the ``miaow::bmi_api = ::bmi`` alias.

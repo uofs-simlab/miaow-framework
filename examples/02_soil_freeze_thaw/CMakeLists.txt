@@ -1,26 +1,28 @@
 cmake_minimum_required(VERSION 3.21)
 
+# If using a standalone build for this example, enable the required languages
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(miaow_soil_freeze_thaw_example LANGUAGES CXX)
+endif()
+
+# Load MIAOW and choose the executable name for this example
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_setup_example.cmake")
 miaow_setup_example(soil_freeze_thaw)
 
+# Load the helper that builds a static BMI model with an example executable
 include("${MIAOW_ROOT}/cmake/miaow_bmi_model.cmake")
 
+# Allow a local checkout to override the default third_party source
 set(MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT "" CACHE PATH
     "Path to a local NOAA-OWP/SoilFreezeThaw source tree")
 
-# Build NOAA-OWP/SoilFreezeThaw as a static model library and link it directly
-# into the example executable (no dynamic plugin loading).
-set(soil_freeze_thaw_model_target "${EXECUTABLE_TARGET}_model")
+# Link SoilFreezeThaw directly without dynamic plugin loading
 miaow_add_bmi_model(
-    EXAMPLE_NAME soil_freeze_thaw
-    MIAOW_ROOT "${MIAOW_ROOT}"
     MODEL_ROOT "${MIAOW_SOIL_FREEZE_THAW_MODEL_ROOT}"
     EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
-    MODEL_TARGET "${soil_freeze_thaw_model_target}"
     MODEL_LOCAL_SUBDIR SoilFreezeThaw
     MODEL_GIT_REPOSITORY "https://github.com/NOAA-OWP/SoilFreezeThaw.git"
     MODEL_GIT_TAG "d7a4bdbbe773d79c5d5b81a1255e5288cec01e5b"
-    MODEL_FETCH_NAME soil_freeze_thaw
     EXECUTABLE_SOURCES main.cpp
     MODEL_SOURCES
         src/bmi_soil_freeze_thaw.cxx
@@ -31,31 +33,17 @@ miaow_add_bmi_model(
     MODEL_COMPILE_DEFINITIONS BMI_ACTIVE
 )
 
-miaow_provision_example_extern_link(
-    EXAMPLE_DIR "${CMAKE_CURRENT_LIST_DIR}"
-    LINK_NAME "SoilFreezeThaw"
-    TARGET_DIR "${MODEL_ROOT}"
-)
-
 target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
     MIAOW_SOIL_FREEZE_THAW_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
 )
 
 if(BUILD_TESTING)
-    add_test(
-        NAME miaow_example_02_soil_freeze_thaw_extern_symlink
-        COMMAND
-            ${CMAKE_COMMAND}
-            -DLINK_PATH=${CMAKE_CURRENT_LIST_DIR}/extern/SoilFreezeThaw
-            -DEXPECT_TARGET=${MODEL_ROOT}
-            -P
-            ${MIAOW_ROOT}/cmake/check_symlink.cmake
-    )
-
+    # Run the workflow while locking its shared output directory
     miaow_add_workflow_test(
         TEST_NAME miaow_example_02_soil_freeze_thaw
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+        RESOURCE_LOCK miaow_example_02_soil_freeze_thaw_output
         CLI_ARGS
             --output_root
             "${CMAKE_CURRENT_LIST_DIR}/output"
@@ -66,11 +54,7 @@ if(BUILD_TESTING)
             --job_request_timeout
             600
     )
-    set_tests_properties(miaow_example_02_soil_freeze_thaw PROPERTIES
-        RESOURCE_LOCK miaow_example_02_soil_freeze_thaw_output
-    )
-
-    # Drives the example with --output_root and validates the on-disk layout
+    # Run again with one worker and validate the expected result files
     set(soil_freeze_thaw_layout_cli_args
         --output_root
         "${CMAKE_CURRENT_LIST_DIR}/output"

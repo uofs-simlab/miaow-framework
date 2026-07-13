@@ -13,26 +13,13 @@
   <img src="docs/images/miaow_logo.svg" alt="MIAOW logo" width="360">
 </p>
 
-Managing concurrent numerical simulation tasks with dynamic workloads and
-heterogeneous hardware can feel like herding cats. **MIAOW** embraces that
-reality by using actor-based asynchronous orchestration so tasks run when they
-are ready, maximizing utilization across available resources.
+Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
 
-MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html),
-uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its
-actor backend, relies on [Boost](https://www.boost.org/) for process management
-and JSON support, and includes C++/Fortran
-[Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) integration
-paths.
+MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its actor backend, relies on [Boost](https://www.boost.org/) for process management and JSON support, and includes C++/Fortran [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) integration paths.
 
 ## Requirements
 
-MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a
-Fortran compiler. CMake tries to find Boost and CAF on the system, then fetches
-them from source when the provider option is `auto`. See the
-[Development](https://tjbmontoya.com/miaow-framework/development.html) section
-in the [documentation](https://tjbmontoya.com/miaow-framework/index.html) for a
-description of the provider options.
+MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. CMake tries to find Boost and CAF on the system, then fetches them from source when the provider option is `auto`. See the [Development](https://tjbmontoya.com/miaow-framework/development.html) section in the [documentation](https://tjbmontoya.com/miaow-framework/index.html) for a description of the provider options.
 
 On Ubuntu:
 
@@ -58,28 +45,15 @@ cd examples/00_hello
 ./miaow_hello
 ```
 
-See the [development documentation](https://tjbmontoya.com/miaow-framework/development.html)
-for requirements, build options, and testing. See the
-[examples documentation](https://tjbmontoya.com/miaow-framework/examples.html)
-for the available workflows and model-specific setup.
+See the [development documentation](https://tjbmontoya.com/miaow-framework/development.html) for requirements, build options, and testing. See the [examples documentation](https://tjbmontoya.com/miaow-framework/examples.html) for the available workflows and model-specific setup.
 
 ## Documentation
 
-The full documentation covers the
-[architecture](https://tjbmontoya.com/miaow-framework/architecture.html),
-[BMI integration](https://tjbmontoya.com/miaow-framework/bmi.html),
-[examples](https://tjbmontoya.com/miaow-framework/examples.html),
-[development workflow](https://tjbmontoya.com/miaow-framework/development.html),
-and [API reference](https://tjbmontoya.com/miaow-framework/api.html).
+The full documentation covers the [architecture](https://tjbmontoya.com/miaow-framework/architecture.html), [BMI integration](https://tjbmontoya.com/miaow-framework/bmi.html), [examples](https://tjbmontoya.com/miaow-framework/examples.html), [development workflow](https://tjbmontoya.com/miaow-framework/development.html), and [API reference](https://tjbmontoya.com/miaow-framework/api.html).
 
 ## Authors and funding
 
-MIAOW was developed at the University of Saskatchewan by
-[Tristan Montoya](https://tjbmontoya.com/) and
-[Raymond Spiteri](https://www.cs.usask.ca/people/faculty%20profiles/ray-spiteri.php),
-with funding support from the
-[Cooperative Institute for Research to Operations in Hydrology
-(CIROH)](https://ciroh.ua.edu/).
+MIAOW was developed at the University of Saskatchewan with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/).
 
 <p align="center">
   <a href="https://www.usask.ca/">

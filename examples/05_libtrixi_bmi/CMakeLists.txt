@@ -1,12 +1,19 @@
 cmake_minimum_required(VERSION 3.21)
 
+# If using a standalone build for this example, enable the required languages
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(miaow_libtrixi_bmi_example LANGUAGES CXX)
+endif()
+
+# Load MIAOW and choose the executable name for this example
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_setup_example.cmake")
 miaow_setup_example(libtrixi_bmi)
 
+# Allow a local checkout to override the default third_party source
 set(MIAOW_LIBTRIXI_BMI_ROOT "" CACHE PATH
     "Path to a local tristanmontoya/libtrixi-bmi source tree")
 
-# Resolve/fetch the libtrixi BMI plugin source tree
+# Choose the plugin source path, fetching the pinned source when absent
 miaow_resolve_model_root(libtrixi_bmi_root
     MODEL_ROOT "${MIAOW_LIBTRIXI_BMI_ROOT}"
     MODEL_LOCAL_SUBDIR "libtrixi-bmi"
@@ -24,11 +31,13 @@ if(NOT EXISTS "${libtrixi_bmi_root}")
     )
 endif()
 
+# Validate the selected source tree before reading its build configuration
 if(NOT EXISTS "${libtrixi_bmi_root}/CMakeLists.txt")
     message(FATAL_ERROR
         "MIAOW_LIBTRIXI_BMI_ROOT must point to a tristanmontoya/libtrixi-bmi checkout")
 endif()
 
+# Locate the libtrixi installation and Julia environment used by the plugin
 set(libtrixi_install_dir_default "${libtrixi_bmi_root}/build/libtrixi-install")
 set(libtrixi_project_dir_default "${libtrixi_bmi_root}/build/libtrixi-julia")
 set(libtrixi_julia_depot_path_default "${libtrixi_bmi_root}/build/julia-depot")
@@ -51,17 +60,13 @@ endif()
 set(LIBTRIXI_PREFIX "${LIBTRIXI_INSTALL_DIR}" CACHE PATH
     "Installed libtrixi prefix used by libtrixi-bmi" FORCE)
 
+# Let libtrixi-bmi define its plugin target in a separate binary directory
 add_subdirectory(
     "${libtrixi_bmi_root}"
     "${CMAKE_CURRENT_BINARY_DIR}/libtrixi-bmi-build"
 )
 
-miaow_provision_example_extern_link(
-    EXAMPLE_DIR "${CMAKE_CURRENT_LIST_DIR}"
-    LINK_NAME "libtrixi-bmi"
-    TARGET_DIR "${libtrixi_bmi_root}"
-)
-
+# Build the driver and embed the plugin and Julia environment paths
 add_executable(${EXECUTABLE_TARGET}
     main.cpp
 )
@@ -75,7 +80,7 @@ target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
 )
 add_dependencies(${EXECUTABLE_TARGET} miaow_subprocess libtrixi_bmi_plugin)
 
-# Drop the binary next to the source so example paths are easy to run manually
+# Place the binary beside the source so relative example paths remain stable
 set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
