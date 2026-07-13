@@ -19,7 +19,7 @@ MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), u
 
 ## Requirements
 
-MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. CMake tries to find Boost and CAF on the system, then fetches them from source when the provider option is `auto`. See the [Development](https://tjbmontoya.com/miaow-framework/development.html) section of the [MIAOW documentation](https://tjbmontoya.com/miaow-framework/index.html) for a description of the provider options.
+MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. The Boost and CAF provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. See the [Development](https://tjbmontoya.com/miaow-framework/development.html) section of the [MIAOW documentation](https://tjbmontoya.com/miaow-framework/index.html) for the available provider settings.
 
 On Ubuntu:
 
