@@ -168,6 +168,7 @@ Examples use the following runtime command-line options where applicable:
      - ``""``
      - Root directory path for runtime-managed output folders, disabled by
        default
+
 Public CLI parsers throw ``std::runtime_error`` for unrecognized arguments,
 missing option values, and invalid option values. Example executables catch
 these errors, print the message, and exit with status ``1``.

@@ -1,6 +1,10 @@
 /**
- * This example runs libtrixi configs through MIAOW's dynamic BMI plugin path.
- * libtrixi calls these configs libelixirs.
+ * This example demonstrates how to use the libtrixi BMI plugin with MIAOW, using the 
+ * `advection_basic_1d.jl` setup file to run a simple 1D advection simulation a total of 
+ * `default_random_cfl_runs` times, each with a different random CFL number. The example 
+ * uses the dynamic BMI simulation unit to load the libtrixi plugin and execute the BMI 
+ * lifecycle in persistent subprocess mode, meaning that the Julia runtime is initialized 
+ * once per worker and reused for all tasks submitted to that worker.
  */
 
 #include <cstdlib>
@@ -13,10 +17,8 @@
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
 
-namespace {
 // Default number of random CFL runs to execute in this example
 constexpr int default_random_cfl_runs = 12;
-} // namespace
 
 int main(int argc, char* argv[]) {
     // Check that local example data is resolved from the expected directory
@@ -53,15 +55,20 @@ int main(int argc, char* argv[]) {
         registry.add<miaow::DynamicBmiSimulationUnit>();
     miaow::Runtime runtime(registry, runtime_options);
 
-    // Repeat the config so each task samples its own CFL number
+    // Specify the dynamic BMI config for this example, which is the same for all tasks
     const miaow::DynamicBmiConfig bmi_config{
         .plugin_path_ = plugin_path,
         .init_config_ = "./advection_basic_1d.jl",
         .output_variables_ = {"simulation_time"},
         .execution_mode_ = miaow::ExecutionMode::persistent_subprocess,
     };
+
+    // Call constructor for a vector of length `default_random_cfl_runs` with same config
     const std::vector<miaow::DynamicBmiConfig> bmi_configs(
         default_random_cfl_runs, bmi_config);
+
+    // Build one task per config using the dynamic_bmi simulation unit; these are all the 
+    // same config, but each task will sample its own CFL number at runtime
     const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(dynamic_bmi, bmi_configs);
 
     // Submit tasks and wait for results

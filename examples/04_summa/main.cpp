@@ -1,6 +1,6 @@
 /**
- * This example demonstrates how to run SUMMA through MIAOW using a small
- * NextGen-style realization file.
+ * This example demonstrates how to run SUMMA through MIAOW using a small NextGen-style 
+ * realization file.
  */
 #include <exception>
 #include <filesystem>
@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // SUMMA file managers write model-native output under the local output directory
+    // SUMMA file managers write model-native output under the local `./output` directory
     try {
         std::filesystem::create_directories("output");
     } catch (const std::exception& exception) {
@@ -41,6 +41,8 @@ int main(int argc, char* argv[]) {
     try {
         realization = miaow::PartitionedBmiRealization(
             "data/gauge_01073000/realization_config.json");
+
+        // Use the realization's output root unless the CLI explicitly overrides it
         if (runtime_options.output_root_.empty() && !realization.output_root().empty()) {
             runtime_options.output_root_ = realization.output_root();
         }
