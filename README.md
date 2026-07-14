@@ -47,9 +47,13 @@ cd examples/00_hello
 
 See the [Examples](https://tjbmontoya.com/miaow-framework/examples.html) section of the documentation for an overview of the available workflows and model-specific setup.
 
+## Contributing
+
+MIAOW is an open-source project and welcomes contributions from the community. To report a bug, suggest an improvement, or discuss a contribution, please [open an issue](https://github.com/uofs-simlab/miaow-framework/issues). Code and documentation contributions can be proposed through a pull request.
+
 ## Authors and funding
 
-MIAOW was developed at the University of Saskatchewan with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/).
+MIAOW was developed with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/) and is maintained by the [Numerical Simulation Laboratory](https://github.com/uofs-simlab) at the [University of Saskatchewan](https://www.usask.ca/). See the [AUTHORS](AUTHORS.md) file for a full list of individual contributors to the project.
 
 <p align="center">
   <a href="https://www.usask.ca/">
@@ -67,3 +71,7 @@ MIAOW was developed at the University of Saskatchewan with funding support from 
   </a>
 
 </p>
+
+## License
+
+MIAOW is available under the [MIT License](LICENSE).
