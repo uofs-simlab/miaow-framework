@@ -21,21 +21,19 @@ A typical workflow includes the following steps:
 6. Completed task results are wrapped into one ``JobRecord``.
 7. Runtime fulfils the caller's ``JobHandle`` future.
 
-Multiple ``submit_job(...)`` calls can be running concurrently.
+Each job creates at most ``RuntimeOptions::max_workers_`` workers, or one worker per task when the job contains fewer tasks than ``RuntimeOptions::max_workers_``. This limit applies per job rather than across the entire ``Runtime``, so concurrent jobs can collectively run more than ``max_workers_`` tasks.
 
 .. _subprocess-execution:
 
 Subprocess execution
 --------------------
 
-``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` isolate model execution from the parent process. The parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defer the actual model execution to a subprocess with its own actor system.
-
-Single-task subprocess mode stops the subprocess after each task. Persistent subprocess mode reuses one subprocess per job worker for tasks with the same resolved subprocess path.
+The ``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` execution modes isolate model execution from the parent process. When using these modes, the parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defers the actual model execution to a subprocess with its own actor system. In ``single_task_subprocess`` mode, the subprocess is stopped after each task, while ``persistent_subprocess`` mode reuses one subprocess per job worker for tasks with the same resolved subprocess path.
 
 Scheduling behaviour
 --------------------
 
-MIAOW uses a simple greedy scheduling strategy to dispatch tasks to available workers, as illustrated in the figure below:
+MIAOW uses a simple greedy scheduling strategy to dispatch tasks to available workers, as illustrated in the figure below, where the orange cat icons represent tasks:
 
 .. image:: images/task_scheduling_tikz.png
    :alt: MIAOW task scheduling queue and worker dispatch
@@ -52,6 +50,6 @@ When a worker finishes, it is immediately returned to the idle queue and the nex
 Limitations
 -----------
 
-- Distributed-memory parallelism is not currently supported.
-- Target workloads are embarrassingly parallel tasks without inter-task communication.
-- Windows is not currently supported.
+- While subprocess execution is currently supported using remote actors, MIAOW does not currently support distributed-memory parallelism across multiple nodes. This is a planned feature for future releases.
+- MIAOW currently targets embarrassingly parallel workflows. A future release will support more complex workflows involving task dependencies.
+- Microsoft Windows is not currently supported, and there are no immediate plans to support it. MIAOW has been tested on Linux and macOS, and future releases will continue to support these platforms.

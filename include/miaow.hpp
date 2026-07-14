@@ -468,7 +468,7 @@ class SimulationUnitRegistry {
  * Solver-specific options should be passed in `Task` arguments.
  */
 struct RuntimeOptions {
-    /// Maximum number of worker actors that may run concurrently
+    /// Maximum number of worker actors used for each job
     std::size_t max_workers_;
 
     /// Timeout for a single task request from `job_actor` to `simulation_unit_actor`
@@ -483,7 +483,8 @@ struct RuntimeOptions {
 
     /**
      * @brief Construct runtime options.
-     * @param workers Desired worker count. Values of zero are clamped to one.
+     * @param workers Maximum number of worker actors used for each job. Values of zero are
+     *                clamped to one.
      * @param task_timeout Timeout used for one simulation task request.
      * @param job_timeout Timeout used for whole-job requests.
      * @param output_root Root directory for runtime-managed output folders.
