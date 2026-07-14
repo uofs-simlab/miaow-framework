@@ -1,6 +1,6 @@
 # Authors
 
-MIAOW is maintained by the Numerical Simulation Laboratory at the University of Saskatchewan, with [Tristan Montoya](https://tjbmontoya.com) as its current principal developer. The "MIAOW Authors" consist of the following people, who have contributed to the project in various ways, including code contributions, documentation, testing, scientific guidance, and project management:
+MIAOW is maintained by the Numerical Simulation Laboratory at the University of Saskatchewan, with [Tristan Montoya](https://tjbmontoya.com) as its current principal developer. The "MIAOW authors" consist of the following people, who have contributed to the project in various ways, including code contributions, documentation, testing, scientific guidance, and project management:
 
 - Tristan Montoya, University of Saskatchewan
 - Raymond Spiteri, University of Saskatchewan
