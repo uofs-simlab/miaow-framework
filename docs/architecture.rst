@@ -17,7 +17,7 @@ A typical workflow includes the following steps:
 2. Runtime assigns a ``job_id`` and sends ``(job_id, tasks)`` to ``orchestrator_actor``.
 3. ``orchestrator_actor`` spawns one ``job_actor`` for that job.
 4. ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
-5. Each worker resolves ``SimulationUnitId``. In-process tasks construct a fresh ``SimulationUnit`` instance, while subprocess tasks use worker-owned subprocess state.
+5. Each worker resolves ``SimulationUnitId``. In-process tasks construct a fresh ``SimulationUnit`` instance, whereas subprocess tasks use worker-owned subprocess state.
 6. Completed task results are wrapped into one ``JobRecord``.
 7. Runtime fulfils the caller's ``JobHandle`` future.
 
@@ -28,7 +28,9 @@ Each job creates at most ``RuntimeOptions::max_workers_`` workers, or one worker
 Subprocess execution
 --------------------
 
-The ``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` execution modes isolate model execution from the parent process. When using these modes, the parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defers the actual model execution to a subprocess with its own actor system. In ``single_task_subprocess`` mode, the subprocess is stopped after each task, while ``persistent_subprocess`` mode reuses one subprocess per job worker for tasks with the same resolved subprocess path.
+The ``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` execution modes isolate model execution from the parent process. When using these modes, the parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defers the actual model execution to a subprocess with its own actor system. 
+
+In ``single_task_subprocess`` mode, the subprocess is stopped after each task, whereas ``persistent_subprocess`` mode reuses one subprocess per job worker for tasks with the same resolved subprocess path.
 
 Scheduling behaviour
 --------------------
@@ -50,6 +52,6 @@ When a worker finishes, it is immediately returned to the idle queue and the nex
 Limitations
 -----------
 
-- While subprocess execution is currently supported using remote actors, MIAOW does not currently support distributed-memory parallelism across multiple nodes. This is a planned feature for future releases.
+- Although subprocess execution is currently supported using remote actors, MIAOW does not currently support distributed-memory parallelism across multiple nodes. This is a planned feature for future releases.
 - MIAOW currently targets embarrassingly parallel workflows. A future release will support more complex workflows involving task dependencies.
 - Microsoft Windows is not currently supported, and there are no immediate plans to support it. MIAOW has been tested on Linux and macOS, and future releases will continue to support these platforms.
