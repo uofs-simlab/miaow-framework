@@ -19,7 +19,7 @@ MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), u
 
 ## Requirements
 
-MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. The Boost and CAF provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. See the [Development](https://tjbmontoya.com/miaow-framework/development.html) section of the [MIAOW documentation](https://tjbmontoya.com/miaow-framework/index.html) for the available provider settings.
+MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. The Boost and CAF provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. See the [developer documentation](https://tjbmontoya.com/miaow-framework/development.html) for a description of the available provider settings.
 
 On Ubuntu:
 
@@ -49,7 +49,7 @@ See the [Examples](https://tjbmontoya.com/miaow-framework/examples.html) section
 
 ## Contributing
 
-MIAOW is an open-source project and welcomes contributions from the community. To report a bug, suggest an improvement, or discuss a contribution, please [open an issue](https://github.com/uofs-simlab/miaow-framework/issues). Code and documentation contributions can be proposed through a pull request.
+MIAOW is an open-source project and welcomes contributions from the community. To report a bug, suggest an improvement, or discuss a contribution, please [open an issue](https://github.com/uofs-simlab/miaow-framework/issues). Code and documentation contributions should be proposed through a [pull request](https://github.com/uofs-simlab/miaow-framework/pulls).
 
 ## Authors and funding
 
