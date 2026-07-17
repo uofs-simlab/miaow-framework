@@ -68,10 +68,9 @@ int main(int argc, char* argv[]) {
     for (const auto& config_file : config_files) {
         configs.push_back({
             .backend_    = miaow::DynamicBmiBackend::fortran,
-            .execution_mode_ = miaow::ExecutionMode::persistent_subprocess,
-            .execution_mode_ = miaow::ExecutionMode::persistent_subprocess,
             .plugin_path_ = fuse_plugin_path,
             .init_config_ = config_file,
+            .execution_mode_ = miaow::ExecutionMode::persistent_subprocess,
         });
     }
 
