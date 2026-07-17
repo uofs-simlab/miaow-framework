@@ -672,13 +672,20 @@ class Runtime {
     JobHandle submit_job(const Task& task) const;
 
     /**
-     * @brief Submit a multi-task asynchronous job.
+     * @brief Submit multiple tasks and return immediately with a `JobHandle`.
      *
-     * Lvalue inputs are copied, while rvalue inputs transfer ownership into
-     * `Runtime`.
+     * Call `JobHandle::get()` to wait for the tasks to finish and obtain their
+     * `JobRecord`.
+     *
+     * Passing an already-created task vector copies the vector and its tasks,
+     * leaving the original unchanged. Passing a temporary task vector, such as the
+     * return value of a function call, or using `std::move` allows MIAOW to reuse
+     * the vector's existing storage and tasks instead of copying them. Do not rely
+     * on the contents of an explicitly moved vector afterward.
+     *
      * The returned handle may rethrow if final `job_record.json` output fails.
-     * @param tasks Generic `Task` arguments.
-     * @return `JobHandle` for retrieving the final `JobRecord`.
+     * @param tasks Tasks to submit.
+     * @return `JobHandle` used to wait for and retrieve the resulting `JobRecord`.
      * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */

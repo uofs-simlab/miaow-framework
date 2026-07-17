@@ -60,6 +60,8 @@ Use this path when the model is loaded from a C++ or Fortran plugin library. ``D
 
 Dynamic C++ plugins must export C-linkage ``bmi_model_create()`` and ``bmi_model_destroy(...)`` symbols. Dynamic Fortran plugins must export ``register_bmi(void**)`` for the linked `NOAA-OWP iso_c_fortran_bmi bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_. See ``examples/03_dynamic_bmi`` for concrete C++ and Fortran plugin exports.
 
+.. _realization-driven-task-creation:
+
 NextGen-style realization-driven task creation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -82,7 +84,7 @@ Use this path when a `NextGen <https://noaa-owp.github.io/ngen/>`_-style realiza
 Choose where dynamic tasks run
 ------------------------------
 
-Set ``DynamicBmiConfig::execution_mode_`` for direct dynamic tasks or pass an execution mode to the realization overload of ``make_bmi_tasks(...)``. Static BMI units always run in the parent process.
+Dynamic BMI tasks can execute in the parent process or in an isolated subprocess, the latter being useful for models that are not thread safe. To choose the execution mode, set ``DynamicBmiConfig::execution_mode_`` when creating a single dynamic task with ``make_bmi_task(...)`` or multiple dynamic tasks from a configuration vector with ``make_bmi_tasks(...)``. Each configuration in a vector controls the execution mode of its corresponding task, so tasks in the same vector can use different modes. When :ref:`creating tasks from a realization <realization-driven-task-creation>`, pass one execution mode to ``make_bmi_tasks(...)``; the selected mode applies to every generated task. Static BMI units always run in the parent process. The following table describes the features of each execution mode:
 
 .. list-table::
    :header-rows: 1
@@ -92,7 +94,7 @@ Set ``DynamicBmiConfig::execution_mode_`` for direct dynamic tasks or pass an ex
      - Use when
      - Behaviour to know
    * - ``ExecutionMode::in_process``
-     - The plugin can run safely in the parent process
+     - The plugin can run safely in the parent process (i.e., it is thread safe) and you want to avoid the overhead of subprocesses.
      - This is the default task execution mode.
    * - ``ExecutionMode::single_task_subprocess``
      - Each task needs a fresh process

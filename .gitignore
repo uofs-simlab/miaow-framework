@@ -42,6 +42,7 @@ examples/*/build*/
 examples/*/extern/
 examples/*/data/plugins/
 examples/*/out/
+/examples/06_summa_streamflow/
 
 # Local helper scripts
 scripts/preprocessing/
