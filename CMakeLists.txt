@@ -218,7 +218,7 @@ set_target_properties(miaow_subprocess PROPERTIES
 
 option(BUILD_EXAMPLES "Build example programs" ON)
 set(MIAOW_EXAMPLES
-    "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi"
+    "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;06_fuse_bmi"
     CACHE STRING "Semicolon-separated list of examples to build"
 )
 set(miaow_known_examples
@@ -228,6 +228,7 @@ set(miaow_known_examples
     03_dynamic_bmi
     04_summa
     05_libtrixi_bmi
+    06_fuse_bmi
 )
 set_property(CACHE MIAOW_EXAMPLES PROPERTY STRINGS ${miaow_known_examples})
 
