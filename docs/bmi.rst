@@ -84,7 +84,7 @@ Use this path when a `NextGen <https://noaa-owp.github.io/ngen/>`_-style realiza
 Choose where dynamic tasks run
 ------------------------------
 
-Dynamic BMI tasks can execute in the parent process or in an isolated subprocess, the latter being useful for models that are not thread safe. To choose the execution mode, set ``DynamicBmiConfig::execution_mode_`` when creating a single dynamic task with ``make_bmi_task(...)`` or multiple dynamic tasks from a configuration vector with ``make_bmi_tasks(...)``. Each configuration in a vector controls the execution mode of its corresponding task, so tasks in the same vector can use different modes. When :ref:`creating tasks from a realization <realization-driven-task-creation>`, pass one execution mode to ``make_bmi_tasks(...)``; the selected mode applies to every generated task. Static BMI units always run in the parent process. The following table describes the features of each execution mode:
+Static BMI tasks always execute in the parent process. Dynamic BMI tasks can execute in the parent process or in an isolated subprocess, the latter being useful for models that are not thread safe. To choose the execution mode, set ``DynamicBmiConfig::execution_mode_`` when creating a single dynamic task with ``make_bmi_task(...)`` or multiple dynamic tasks from a configuration vector with ``make_bmi_tasks(...)``. Each configuration in a vector controls the execution mode of its corresponding task, so tasks in the same vector can use different modes. When :ref:`creating tasks from a realization <realization-driven-task-creation>`, pass one execution mode to ``make_bmi_tasks(...)``; the selected mode applies to every generated task.  The following table describes the features of each execution mode:
 
 .. list-table::
    :header-rows: 1
@@ -112,11 +112,9 @@ Set ``forcing_file_`` in ``StaticBmiConfig`` or ``DynamicBmiConfig`` to enable t
 
 The variable map is interpreted as ``BMI input variable -> CSV header``. If it is empty, MIAOW derives an identity map from ``GetInputVarNames()`` and expects CSV headers with the same names as the corresponding variables. The ``output_variables_`` field controls which BMI output names are written to task CSV output; when empty, CSV output uses all names returned by ``GetOutputVarNames()``.
 
-MIAOW's external forcing reader currently only supports CSV files. The file must define a ``time`` or ``Time`` column plus all required numeric data columns. Supported timestamp formats are ``YYYY-MM-DD HH:MM:SS`` and ``YYYY/MM/DD HH:MM:SS``. MIAOW treats the first forcing row as the model-start forcing values. Later forcing rows are streamed as the model advances; each row-to-row timestamp delta must match the receiving BMI model timestep after unit normalization.
+MIAOW's external forcing reader currently only supports CSV files. The file must define a ``time`` or ``Time`` column plus all required numeric data columns. Supported timestamp formats are ``YYYY-MM-DD HH:MM:SS`` and ``YYYY/MM/DD HH:MM:SS``. MIAOW treats the first forcing row as the model-start forcing values, so users should ensure that the first forcing row timestamp matches the model's ``start_time`` after unit normalization. Later forcing rows are streamed as the model advances; each row-to-row timestamp delta must match the receiving BMI model timestep after unit normalization. Because the only supported forcing source is CSV, the forcing provider for global `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization files should be set to ``CsvPerFeature``.
 
-Exhausting the forcing data before the model's ``end_time`` fails the task with a ``Forcing alignment error``; forcing rows beyond ``end_time`` are silently ignored. The ``examples/02_soil_freeze_thaw`` workflow includes matched and mismatched model end time and forcing series lengths.
-
-In global `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization files, ``CsvPerFeature`` forcing enables MIAOW-managed CSV forcing for each feature. Realization parsing resolves that entry to per-task ``CsvFile`` forcing.
+Exhausting the forcing data before the model's ``end_time`` fails the task with a ``Forcing alignment error``; forcing rows beyond ``end_time`` are silently ignored and the task completes successfully. The ``examples/02_soil_freeze_thaw`` workflow includes matched and mismatched model end time and forcing series lengths.
 
 Diagnostics and artifacts
 -------------------------

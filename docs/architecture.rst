@@ -40,7 +40,7 @@ MIAOW uses a simple greedy scheduling strategy to dispatch tasks to available wo
    :align: center
    :width: 45%
 
-Each ``job_actor`` maintains:
+Each ``job_actor`` maintains the following state to manage task dispatch:
 
 - a pending-task cursor, ``next_task_to_dispatch_``
 - a queue of idle workers, ``available_workers_``
