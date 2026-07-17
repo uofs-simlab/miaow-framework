@@ -42,6 +42,8 @@ examples/*/build*/
 examples/*/extern/
 examples/*/data/plugins/
 examples/*/out/
+examples/06_summa_streamflow/.venv/
+examples/06_summa_streamflow/data/bow_at_banff/
 
 # Local helper scripts
 scripts/preprocessing/
@@ -55,6 +57,7 @@ scripts/visualization/
 
 # CMake build artifacts
 build/
+/build-summa-streamflow/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake

@@ -43,9 +43,10 @@ bool all_tasks_succeeded(const JobRecord& job_record);
 bool ensure_expected_run_dir(const std::string& expected_run_dir);
 
 /**
- * @brief Parse runtime CLI arguments without workflow task inputs.
- *
- * Supported arguments:
+ * @brief Read model-independent runtime CLI arguments into `RuntimeOptions`.
+ * 
+ * These arguments override the default `RuntimeOptions` values. The following arguments
+ * are recognized:
  * - `--max_workers <num_workers>`
  * - `--task_request_timeout <seconds>`
  * - `--job_request_timeout <seconds>`

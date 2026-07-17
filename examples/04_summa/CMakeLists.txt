@@ -17,7 +17,7 @@ set(MIAOW_SUMMA_MODEL_ROOT "" CACHE PATH
     "Path to a local SUMMA source tree")
 set(summa_git_repository "https://github.com/tristanmontoya/summa.git")
 # Pin the external build to the validated SUMMA revision
-set(summa_git_tag "f719ded11a4fb7be3abf05b85332f20744ae4f2c")
+set(summa_git_tag "092013ac926924b109f32664ae7ba37b685cec49")
 
 # Supply the platform BLAS and LAPACK link flags expected by SUMMA
 if(APPLE)
@@ -66,12 +66,11 @@ if(NOT EXISTS "${summa_source_dir}/build/CMakeLists.txt")
 endif()
 
 # Pass the same procedural BMI bridge source used by the parent MIAOW build
-if(MIAOW_ISO_C_FORTRAN_BMI_ROOT)
-    set(summa_iso_c_fortran_bmi_source_dir "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}")
-else()
-    set(summa_iso_c_fortran_bmi_source_dir
-        "${MIAOW_DEFAULT_MODEL_BASE_DIR}/iso_c_fortran_bmi")
-endif()
+miaow_resolve_model_root(summa_iso_c_fortran_bmi_source_dir
+    MODEL_ROOT "${MIAOW_ISO_C_FORTRAN_BMI_ROOT}"
+    MODEL_LOCAL_SUBDIR "iso_c_fortran_bmi"
+    MODEL_LABEL "iso_c_fortran_bmi"
+)
 if(NOT EXISTS "${summa_iso_c_fortran_bmi_source_dir}/CMakeLists.txt")
     message(FATAL_ERROR
         "SUMMA requires iso_c_fortran_bmi source at "
@@ -119,9 +118,14 @@ endif()
 
 # Predict the shared library path produced by the external build
 set(summa_build_dir "${CMAKE_CURRENT_BINARY_DIR}/summa-build")
-string(CONCAT summa_bmi_library
-    "${summa_build_dir}/"
+set(summa_bmi_library_filename
     "${CMAKE_SHARED_LIBRARY_PREFIX}summabmi${CMAKE_SHARED_LIBRARY_SUFFIX}")
+set(summa_bmi_library "${summa_build_dir}/${summa_bmi_library_filename}")
+
+# Stage the built library where realization_config.json expects to load it
+set(summa_realization_plugin_dir "${CMAKE_CURRENT_LIST_DIR}/data/plugins")
+set(summa_realization_plugin_link
+    "${summa_realization_plugin_dir}/libsummabmi")
 
 # Configure and build only the SUMMA BMI shared library
 ExternalProject_Add(miaow_summa_external
@@ -149,12 +153,8 @@ ExternalProject_Add(miaow_summa_external
     BUILD_BYPRODUCTS "${summa_bmi_library}"
 )
 
-# Link the built library where realization_config.json expects to load it
-set(summa_realization_plugin_dir "${CMAKE_CURRENT_LIST_DIR}/data/plugins")
-set(summa_realization_plugin_link
-    "${summa_realization_plugin_dir}/libsummabmi")
-add_custom_command(
-    OUTPUT "${summa_realization_plugin_link}"
+# Refresh the realization plugin link after each external build
+ExternalProject_Add_Step(miaow_summa_external stage_plugin
     COMMAND ${CMAKE_COMMAND} -E make_directory
             "${summa_realization_plugin_dir}"
     COMMAND ${CMAKE_COMMAND} -E remove -f
@@ -162,11 +162,10 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E create_symlink
             "${summa_bmi_library}"
             "${summa_realization_plugin_link}"
-    DEPENDS miaow_summa_external "${summa_bmi_library}"
-    VERBATIM
-)
-add_custom_target(miaow_summa_plugin_link
-    DEPENDS "${summa_realization_plugin_link}"
+    DEPENDEES build
+    DEPENDERS install
+    BYPRODUCTS "${summa_realization_plugin_link}"
+    ALWAYS TRUE
 )
 
 # Build the driver after the realization plugin link is ready
@@ -179,7 +178,7 @@ target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
 target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
     MIAOW_SUMMA_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
 )
-add_dependencies(${EXECUTABLE_TARGET} miaow_summa_plugin_link)
+add_dependencies(${EXECUTABLE_TARGET} miaow_subprocess miaow_summa_external)
 
 # Place the binary beside the source so relative example paths remain stable
 set_target_properties(${EXECUTABLE_TARGET} PROPERTIES

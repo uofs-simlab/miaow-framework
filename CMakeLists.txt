@@ -167,6 +167,7 @@ add_library(miaow STATIC
     src/bmi/io.cpp
     src/bmi/pipeline.cpp
     src/bmi/realization.cpp
+    src/bmi/task.cpp
     src/core/actors.cpp
     src/core/process.cpp
     src/core/runtime.cpp
@@ -228,6 +229,7 @@ set(miaow_known_examples
     03_dynamic_bmi
     04_summa
     05_libtrixi_bmi
+    06_summa_streamflow
 )
 set_property(CACHE MIAOW_EXAMPLES PROPERTY STRINGS ${miaow_known_examples})
 
