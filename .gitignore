@@ -56,6 +56,7 @@ scripts/visualization/
 
 # CMake build artifacts
 build/
+/build-summa-streamflow/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
