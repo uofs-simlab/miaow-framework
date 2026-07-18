@@ -421,13 +421,12 @@ TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& 
         TaskResult task_result =
             request_remote_task(actor_system, state.remote_worker_, task_payload);
 
-        // Keep logs when the subprocess reports a task failure
+        // Failed tasks preserve logs and reset the worker subprocess
         if (task_result.status_ == TaskStatus::failed) {
             state.keep_logs_ = true;
-        }
-
-        // Task-scoped subprocess mode stops the worker after one task
-        if (task.execution_mode_ == ExecutionMode::single_task_subprocess) {
+            stop_subprocess(state);
+        } else if (task.execution_mode_ == ExecutionMode::single_task_subprocess) {
+            // Successful task-scoped execution stops its one-task subprocess
             stop_subprocess(state);
         }
         return task_result;
