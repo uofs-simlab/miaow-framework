@@ -133,4 +133,4 @@ When ``RuntimeOptions::output_root_`` or CLI ``--output_root`` is set, MIAOW wri
 
 Persisted run directories start at ``run_0`` and advance to the largest existing run ID plus one. BMI tasks write the resolved BMI config in the job directory and one CSV file per task under ``results/``. A non-empty ``metadata_["feature_id"]`` becomes the output file stem; otherwise MIAOW uses ``task_<task_id>``. Output stems must be unique within one job and cannot contain path separators.
 
-Subprocess tasks also write ``subprocess_*_stdout.log`` and ``subprocess_*_stderr.log`` diagnostics. Logs are removed after successful task or persistent-worker shutdown, and retained when setup, launch, actor exchange, shutdown, or task execution fails.
+Tasks executed in subprocesses also write ``subprocess_*_stdout.log`` and ``subprocess_*_stderr.log`` diagnostics. Logs are removed after successful task or persistent-worker shutdown, and retained when setup, launch, actor exchange, shutdown, or task execution fails.
