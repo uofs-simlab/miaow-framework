@@ -76,8 +76,8 @@ struct Task {
     /// Execution mode selected for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
 
-    /// Optional subprocess executable path set on this task
-    /// Empty uses the MIAOW_SUBPROCESS_PATH compile-time default
+    /// Optional subprocess executable path; an empty value uses the
+    /// MIAOW_SUBPROCESS_PATH compile-time default
     std::string subprocess_path_;
 
     /// Generic arguments for this task to pass into `SimulationUnit::execute()`
@@ -471,15 +471,15 @@ struct RuntimeOptions {
     /// Maximum number of worker actors used for each job
     std::size_t max_workers_;
 
-    /// Timeout for one task execution request; tasks executed in subprocesses terminate
-    /// their child process when this timeout expires
+    /// Timeout for one task execution request; in either subprocess mode, MIAOW
+    /// terminates the child process when this timeout expires
     std::chrono::milliseconds task_request_timeout_;
 
     /// Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
     std::chrono::milliseconds job_request_timeout_;
 
-    /// Root output directory where run/job artifact folders are created
-    /// When empty (the default), no output directories or files are written
+    /// Root output directory for run and job artifact folders; an empty value disables
+    /// all output directories and files
     std::string output_root_;
 
     /**
