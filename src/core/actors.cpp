@@ -140,6 +140,7 @@ caf::behavior simulation_unit_actor(
     active_subprocess->subprocess_task_timeout_ = task_request_timeout;
 
     return {
+        // Execute one task using a fresh simulation unit instance from the shared registry
         [self, simulation_unit_registry = std::move(simulation_unit_registry),
          active_subprocess](caf::get_atom,
                             const Task& task) -> caf::result<TaskResult> {
@@ -203,11 +204,11 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
     const std::size_t worker_count =
         std::min<std::size_t>(state->runtime_options_.max_workers_, state->tasks_.size());
 
-    // Spawn worker actors and add their IDs to the available_workers queue
+    // Workers use Task::simulation_unit_id_ to select a factory from the shared registry;
+    // the selected factory creates a fresh SimulationUnit for each task. This loop spawns 
+    // one simulation_unit actor per worker and queues their indices for task dispatching.
     state->workers_.reserve(worker_count);
     for (std::size_t worker_id = 0; worker_id < worker_count; ++worker_id) {
-        // Each worker receives the same simulation_unit registry
-        // Insert a new simulation_unit actor and track its index as worker_id
         state->workers_.emplace_back(self->spawn(
             simulation_unit_actor, simulation_unit_registry,
             state->runtime_options_.task_request_timeout_));
@@ -257,7 +258,7 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                             caf::anon_mail(caf::put_atom_v, job_id, job_record)
                                 .send(orchestrator);
                         },
-                        // Convert timeout or error into a failed JobRecord
+                        // Convert job request timeout or error into a failed JobRecord
                         [orchestrator, job, job_id, run_id,
                          tasks](const caf::error& err) {
                             caf::anon_mail(shutdown_atom_v).send(job);
