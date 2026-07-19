@@ -471,7 +471,8 @@ struct RuntimeOptions {
     /// Maximum number of worker actors used for each job
     std::size_t max_workers_;
 
-    /// Timeout for a single task request from `job_actor` to `simulation_unit_actor`
+    /// Timeout for one task execution request
+    /// Subprocess tasks terminate their child process when this timeout expires
     std::chrono::milliseconds task_request_timeout_;
 
     /// Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`

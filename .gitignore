@@ -48,6 +48,9 @@ examples/*/out/
 scripts/preprocessing/
 scripts/visualization/
 
+# Local prototype tests
+/tests/
+
 # Locally fetched vendored code
 /third_party/
 

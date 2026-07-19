@@ -54,7 +54,6 @@ namespace {
 constexpr const char* subprocess_file_prefix = "subprocess";
 constexpr const char* subprocess_temp_dir_prefix = "miaow_subprocess";
 constexpr auto subprocess_connection_timeout = std::chrono::seconds(30);
-constexpr auto subprocess_remote_task_timeout = std::chrono::hours(24);
 constexpr std::size_t subprocess_connection_max_bytes = 4096;
 std::atomic<unsigned long long> next_control_dir_id{0};
 
@@ -269,14 +268,15 @@ caf::actor connect_remote_worker(caf::actor_system& actor_system,
 
 // Send one task to the subprocess actor over CAF
 TaskResult request_remote_task(caf::actor_system& actor_system,
-                               const caf::actor& remote_worker, const Task& task) {
+                               const caf::actor& remote_worker, const Task& task,
+                               std::chrono::milliseconds subprocess_task_timeout) {
     caf::scoped_actor self{actor_system};
     std::optional<TaskResult> task_result;
     caf::error request_error;
 
     // Send the task via CAF and wait for a TaskResult or an error
     self->mail(caf::get_atom_v, task)
-        .request(remote_worker, subprocess_remote_task_timeout)
+        .request(remote_worker, subprocess_task_timeout)
         .receive(
             [&task_result](TaskResult result) { task_result = std::move(result); },
             [&request_error](caf::error& error) { request_error = std::move(error); });
@@ -418,8 +418,9 @@ TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& 
         }
 
         // Send one task to the active remote worker
-        TaskResult task_result =
-            request_remote_task(actor_system, state.remote_worker_, task_payload);
+        TaskResult task_result = request_remote_task(
+            actor_system, state.remote_worker_, task_payload,
+            state.subprocess_task_timeout_);
 
         // Failed tasks preserve logs and reset the worker subprocess
         if (task_result.status_ == TaskStatus::failed) {
