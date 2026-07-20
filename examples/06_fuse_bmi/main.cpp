@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
             .backend_    = miaow::DynamicBmiBackend::fortran,
             .plugin_path_ = fuse_plugin_path,
             .init_config_ = config_file,
-            .execution_mode_ = miaow::ExecutionMode::persistent_subprocess,
+            .execution_mode_ = miaow::ExecutionMode::single_task_subprocess,
         });
     }
 
