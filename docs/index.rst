@@ -5,11 +5,6 @@ Managing concurrent numerical simulation tasks with dynamic workloads and hetero
 
 MIAOW targets the `C++20 standard <https://en.cppreference.com/w/cpp/20.html>`_, uses the `C++ Actor Framework (CAF) <https://www.actor-framework.org/>`_ as its actor backend, relies on `Boost <https://www.boost.org/>`_ for process management and JSON support, and includes C++/Fortran `Basic Model Interface (BMI) <https://bmi.csdms.io/en/stable/>`_ integration paths.
 
-Getting started
----------------
-
-See :doc:`development` for requirements, build options, and testing. See :doc:`examples` for runnable workflows and model-specific setup.
-
 Documentation
 -------------
 
@@ -22,7 +17,17 @@ Documentation
    development
    api
 
+Contributing
+------------
+
+Contributions from the community are welcome. To report a bug, suggest an improvement, or discuss a contribution, `open an issue <https://github.com/uofs-simlab/miaow-framework/issues>`_. Code and documentation contributions can be proposed through a pull request.
+
 Authors and funding
 -------------------
 
-MIAOW was developed at the University of Saskatchewan with funding support from the `Cooperative Institute for Research to Operations in Hydrology (CIROH) <https://ciroh.ua.edu/>`_.
+MIAOW was developed with funding support from the `Cooperative Institute for Research to Operations in Hydrology (CIROH) <https://ciroh.ua.edu/>`_ and is maintained by the `Numerical Simulation Laboratory <https://github.com/uofs-simlab>`_ at the `University of Saskatchewan <https://www.usask.ca/>`_. See the `AUTHORS <https://github.com/uofs-simlab/miaow-framework/blob/main/AUTHORS.md>`_ file for a full list of individual contributors to the project.
+
+License
+-------
+
+MIAOW is available under the `MIT License <https://github.com/uofs-simlab/miaow-framework/blob/main/LICENSE>`_.

@@ -19,7 +19,7 @@ MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), u
 
 ## Requirements
 
-MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. The Boost and CAF provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. See the [Development](https://tjbmontoya.com/miaow-framework/development.html) section of the [MIAOW documentation](https://tjbmontoya.com/miaow-framework/index.html) for the available provider settings.
+MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. The Boost and CAF provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. See the [developer documentation](https://tjbmontoya.com/miaow-framework/development.html) for a description of the available provider settings.
 
 On Ubuntu:
 
@@ -47,9 +47,13 @@ cd examples/00_hello
 
 See the [Examples](https://tjbmontoya.com/miaow-framework/examples.html) section of the documentation for an overview of the available workflows and model-specific setup.
 
+## Contributing
+
+MIAOW is an open-source project and welcomes contributions from the community. To report a bug, suggest an improvement, or discuss a contribution, please [open an issue](https://github.com/uofs-simlab/miaow-framework/issues). Code and documentation contributions should be proposed through a [pull request](https://github.com/uofs-simlab/miaow-framework/pulls).
+
 ## Authors and funding
 
-MIAOW was developed at the University of Saskatchewan with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/).
+MIAOW was developed with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/) and is maintained by the [Numerical Simulation Laboratory](https://github.com/uofs-simlab) at the [University of Saskatchewan](https://www.usask.ca/). See the [AUTHORS](AUTHORS.md) file for a full list of individual contributors to the project.
 
 <p align="center">
   <a href="https://www.usask.ca/">
@@ -67,3 +71,7 @@ MIAOW was developed at the University of Saskatchewan with funding support from 
   </a>
 
 </p>
+
+## License
+
+MIAOW is available under the [MIT License](LICENSE).

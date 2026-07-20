@@ -56,6 +56,9 @@ struct SubprocessPaths {
 struct SubprocessState {
     ~SubprocessState();
 
+    // Timeout used for one task request to the remote subprocess actor
+    std::chrono::milliseconds subprocess_task_timeout_{};
+
     // IO context owned by the persistent subprocess process handle
     boost::asio::io_context io_context_;
 
@@ -111,7 +114,8 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
 // replies with a TaskResult
 caf::behavior simulation_unit_actor(
     caf::event_based_actor* self,
-    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry);
+    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
+    std::chrono::milliseconds task_request_timeout);
 
 // Internal scheduler state for one job_actor instance
 // job_actor is the only owner/writer of this state

@@ -103,10 +103,17 @@ static void dispatch_tasks(caf::event_based_actor* self,
         // Record dispatch time for per-task runtime diagnostics
         state->task_start_times_.at(task_id) = std::chrono::steady_clock::now();
 
+        // Subprocess execution enforces its timeout before returning to this actor
+        caf::timespan simulation_unit_request_timeout = caf::infinite;
+        if (state->tasks_.at(task_id).execution_mode_ == ExecutionMode::in_process) {
+            simulation_unit_request_timeout =
+                state->runtime_options_.task_request_timeout_;
+        }
+
         // Request one task execution from one simulation_unit actor
         self->mail(caf::get_atom_v, state->tasks_.at(task_id))
             .request(state->workers_.at(worker_id),
-                     state->runtime_options_.task_request_timeout_)
+                     simulation_unit_request_timeout)
             .then(
                 [self, state, worker_id, task_id](TaskResult task_result) {
                     complete_task(self, state, worker_id, task_id, std::move(task_result));
@@ -125,12 +132,15 @@ static void dispatch_tasks(caf::event_based_actor* self,
 // Leaf simulation_unit actors used as workers by each job actor
 caf::behavior simulation_unit_actor(
     caf::event_based_actor* self,
-    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry) {
+    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
+    std::chrono::milliseconds task_request_timeout) {
     // Create a slot for the subprocess state - this will be empty for in-process execution
     std::shared_ptr<SubprocessState> active_subprocess =
         std::make_shared<SubprocessState>();
+    active_subprocess->subprocess_task_timeout_ = task_request_timeout;
 
     return {
+        // Execute one task using a fresh simulation unit instance from the shared registry
         [self, simulation_unit_registry = std::move(simulation_unit_registry),
          active_subprocess](caf::get_atom,
                             const Task& task) -> caf::result<TaskResult> {
@@ -194,13 +204,14 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
     const std::size_t worker_count =
         std::min<std::size_t>(state->runtime_options_.max_workers_, state->tasks_.size());
 
-    // Spawn worker actors and add their IDs to the available_workers queue
+    // Workers use Task::simulation_unit_id_ to select a factory from the shared registry;
+    // the selected factory creates a fresh SimulationUnit for each task. This loop spawns 
+    // one simulation_unit actor per worker and queues their indices for task dispatching.
     state->workers_.reserve(worker_count);
     for (std::size_t worker_id = 0; worker_id < worker_count; ++worker_id) {
-        // Each worker receives the same simulation_unit registry
-        // Insert a new simulation_unit actor and track its index as worker_id
-        state->workers_.emplace_back(
-            self->spawn(simulation_unit_actor, simulation_unit_registry));
+        state->workers_.emplace_back(self->spawn(
+            simulation_unit_actor, simulation_unit_registry,
+            state->runtime_options_.task_request_timeout_));
         state->available_workers_.push(worker_id);
     }
 
@@ -247,7 +258,7 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                             caf::anon_mail(caf::put_atom_v, job_id, job_record)
                                 .send(orchestrator);
                         },
-                        // Convert timeout or error into a failed JobRecord
+                        // Convert job request timeout or error into a failed JobRecord
                         [orchestrator, job, job_id, run_id,
                          tasks](const caf::error& err) {
                             caf::anon_mail(shutdown_atom_v).send(job);

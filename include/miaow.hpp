@@ -76,8 +76,8 @@ struct Task {
     /// Execution mode selected for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
 
-    /// Optional subprocess executable path set on this task
-    /// Empty uses the MIAOW_SUBPROCESS_PATH compile-time default
+    /// Optional subprocess executable path; an empty value uses the
+    /// MIAOW_SUBPROCESS_PATH compile-time default
     std::string subprocess_path_;
 
     /// Generic arguments for this task to pass into `SimulationUnit::execute()`
@@ -468,22 +468,24 @@ class SimulationUnitRegistry {
  * Solver-specific options should be passed in `Task` arguments.
  */
 struct RuntimeOptions {
-    /// Maximum number of worker actors that may run concurrently
+    /// Maximum number of worker actors used for each job
     std::size_t max_workers_;
 
-    /// Timeout for a single task request from `job_actor` to `simulation_unit_actor`
+    /// Timeout for one task execution request; in either subprocess mode, MIAOW
+    /// terminates the child process when this timeout expires
     std::chrono::milliseconds task_request_timeout_;
 
     /// Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
     std::chrono::milliseconds job_request_timeout_;
 
-    /// Root output directory where run/job artifact folders are created
-    /// When empty (the default), no output directories or files are written
+    /// Root output directory for run and job artifact folders; an empty value disables
+    /// all output directories and files
     std::string output_root_;
 
     /**
      * @brief Construct runtime options.
-     * @param workers Desired worker count. Values of zero are clamped to one.
+     * @param workers Maximum number of worker actors used for each job. Values of zero are
+     *                clamped to one.
      * @param task_timeout Timeout used for one simulation task request.
      * @param job_timeout Timeout used for whole-job requests.
      * @param output_root Root directory for runtime-managed output folders.
@@ -671,13 +673,20 @@ class Runtime {
     JobHandle submit_job(const Task& task) const;
 
     /**
-     * @brief Submit a multi-task asynchronous job.
+     * @brief Submit multiple tasks and return immediately with a `JobHandle`.
      *
-     * Lvalue inputs are copied, while rvalue inputs transfer ownership into
-     * `Runtime`.
+     * Call `JobHandle::get()` to wait for the tasks to finish and obtain their
+     * `JobRecord`.
+     *
+     * Passing an already-created task vector copies the vector and its tasks,
+     * leaving the original unchanged. Passing a temporary task vector, such as the
+     * return value of a function call, or using `std::move` allows MIAOW to reuse
+     * the vector's existing storage and tasks instead of copying them. Do not rely
+     * on the contents of an explicitly moved vector afterward.
+     *
      * The returned handle may rethrow if final `job_record.json` output fails.
-     * @param tasks Generic `Task` arguments.
-     * @return `JobHandle` for retrieving the final `JobRecord`.
+     * @param tasks Tasks to submit.
+     * @return `JobHandle` used to wait for and retrieve the resulting `JobRecord`.
      * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */

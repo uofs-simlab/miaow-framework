@@ -41,7 +41,9 @@ These are the top-level CMake options:
      - ``ON``
      - Build selected example programs
    * - ``-DMIAOW_EXAMPLES``
-     - ``00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi``
+     - | ``00_hello;01_heat;``
+       | ``02_soil_freeze_thaw;``
+       | ``03_dynamic_bmi``
      - Semicolon-separated list of examples to build when ``BUILD_EXAMPLES`` is enabled
    * - ``-DMIAOW_BOOST_PROVIDER``
      - ``auto``
