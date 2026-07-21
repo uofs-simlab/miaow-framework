@@ -76,8 +76,9 @@ struct Task {
     /// Execution mode selected for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
 
-    /// Optional subprocess executable path; an empty value uses the
-    /// MIAOW_SUBPROCESS_PATH compile-time default
+    /// Optional path to the `miaow_subprocess` executable; when empty, MIAOW first tries
+    /// `PROJECT_BINARY_DIR/miaow_subprocess`, then if not found there, tries
+    /// `CMAKE_INSTALL_FULL_LIBEXECDIR/miaow/miaow_subprocess`
     std::string subprocess_path_;
 
     /// Generic arguments for this task to pass into `SimulationUnit::execute()`

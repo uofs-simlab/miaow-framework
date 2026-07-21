@@ -1,8 +1,8 @@
 Development
 ===========
 
-Build and test
---------------
+Repository development build
+----------------------------
 
 Configure and build from the repository root:
 
@@ -22,6 +22,53 @@ Run a single test by name:
 .. code-block:: sh
 
    ctest --test-dir build -R <test_name> --output-on-failure
+
+Library installation build
+--------------------------
+
+Configure a build without examples and select an installation prefix:
+
+.. code-block:: sh
+
+   cmake -S . -B build \
+       -DBUILD_EXAMPLES=OFF \
+       -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+
+   cmake --build build
+   cmake --install build
+
+Building MIAOW from source requires C++20 and Fortran compilers. The completed installation can be consumed by a C++-only project without enabling Fortran or requiring a Fortran compiler.
+
+Using the installed package
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In another project, define the executable or library that uses MIAOW and link it to the installed ``miaow::miaow`` target. For example, a minimal downstream ``CMakeLists.txt`` is:
+
+.. code-block:: cmake
+
+   cmake_minimum_required(VERSION 3.21)
+
+   project(my_program LANGUAGES CXX)
+
+   find_package(miaow CONFIG REQUIRED)
+
+   add_executable(my_program main.cpp)
+   target_link_libraries(my_program PRIVATE miaow::miaow)
+
+The imported target supplies the installed MIAOW include directory, requests C++20, and links the required CAF, Boost, and procedural BMI bridge libraries. Source files can include ``miaow.hpp``, ``miaow_bmi.hpp``, and ``miaow_io.hpp`` as needed.
+
+If MIAOW was installed under ``$HOME/.local`` and that prefix is outside CMake's normal search locations, configure and build the downstream project with:
+
+.. code-block:: sh
+
+   cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.local"
+   cmake --build build
+
+The MIAOW package locates the required CAF and Boost components when ``find_package(miaow)`` runs. These dependencies must be discoverable through the system installation, ``CMAKE_PREFIX_PATH``, or the downstream project's CMake toolchain. The installed procedural BMI bridge depends on a compatible Fortran runtime library, such as ``libgfortran`` when the bridge is built with GNU Fortran. This runtime library must remain available when an application that links to MIAOW runs, but compiling the downstream project does not require a Fortran compiler.
+
+.. note::
+
+   Select the MIAOW installation prefix with ``CMAKE_INSTALL_PREFIX`` during configuration. If the installation prefix is changed after configuration, including with ``cmake --install --prefix``, MIAOW continues to search for ``miaow_subprocess`` under the configured prefix. To change the default subprocess executable prefix, reconfigure and rebuild MIAOW with the new prefix. Alternatively, set ``Task::subprocess_path_`` explicitly for individual tasks.
 
 .. _build-options:
 

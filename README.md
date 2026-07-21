@@ -47,6 +47,8 @@ cd examples/00_hello
 
 See the [Examples](https://tjbmontoya.com/miaow-framework/examples.html) section of the documentation for an overview of the available workflows and model-specific setup.
 
+To install MIAOW for use from another CMake project, see the [library installation build](https://tjbmontoya.com/miaow-framework/development.html#library-installation-build) instructions.
+
 ## Contributing
 
 MIAOW is an open-source project and welcomes contributions from the community. To report a bug, suggest an improvement, or discuss a contribution, please [open an issue](https://github.com/uofs-simlab/miaow-framework/issues). Code and documentation contributions should be proposed through a [pull request](https://github.com/uofs-simlab/miaow-framework/pulls).
