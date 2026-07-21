@@ -380,8 +380,9 @@ class StaticBmiSimulationUnit : public SimulationUnit {
 /**
  * @brief Simulation unit that runs dynamically loaded BMI plugin tasks.
  *
- * In-process tasks construct and execute `BmiPipeline` locally. Subprocess
- * execution modes delegate the serialized `Task` through `ExecutionContext`.
+ * For in-process tasks, `DynamicBmiSimulationUnit` constructs and executes
+ * `BmiPipeline` locally. Subprocess execution modes delegate the serialized
+ * `Task` through `ExecutionContext`.
  */
 class DynamicBmiSimulationUnit : public SimulationUnit {
   public:
@@ -402,7 +403,7 @@ class DynamicBmiSimulationUnit : public SimulationUnit {
         }
 
         try {
-            // In-process pipeline tasks construct all configured model modules here
+            // Construct all configured model modules locally for an in-process task
             BmiPipeline pipeline(task);
             return pipeline.execute_bmi_lifecycle(task);
         } catch (...) {

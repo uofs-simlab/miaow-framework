@@ -17,7 +17,7 @@ A typical workflow includes the following steps:
 2. Runtime assigns a ``job_id`` and sends ``(job_id, tasks)`` to ``orchestrator_actor``.
 3. ``orchestrator_actor`` spawns one ``job_actor`` for that job.
 4. ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
-5. Each worker resolves ``SimulationUnitId``. In-process tasks construct a fresh ``SimulationUnit`` instance, whereas subprocess tasks use worker-owned subprocess state.
+5. Each worker resolves ``Task::simulation_unit_id_``. For an in-process task, the worker constructs a fresh ``SimulationUnit`` instance; for a subprocess task, it uses worker-owned subprocess state.
 6. Completed task results are wrapped into one ``JobRecord``.
 7. Runtime fulfils the caller's ``JobHandle`` future.
 
@@ -28,7 +28,7 @@ Each job creates at most ``RuntimeOptions::max_workers_`` workers, or one worker
 Subprocess execution
 --------------------
 
-The ``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` execution modes isolate model execution from the parent process. When using these modes, the parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defers the actual model execution to a subprocess with its own actor system. In ``single_task_subprocess`` mode, the subprocess is stopped after each task, whereas ``persistent_subprocess`` mode reuses one subprocess per job worker for tasks with the same resolved subprocess path. A subprocess task that fails or exceeds ``RuntimeOptions::task_request_timeout_`` preserves its subprocess logs and terminates the subprocess; the worker launches a fresh subprocess for its next task.
+The ``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` execution modes isolate model execution from the parent process. When using these modes, the parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defers the actual model execution to a subprocess with its own actor system. In ``single_task_subprocess`` mode, the subprocess is stopped after each task, whereas ``persistent_subprocess`` mode reuses one subprocess per job worker for tasks with the same resolved subprocess path. When a subprocess task fails, including when its remote request exceeds ``RuntimeOptions::task_request_timeout_``, MIAOW preserves the subprocess logs and terminates the process; the worker launches a fresh subprocess for its next task.
 
 Scheduling behaviour
 --------------------
@@ -45,7 +45,7 @@ Each ``job_actor`` maintains the following state to manage task dispatch:
 - a pending-task cursor, ``next_task_to_dispatch_``
 - a queue of idle workers, ``available_workers_``
 
-When a worker finishes, it is immediately returned to the idle queue and the next pending task is dispatched. Each task constructs a fresh ``SimulationUnit`` instance and calls the corresponding ``execute(...)`` method, which takes a ``Task`` and ``ExecutionContext`` and returns a ``TaskResult``. The ``SimulationUnit`` instance is destroyed after the task completes, although tasks run in a subprocess may reuse the subprocess for later tasks.
+When a worker finishes, it is immediately returned to the idle queue and the next pending task is dispatched. For each task, the worker constructs a fresh ``SimulationUnit`` instance and calls the corresponding ``execute(...)`` method, which takes a ``Task`` and ``ExecutionContext`` and returns a ``TaskResult``. The ``SimulationUnit`` instance is destroyed after the task completes, although a worker may reuse a persistent subprocess across tasks.
 
 Limitations
 -----------

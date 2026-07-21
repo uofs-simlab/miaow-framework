@@ -204,9 +204,10 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
     const std::size_t worker_count =
         std::min<std::size_t>(state->runtime_options_.max_workers_, state->tasks_.size());
 
-    // Workers use Task::simulation_unit_id_ to select a factory from the shared registry;
-    // the selected factory creates a fresh SimulationUnit for each task. This loop spawns 
-    // one simulation_unit actor per worker and queues their indices for task dispatching.
+    // Workers use Task::simulation_unit_id_ to select a factory from the shared registry
+    // The selected factory creates a fresh SimulationUnit for each task
+
+    // Spawn simulation_unit actors and queue their worker indices
     state->workers_.reserve(worker_count);
     for (std::size_t worker_id = 0; worker_id < worker_count; ++worker_id) {
         state->workers_.emplace_back(self->spawn(

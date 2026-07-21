@@ -134,7 +134,7 @@ Examples use the following runtime command-line options where applicable:
      - Maximum number of worker actors used for each job
    * - ``--task_request_timeout``
      - ``5``
-     - Timeout for one task execution, in seconds; a timed-out subprocess task terminates its child process
+     - Timeout for one task execution, in seconds; MIAOW terminates the child process when a subprocess task exceeds this timeout
    * - ``--job_request_timeout``
      - ``300``
      - Timeout for job result requests, in seconds

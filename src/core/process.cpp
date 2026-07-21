@@ -422,7 +422,7 @@ TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& 
             actor_system, state.remote_worker_, task_payload,
             state.subprocess_task_timeout_);
 
-        // Failed tasks preserve logs and reset the worker subprocess
+        // Preserve logs and reset the worker subprocess after a failed task
         if (task_result.status_ == TaskStatus::failed) {
             state.keep_logs_ = true;
             stop_subprocess(state);

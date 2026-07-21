@@ -83,7 +83,8 @@ struct Task {
     /// Generic arguments for this task to pass into `SimulationUnit::execute()`
     std::vector<caf::config_value> args_;
 
-    /// Directory injected by `Runtime` where this task should write artifacts
+    /// Directory injected by `Runtime` where the executing `SimulationUnit` writes
+    /// task artifacts
     std::string task_output_dir_;
 
     /// Stable task label injected by `Runtime` and used as an artifact file stem
