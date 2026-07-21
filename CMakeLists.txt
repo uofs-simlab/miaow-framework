@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(miaow CXX Fortran)
+project(miaow VERSION 0.1.0 LANGUAGES CXX Fortran)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,6 +8,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(CTest)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 set(MIAOW_BOOST_PROVIDER "auto" CACHE STRING "Boost provider: auto, system, fetch")
 set(MIAOW_BOOST_VERSION "1.86.0" CACHE STRING "Boost version for FetchContent")
@@ -160,6 +162,11 @@ if(NOT TARGET iso_c_bmi)
         "NOAA-OWP/iso_c_fortran_bmi did not provide the expected iso_c_bmi target")
 endif()
 
+# Keep the bridge target while excluding its standalone installation metadata
+get_target_property(miaow_iso_c_bmi_source_dir iso_c_bmi SOURCE_DIR)
+set_property(DIRECTORY "${miaow_iso_c_bmi_source_dir}"
+    PROPERTY EXCLUDE_FROM_ALL TRUE)
+
 add_library(miaow STATIC
     src/bmi/execute.cpp
     src/bmi/dynamic.cpp
@@ -177,10 +184,12 @@ add_library(miaow STATIC
 
 target_include_directories(miaow
     PUBLIC
-        ${PROJECT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         ${PROJECT_SOURCE_DIR}/src
 )
+target_compile_features(miaow PUBLIC cxx_std_20)
 
 if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
     message(FATAL_ERROR
@@ -188,20 +197,39 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
 endif()
 
 target_link_libraries(miaow
-    PUBLIC
+    PRIVATE
         ${MIAOW_CAF_CORE_TARGET}
         ${MIAOW_CAF_IO_TARGET}
-        iso_c_bmi
-        ${CMAKE_DL_LIBS}
-    PRIVATE
         Boost::process
         Boost::json
+        iso_c_bmi
+        ${CMAKE_DL_LIBS}
 )
+
+# Publish build dependencies without carrying their target names into the export
+set(miaow_interface_link_libraries
+    "$<BUILD_INTERFACE:${MIAOW_CAF_CORE_TARGET}>"
+    "$<BUILD_INTERFACE:${MIAOW_CAF_IO_TARGET}>"
+    "$<BUILD_INTERFACE:$<LINK_ONLY:Boost::process>>"
+    "$<BUILD_INTERFACE:$<LINK_ONLY:Boost::json>>"
+    "$<BUILD_INTERFACE:$<LINK_ONLY:iso_c_bmi>>"
+)
+if(CMAKE_DL_LIBS)
+    list(APPEND miaow_interface_link_libraries "${CMAKE_DL_LIBS}")
+endif()
+set_property(TARGET miaow PROPERTY INTERFACE_LINK_LIBRARIES
+    "${miaow_interface_link_libraries}")
 
 set(MIAOW_SUBPROCESS_PATH
     "${PROJECT_BINARY_DIR}/miaow_subprocess${CMAKE_EXECUTABLE_SUFFIX}")
+string(CONCAT MIAOW_INSTALLED_SUBPROCESS_PATH
+    "${CMAKE_INSTALL_FULL_LIBEXECDIR}/miaow/"
+    "miaow_subprocess${CMAKE_EXECUTABLE_SUFFIX}")
+string(CONCAT MIAOW_SUBPROCESS_COMPILE_DEFINITIONS
+    "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\";"
+    "MIAOW_INSTALLED_SUBPROCESS_PATH=\"${MIAOW_INSTALLED_SUBPROCESS_PATH}\"")
 set_source_files_properties(src/bmi/execute.cpp src/core/process.cpp PROPERTIES
-    COMPILE_DEFINITIONS "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\""
+    COMPILE_DEFINITIONS "${MIAOW_SUBPROCESS_COMPILE_DEFINITIONS}"
 )
 
 add_executable(miaow_subprocess
@@ -214,6 +242,77 @@ target_include_directories(miaow_subprocess PRIVATE
 target_link_libraries(miaow_subprocess PRIVATE miaow Boost::process)
 set_target_properties(miaow_subprocess PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+)
+
+# Resolve the installed BMI bridge relative to the subprocess executable
+file(RELATIVE_PATH miaow_subprocess_libdir_relative
+    "${CMAKE_INSTALL_FULL_LIBEXECDIR}/miaow"
+    "${CMAKE_INSTALL_FULL_LIBDIR}"
+)
+if(APPLE)
+    set(miaow_subprocess_install_rpath
+        "@loader_path/${miaow_subprocess_libdir_relative}")
+elseif(UNIX)
+    set(miaow_subprocess_install_rpath
+        "\$ORIGIN/${miaow_subprocess_libdir_relative}")
+endif()
+if(miaow_subprocess_install_rpath)
+    set_target_properties(miaow_subprocess PROPERTIES
+        INSTALL_RPATH "${miaow_subprocess_install_rpath}"
+    )
+endif()
+
+# Install the public library interface and runtime helper
+install(TARGETS miaow
+    EXPORT miaowTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(TARGETS iso_c_bmi
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(TARGETS miaow_subprocess
+    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/miaow
+)
+install(FILES
+    include/miaow.hpp
+    include/miaow_bmi.hpp
+    include/miaow_io.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+install(FILES include/third_party/bmi/bmi.hxx
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/third_party/bmi
+)
+
+# Install the project and third-party licences
+install(FILES LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/licenses/miaow
+)
+install(FILES include/third_party/bmi/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/licenses/miaow
+    RENAME BMI-LICENSE
+)
+install(FILES "${miaow_iso_c_bmi_source_dir}/LICENSE"
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/licenses/miaow
+    RENAME ISO_C_FORTRAN_BMI-LICENSE
+)
+
+# Install the CMake package without a package-version compatibility file
+set(miaow_package_install_dir "${CMAKE_INSTALL_LIBDIR}/cmake/miaow")
+configure_package_config_file(
+    cmake/miaowConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/miaowConfig.cmake"
+    INSTALL_DESTINATION "${miaow_package_install_dir}"
+)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/miaowConfig.cmake"
+    DESTINATION "${miaow_package_install_dir}"
+)
+install(EXPORT miaowTargets
+    FILE miaowTargets.cmake
+    NAMESPACE miaow::
+    DESTINATION "${miaow_package_install_dir}"
 )
 
 option(BUILD_EXAMPLES "Build example programs" ON)

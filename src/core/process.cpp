@@ -44,11 +44,15 @@ namespace miaow::core {
 
 namespace {
 
-// Subprocess executable resolution uses the task field before the built default
+// Subprocess executable resolution checks these paths in order
 // 1. Task::subprocess_path_ on the task being executed
-// 2. Compile-time MIAOW_SUBPROCESS_PATH macro, which defaults to an empty string
+// 2. Build-tree helper when it exists
+// 3. Helper under the configured installation prefix
 #ifndef MIAOW_SUBPROCESS_PATH
 #define MIAOW_SUBPROCESS_PATH ""
+#endif
+#ifndef MIAOW_INSTALLED_SUBPROCESS_PATH
+#define MIAOW_INSTALLED_SUBPROCESS_PATH ""
 #endif
 
 constexpr const char* subprocess_file_prefix = "subprocess";
@@ -375,10 +379,14 @@ void start_subprocess(caf::actor_system& actor_system, SubprocessState& state,
 TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& state,
                               const Task& task) {
     try {
-        // Prefer the task-local subprocess path over the built default path
-        const std::string subprocess_path =
-            task.subprocess_path_.empty() ? std::string(MIAOW_SUBPROCESS_PATH)
-                                          : task.subprocess_path_;
+        // Prefer the task-local path, then available build and installed helpers
+        std::string subprocess_path = task.subprocess_path_;
+        if (subprocess_path.empty()) {
+            const std::filesystem::path build_subprocess_path{MIAOW_SUBPROCESS_PATH};
+            subprocess_path = std::filesystem::exists(build_subprocess_path)
+                                  ? build_subprocess_path.string()
+                                  : std::string(MIAOW_INSTALLED_SUBPROCESS_PATH);
+        }
 
         // Check if this worker's subprocess is already running the correct executable
         const bool path_changed =
@@ -422,7 +430,7 @@ TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& 
             actor_system, state.remote_worker_, task_payload,
             state.subprocess_task_timeout_);
 
-        // Failed tasks preserve logs and reset the worker subprocess
+        // Preserve logs and reset the worker subprocess after a failed task
         if (task_result.status_ == TaskStatus::failed) {
             state.keep_logs_ = true;
             stop_subprocess(state);

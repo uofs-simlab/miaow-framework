@@ -76,14 +76,16 @@ struct Task {
     /// Execution mode selected for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
 
-    /// Optional subprocess executable path; an empty value uses the
-    /// MIAOW_SUBPROCESS_PATH compile-time default
+    /// Optional path to the `miaow_subprocess` executable; when empty, MIAOW first tries
+    /// `PROJECT_BINARY_DIR/miaow_subprocess`, then if not found there, tries
+    /// `CMAKE_INSTALL_FULL_LIBEXECDIR/miaow/miaow_subprocess`
     std::string subprocess_path_;
 
     /// Generic arguments for this task to pass into `SimulationUnit::execute()`
     std::vector<caf::config_value> args_;
 
-    /// Directory injected by `Runtime` where this task should write artifacts
+    /// Directory injected by `Runtime` where the executing `SimulationUnit` writes
+    /// task artifacts
     std::string task_output_dir_;
 
     /// Stable task label injected by `Runtime` and used as an artifact file stem
