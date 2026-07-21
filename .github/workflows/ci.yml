@@ -69,7 +69,6 @@ jobs:
     name: Library installation
     runs-on: ubuntu-22.04
     env:
-      MIAOW_INSTALL_PREFIX: ${{ runner.temp }}/miaow-install
       MIAOW_CONAN_TOOLCHAIN: >-
         ${{ github.workspace }}/build-install/conan/conan_toolchain.cmake
 
@@ -115,7 +114,7 @@ jobs:
           cmake -S . -B build-install
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_EXAMPLES=OFF
-          -DCMAKE_INSTALL_PREFIX="$MIAOW_INSTALL_PREFIX"
+          -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/miaow-install"
           -DCMAKE_TOOLCHAIN_FILE="$MIAOW_CONAN_TOOLCHAIN"
           -DMIAOW_BOOST_PROVIDER=system
           -DMIAOW_CAF_PROVIDER=system
