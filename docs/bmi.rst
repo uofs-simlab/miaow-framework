@@ -1,7 +1,7 @@
 BMI integration
 ===============
 
-MIAOW runs statically typed C++ BMI models and dynamically loaded C++ or Fortran BMI plugins through the same task interface. Use this page to configure tasks, select dynamic-task execution, and understand workflow behaviour. See :doc:`api` for constructor, member, and function details.
+MIAOW runs statically typed C++ BMI models and dynamically loaded C++ or Fortran BMI plugins through a common task interface, where each task is a single BMI model run with its own configuration, forcing, and output. This page describes the BMI integration paths and how to configure tasks for different BMI model execution patterns. See the :doc:`examples` section for concrete workflows and the :doc:`api` for constructor, member, and function details.
 
 BMI task lifecycle
 ------------------
@@ -16,8 +16,8 @@ During execution, MIAOW writes the resolved BMI configuration beside the task re
 
 Static and dynamic tasks use the same forcing, output, and artifact handling.
 
-Minimal setup patterns
-----------------------
+Task configuration options
+--------------------------
 
 Choose a setup pattern based on where the BMI model implementation comes from: a statically typed C++ model, a dynamic plugin, or a realization file.
 
@@ -97,11 +97,11 @@ Static BMI tasks always execute in the parent process. Dynamic BMI tasks can exe
      - The plugin can run safely in the parent process (i.e., it is thread safe) and you want to avoid the overhead of subprocesses.
      - This is the default task execution mode.
    * - ``ExecutionMode::single_task_subprocess``
-     - Each task needs a fresh process
-     - The subprocess stops after one task result.
+     - Each task needs a fresh process, for example, due to persistent global state in the plugin.
+     - The subprocess stops after one task result, whether the task succeeds or fails, and the next task gets a fresh process and BMI lifecycle.
    * - ``ExecutionMode::persistent_subprocess``
      - Tasks benefit from process reuse while keeping parent-process isolation
-     - One process is reused per job worker; each task still gets a fresh BMI lifecycle.
+     - One process is reused per job worker if the task succeeds; each task still gets a fresh BMI lifecycle.
 
 Subprocess modes are available for dynamic BMI tasks. ``DynamicBmiConfig::subprocess_path_`` selects a non-default subprocess executable. See :ref:`subprocess-execution` for process ownership, reuse, lifetime, and concurrency behaviour.
 

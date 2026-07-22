@@ -1,13 +1,12 @@
 # MIAOW: Model-Independent Actor Orchestration Workflows for Scientific Computing
 
-<a href="https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml">
-  <img
+<a href="https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml"><img
     alt="CI"
-    src="https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml/badge.svg">
-</a>
-<a href="https://tjbmontoya.com/miaow-framework/">
-  <img alt="Documentation" src="https://img.shields.io/badge/docs-latest-blue.svg">
-</a>
+    src="https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml/badge.svg"
+    ></a>
+<a href="https://tjbmontoya.com/miaow-framework/"><img
+    alt="Documentation"
+    src="https://img.shields.io/badge/docs-latest-blue.svg"></a>
 
 <p align="center">
   <img src="docs/images/miaow_logo.svg" alt="MIAOW logo" width="360">
@@ -58,19 +57,15 @@ MIAOW is an open-source project and welcomes contributions from the community. T
 MIAOW was developed with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/) and is maintained by the [Numerical Simulation Laboratory](https://github.com/uofs-simlab) at the [University of Saskatchewan](https://www.usask.ca/). See the [CONTRIBUTORS](CONTRIBUTORS.md) file for a full list of individual contributors to the project.
 
 <p align="center">
-  <a href="https://www.usask.ca/">
-    <img
+  <a href="https://www.usask.ca/"><img
       src="docs/images/usask_logo.png"
       alt="University of Saskatchewan logo"
-      height="60">
-  </a>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp
-  <a href="https://ciroh.ua.edu/">
-    <img
+      height="60"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://ciroh.ua.edu/"><img
       src="docs/images/ciroh_logo.jpg"
       alt="CIROH logo"
-      height="80">
-  </a>
+      height="80"></a>
 
 </p>
 
