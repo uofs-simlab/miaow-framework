@@ -14,7 +14,7 @@ Documentation
    architecture
    bmi
    examples
-   development
+   building
    api
 
 Contributing

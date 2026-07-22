@@ -1,5 +1,23 @@
-Development
-===========
+Building and installation
+=========================
+
+Prerequisites
+-------------
+
+MIAOW requires `CMake <https://cmake.org/>`_ 3.21 or newer, a C++20 compiler, and a Fortran compiler. The Boost and CAF provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. See :ref:`build-options` for a description of the available provider settings.
+
+On Ubuntu:
+
+.. code-block:: sh
+
+   sudo apt-get install build-essential cmake gfortran
+
+On macOS with `Homebrew <https://brew.sh/>`_:
+
+.. code-block:: sh
+
+   sudo xcode-select --install  # if Apple's Command Line Tools are not installed
+   brew install cmake gcc
 
 Repository development build
 ----------------------------
@@ -133,12 +151,3 @@ Build the docs from a dedicated Python environment:
    docs/.venv/bin/sphinx-build -E -n -b html -d docs/_build/doctrees docs docs/_build/html
 
 The generated HTML entry point is ``docs/_build/html/index.html``.
-
-Namespace layout
-----------------
-
-- Public API: ``miaow``
-- Core internals: ``miaow::core``
-- BMI internals: ``miaow::bmi``
-- Internal I/O helpers: ``miaow::io``
-- The external `BMI C++ API <https://github.com/csdms/bmi-cxx/tree/master>`_ is available through the ``miaow::bmi_api = ::bmi`` alias.
