@@ -22,12 +22,12 @@ Contributing
 
 Contributions from the community are welcome. To report a bug, suggest an improvement, or discuss a contribution, `open an issue <https://github.com/uofs-simlab/miaow-framework/issues>`_. Code and documentation contributions can be proposed through a pull request.
 
-Authors and funding
--------------------
+Contributors and funding
+------------------------
 
-MIAOW was developed with funding support from the `Cooperative Institute for Research to Operations in Hydrology (CIROH) <https://ciroh.ua.edu/>`_ and is maintained by the `Numerical Simulation Laboratory <https://github.com/uofs-simlab>`_ at the `University of Saskatchewan <https://www.usask.ca/>`_. See the `AUTHORS <https://github.com/uofs-simlab/miaow-framework/blob/main/AUTHORS.md>`_ file for a full list of individual contributors to the project.
+MIAOW was developed with funding support from the `Cooperative Institute for Research to Operations in Hydrology (CIROH) <https://ciroh.ua.edu/>`_ and is maintained by the `Numerical Simulation Laboratory <https://github.com/uofs-simlab>`_ at the `University of Saskatchewan <https://www.usask.ca/>`_. See the `CONTRIBUTORS <https://github.com/uofs-simlab/miaow-framework/blob/main/CONTRIBUTORS.md>`_ file for a full list of individual contributors to the project.
 
 License
 -------
 
-MIAOW is available under the `MIT License <https://github.com/uofs-simlab/miaow-framework/blob/main/LICENSE>`_.
+MIAOW is released under the `MIT License <https://github.com/uofs-simlab/miaow-framework/blob/main/LICENSE>`_. Third-party components remain subject to the licences and copyright notices included with those components.

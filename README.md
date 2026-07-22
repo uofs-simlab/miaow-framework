@@ -53,9 +53,9 @@ To install MIAOW for use from another CMake project, see the [library installati
 
 MIAOW is an open-source project and welcomes contributions from the community. To report a bug, suggest an improvement, or discuss a contribution, please [open an issue](https://github.com/uofs-simlab/miaow-framework/issues). Code and documentation contributions should be proposed through a [pull request](https://github.com/uofs-simlab/miaow-framework/pulls).
 
-## Authors and funding
+## Contributors and funding
 
-MIAOW was developed with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/) and is maintained by the [Numerical Simulation Laboratory](https://github.com/uofs-simlab) at the [University of Saskatchewan](https://www.usask.ca/). See the [AUTHORS](AUTHORS.md) file for a full list of individual contributors to the project.
+MIAOW was developed with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/) and is maintained by the [Numerical Simulation Laboratory](https://github.com/uofs-simlab) at the [University of Saskatchewan](https://www.usask.ca/). See the [CONTRIBUTORS](CONTRIBUTORS.md) file for a full list of individual contributors to the project.
 
 <p align="center">
   <a href="https://www.usask.ca/">
@@ -76,4 +76,4 @@ MIAOW was developed with funding support from the [Cooperative Institute for Res
 
 ## License
 
-MIAOW is available under the [MIT License](LICENSE).
+MIAOW is released under the [MIT License](LICENSE). Third-party components remain subject to the licences and copyright notices included with those components.
