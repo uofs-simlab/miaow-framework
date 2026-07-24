@@ -1,6 +1,14 @@
-# FUSE Fortran BMI plugin for MIAOW
-set(FUSE_SRC "/home/mandana/fuse/build/FUSE_SRC")
-set(FUSE_ROOT "/home/mandana/fuse")
+# FUSE Fortran BMI plugin for MIAOW -- CH-Earth/fuse (FUSE2 v2.0.0 lineage)
+# Base: uofs-simlab/fuse branch bmi-wrapper (upstream CH-Earth/fuse @ 3df3724)
+# Source list matches the verified BMI wrapper build (compile_bmi_chearth.sh):
+#   removed vs old fork: calib_control, eval_metrics, user_state,
+#     init_user_state, output_state, fuse_rmse, sobol, functn, sce_16plus.o
+#   added: metrics.f90, get_time_indices.f90, fuse_metric.f90
+if(NOT DEFINED MIAOW_FUSE_ROOT)
+    set(MIAOW_FUSE_ROOT "/home/mandana/fuse-chearth")
+endif()
+set(FUSE_ROOT "${MIAOW_FUSE_ROOT}")
+set(FUSE_SRC  "${FUSE_ROOT}/build/FUSE_SRC")
 
 set(FUSE_SOURCES
     "${FUSE_SRC}/FUSE_HOOK/kinds_dmsl_kit_FUSE.f90"
@@ -9,7 +17,6 @@ set(FUSE_SOURCES
     "${FUSE_SRC}/FUSE_NR/nrtype.f90"
     "${FUSE_SRC}/FUSE_NR/nr.f90"
     "${FUSE_SRC}/FUSE_NR/nrutil.f90"
-    "${FUSE_SRC}/FUSE_ENGINE/calib_control.f90"
     "${FUSE_SRC}/FUSE_ENGINE/model_defn.f90"
     "${FUSE_SRC}/FUSE_ENGINE/model_defnames.f90"
     "${FUSE_SRC}/FUSE_ENGINE/multiconst.f90"
@@ -20,7 +27,6 @@ set(FUSE_SOURCES
     "${FUSE_SRC}/FUSE_ENGINE/multi_flux.f90"
     "${FUSE_SRC}/FUSE_ENGINE/multiroute.f90"
     "${FUSE_SRC}/FUSE_ENGINE/multistats.f90"
-    "${FUSE_SRC}/FUSE_ENGINE/eval_metrics.f90"
     "${FUSE_SRC}/FUSE_ENGINE/model_numerix.f90"
     "${FUSE_SRC}/FUSE_TIME/time_io.f90"
     "${FUSE_SRC}/FUSE_ENGINE/metaoutput.f90"
@@ -87,14 +93,13 @@ set(FUSE_SOURCES
     "${FUSE_SRC}/FUSE_ENGINE/qtimedelay.f90"
     "${FUSE_SRC}/FUSE_ENGINE/init_stats.f90"
     "${FUSE_SRC}/FUSE_ENGINE/init_state.f90"
-    "${FUSE_SRC}/FUSE_ENGINE/user_state.f90"
-    "${FUSE_SRC}/FUSE_ENGINE/init_user_state.f90"
-    "${FUSE_SRC}/FUSE_ENGINE/output_state.f90"
+    "${FUSE_SRC}/FUSE_ENGINE/metrics.f90"
     "${FUSE_SRC}/FUSE_ENGINE/conv_funcs.f90"
     "${FUSE_SRC}/FUSE_ENGINE/force_info.f90"
     "${FUSE_SRC}/FUSE_ENGINE/clrsky_rad.f90"
     "${FUSE_SRC}/FUSE_ENGINE/getPETgrid.f90"
     "${FUSE_SRC}/FUSE_ENGINE/get_mbands.f90"
+    "${FUSE_SRC}/FUSE_ENGINE/get_time_indices.f90"
     "${FUSE_SRC}/FUSE_ENGINE/initfluxes.f90"
     "${FUSE_SRC}/FUSE_ENGINE/set_all.f90"
     "${FUSE_SRC}/FUSE_ENGINE/ode_int.f90"
@@ -114,23 +119,20 @@ set(FUSE_SOURCES
     "${FUSE_SRC}/FUSE_NETCDF/put_params.f90"
     "${FUSE_SRC}/FUSE_NETCDF/put_output.f90"
     "${FUSE_SRC}/FUSE_NETCDF/put_sstats.f90"
-    "${FUSE_SRC}/FUSE_DMSL/sobol.f90"
-    "${FUSE_SRC}/FUSE_DMSL/fuse_rmse.f90"
-    "${FUSE_SRC}/FUSE_DMSL/functn.f90"
-    "${FUSE_ROOT}/fuse_bmi.f90"
+    "${FUSE_SRC}/FUSE_DMSL/fuse_metric.f90"
+    "${FUSE_ROOT}/bmi/fuse_bmi.f90"
     "${CMAKE_CURRENT_LIST_DIR}/../register_bmi_fuse.f90"
 )
 
 # Build shared library directly (avoids cmake_parse_arguments limits)
 add_library(miaow_dynamic_fuse_plugin SHARED ${FUSE_SOURCES})
 
-# Fortran compiler flags matching FUSE's own Makefile
+# Fortran compiler flags: -cpp required (CH-Earth sources use #ifdef __MPI__)
 target_compile_options(miaow_dynamic_fuse_plugin PRIVATE
     $<$<COMPILE_LANGUAGE:Fortran>:
         -ffree-line-length-none
-        -fallow-argument-mismatch
-        -std=legacy
-        -g
+        -cpp
+        -O2
     >
 )
 
@@ -152,9 +154,4 @@ target_include_directories(miaow_dynamic_fuse_plugin PRIVATE
 target_link_libraries(miaow_dynamic_fuse_plugin PRIVATE
     ${NETCDF_FORTRAN_LIBRARIES}
     netcdf
-)
-
-# Pre-compiled SCE object
-target_link_libraries(miaow_dynamic_fuse_plugin PRIVATE
-    "${FUSE_SRC}/FUSE_SCE/sce_16plus.o"
 )
