@@ -80,7 +80,7 @@ target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
 )
 add_dependencies(${EXECUTABLE_TARGET} miaow_subprocess libtrixi_bmi_plugin)
 
-# Place the binary beside the source so relative example paths remain stable
+# Place the binary in the example directory for source-relative execution
 set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )

@@ -13,15 +13,16 @@ MIAOW executes simulation workflows through an actor hierarchy inspired by `SUMM
 
 A typical workflow includes the following steps:
 
-1. Caller invokes ``Runtime::submit_job(tasks)``.
-2. Runtime assigns a ``job_id`` and sends ``(job_id, tasks)`` to ``orchestrator_actor``.
-3. ``orchestrator_actor`` spawns one ``job_actor`` for that job.
-4. ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
+1. Caller invokes ``Runtime::submit_job(task)``, ``Runtime::submit_job(tasks)``, or ``Runtime::submit_job(tasks, std::move(job_controller))``. In the third overload, ``job_controller`` has type ``std::unique_ptr<JobController>``, and ``Runtime`` takes ownership of the controller. The controller's role is to generate additional tasks after each task completes, and it can inspect all completed task records to determine what new tasks to generate.
+2. Runtime assigns a ``job_id`` and sends the tasks and job controller to ``orchestrator_actor``.
+3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector and creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_workers_``.
+4. The ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
 5. Each worker resolves ``Task::simulation_unit_id_``. For an in-process task, the worker constructs a fresh ``SimulationUnit`` instance; for a subprocess task, it uses worker-owned subprocess state.
-6. Completed task results are wrapped into one ``JobRecord``.
-7. Runtime fulfils the caller's ``JobHandle`` future.
+6. After each task execution returns success or failure, ``job_actor`` creates its ``TaskRecord``, passes all completed task records to its controller, appends returned tasks to its task vector, adds workers if needed, and returns to step 4. This continues until no tasks are waiting or running.
+7. Completed ``TaskRecord`` values are sorted by ``TaskId`` and stored in one ``JobRecord``.
+8. Runtime fulfils the caller's ``JobHandle`` future.
 
-Each job creates at most ``RuntimeOptions::max_workers_`` workers, or one worker per task when the job contains fewer tasks than ``RuntimeOptions::max_workers_``. This limit applies per job rather than across the entire ``Runtime``, so concurrent jobs can collectively run more than ``max_workers_`` tasks.
+When a controller generates new tasks, the job actor counts entries in its task vector that do not yet have a corresponding completed task record and adds workers only if this count exceeds the existing worker count. Workers are not removed while the job is running, so the job retains the largest worker count that has been required at any point so far, capped by ``RuntimeOptions::max_workers_``, until the job completes or shuts down. Idle ``simulation_unit_actor`` workers do not occupy CAF scheduler threads, so retaining them does not reduce scheduler capacity. Persistent subprocesses remain alive and retain their process resources while their workers are idle, but MIAOW does not reserve dedicated CPU cores for them.
 
 .. _subprocess-execution:
 
@@ -45,11 +46,14 @@ Each ``job_actor`` maintains the following state to manage task dispatch:
 - a pending-task cursor, ``next_task_to_dispatch_``
 - a queue of idle workers, ``available_workers_``
 
-When a worker finishes, it is immediately returned to the idle queue and the next pending task is dispatched. For each task, the worker constructs a fresh ``SimulationUnit`` instance and calls the corresponding ``execute(...)`` method, which takes a ``Task`` and ``ExecutionContext`` and returns a ``TaskResult``. The ``SimulationUnit`` instance is destroyed after the task completes, although a worker may reuse a persistent subprocess across tasks.
+When a worker finishes, the job actor returns it to the idle queue, creates its ``TaskRecord``, and passes all completed task records to the job controller. After appending any tasks returned by the controller's ``generate_new_tasks()`` method, the job actor dispatches pending tasks to available workers. For each dispatched task, the worker constructs a fresh ``SimulationUnit`` instance and calls its ``execute(...)`` method with a ``Task`` and ``ExecutionContext``. The ``SimulationUnit`` instance is destroyed after the task completes, although the worker may retain a persistent subprocess for reuse across tasks.
+
+Task results that arrive while ``generate_new_tasks()`` is running wait in the job actor's mailbox and are processed after the current call returns. Each controller invocation therefore sees only the task records processed so far, and results from workers that finish concurrently may be processed in either order. Because shutdown requests and the job-timeout message use the same mailbox, a long-running or blocking controller delays their processing. Generated tasks receive consecutive ``TaskId`` values, undergo runtime-field assignment and duplicate-name validation, and enter the same greedy scheduling queue as the initial tasks.
+
+If ``generate_new_tasks()`` or preparation of its returned tasks throws, the job actor stops dispatching pending tasks, requests worker shutdown, and does not call the controller again. Active tasks are allowed to finish before ``JobHandle::get()`` reports the job-level error. The job produces no final ``JobRecord`` or ``job_record.json``.
 
 Limitations
 -----------
 
 - Although subprocess execution is currently supported using remote actors, MIAOW does not currently support distributed-memory parallelism across multiple nodes. This is a planned feature for future releases.
-- MIAOW currently targets embarrassingly parallel workflows. A future release will support more complex workflows involving task dependencies.
 - Microsoft Windows is not currently supported, and there are no immediate plans to support it. MIAOW has been tested on Linux and macOS, and future releases will continue to support these platforms.

@@ -46,6 +46,8 @@ cd examples/00_hello
 
 See the [Examples](https://tjbmontoya.com/miaow-framework/examples.html) section of the documentation for an overview of the available workflows and model-specific setup.
 
+Jobs can use a per-job `JobController` to generate additional tasks as earlier tasks complete; see the [`07_job_controller`](examples/07_job_controller) example.
+
 To install MIAOW for use from another CMake project, see the [library installation build](https://tjbmontoya.com/miaow-framework/building.html#library-installation-build) instructions.
 
 ## Contributing

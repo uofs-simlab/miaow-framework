@@ -80,8 +80,9 @@ int main(int argc, char* argv[]) {
     miaow::print_diagnostics(second_job_record);
 
     // Return 1 if any task failed, or 0 if all tasks succeeded
-    return miaow::all_tasks_succeeded(first_job_record) &&
-                   miaow::all_tasks_succeeded(second_job_record)
-               ? 0
-               : 1;
+    const bool all_jobs_succeeded =
+        miaow::all_tasks_succeeded(first_job_record) &&
+        miaow::all_tasks_succeeded(second_job_record);
+
+    return all_jobs_succeeded ? 0 : 1;
 }
