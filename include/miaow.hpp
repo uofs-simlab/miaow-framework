@@ -51,7 +51,8 @@ using JobId = std::uint64_t;
 using TaskMetadata = std::map<std::string, std::string>;
 
 /**
- * @brief Execution location and process lifetime selected per `Task`.
+ * @brief Select whether a `Task` executes in the parent process or a subprocess
+ * and whether a subprocess is reused across tasks.
  */
 enum class ExecutionMode {
     /// Execute the task in a parent-process worker actor
@@ -67,7 +68,8 @@ enum class ExecutionMode {
 /**
  * @brief Input payload routed to one registered simulation unit.
  *
- * Arguments are positional and interpreted by the concrete `SimulationUnit`.
+ * Arguments in `args_` are positional and interpreted by the concrete `SimulationUnit`
+ * implementation inside `SimulationUnit::execute()`.
  */
 struct Task {
     /// `SimulationUnitId` that selects which registered unit handles this task
@@ -88,7 +90,8 @@ struct Task {
     /// task artifacts
     std::string task_output_dir_;
 
-    /// Stable task label injected by `Runtime` and used as an artifact file stem
+    /// Task label injected by `Runtime` from non-empty `feature_id` metadata or the
+    /// task index and used as an artifact file stem
     std::string task_name_;
 
     /// Metadata preserves labels used by reporting and postprocessing tools
@@ -183,9 +186,9 @@ enum class TaskStatus : std::uint8_t {
 };
 
 /**
- * @brief Convert a `TaskStatus` to a stable string value.
+ * @brief Convert a `TaskStatus` to its lowercase string value.
  * @param status `TaskStatus` enum value.
- * @return Stable string representation of `status`.
+ * @return `"succeeded"` or `"failed"`, according to `status`.
  */
 inline std::string task_status_to_string(TaskStatus status) {
     if (status == TaskStatus::succeeded) {
@@ -224,16 +227,19 @@ struct TaskResult {
 
 /**
  * @brief Runtime `TaskRecord` for one completed task.
+ *
+ * A task is completed when its result status is `TaskStatus::succeeded` or
+ * `TaskStatus::failed`.
  */
 struct TaskRecord {
     /// Construct an empty task record
     TaskRecord() = default;
 
     /**
-     * @brief Construct a completed `TaskRecord` from task input and terminal result.
+     * @brief Construct a completed `TaskRecord` from a task and its success or failure.
      * @param task Submitted task whose metadata and simulation unit ID are copied.
      * @param task_id `TaskId` within the submitted job.
-     * @param result Terminal simulation unit result for this task.
+     * @param result Success or failure result for this task.
      * @param run_time_s Wall-clock runtime for this task in seconds.
      */
     TaskRecord(const Task& task, TaskId task_id, TaskResult result, double run_time_s)
@@ -247,7 +253,7 @@ struct TaskRecord {
     /// `SimulationUnitId` that executed this task
     SimulationUnitId simulation_unit_id_{0};
 
-    /// Stable task label assigned by `Runtime`
+    /// Task label copied from the corresponding `Runtime`-assigned `Task`
     std::string task_name_;
 
     /// Metadata copied from the submitted task
@@ -258,6 +264,39 @@ struct TaskRecord {
 
     /// Wall-clock runtime for this task in seconds
     double run_time_s_{0.0};
+};
+
+/**
+ * @brief Per-job policy for generating tasks from completed task records.
+ *
+ * One controller instance belongs to each submitted job and remains in the parent
+ * process that owns `Runtime`. Only the owning job actor calls `generate_new_tasks()`.
+ * Calls are serialized even when multiple workers finish concurrently, so controller
+ * members accessed only by this method do not require a mutex. Results from workers
+ * that finish concurrently may be processed in either order.
+ *
+ * `generate_new_tasks()` runs synchronously and should return promptly. Long-running or
+ * blocking work delays queued task results, shutdown requests, and the job timeout.
+ *
+ * Tasks returned by one call are appended to the job in vector order. The first
+ * returned task receives the next available `TaskId`, and the remaining tasks receive
+ * consecutive `TaskId` values. Before dispatch, returned tasks undergo the same
+ * runtime-field assignment and duplicate-name validation as initial tasks.
+ */
+class JobController {
+  public:
+    virtual ~JobController() = default;
+
+    /**
+     * @brief Generate tasks after one task execution returns success or failure.
+     * @param completed_task_records All completed task records in completion order.
+     * @return Tasks to append to the current job in the order returned.
+     */
+    virtual std::vector<Task>
+    generate_new_tasks(const std::vector<TaskRecord>& completed_task_records) {
+        static_cast<void>(completed_task_records);
+        return {};
+    }
 };
 
 /**
@@ -477,7 +516,7 @@ struct RuntimeOptions {
     /// terminates the child process when this timeout expires
     std::chrono::milliseconds task_request_timeout_;
 
-    /// Timeout for whole-job requests between `runtime`/`orchestrator`/`job_actor`
+    /// Maximum runtime for a job; completed records are preserved when this expires
     std::chrono::milliseconds job_request_timeout_;
 
     /// Root output directory for run and job artifact folders; an empty value disables
@@ -489,7 +528,7 @@ struct RuntimeOptions {
      * @param workers Maximum number of worker actors used for each job. Values of zero are
      *                clamped to one.
      * @param task_timeout Timeout used for one simulation task request.
-     * @param job_timeout Timeout used for whole-job requests.
+     * @param job_timeout Maximum runtime for one submitted job.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      */
@@ -504,15 +543,16 @@ struct RuntimeOptions {
 /**
  * @brief Handle for a submitted asynchronous job.
  *
- * Call `get()` to wait for completion and retrieve the final result.
+ * Call `get()` to wait for completion and retrieve the final result. It throws
+ * `std::runtime_error` when the owning job actor reports a job-level failure.
  */
 using JobHandle = std::future<JobRecord>;
 
 /**
  * @brief Runtime-owned map of jobs waiting for actor completion.
  *
- * Each submitted `JobId` maps to the promise that will be fulfilled by the
- * orchestrator actor when that job finishes.
+ * Each submitted `JobId` maps to the promise that the orchestrator fulfils with either
+ * the final `JobRecord` or a job-level exception.
  */
 using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
 
@@ -525,7 +565,7 @@ using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
  */
 template <class Inspector>
 bool inspect(Inspector& inspector, ExecutionMode& execution_mode) {
-    // Execution mode serializes as a stable string in actor messages and JSON
+    // Execution mode uses explicit string values in actor messages and JSON
     std::string mode_value = "in_process";
     switch (execution_mode) {
     case ExecutionMode::in_process:
@@ -580,7 +620,7 @@ template <class Inspector> bool inspect(Inspector& inspector, Task& task) {
  * @return true when the status value was inspected successfully.
  */
 template <class Inspector> bool inspect(Inspector& inspector, TaskStatus& task_status) {
-    // Task status serializes as a stable string in actor messages and JSON
+    // Task status uses "succeeded" or "failed" in actor messages and JSON
     std::string status_value = task_status_to_string(task_status);
     const bool inspected = inspector.apply(status_value);
     if (!inspected) {
@@ -666,7 +706,8 @@ class Runtime {
     /**
      * @brief Submit one `Task` as an asynchronous job.
      *
-     * The returned handle may rethrow if final `job_record.json` output fails.
+     * The returned handle may throw if job execution or final `job_record.json` output
+     * fails.
      * @param task Generic `Task` arguments.
      * @return `JobHandle` for retrieving the final `JobRecord`.
      * @throws std::filesystem::filesystem_error if runtime output directories
@@ -686,13 +727,39 @@ class Runtime {
      * the vector's existing storage and tasks instead of copying them. Do not rely
      * on the contents of an explicitly moved vector afterward.
      *
-     * The returned handle may rethrow if final `job_record.json` output fails.
+     * The returned handle may throw if job execution or final `job_record.json` output
+     * fails.
      * @param tasks Tasks to submit.
      * @return `JobHandle` used to wait for and retrieve the resulting `JobRecord`.
      * @throws std::filesystem::filesystem_error if runtime output directories
      * cannot be created.
      */
     JobHandle submit_job(std::vector<Task> tasks) const;
+
+    /**
+     * @brief Submit tasks with a controller that may generate additional work.
+     *
+     * The runtime takes ownership of `job_controller`. After each task execution
+     * returns success or failure, the owning job actor creates its `TaskRecord`, passes
+     * all completed task records to the controller, and appends any returned tasks to
+     * the job.
+     * An empty `tasks` vector returns an empty `JobRecord` without invoking
+     * `job_controller`.
+     *
+     * If the controller or preparation of its returned tasks fails, the job stops
+     * dispatching pending tasks and allows active tasks to finish. The returned handle
+     * then throws `std::runtime_error`. No final `JobRecord` or `job_record.json` is
+     * produced for this job-level error. Output failures may also be rethrown by the
+     * handle.
+     * @param tasks Initial tasks to submit.
+     * @param job_controller Controller transferred to the submitted job.
+     * @return `JobHandle` used to wait for and retrieve the resulting `JobRecord`.
+     * @throws std::invalid_argument if `job_controller` is null.
+     * @throws std::filesystem::filesystem_error if runtime output directories
+     * cannot be created.
+     */
+    JobHandle submit_job(std::vector<Task> tasks,
+                         std::unique_ptr<JobController> job_controller) const;
 
   private:
     // Shared simulation unit registry used by all `simulation_unit_actor`s in this runtime

@@ -103,6 +103,15 @@ foreach(job_record_path IN LISTS job_record_paths)
                 "${job_record_path} does not contain ${required_job_record_snippet}")
         endif()
     endforeach()
+
+    if(DEFINED EXPECTED_TASK_COUNT)
+        string(JSON actual_task_count LENGTH "${job_record_text}" tasks)
+        if(NOT actual_task_count EQUAL EXPECTED_TASK_COUNT)
+            message(FATAL_ERROR
+                "${job_record_path} contains ${actual_task_count} tasks; "
+                "expected ${EXPECTED_TASK_COUNT}")
+        endif()
+    endif()
 endforeach()
 
 # Check each result artifact requested by the calling test

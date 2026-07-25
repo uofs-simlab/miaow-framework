@@ -13,6 +13,8 @@ Run built examples from their own ``examples/<example_name>`` directories:
    ./miaow_soil_freeze_thaw --output_root ./output --max_workers 2
    cd ../03_dynamic_bmi
    ./miaow_dynamic_bmi --output_root ./output --max_workers 2
+   cd ../07_job_controller
+   ./miaow_job_controller
 
 Included examples
 -----------------
@@ -23,6 +25,7 @@ Included examples
 - ``examples/03_dynamic_bmi``: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
 - ``examples/04_summa``: optional `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline execution and one MIAOW task per staged catchment feature described by a NextGen-style realization
 - ``examples/05_libtrixi_bmi``: optional `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin
+- ``examples/07_job_controller``: two initial hello tasks with randomized durations; each completion generates one replacement until the five-task budget is reached
 
 SUMMA example
 -------------
@@ -137,7 +140,7 @@ Examples use the following runtime command-line options where applicable:
      - Timeout for one task execution, in seconds; MIAOW terminates the child process when a subprocess task exceeds this timeout
    * - ``--job_request_timeout``
      - ``300``
-     - Timeout for job result requests, in seconds
+     - Maximum runtime for one job, in seconds
    * - ``--output_root``
      - ``""``
      - Root directory path for runtime-managed output folders, disabled by default

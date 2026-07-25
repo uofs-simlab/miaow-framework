@@ -58,6 +58,7 @@ parse_run_directory_id(const std::string& directory_name) {
 }
 
 // Create a unique run ID by scanning existing run directories and claiming the next one
+// that is not already present
 static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
     if (runtime_options.output_root_.empty()) {
         return next_run_id.fetch_add(1, std::memory_order_relaxed);
@@ -94,7 +95,8 @@ static std::filesystem::path job_directory_path(const RuntimeOptions& runtime_op
     return run_directory_path(runtime_options, run_id) / ("job_" + std::to_string(job_id));
 }
 
-// Get the stable task label, prioritizing realization feature metadata
+// Generate a name for a task from its metadata or vector index; first try the feature_id
+// from the task's metadata, otherwise use task_<task_id> when no feature_id is available
 static std::string task_name(const Task& task, TaskId task_id) {
     const TaskMetadata::const_iterator feature_id = task.metadata_.find("feature_id");
     if (feature_id != task.metadata_.end() && !feature_id->second.empty()) {
@@ -108,14 +110,21 @@ static std::string task_name(const Task& task, TaskId task_id) {
     return "task_" + std::to_string(task_id);
 }
 
-static void assign_task_runtime_fields(std::vector<Task>& tasks,
-                                       const RuntimeOptions& runtime_options,
-                                       std::uint64_t run_id, JobId job_id) {
+// Prepare initial or generated tasks for dispatch without changing earlier task fields
+void core::assign_task_runtime_fields(std::vector<Task>& tasks,
+                                      std::size_t first_task_index,
+                                      const RuntimeOptions& runtime_options,
+                                      std::uint64_t run_id, JobId job_id) {
     // Track task names so logs and artifacts can identify tasks unambiguously
     std::vector<std::string> assigned_task_names;
     assigned_task_names.reserve(tasks.size());
+    for (std::size_t task_index = 0; task_index < first_task_index; ++task_index) {
+        assigned_task_names.push_back(tasks.at(task_index).task_name_);
+    }
 
-    for (std::size_t task_index = 0; task_index < tasks.size(); ++task_index) {
+    // Assign unique names from feature_id metadata or task indices in the requested range
+    for (std::size_t task_index = first_task_index; task_index < tasks.size();
+         ++task_index) {
         Task& task = tasks.at(task_index);
         const TaskId task_id = static_cast<TaskId>(task_index);
         task.task_name_ = task_name(task, task_id);
@@ -127,20 +136,25 @@ static void assign_task_runtime_fields(std::vector<Task>& tasks,
         assigned_task_names.push_back(task.task_name_);
     }
 
+    // Clear output paths when artifact storage is disabled
     if (runtime_options.output_root_.empty()) {
-        for (Task& task : tasks) {
-            task.task_output_dir_.clear();
+        for (std::size_t task_index = first_task_index; task_index < tasks.size();
+             ++task_index) {
+            tasks.at(task_index).task_output_dir_.clear();
         }
         return;
     }
 
+    // Create the job results directory before assigning task output paths
     const std::filesystem::path job_directory =
         job_directory_path(runtime_options, run_id, job_id);
     const std::filesystem::path results_directory = job_directory / "results";
     std::filesystem::create_directories(results_directory);
 
-    for (Task& task : tasks) {
-        task.task_output_dir_ = results_directory.string();
+    // Store output from every selected task in the job results directory
+    for (std::size_t task_index = first_task_index; task_index < tasks.size();
+         ++task_index) {
+        tasks.at(task_index).task_output_dir_ = results_directory.string();
     }
 }
 
@@ -151,7 +165,7 @@ static JobHandle make_ready_job_handle(JobRecord record) {
     return promise.get_future();
 }
 
-// Initializes CAF global meta objects exactly once in a thread-safe way
+// Initialize CAF global meta objects exactly once in a thread-safe way
 static void initialize_caf_once() {
     std::call_once(caf_init_flag, [] {
         caf::init_global_meta_objects<caf::id_block::core_module>();
@@ -195,8 +209,18 @@ JobHandle Runtime::submit_job(const Task& task) const {
     return submit_job(std::vector<Task>{task});
 }
 
-// Submit a full task collection into the Runtime message path
+// Submit fixed tasks with the default controller; it does not generate more tasks
 JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
+    return submit_job(std::move(tasks), std::make_unique<JobController>());
+}
+
+// Submit initial tasks and transfer controller ownership to the job actor
+JobHandle Runtime::submit_job(std::vector<Task> tasks,
+                              std::unique_ptr<JobController> job_controller) const {
+    if (!job_controller) {
+        throw std::invalid_argument("Runtime requires a non-null JobController");
+    }
+
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
     // If there are no tasks, return a ready future with an empty result immediately
@@ -204,7 +228,13 @@ JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
         return make_ready_job_handle(JobRecord{run_id_, job_id});
     }
 
-    assign_task_runtime_fields(tasks, runtime_options_, run_id_, job_id);
+    // Assign names and output directories from index 0 because every submitted task is new
+    core::assign_task_runtime_fields(tasks, 0, runtime_options_, run_id_, job_id);
+
+    // The public interface transfers unique ownership of the controller to Runtime
+    // CAF may copy message payloads, so use shared ownership while the controller passes
+    // through local messages to orchestrator_actor and then job_actor
+    std::shared_ptr<JobController> shared_job_controller(std::move(job_controller));
 
     // Create a promise/future pair for this submitted job
     std::promise<JobRecord> promise;
@@ -217,7 +247,8 @@ JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
     }
 
     // Send this job to the shared orchestrator
-    caf::anon_mail(caf::get_atom_v, job_id, std::move(tasks)).send(orchestrator_);
+    caf::anon_mail(caf::get_atom_v, job_id, std::move(tasks),
+                   std::move(shared_job_controller)).send(orchestrator_);
     return job;
 }
 

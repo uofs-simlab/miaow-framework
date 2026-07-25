@@ -39,7 +39,7 @@ miaow_attach_plugin_paths(${EXECUTABLE_TARGET}
     MIAOW_FORTRAN_HEAT_PLUGIN_PATH  miaow_dynamic_fortran_heat_plugin
 )
 
-# Place the binary beside the source so relative example paths remain stable
+# Place the binary in the example directory for source-relative execution
 set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
