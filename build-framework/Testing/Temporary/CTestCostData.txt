@@ -1,4 +1,0 @@
-miaow_core 1 0.899844
-miaow_bmi 1 0.593894
-miaow_io 1 0.130507
----
