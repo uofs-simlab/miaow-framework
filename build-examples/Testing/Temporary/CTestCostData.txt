@@ -1,0 +1,6 @@
+miaow_example_00_hello 1 0.542522
+miaow_example_01_heat 1 0.395121
+miaow_example_02_soil_freeze_thaw 1 0.233344
+miaow_example_03_dynamic_bmi 1 0.94694
+miaow_example_07_job_controller 1 0.248316
+---

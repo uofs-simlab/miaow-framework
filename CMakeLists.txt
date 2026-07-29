@@ -7,9 +7,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-include(CTest)
+if(PROJECT_IS_TOP_LEVEL)
+    include(CTest)
+endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
+
+# Build the repository test suite only for a top-level development build
+set(miaow_build_tests OFF)
+if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
+    set(miaow_build_tests ON)
+endif()
 
 set(MIAOW_BOOST_PROVIDER "auto" CACHE STRING "Boost provider: auto, system, fetch")
 set(MIAOW_BOOST_VERSION "1.86.0" CACHE STRING "Boost version for FetchContent")
@@ -34,22 +42,44 @@ endfunction()
 miaow_validate_provider(MIAOW_BOOST_PROVIDER)
 miaow_validate_provider(MIAOW_CAF_PROVIDER)
 
-if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
-    find_package(Boost CONFIG QUIET COMPONENTS process json)
-    if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
-        find_package(Boost QUIET COMPONENTS process json)
-    endif()
+# Resolve only the Boost components used by the selected build
+set(miaow_boost_components process json)
+set(miaow_boost_fetch_libraries process json)
+if(miaow_build_tests)
+    list(APPEND miaow_boost_components unit_test_framework)
+    list(APPEND miaow_boost_fetch_libraries test)
 endif()
 
-if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
+function(miaow_find_missing_boost_targets output_variable)
+    set(missing_targets)
+    foreach(boost_component IN LISTS miaow_boost_components)
+        if(NOT TARGET Boost::${boost_component})
+            list(APPEND missing_targets Boost::${boost_component})
+        endif()
+    endforeach()
+    set(${output_variable} "${missing_targets}" PARENT_SCOPE)
+endfunction()
+
+if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
+    find_package(Boost CONFIG QUIET COMPONENTS ${miaow_boost_components})
+    miaow_find_missing_boost_targets(miaow_missing_boost_targets)
+    if(miaow_missing_boost_targets)
+        find_package(Boost QUIET COMPONENTS ${miaow_boost_components})
+        miaow_find_missing_boost_targets(miaow_missing_boost_targets)
+    endif()
+else()
+    set(miaow_missing_boost_targets TRUE)
+endif()
+
+if(miaow_missing_boost_targets)
     if(MIAOW_BOOST_PROVIDER STREQUAL "system")
         message(FATAL_ERROR
-            "Boost.Process or Boost.JSON not found. Use Conan, install Boost, or set "
-            "MIAOW_BOOST_PROVIDER to auto or fetch.")
+            "Required Boost targets not found: ${miaow_missing_boost_targets}. "
+            "Use Conan, install Boost, or set MIAOW_BOOST_PROVIDER to auto or fetch.")
     endif()
 
     include(FetchContent)
-    set(BOOST_INCLUDE_LIBRARIES process json CACHE STRING
+    set(BOOST_INCLUDE_LIBRARIES ${miaow_boost_fetch_libraries} CACHE STRING
         "Boost libraries included by FetchContent" FORCE)
     set(BOOST_ENABLE_CMAKE ON CACHE BOOL "Enable Boost CMake support" FORCE)
     set(miaow_boost_release_url
@@ -65,10 +95,12 @@ if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
         URL ${miaow_boost_url}
     )
     FetchContent_MakeAvailable(boost)
+    miaow_find_missing_boost_targets(miaow_missing_boost_targets)
 endif()
 
-if(NOT TARGET Boost::process OR NOT TARGET Boost::json)
-    message(FATAL_ERROR "Boost did not provide the expected Boost targets.")
+if(miaow_missing_boost_targets)
+    message(FATAL_ERROR
+        "Boost did not provide the expected targets: ${miaow_missing_boost_targets}")
 endif()
 
 set(MIAOW_CAF_CORE_TARGET "")
@@ -315,23 +347,32 @@ install(EXPORT miaowTargets
     DESTINATION "${miaow_package_install_dir}"
 )
 
-option(BUILD_EXAMPLES "Build example programs" ON)
-set(MIAOW_EXAMPLES
-    "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;07_job_controller"
-    CACHE STRING "Semicolon-separated list of examples to build"
-)
-set(miaow_known_examples
-    00_hello
-    01_heat
-    02_soil_freeze_thaw
-    03_dynamic_bmi
-    04_summa
-    05_libtrixi_bmi
-    07_job_controller
-)
-set_property(CACHE MIAOW_EXAMPLES PROPERTY STRINGS ${miaow_known_examples})
+if(miaow_build_tests)
+    add_subdirectory(tests)
+endif()
 
-if(BUILD_EXAMPLES)
+# Expose example selection only for a top-level repository build
+set(miaow_build_examples OFF)
+if(PROJECT_IS_TOP_LEVEL)
+    option(BUILD_EXAMPLES "Build example programs" OFF)
+    set(MIAOW_EXAMPLES
+        "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;07_job_controller"
+        CACHE STRING "Semicolon-separated list of examples to build"
+    )
+    set(miaow_known_examples
+        00_hello
+        01_heat
+        02_soil_freeze_thaw
+        03_dynamic_bmi
+        04_summa
+        05_libtrixi_bmi
+        07_job_controller
+    )
+    set_property(CACHE MIAOW_EXAMPLES PROPERTY STRINGS ${miaow_known_examples})
+    set(miaow_build_examples "${BUILD_EXAMPLES}")
+endif()
+
+if(miaow_build_examples)
     foreach(miaow_example IN LISTS MIAOW_EXAMPLES)
         if(NOT miaow_example IN_LIST miaow_known_examples)
             message(FATAL_ERROR

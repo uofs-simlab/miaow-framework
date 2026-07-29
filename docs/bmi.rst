@@ -114,7 +114,7 @@ The variable map is interpreted as ``BMI input variable -> CSV header``. If it i
 
 MIAOW's external forcing reader currently only supports CSV files. The file must define a ``time`` or ``Time`` column plus all required numeric data columns. Supported timestamp formats are ``YYYY-MM-DD HH:MM:SS`` and ``YYYY/MM/DD HH:MM:SS``. MIAOW treats the first forcing row as the model-start forcing values, so users should ensure that the first forcing row timestamp matches the model's ``start_time`` after unit normalization. Later forcing rows are streamed as the model advances; each row-to-row timestamp delta must match the receiving BMI model timestep after unit normalization. Because the only supported forcing source is CSV, the forcing provider for global `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization files should be set to ``CsvPerFeature``.
 
-Exhausting the forcing data before the model's ``end_time`` fails the task with a ``Forcing alignment error``; forcing rows beyond ``end_time`` are silently ignored and the task completes successfully. The ``examples/02_soil_freeze_thaw`` workflow includes matched and mismatched model end time and forcing series lengths.
+Exhausting the forcing data before the model's ``end_time`` fails the task with a ``Forcing alignment error``; forcing rows beyond ``end_time`` are silently ignored and the task completes successfully. The ``examples/02_soil_freeze_thaw`` workflow illustrates an aligned model end time and forcing series.
 
 Diagnostics and artifacts
 -------------------------

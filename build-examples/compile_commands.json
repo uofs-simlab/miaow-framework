@@ -1,0 +1,206 @@
+[
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -DMIAOW_INSTALLED_SUBPROCESS_PATH=\\\"/usr/local/libexec/miaow/miaow_subprocess\\\" -DMIAOW_SUBPROCESS_PATH=\\\"/Users/tristanmontoya/Research/miaow-framework/build-examples/miaow_subprocess\\\" -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/bmi/execute.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/bmi/execute.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/bmi/execute.cpp",
+  "output": "CMakeFiles/miaow.dir/src/bmi/execute.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/bmi/dynamic.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/bmi/dynamic.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/bmi/dynamic.cpp",
+  "output": "CMakeFiles/miaow.dir/src/bmi/dynamic.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/bmi/forcing.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/bmi/forcing.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/bmi/forcing.cpp",
+  "output": "CMakeFiles/miaow.dir/src/bmi/forcing.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/bmi/io.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/bmi/io.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/bmi/io.cpp",
+  "output": "CMakeFiles/miaow.dir/src/bmi/io.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/bmi/pipeline.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/bmi/pipeline.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/bmi/pipeline.cpp",
+  "output": "CMakeFiles/miaow.dir/src/bmi/pipeline.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/bmi/realization.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/bmi/realization.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/bmi/realization.cpp",
+  "output": "CMakeFiles/miaow.dir/src/bmi/realization.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/core/actors.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/core/actors.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/core/actors.cpp",
+  "output": "CMakeFiles/miaow.dir/src/core/actors.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -DMIAOW_INSTALLED_SUBPROCESS_PATH=\\\"/usr/local/libexec/miaow/miaow_subprocess\\\" -DMIAOW_SUBPROCESS_PATH=\\\"/Users/tristanmontoya/Research/miaow-framework/build-examples/miaow_subprocess\\\" -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/core/process.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/core/process.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/core/process.cpp",
+  "output": "CMakeFiles/miaow.dir/src/core/process.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/core/runtime.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/core/runtime.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/core/runtime.cpp",
+  "output": "CMakeFiles/miaow.dir/src/core/runtime.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/io/cli.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/io/cli.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/io/cli.cpp",
+  "output": "CMakeFiles/miaow.dir/src/io/cli.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/io/csv.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/io/csv.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/io/csv.cpp",
+  "output": "CMakeFiles/miaow.dir/src/io/csv.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTAINER_DYN_LINK -DBOOST_CONTAINER_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_JSON_DYN_LINK -DBOOST_JSON_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow.dir/src/io/diagnostics.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/io/diagnostics.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/io/diagnostics.cpp",
+  "output": "CMakeFiles/miaow.dir/src/io/diagnostics.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples",
+  "command": "/usr/bin/c++ -DBOOST_ATOMIC_DYN_LINK -DBOOST_ATOMIC_NO_LIB -DBOOST_CONTEXT_DYN_LINK -DBOOST_CONTEXT_NO_LIB -DBOOST_DATE_TIME_DYN_LINK -DBOOST_DATE_TIME_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_FILESYSTEM_NO_LIB -DBOOST_PROCESS_DYN_LINK -DBOOST_PROCESS_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/src -I/Users/tristanmontoya/Research/miaow-framework/include -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow_subprocess.dir/src/bmi/subprocess.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/src/bmi/subprocess.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/src/bmi/subprocess.cpp",
+  "output": "CMakeFiles/miaow_subprocess.dir/src/bmi/subprocess.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build",
+  "command": "/opt/homebrew/bin/gfortran -Diso_c_bmi_EXPORTS  -Jmod -fPIC -cpp -ffree-line-length-none -c /Users/tristanmontoya/Research/miaow-framework/third_party/iso_c_fortran_bmi/src/bmi.f90 -o CMakeFiles/iso_c_bmi.dir/src/bmi.f90.o",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/third_party/iso_c_fortran_bmi/src/bmi.f90",
+  "output": "iso_c_fortran_bmi-build/CMakeFiles/iso_c_bmi.dir/src/bmi.f90.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build",
+  "command": "/opt/homebrew/bin/gfortran -Diso_c_bmi_EXPORTS  -Jmod -fPIC -cpp -ffree-line-length-none -c /Users/tristanmontoya/Research/miaow-framework/third_party/iso_c_fortran_bmi/src/iso_c_bmi.f90 -o CMakeFiles/iso_c_bmi.dir/src/iso_c_bmi.f90.o",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/third_party/iso_c_fortran_bmi/src/iso_c_bmi.f90",
+  "output": "iso_c_fortran_bmi-build/CMakeFiles/iso_c_bmi.dir/src/iso_c_bmi.f90.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/tests",
+  "command": "/usr/bin/c++ -DBOOST_UNIT_TEST_FRAMEWORK_DYN_LINK -DBOOST_UNIT_TEST_FRAMEWORK_NO_LIB -DMIAOW_CORE_TEST_OUTPUT_ROOT=\\\"/Users/tristanmontoya/Research/miaow-framework/build-examples/tests/output/core\\\" -I/Users/tristanmontoya/Research/miaow-framework/include -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow_core_tests.dir/core/runtime.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/tests/core/runtime.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/tests/core/runtime.cpp",
+  "output": "tests/CMakeFiles/miaow_core_tests.dir/core/runtime.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/tests",
+  "command": "/opt/homebrew/bin/gfortran -Dmiaow_test_fortran_bmi_EXPORTS -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -Jfortran-mod -fPIC -c /Users/tristanmontoya/Research/miaow-framework/tests/bmi/fixtures/simple_fortran_bmi.f90 -o CMakeFiles/miaow_test_fortran_bmi.dir/bmi/fixtures/simple_fortran_bmi.f90.o",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/tests/bmi/fixtures/simple_fortran_bmi.f90",
+  "output": "tests/CMakeFiles/miaow_test_fortran_bmi.dir/bmi/fixtures/simple_fortran_bmi.f90.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/tests",
+  "command": "/usr/bin/c++ -DBOOST_UNIT_TEST_FRAMEWORK_DYN_LINK -DBOOST_UNIT_TEST_FRAMEWORK_NO_LIB -DMIAOW_BMI_TEST_OUTPUT_ROOT=\\\"/Users/tristanmontoya/Research/miaow-framework/build-examples/tests/output/bmi\\\" -DMIAOW_TEST_BMI_FORCING_PATH=\\\"/Users/tristanmontoya/Research/miaow-framework/tests/bmi/fixtures/forcing.csv\\\" -DMIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH=\\\"/Users/tristanmontoya/Research/miaow-framework/build-examples/tests/libmiaow_test_fortran_bmi.dylib\\\" -I/Users/tristanmontoya/Research/miaow-framework/include -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow_bmi_tests.dir/bmi/bmi.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/tests/bmi/bmi.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/tests/bmi/bmi.cpp",
+  "output": "tests/CMakeFiles/miaow_bmi_tests.dir/bmi/bmi.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/tests",
+  "command": "/usr/bin/c++ -DBOOST_UNIT_TEST_FRAMEWORK_DYN_LINK -DBOOST_UNIT_TEST_FRAMEWORK_NO_LIB -I/Users/tristanmontoya/Research/miaow-framework/include -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -isystem /opt/homebrew/include -std=c++20 -o CMakeFiles/miaow_io_tests.dir/io/io.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/tests/io/io.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/tests/io/io.cpp",
+  "output": "tests/CMakeFiles/miaow_io_tests.dir/io/io.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/00_hello",
+  "command": "/usr/bin/c++ -DMIAOW_HELLO_RUN_DIR=\\\"/Users/tristanmontoya/Research/miaow-framework/examples/00_hello\\\" -I/Users/tristanmontoya/Research/miaow-framework/include -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -std=c++20 -o CMakeFiles/miaow_hello.dir/main.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/examples/00_hello/main.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/examples/00_hello/main.cpp",
+  "output": "examples/00_hello/CMakeFiles/miaow_hello.dir/main.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/01_heat",
+  "command": "/usr/bin/c++  -I/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat -I/Users/tristanmontoya/Research/miaow-framework/include/third_party/bmi -std=c++20 -o CMakeFiles/miaow_heat_model.dir/__/__/third_party/bmi-example-cxx/heat/heat.cxx.o -c /Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat/heat.cxx",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat/heat.cxx",
+  "output": "examples/01_heat/CMakeFiles/miaow_heat_model.dir/__/__/third_party/bmi-example-cxx/heat/heat.cxx.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/01_heat",
+  "command": "/usr/bin/c++  -I/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat -I/Users/tristanmontoya/Research/miaow-framework/include/third_party/bmi -std=c++20 -o CMakeFiles/miaow_heat_model.dir/__/__/third_party/bmi-example-cxx/heat/bmi_heat.cxx.o -c /Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat/bmi_heat.cxx",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat/bmi_heat.cxx",
+  "output": "examples/01_heat/CMakeFiles/miaow_heat_model.dir/__/__/third_party/bmi-example-cxx/heat/bmi_heat.cxx.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/01_heat",
+  "command": "/usr/bin/c++ -DMIAOW_HEAT_RUN_DIR=\\\"/Users/tristanmontoya/Research/miaow-framework/examples/01_heat\\\" -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat -I/Users/tristanmontoya/Research/miaow-framework/include/third_party/bmi -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -std=c++20 -o CMakeFiles/miaow_heat.dir/main.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/examples/01_heat/main.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/examples/01_heat/main.cpp",
+  "output": "examples/01_heat/CMakeFiles/miaow_heat.dir/main.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/02_soil_freeze_thaw",
+  "command": "/usr/bin/c++ -DBMI_ACTIVE -I/Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/include -I/Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/. -std=c++20 -o CMakeFiles/miaow_soil_freeze_thaw_model.dir/__/__/third_party/SoilFreezeThaw/src/bmi_soil_freeze_thaw.cxx.o -c /Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/src/bmi_soil_freeze_thaw.cxx",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/src/bmi_soil_freeze_thaw.cxx",
+  "output": "examples/02_soil_freeze_thaw/CMakeFiles/miaow_soil_freeze_thaw_model.dir/__/__/third_party/SoilFreezeThaw/src/bmi_soil_freeze_thaw.cxx.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/02_soil_freeze_thaw",
+  "command": "/usr/bin/c++ -DBMI_ACTIVE -I/Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/include -I/Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/. -std=c++20 -o CMakeFiles/miaow_soil_freeze_thaw_model.dir/__/__/third_party/SoilFreezeThaw/src/soil_freeze_thaw.cxx.o -c /Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/src/soil_freeze_thaw.cxx",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/src/soil_freeze_thaw.cxx",
+  "output": "examples/02_soil_freeze_thaw/CMakeFiles/miaow_soil_freeze_thaw_model.dir/__/__/third_party/SoilFreezeThaw/src/soil_freeze_thaw.cxx.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/02_soil_freeze_thaw",
+  "command": "/usr/bin/c++ -DMIAOW_SOIL_FREEZE_THAW_RUN_DIR=\\\"/Users/tristanmontoya/Research/miaow-framework/examples/02_soil_freeze_thaw\\\" -I/Users/tristanmontoya/Research/miaow-framework/include -I/Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/include -I/Users/tristanmontoya/Research/miaow-framework/third_party/SoilFreezeThaw/. -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -std=c++20 -o CMakeFiles/miaow_soil_freeze_thaw.dir/main.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/examples/02_soil_freeze_thaw/main.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/examples/02_soil_freeze_thaw/main.cpp",
+  "output": "examples/02_soil_freeze_thaw/CMakeFiles/miaow_soil_freeze_thaw.dir/main.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi",
+  "command": "/usr/bin/c++ -Dmiaow_dynamic_cpp_heat_plugin_EXPORTS -I/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat -I/Users/tristanmontoya/Research/miaow-framework/include/third_party/bmi -std=c++20 -fPIC -o CMakeFiles/miaow_dynamic_cpp_heat_plugin.dir/__/__/third_party/bmi-example-cxx/heat/heat.cxx.o -c /Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat/heat.cxx",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat/heat.cxx",
+  "output": "examples/03_dynamic_bmi/CMakeFiles/miaow_dynamic_cpp_heat_plugin.dir/__/__/third_party/bmi-example-cxx/heat/heat.cxx.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi",
+  "command": "/usr/bin/c++ -Dmiaow_dynamic_cpp_heat_plugin_EXPORTS -I/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat -I/Users/tristanmontoya/Research/miaow-framework/include/third_party/bmi -std=c++20 -fPIC -o CMakeFiles/miaow_dynamic_cpp_heat_plugin.dir/__/__/third_party/bmi-example-cxx/heat/bmi_heat.cxx.o -c /Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat/bmi_heat.cxx",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat/bmi_heat.cxx",
+  "output": "examples/03_dynamic_bmi/CMakeFiles/miaow_dynamic_cpp_heat_plugin.dir/__/__/third_party/bmi-example-cxx/heat/bmi_heat.cxx.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi",
+  "command": "/usr/bin/c++ -Dmiaow_dynamic_cpp_heat_plugin_EXPORTS -I/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-cxx/heat -I/Users/tristanmontoya/Research/miaow-framework/include/third_party/bmi -std=c++20 -fPIC -o CMakeFiles/miaow_dynamic_cpp_heat_plugin.dir/create_destroy_bmi_heat.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/examples/03_dynamic_bmi/create_destroy_bmi_heat.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/examples/03_dynamic_bmi/create_destroy_bmi_heat.cpp",
+  "output": "examples/03_dynamic_bmi/CMakeFiles/miaow_dynamic_cpp_heat_plugin.dir/create_destroy_bmi_heat.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi",
+  "command": "/opt/homebrew/bin/gfortran -Dmiaow_dynamic_fortran_heat_plugin_EXPORTS -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -Jmod -fPIC -c /Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-fortran/heat/heat.f90 -o CMakeFiles/miaow_dynamic_fortran_heat_plugin.dir/__/__/third_party/bmi-example-fortran/heat/heat.f90.o",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/third_party/bmi-example-fortran/heat/heat.f90",
+  "output": "examples/03_dynamic_bmi/CMakeFiles/miaow_dynamic_fortran_heat_plugin.dir/__/__/third_party/bmi-example-fortran/heat/heat.f90.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi",
+  "command": "/opt/homebrew/bin/gfortran -Dmiaow_dynamic_fortran_heat_plugin_EXPORTS -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -Jmod -fPIC -c /Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi/generated/bmi_heat.f90 -o CMakeFiles/miaow_dynamic_fortran_heat_plugin.dir/generated/bmi_heat.f90.o",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi/generated/bmi_heat.f90",
+  "output": "examples/03_dynamic_bmi/CMakeFiles/miaow_dynamic_fortran_heat_plugin.dir/generated/bmi_heat.f90.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi",
+  "command": "/opt/homebrew/bin/gfortran -Dmiaow_dynamic_fortran_heat_plugin_EXPORTS -I/Users/tristanmontoya/Research/miaow-framework/build-examples/iso_c_fortran_bmi-build/mod -Jmod -fPIC -c /Users/tristanmontoya/Research/miaow-framework/examples/03_dynamic_bmi/register_bmi_heat.f90 -o CMakeFiles/miaow_dynamic_fortran_heat_plugin.dir/register_bmi_heat.f90.o",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/examples/03_dynamic_bmi/register_bmi_heat.f90",
+  "output": "examples/03_dynamic_bmi/CMakeFiles/miaow_dynamic_fortran_heat_plugin.dir/register_bmi_heat.f90.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi",
+  "command": "/usr/bin/c++ -DMIAOW_CPP_HEAT_PLUGIN_PATH=\\\"/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi/libmiaow_dynamic_cpp_heat_plugin.dylib\\\" -DMIAOW_DYNAMIC_BMI_RUN_DIR=\\\"/Users/tristanmontoya/Research/miaow-framework/examples/03_dynamic_bmi\\\" -DMIAOW_FORTRAN_HEAT_PLUGIN_PATH=\\\"/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/03_dynamic_bmi/libmiaow_dynamic_fortran_heat_plugin.dylib\\\" -I/Users/tristanmontoya/Research/miaow-framework/include -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -std=c++20 -o CMakeFiles/miaow_dynamic_bmi.dir/main.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/examples/03_dynamic_bmi/main.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/examples/03_dynamic_bmi/main.cpp",
+  "output": "examples/03_dynamic_bmi/CMakeFiles/miaow_dynamic_bmi.dir/main.cpp.o"
+},
+{
+  "directory": "/Users/tristanmontoya/Research/miaow-framework/build-examples/examples/07_job_controller",
+  "command": "/usr/bin/c++ -DMIAOW_JOB_CONTROLLER_RUN_DIR=\\\"/Users/tristanmontoya/Research/miaow-framework/examples/07_job_controller\\\" -I/Users/tristanmontoya/Research/miaow-framework/include -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_core -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-src/libcaf_io -isystem /Users/tristanmontoya/Research/miaow-framework/build/_deps/caf-build/libcaf_io -std=c++20 -o CMakeFiles/miaow_job_controller.dir/main.cpp.o -c /Users/tristanmontoya/Research/miaow-framework/examples/07_job_controller/main.cpp",
+  "file": "/Users/tristanmontoya/Research/miaow-framework/examples/07_job_controller/main.cpp",
+  "output": "examples/07_job_controller/CMakeFiles/miaow_job_controller.dir/main.cpp.o"
+}
+]

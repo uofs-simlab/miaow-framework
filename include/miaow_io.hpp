@@ -11,16 +11,10 @@
 namespace miaow {
 
 /**
- * @brief Print diagnostics to stdout.
- * @param job_record `JobRecord` payload containing task and job timings.
+ * @brief Print task results and aggregate job timing information to stdout.
+ * @param job_record `JobRecord` payload containing task results and timings.
  */
-void print_diagnostics(const JobRecord& job_record);
-
-/**
- * @brief Print all task results in a job to stdout.
- * @param job_record `JobRecord` payload containing task records to print.
- */
-void print_task_results(const JobRecord& job_record);
+void print_job_summary(const JobRecord& job_record);
 
 /**
  * @brief Return true when every task result in a job succeeded.

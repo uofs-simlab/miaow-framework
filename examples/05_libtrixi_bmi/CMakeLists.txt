@@ -84,3 +84,11 @@ add_dependencies(${EXECUTABLE_TARGET} miaow_subprocess libtrixi_bmi_plugin)
 set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
+
+if(BUILD_TESTING)
+    miaow_add_example_smoke_test(
+        TEST_NAME miaow_example_05_libtrixi_bmi
+        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
+        EXTERNAL_MODEL
+    )
+endif()

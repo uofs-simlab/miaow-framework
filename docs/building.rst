@@ -29,6 +29,8 @@ Configure and build from the repository root:
    cmake -S . -B build
    cmake --build build
 
+The default development build includes the framework tests and does not build examples.
+
 Run all tests:
 
 .. code-block:: sh
@@ -44,12 +46,12 @@ Run a single test by name:
 Library installation build
 --------------------------
 
-Configure a build without examples and select an installation prefix:
+Configure a build without tests and select an installation prefix. Examples are already disabled by default:
 
 .. code-block:: sh
 
    cmake -S . -B build \
-       -DBUILD_EXAMPLES=OFF \
+       -DBUILD_TESTING=OFF \
        -DCMAKE_INSTALL_PREFIX="$HOME/.local"
 
    cmake --build build
@@ -102,13 +104,17 @@ These are the top-level CMake options:
    * - Flag
      - Default
      - Description
-   * - ``-DBUILD_EXAMPLES``
+   * - ``-DBUILD_TESTING``
      - ``ON``
+     - Build the framework test executables in a top-level repository build
+   * - ``-DBUILD_EXAMPLES``
+     - ``OFF``
      - Build selected example programs
    * - ``-DMIAOW_EXAMPLES``
      - | ``00_hello;01_heat;``
        | ``02_soil_freeze_thaw;``
-       | ``03_dynamic_bmi``
+       | ``03_dynamic_bmi;``
+       | ``07_job_controller``
      - Semicolon-separated list of examples to build when ``BUILD_EXAMPLES`` is enabled
    * - ``-DMIAOW_BOOST_PROVIDER``
      - ``auto``
@@ -130,6 +136,8 @@ These are the top-level CMake options:
      - Optional explicit path to a valid local ``NOAA-OWP/iso_c_fortran_bmi`` checkout
 
 When ``MIAOW_ISO_C_FORTRAN_BMI_ROOT`` is empty, CMake looks for ``iso_c_fortran_bmi`` under ``MIAOW_DEFAULT_MODEL_BASE_DIR`` and fetches it into that location if missing.
+
+Enable the curated example set with ``-DBUILD_EXAMPLES=ON``. Override that set by also passing a semicolon-separated ``MIAOW_EXAMPLES`` value, for example ``-DMIAOW_EXAMPLES=00_hello``. A normal ``cmake --build build`` then builds every selected example; ``--target miaow_hello`` is only needed when narrowing the build to that target.
 
 Provider values are interpreted as follows:
 

@@ -187,69 +187,9 @@ set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
 )
 
 if(BUILD_TESTING)
-    # Confirm the runtime-critical realization plugin link targets this build
-    add_test(
-        NAME miaow_example_04_summa_plugin_symlink
-        COMMAND
-            ${CMAKE_COMMAND}
-            -DLINK_PATH=${summa_realization_plugin_link}
-            -DEXPECT_TARGET=${summa_bmi_library}
-            -P
-            ${MIAOW_ROOT}/cmake/check_symlink.cmake
-    )
-
-    # Describe the metadata and result files required from a successful run
-    set(summa_expected_job_record_snippets
-        "\"feature_id\""
-        "\"hydrofabric_layer\""
-        "\"hydrofabric_id_field\""
-        "\"cat-11223.json\""
-        "\"results/cat-11223.csv\""
-    )
-    list(JOIN summa_expected_job_record_snippets ";"
-        summa_job_record_snippets_arg)
-    set(summa_expected_result_paths
-        "cat-11223.json"
-        "cat-11224.json"
-        "cat-11371.json"
-        "cat-11410.json"
-        "cat-11509.json"
-        "results/cat-11223.csv"
-        "results/cat-11224.csv"
-        "results/cat-11371.csv"
-        "results/cat-11410.csv"
-        "results/cat-11509.csv"
-    )
-    list(JOIN summa_expected_result_paths ";"
-        summa_result_paths_arg)
-
-    # Run SUMMA once and validate its complete job-record layout
-    add_test(
-        NAME miaow_example_04_summa_job_record_layout
-        COMMAND
-            ${CMAKE_COMMAND}
-            -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
-            -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output/gauge_01073000
-            -DREQUIRE_SUCCESS=TRUE
-            "-DEXPECTED_METADATA_SNIPPETS=${summa_job_record_snippets_arg}"
-            "-DEXPECTED_RESULT_PATHS=${summa_result_paths_arg}"
-            -P
-            ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
-    )
-    set_tests_properties(miaow_example_04_summa_job_record_layout PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        RESOURCE_LOCK miaow_example_04_summa_output
-    )
-
-    # Confirm the example rejects a working directory with unresolved data paths
-    add_test(
-        NAME miaow_example_04_summa_wrong_cwd
-        COMMAND
-            $<TARGET_FILE:${EXECUTABLE_TARGET}>
-    )
-    set_tests_properties(miaow_example_04_summa_wrong_cwd PROPERTIES
-        WORKING_DIRECTORY "${MIAOW_ROOT}"
-        PASS_REGULAR_EXPRESSION "Run directory error: expected"
+    miaow_add_example_smoke_test(
+        TEST_NAME miaow_example_04_summa
+        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
+        EXTERNAL_MODEL
     )
 endif()

@@ -14,7 +14,7 @@
 
 Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
 
-MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its actor backend, relies on [Boost](https://www.boost.org/) for process management and JSON support, and includes C++/Fortran [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) integration paths.
+MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its actor backend, relies on [Boost](https://www.boost.org/) for process management, JSON support, and testing, and includes C++/Fortran [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) integration paths.
 
 ## Requirements
 
@@ -38,8 +38,8 @@ brew install cmake gcc
 Use the following commands to build MIAOW and run the `00_hello` example workflow:
 
 ```sh
-cmake -S . -B build
-cmake --build build --target miaow_hello
+cmake -S . -B build -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=00_hello
+cmake --build build
 cd examples/00_hello
 ./miaow_hello
 ```

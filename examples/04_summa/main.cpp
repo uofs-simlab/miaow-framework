@@ -41,16 +41,13 @@ int main(int argc, char* argv[]) {
     std::cout << "Parsed realization with " << tasks.size() << " feature task(s)\n";
     miaow::Runtime runtime(registry, runtime_options);
 
-    // Submit tasks and wait for results
+    // Submit a job containing the tasks and wait for results
     miaow::JobHandle job = runtime.submit_job(tasks);
     const miaow::JobRecord job_record = job.get();
 
-    // Print per-task status and message in completion order
-    miaow::print_task_results(job_record);
+    // Print task results and aggregate timing information
+    miaow::print_job_summary(job_record);
 
-    // Print timing diagnostics for this job run
-    miaow::print_diagnostics(job_record);
-
-    // Return 1 if any task failed, or 0 if all tasks succeeded
+    // Return 0 if all tasks succeeded, or 1 if any task failed
     return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
 }

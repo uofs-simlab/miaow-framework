@@ -5,8 +5,8 @@ on:
   pull_request:
 
 jobs:
-  ci:
-    name: CI
+  framework-tests:
+    name: Framework tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -18,14 +18,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Fortran and model dependencies
+      - name: Install Fortran compiler
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            gfortran \
-            libnetcdf-dev \
-            libnetcdff-dev \
-            libopenblas-dev
+          sudo apt-get install -y gfortran
 
       - name: Cache Conan
         uses: actions/cache@v4
@@ -54,7 +50,6 @@ jobs:
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_EXAMPLES=ON
           -DCMAKE_TOOLCHAIN_FILE=build/conan/conan_toolchain.cmake
           -DMIAOW_BOOST_PROVIDER=system
           -DMIAOW_CAF_PROVIDER=system
@@ -64,6 +59,68 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure --build-config Release
+
+  example-smoke-tests:
+    name: Example smoke tests
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Fortran compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran
+
+      - name: Cache Conan
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: ${{ runner.os }}-conan-${{ hashFiles('conanfile.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-conan-
+
+      - name: Install Conan
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "conan>=2,<3"
+
+      - name: Configure Conan Profile
+        run: conan profile detect --force
+
+      - name: Install Dependencies
+        run: >
+          conan install .
+          --output-folder=build-examples/conan
+          --build=missing
+          -s build_type=Release
+
+      - name: Configure
+        run: >
+          cmake -S . -B build-examples
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON
+          -DBUILD_EXAMPLES=ON
+          "-DMIAOW_EXAMPLES=00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;07_job_controller"
+          -DCMAKE_TOOLCHAIN_FILE=build-examples/conan/conan_toolchain.cmake
+          -DMIAOW_BOOST_PROVIDER=system
+          -DMIAOW_CAF_PROVIDER=system
+
+      - name: Build
+        run: cmake --build build-examples --parallel
+
+      - name: Test
+        run: >
+          ctest --test-dir build-examples
+          --label-regex example
+          --output-on-failure
+          --build-config Release
 
   library-installation:
     name: Library installation
@@ -113,7 +170,7 @@ jobs:
         run: >
           cmake -S . -B build-install
           -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_EXAMPLES=OFF
+          -DBUILD_TESTING=OFF
           -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/miaow-install"
           -DCMAKE_TOOLCHAIN_FILE="$MIAOW_CONAN_TOOLCHAIN"
           -DMIAOW_BOOST_PROVIDER=system

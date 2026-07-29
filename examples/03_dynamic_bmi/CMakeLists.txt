@@ -45,25 +45,9 @@ set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
 )
 
 if(BUILD_TESTING)
-    # Verify temporary startup, persistent startup, and persistent actor reuse
-    string(CONCAT dynamic_bmi_pass_regex
-        "\\[task_2\\] MIAOW subprocess: connected to actor(.|\\n)*"
-        "\\[task_3\\] MIAOW subprocess: connected to actor(.|\\n)*"
-        "\\[task_4\\] MIAOW subprocess: reusing actor(.|\\n)*"
-        "\\[task_4\\] succeeded: BMI workflow complete"
-    )
-
-    miaow_add_workflow_test(
+    miaow_add_example_smoke_test(
         TEST_NAME miaow_example_03_dynamic_bmi
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "${dynamic_bmi_pass_regex}"
-        CLI_ARGS
-            --max_workers
-            1
-            --task_request_timeout
-            60
-            --job_request_timeout
-            600
+        EXTERNAL_MODEL
     )
 endif()

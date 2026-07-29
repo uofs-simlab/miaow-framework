@@ -26,77 +26,8 @@ set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
 )
 
 if(BUILD_TESTING)
-    # Build a focused regression for preserving generated tasks after a job timeout
-    add_executable(miaow_job_controller_timeout_test
-        timeout_test.cpp
-    )
-    target_compile_features(miaow_job_controller_timeout_test PRIVATE cxx_std_20)
-    target_link_libraries(miaow_job_controller_timeout_test PRIVATE miaow)
-
-    add_test(
-        NAME miaow_job_controller_generated_task_timeout
-        COMMAND miaow_job_controller_timeout_test
-    )
-    set_tests_properties(miaow_job_controller_generated_task_timeout PROPERTIES
-        TIMEOUT 10
-    )
-
-    # Build a focused regression for propagating controller exceptions to JobHandle
-    add_executable(miaow_job_controller_exception_test
-        exception_test.cpp
-    )
-    target_compile_features(miaow_job_controller_exception_test PRIVATE cxx_std_20)
-    target_link_libraries(miaow_job_controller_exception_test PRIVATE miaow)
-
-    add_test(
-        NAME miaow_job_controller_exception
-        COMMAND miaow_job_controller_exception_test
-    )
-    set_tests_properties(miaow_job_controller_exception PROPERTIES
-        TIMEOUT 10
-    )
-
-    # Check deterministic task messages while allowing randomized sleep durations
-    string(CONCAT job_controller_pass_regex
-        "succeeded: hello from task 0.*finished tasks: 0(.|\\n)*"
-        "succeeded: hello from task 1.*finished tasks: 0(.|\\n)*"
-        "succeeded: hello from task 2.*finished tasks: 1(.|\\n)*"
-        "succeeded: hello from task 3.*finished tasks: 2(.|\\n)*"
-        "succeeded: hello from task 4.*finished tasks: 3"
-    )
-    add_test(
-        NAME miaow_example_07_job_controller
-        COMMAND
-            $<TARGET_FILE:${EXECUTABLE_TARGET}>
-    )
-    set_tests_properties(miaow_example_07_job_controller PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "${job_controller_pass_regex}"
-    )
-
-    # Check that the complete generated task collection is written to disk
-    set(job_controller_layout_cli_args
-        --output_root
-        "${CMAKE_CURRENT_LIST_DIR}/output"
-    )
-    list(JOIN job_controller_layout_cli_args ";"
-        job_controller_layout_cli_args_serialized)
-
-    add_test(
-        NAME miaow_example_07_job_controller_job_record_layout
-        COMMAND
-            ${CMAKE_COMMAND}
-            -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
-            -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
-            -DCHECK_SECOND_RUN=TRUE
-            -DREQUIRE_SUCCESS=TRUE
-            -DEXPECTED_TASK_COUNT=5
-            "-DEXECUTABLE_ARGS=${job_controller_layout_cli_args_serialized}"
-            -P
-            ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
-    )
-    set_tests_properties(miaow_example_07_job_controller_job_record_layout PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+    miaow_add_example_smoke_test(
+        TEST_NAME miaow_example_07_job_controller
+        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
     )
 endif()

@@ -38,58 +38,9 @@ target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
 )
 
 if(BUILD_TESTING)
-    # Run the workflow while locking its shared output directory
-    miaow_add_workflow_test(
+    miaow_add_example_smoke_test(
         TEST_NAME miaow_example_02_soil_freeze_thaw
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        RESOURCE_LOCK miaow_example_02_soil_freeze_thaw_output
-        CLI_ARGS
-            --output_root
-            "${CMAKE_CURRENT_LIST_DIR}/output"
-            --max_workers
-            2
-            --task_request_timeout
-            60
-            --job_request_timeout
-            600
-    )
-    # Run again with one worker and validate the expected result files
-    set(soil_freeze_thaw_layout_cli_args
-        --output_root
-        "${CMAKE_CURRENT_LIST_DIR}/output"
-        --max_workers
-        1
-        --task_request_timeout
-        60
-        --job_request_timeout
-        600
-    )
-    list(JOIN soil_freeze_thaw_layout_cli_args ";"
-        soil_freeze_thaw_layout_cli_args_serialized)
-    set(soil_freeze_thaw_expected_result_paths
-        "task_0.json"
-        "task_2.json"
-        "results/task_0.csv"
-        "results/task_2.csv"
-    )
-    list(JOIN soil_freeze_thaw_expected_result_paths ";"
-        soil_freeze_thaw_result_paths_arg)
-
-    add_test(
-        NAME miaow_example_02_soil_freeze_thaw_job_record_layout
-        COMMAND
-            ${CMAKE_COMMAND}
-            -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
-            -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
-            "-DEXECUTABLE_ARGS=${soil_freeze_thaw_layout_cli_args_serialized}"
-            "-DEXPECTED_RESULT_PATHS=${soil_freeze_thaw_result_paths_arg}"
-            -P
-            ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
-    )
-    set_tests_properties(miaow_example_02_soil_freeze_thaw_job_record_layout PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        RESOURCE_LOCK miaow_example_02_soil_freeze_thaw_output
+        EXTERNAL_MODEL
     )
 endif()
