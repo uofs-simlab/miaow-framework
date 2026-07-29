@@ -34,16 +34,14 @@ Additional examples
 SUMMA
 ^^^^^
 
-The ``examples/04_summa`` example builds a SUMMA BMI library from a SUMMA source tree and runs the packaged gauge realization by default. It is not part of the default example set. SUMMA requires `NetCDF <https://www.unidata.ucar.edu/software/netcdf/>`_ C/Fortran and BLAS/LAPACK support. Select it with ``MIAOW_EXAMPLES=04_summa``.
-
-Then run it from the example directory:
+The ``examples/04_summa`` example builds a SUMMA BMI library from a SUMMA source tree and runs the packaged gauge realization by default. It is not part of the default example set. SUMMA requires `NetCDF <https://www.unidata.ucar.edu/software/netcdf/>`_ C/Fortran and BLAS/LAPACK support. Select it with ``MIAOW_EXAMPLES=04_summa``, then run it from the example directory:
 
 .. code-block:: sh
 
    cd examples/04_summa
    ./miaow_summa --output_root ./output
 
-The following flags control the SUMMA build:
+The following example-specific flags control the SUMMA build:
 
 .. list-table::
    :header-rows: 1
@@ -62,9 +60,7 @@ The following flags control the SUMMA build:
 Trixi.jl
 ^^^^^^^^
 
-The ``examples/05_libtrixi_bmi`` example runs `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ configs through MIAOW's ``libtrixi`` dynamic BMI plugin path. It is not part of the default example set. Select it with ``MIAOW_EXAMPLES=05_libtrixi_bmi``.
-
-The following flags control the ``libtrixi`` paths:
+The ``examples/05_libtrixi_bmi`` example runs `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ configs through MIAOW's ``libtrixi`` dynamic BMI plugin path. It is not part of the default example set, so it should be selected using ``MIAOW_EXAMPLES=05_libtrixi_bmi``. The following example-specific flags control the ``libtrixi`` paths:
 
 .. list-table::
    :header-rows: 1

@@ -1,3 +1,9 @@
+/* Keep documentation tables within the available content width */
+table.docutils {
+    width: 100%;
+    table-layout: fixed;
+}
+
 /* Allow long code literals to wrap within documentation tables */
 table.docutils code.literal span.pre {
     white-space: normal;

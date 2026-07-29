@@ -7,7 +7,7 @@ import subprocess
 project = "MIAOW"
 author = "MIAOW contributors, University of Saskatchewan"
 html_show_sphinx = False
-html_show_copyright = True
+html_show_copyright = False
 html_baseurl = "https://tjbmontoya.com/miaow-framework/"
 html_copy_source = False
 
