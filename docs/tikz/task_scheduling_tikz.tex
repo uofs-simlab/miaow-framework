@@ -1,0 +1,137 @@
+\documentclass[tikz,border=3pt]{standalone}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{lmodern}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+
+% Match Beamer default text family
+\renewcommand{\familydefault}{\sfdefault}
+
+% Define project colours
+\definecolor{themecolor}{RGB}{74, 101, 125}
+\definecolor{mathcolor}{RGB}{50, 71, 91}
+
+% Keep diagrams visually consistent
+\tikzset{
+  diagramOutline/.style={
+    draw=themecolor,
+    line width=0.6pt,
+    rounded corners=2pt
+  },
+  diagramPrimary/.style={
+    diagramOutline,
+    fill=themecolor!10
+  },
+  diagramPrimaryStrong/.style={
+    diagramOutline,
+    fill=themecolor!16
+  }
+}
+
+% Match presentation text styling
+\let\defaulttexttt\texttt
+\newcommand{\flowtexttt}[1]{{\color{black}\defaulttexttt{#1}}}
+
+\begin{document}
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  scale=0.8,
+  transform shape,
+  job/.style={
+    diagramPrimary,
+    minimum width=9.60cm,
+    minimum height=3.84cm,
+    align=center,
+    font=\scriptsize
+  },
+  state/.style={
+    diagramOutline,
+    fill=themecolor!25,
+    minimum width=3.60cm,
+    minimum height=0.68cm,
+    align=center,
+    font=\tiny
+  },
+  worker/.style={
+    diagramPrimaryStrong,
+    minimum width=2.48cm,
+    minimum height=0.46cm,
+    align=center,
+    font=\fontsize{6}{7}\selectfont
+  },
+  edge/.style={
+    -Latex,
+    draw=themecolor,
+    line width=0.6pt
+  }
+]
+% Draw the job actor and its owned scheduling data
+\node[job] (job) at (-2.44,2.13) {};
+\node[font=\footnotesize] at (-2.44,3.58) {\flowtexttt{job\_actor}};
+\draw[diagramOutline, fill=white] (-2.08,0.62) rectangle (2.08,1.78);
+\node[
+  anchor=south west,
+  font=\scriptsize\bfseries\color{mathcolor}
+] at (-2.03,0.61) {Task queue};
+\foreach \x in {-1.56,-0.52,0.52,1.56} {
+  \node[inner sep=0pt] at (\x,1.33)
+  {\includegraphics[width=0.78cm]{../images/miaow_light_orange_cat.pdf}};
+}
+\node[state] (controller) at (-5.20,2.62)
+{\flowtexttt{\scriptsize job\_controller\_}};
+\node[state] (completed_records) at (-5.20,0.96)
+{\flowtexttt{\scriptsize completed\_task\_records\_}};
+
+% Route completed task records back into the controller
+\draw[edge] (completed_records.north) -- (controller.south);
+
+% Route controller-generated tasks back into the queue
+\draw[edge, rounded corners=4pt]
+(controller.east)
+-- node[midway, inner sep=1.5pt, fill=themecolor!10] {
+  \includegraphics[width=0.78cm]{../images/miaow_light_orange_cat.pdf}
+} (0,2.62) -- (0,1.78);
+
+\draw[edge] (-0.80,0.62) -- (-1.45,-0.45);
+\draw[edge] (0.80,0.62) -- (1.58,-0.45);
+
+\draw[diagramOutline] (-2.85,-3.75) rectangle (-0.05,-0.45);
+\node[
+  anchor=base west,
+  font=\scriptsize\bfseries\color{mathcolor}
+] at (-2.80,-3.57) {Busy workers};
+\node[inner sep=0pt] at (-1.45,-0.77)
+{\includegraphics[width=0.78cm]{../images/miaow_light_orange_cat.pdf}};
+\node[worker] (busy1) at (-1.45,-1.39)
+{\flowtexttt{simulation\_unit\_actor}};
+\node[inner sep=0pt] at (-1.45,-2.22)
+{\includegraphics[width=0.78cm]{../images/miaow_light_orange_cat.pdf}};
+\node[worker] (busy2) at (-1.45,-2.84)
+{\flowtexttt{simulation\_unit\_actor}};
+\node[worker, fill=themecolor!25, minimum width=1.35cm] (result1) at (-4.15,-1.39)
+{\flowtexttt{TaskResult}};
+\node[worker, fill=themecolor!25, minimum width=1.35cm] (result2) at (-4.15,-2.84)
+{\flowtexttt{TaskResult}};
+\draw[edge] (busy1.west) -- (result1.east);
+\draw[edge] (busy2.west) -- (result2.east);
+
+% Collect task results in the job actor
+\draw[edge, rounded corners=4pt]
+(result2.west) -- (-5.20,-2.84) -- (-5.20,0.62);
+\draw[edge, -] (result1.west) -- (-5.20,-1.39);
+
+\draw[diagramOutline] (0.18,-3.75) rectangle (2.98,-0.45);
+\node[
+  anchor=base west,
+  font=\scriptsize\bfseries\color{mathcolor}
+] at (0.23,-3.57) {Idle workers};
+\node[worker] (available1) at (1.58,-0.98)
+{\flowtexttt{simulation\_unit\_actor}};
+\node[worker] (available2) at (1.58,-1.86)
+{\flowtexttt{simulation\_unit\_actor}};
+\node[worker] (available3) at (1.58,-2.74)
+{\flowtexttt{simulation\_unit\_actor}};
+\end{tikzpicture}
+\end{document}
