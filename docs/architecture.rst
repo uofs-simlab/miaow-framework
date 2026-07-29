@@ -27,7 +27,7 @@ The following figure illustrates the task scheduling process managed by the ``jo
 .. image:: images/task_scheduling_tikz.png
    :alt: MIAOW task scheduling queue and worker dispatch
    :align: center
-   :width: 90%
+   :width: 67%
 
 When the controller generates new tasks, the job actor counts entries in its task vector that do not yet have a corresponding completed task record and adds workers only if this count exceeds the existing worker count. Workers are not removed while the job is running, so the job retains the largest worker count that has been required at any point so far, capped by ``RuntimeOptions::max_workers_``, until the job completes or shuts down. Idle ``simulation_unit_actor`` workers do not occupy CAF scheduler threads, so retaining them does not reduce scheduler capacity. Persistent subprocesses remain alive and retain their process resources while their workers are idle, but MIAOW does not reserve dedicated CPU cores for them.
 
