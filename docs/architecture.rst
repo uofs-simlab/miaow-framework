@@ -40,7 +40,7 @@ Task execution modes
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 35 35
+   :widths: 40 30 30
 
    * - Execution mode
      - Use when
