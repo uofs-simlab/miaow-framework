@@ -43,6 +43,22 @@ Run a single test by name:
 
    ctest --test-dir build -R <test_name> --output-on-failure
 
+.. _building-examples:
+
+Building examples
+-----------------
+
+Examples are disabled by default. Enable the default example set from the repository root:
+
+.. code-block:: sh
+
+   cmake -S . -B build -DBUILD_EXAMPLES=ON
+   cmake --build build
+
+Override the default example set with a semicolon-separated ``MIAOW_EXAMPLES`` value, for example ``-DMIAOW_EXAMPLES=00_hello``. A normal ``cmake --build build`` builds every selected example; use ``--target miaow_hello`` only to narrow the build to that target.
+
+Each model-backed example accepts a ``MIAOW_<MODEL_NAME>_MODEL_ROOT`` override. When the override is empty, CMake resolves the source beneath ``MIAOW_DEFAULT_MODEL_BASE_DIR``. If the resolved directory is missing and the example declares a Git repository and revision, CMake fetches the model into that directory. See :doc:`examples` for model-specific dependencies and options.
+
 Library installation build
 --------------------------
 
@@ -95,7 +111,7 @@ The MIAOW package locates the required CAF and Boost components when ``find_pack
 Build options
 -------------
 
-These are the top-level CMake options:
+The following top-level CMake options are available:
 
 .. list-table::
    :header-rows: 1
@@ -136,8 +152,6 @@ These are the top-level CMake options:
      - Optional explicit path to a valid local ``NOAA-OWP/iso_c_fortran_bmi`` checkout
 
 When ``MIAOW_ISO_C_FORTRAN_BMI_ROOT`` is empty, CMake looks for ``iso_c_fortran_bmi`` under ``MIAOW_DEFAULT_MODEL_BASE_DIR`` and fetches it into that location if missing.
-
-Enable the curated example set with ``-DBUILD_EXAMPLES=ON``. Override that set by also passing a semicolon-separated ``MIAOW_EXAMPLES`` value, for example ``-DMIAOW_EXAMPLES=00_hello``. A normal ``cmake --build build`` then builds every selected example; ``--target miaow_hello`` is only needed when narrowing the build to that target.
 
 Provider values are interpreted as follows:
 

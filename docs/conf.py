@@ -5,9 +5,9 @@ import shutil
 import subprocess
 
 project = "MIAOW"
-author = "MIAOW developers"
+author = "MIAOW contributors, University of Saskatchewan"
 html_show_sphinx = False
-html_show_copyright = False
+html_show_copyright = True
 html_baseurl = "https://tjbmontoya.com/miaow-framework/"
 html_copy_source = False
 
@@ -49,6 +49,7 @@ breathe_default_members = ("members",)
 
 html_title = "MIAOW documentation"
 html_logo = "images/miaow_logo.svg"
+html_static_path = ["static"]
 html_theme_options = {
     "font_size": "14px",
 }
