@@ -17,7 +17,7 @@ A typical workflow includes the following steps:
 2. Runtime assigns a ``job_id`` and sends the tasks and job controller to ``orchestrator_actor``.
 3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector and creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_workers_``.
 4. The ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
-5. Each worker resolves ``Task::simulation_unit_id_``. For an in-process task, the worker constructs a fresh ``SimulationUnit`` instance; for a subprocess task, it uses worker-owned subprocess state. In either case, the worker calls ``SimulationUnit::execute(...)`` and returns a ``TaskResult`` to the job actor.
+5. Each worker resolves ``Task::simulation_unit_id_``, executes the task using the registered ``SimulationUnit``, and returns a ``TaskResult`` to the job actor.
 6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``, passes all completed task records to its controller, appends tasks returned by the controller's ``generate_new_tasks()`` method to its task vector, adds workers if needed, and returns to step 4. This continues until no tasks are waiting or running.
 7. Completed ``TaskRecord`` values are sorted by ``TaskId`` and stored in one ``JobRecord``.
 8. Runtime fulfils the caller's ``JobHandle`` future.
@@ -31,10 +31,31 @@ The following figure illustrates the task scheduling process managed by the ``jo
 
 When the controller generates new tasks, the job actor counts entries in its task vector that do not yet have a corresponding completed task record and adds workers only if this count exceeds the existing worker count. Workers are not removed while the job is running, so the job retains the largest worker count that has been required at any point so far, capped by ``RuntimeOptions::max_workers_``, until the job completes or shuts down. Idle ``simulation_unit_actor`` workers do not occupy CAF scheduler threads, so retaining them does not reduce scheduler capacity. Persistent subprocesses remain alive and retain their process resources while their workers are idle, but MIAOW does not reserve dedicated CPU cores for them.
 
-.. _subprocess-execution:
+.. _task-execution-modes:
 
-Subprocess execution
+Task execution modes
 --------------------
+
+``Task::execution_mode_`` determines whether a worker executes a task in the parent process or delegates it to an isolated subprocess. The following table describes the available modes:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Execution mode
+     - Use when
+     - Behaviour
+   * - ``ExecutionMode::in_process``
+     - The simulation unit can run safely in the parent process and does not require process isolation
+     - This is the default mode; the worker constructs a fresh ``SimulationUnit`` instance for each task
+   * - ``ExecutionMode::single_task_subprocess``
+     - Each task requires a fresh process, for example, because the simulation unit uses persistent global state
+     - The subprocess stops after one task result, whether the task succeeds or fails; the next task receives a fresh process
+   * - ``ExecutionMode::persistent_subprocess``
+     - Tasks benefit from process reuse while remaining isolated from the parent process
+     - One subprocess is reused per job worker after successful tasks with the same resolved subprocess path; each task receives a fresh ``SimulationUnit`` instance
+
+``Task::subprocess_path_`` selects a non-default subprocess executable for either subprocess mode.
 
 The ``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` execution modes isolate model execution from the parent process. When using these modes, the parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defers the actual model execution to a subprocess with its own actor system. In ``single_task_subprocess`` mode, the subprocess is stopped after each task, whereas ``persistent_subprocess`` mode reuses one subprocess per job worker for tasks with the same resolved subprocess path. When a subprocess task fails, including when its remote request exceeds ``RuntimeOptions::task_request_timeout_``, MIAOW preserves the subprocess logs and terminates the process; the worker launches a fresh subprocess for its next task.
 

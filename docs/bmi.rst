@@ -81,29 +81,16 @@ Use this path when a `NextGen <https://noaa-owp.github.io/ngen/>`_-style realiza
 
 ``PartitionedBmiRealization`` resolves the plugin, initialization, forcing, feature, and output-root values. ``make_bmi_tasks(...)`` builds the dynamic task vector all at once.
 
-Choose where dynamic tasks run
-------------------------------
+Configuring dynamic task execution
+----------------------------------
 
-Static BMI tasks always execute in the parent process. Dynamic BMI tasks can execute in the parent process or in an isolated subprocess, the latter being useful for models that are not thread safe. To choose the execution mode, set ``DynamicBmiConfig::execution_mode_`` when creating a single dynamic task with ``make_bmi_task(...)`` or multiple dynamic tasks from a configuration vector with ``make_bmi_tasks(...)``. Each configuration in a vector controls the execution mode of its corresponding task, so tasks in the same vector can use different modes. When :ref:`creating tasks from a realization <realization-driven-task-creation>`, pass one execution mode to ``make_bmi_tasks(...)``; the selected mode applies to every generated task.  The following table describes the features of each execution mode:
+``StaticBmiConfig`` has no execution-mode setting; the ``make_bmi_task(...)`` and ``make_bmi_tasks(...)`` functions create static BMI tasks with ``ExecutionMode::in_process``, and ``StaticBmiSimulationUnit`` does not support subprocess execution. The dynamic task builders assign execution modes as follows:
 
-.. list-table::
-   :header-rows: 1
-   :widths: 30 35 35
+- ``make_bmi_task(simulation_unit_id, config)`` copies ``DynamicBmiConfig::execution_mode_`` to the resulting ``Task``. The field defaults to ``ExecutionMode::in_process``.
+- ``make_bmi_tasks(simulation_unit_id, configs)`` builds one task per ``DynamicBmiConfig`` and preserves each configuration's execution mode. Tasks in the same vector can therefore use different modes.
+- ``make_bmi_tasks(simulation_unit_id, realization, execution_mode)`` applies the supplied mode to every task generated from the realization. The argument defaults to ``ExecutionMode::in_process``.
 
-   * - Execution mode
-     - Use when
-     - Behaviour to know
-   * - ``ExecutionMode::in_process``
-     - The plugin can run safely in the parent process (i.e., it is thread safe) and you want to avoid the overhead of subprocesses.
-     - This is the default task execution mode.
-   * - ``ExecutionMode::single_task_subprocess``
-     - Each task needs a fresh process, for example, due to persistent global state in the plugin.
-     - The subprocess stops after one task result, whether the task succeeds or fails, and the next task gets a fresh process and BMI lifecycle.
-   * - ``ExecutionMode::persistent_subprocess``
-     - Tasks benefit from process reuse while keeping parent-process isolation
-     - One process is reused per job worker if the task succeeds; each task still gets a fresh BMI lifecycle.
-
-Subprocess modes are available for dynamic BMI tasks. ``DynamicBmiConfig::subprocess_path_`` selects a non-default subprocess executable. See :ref:`subprocess-execution` for process ownership, reuse, lifetime, and concurrency behaviour.
+Subprocess modes are available for dynamic BMI tasks. ``DynamicBmiConfig::subprocess_path_`` is copied to the corresponding ``Task`` and selects a non-default subprocess executable. See :ref:`task-execution-modes` for execution-mode selection and runtime behaviour.
 
 Reading forcing data
 --------------------
@@ -132,5 +119,3 @@ When ``RuntimeOptions::output_root_`` or CLI ``--output_root`` is set, MIAOW wri
                `-- <feature_id or task_<task_id>>.csv
 
 Persisted run directories start at ``run_0`` and advance to the largest existing run ID plus one. MIAOW writes the resolved BMI config in the job directory and one CSV file per task under ``results/``. A non-empty ``metadata_["feature_id"]`` becomes the output file stem; otherwise MIAOW uses ``task_<task_id>``. Output stems must be unique within one job and cannot contain path separators.
-
-Subprocess execution also produces ``subprocess_*_stdout.log`` and ``subprocess_*_stderr.log`` diagnostics. MIAOW removes these logs after successful single-task execution or orderly persistent-worker shutdown, and retains them when setup, launch, actor exchange, shutdown, or task execution fails.

@@ -19,7 +19,7 @@ Identifiers and task status
 
 .. doxygenenum:: miaow::ExecutionMode
 
-See :ref:`subprocess-execution` for subprocess ownership, reuse, and lifetime behaviour.
+See :ref:`task-execution-modes` for subprocess ownership, reuse, and lifetime behaviour.
 
 .. doxygenfunction:: miaow::task_status_to_string
 
