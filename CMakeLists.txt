@@ -13,7 +13,7 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-# Build the repository test suite only for a top-level development build
+# Add framework tests to top-level development builds
 set(miaow_build_tests OFF)
 if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
     set(miaow_build_tests ON)
@@ -194,7 +194,7 @@ if(NOT TARGET iso_c_bmi)
         "NOAA-OWP/iso_c_fortran_bmi did not provide the expected iso_c_bmi target")
 endif()
 
-# Keep the bridge target while excluding its standalone installation metadata
+# Exclude the bridge subproject's package metadata from MIAOW installation
 get_target_property(miaow_iso_c_bmi_source_dir iso_c_bmi SOURCE_DIR)
 set_property(DIRECTORY "${miaow_iso_c_bmi_source_dir}"
     PROPERTY EXCLUDE_FROM_ALL TRUE)
@@ -351,34 +351,18 @@ if(miaow_build_tests)
     add_subdirectory(tests)
 endif()
 
-# Expose example selection only for a top-level repository build
-set(miaow_build_examples OFF)
+# Add examples selected by the repository build
 if(PROJECT_IS_TOP_LEVEL)
     option(BUILD_EXAMPLES "Build example programs" OFF)
     set(MIAOW_EXAMPLES
         "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;07_job_controller"
         CACHE STRING "Semicolon-separated list of examples to build"
     )
-    set(miaow_known_examples
-        00_hello
-        01_heat
-        02_soil_freeze_thaw
-        03_dynamic_bmi
-        04_summa
-        05_libtrixi_bmi
-        07_job_controller
-    )
-    set_property(CACHE MIAOW_EXAMPLES PROPERTY STRINGS ${miaow_known_examples})
-    set(miaow_build_examples "${BUILD_EXAMPLES}")
-endif()
 
-if(miaow_build_examples)
-    foreach(miaow_example IN LISTS MIAOW_EXAMPLES)
-        if(NOT miaow_example IN_LIST miaow_known_examples)
-            message(FATAL_ERROR
-                "Unknown MIAOW example '${miaow_example}'. Known examples: "
-                "${miaow_known_examples}")
-        endif()
-        add_subdirectory("examples/${miaow_example}")
-    endforeach()
+    if(BUILD_EXAMPLES)
+        include(cmake/miaow_example.cmake)
+        foreach(miaow_example IN LISTS MIAOW_EXAMPLES)
+            add_subdirectory("examples/${miaow_example}")
+        endforeach()
+    endif()
 endif()

@@ -1,14 +1,3 @@
-cmake_minimum_required(VERSION 3.21)
-
-# If using a standalone build for this example, enable the required languages
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    project(miaow_libtrixi_bmi_example LANGUAGES CXX)
-endif()
-
-# Load MIAOW and choose the executable name for this example
-include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_setup_example.cmake")
-miaow_setup_example(libtrixi_bmi)
-
 # Allow a local checkout to override the default third_party source
 set(MIAOW_LIBTRIXI_BMI_ROOT "" CACHE PATH
     "Path to a local tristanmontoya/libtrixi-bmi source tree")
@@ -67,28 +56,28 @@ add_subdirectory(
 )
 
 # Build the driver and embed the plugin and Julia environment paths
-add_executable(${EXECUTABLE_TARGET}
+add_executable(miaow_libtrixi_bmi
     main.cpp
 )
-target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_20)
-target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
-target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
+target_compile_features(miaow_libtrixi_bmi PRIVATE cxx_std_20)
+target_link_libraries(miaow_libtrixi_bmi PRIVATE miaow)
+target_compile_definitions(miaow_libtrixi_bmi PRIVATE
     MIAOW_LIBTRIXI_BMI_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
     LIBTRIXI_BMI_PLUGIN_PATH="$<TARGET_FILE:libtrixi_bmi::trixi_bmi>"
     LIBTRIXI_PROJECT_DIR="${LIBTRIXI_PROJECT_DIR}"
     LIBTRIXI_DEPOT_PATH="${LIBTRIXI_DEPOT_PATH}"
 )
-add_dependencies(${EXECUTABLE_TARGET} miaow_subprocess libtrixi_bmi_plugin)
+add_dependencies(miaow_libtrixi_bmi miaow_subprocess libtrixi_bmi_plugin)
 
 # Place the binary in the example directory for source-relative execution
-set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
+set_target_properties(miaow_libtrixi_bmi PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
 
 if(BUILD_TESTING)
     miaow_add_example_smoke_test(
         TEST_NAME miaow_example_05_libtrixi_bmi
-        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
+        EXECUTABLE_TARGET miaow_libtrixi_bmi
         EXTERNAL_MODEL
     )
 endif()

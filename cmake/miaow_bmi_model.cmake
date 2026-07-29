@@ -93,7 +93,10 @@ function(miaow_add_bmi_model)
     endforeach()
 
     if(MIAOW_USE_MIAOW_BMI_INCLUDE)
-        list(APPEND model_include_dirs "${MIAOW_ROOT}/include/third_party/bmi")
+        get_filename_component(miaow_source_dir
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." ABSOLUTE)
+        list(APPEND model_include_dirs
+            "${miaow_source_dir}/include/third_party/bmi")
     endif()
 
     # Build the model library before linking it into the example driver

@@ -1,43 +1,5 @@
 include(CMakeParseArguments)
 
-# miaow_setup_example(<name>)
-#
-# Boilerplate shared by every example CMakeLists.txt after its optional
-# standalone project declaration. After this call the caller can rely on:
-#   - MIAOW_ROOT      cache PATH pointing at the miaow source tree
-#   - EXECUTABLE_TARGET cache STRING set to "miaow_<name>"
-#   - the `miaow` target being available
-macro(miaow_setup_example example_name)
-    # Resolve the framework root relative to this helper unless supplied
-    if(NOT DEFINED MIAOW_ROOT)
-        get_filename_component(_miaow_root_default
-            "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
-        set(MIAOW_ROOT "${_miaow_root_default}" CACHE PATH
-            "Path to the miaow-framework source root")
-        unset(_miaow_root_default)
-    endif()
-
-    # Use the framework third_party directory for model sources by default
-    if(NOT DEFINED MIAOW_DEFAULT_MODEL_BASE_DIR)
-        set(MIAOW_DEFAULT_MODEL_BASE_DIR "${MIAOW_ROOT}/third_party" CACHE PATH
-            "Default base directory containing external model source trees")
-    endif()
-
-    # Enable CTest and configurable target naming only in standalone builds
-    if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-        include(CTest)
-        set(EXECUTABLE_TARGET "miaow_${example_name}" CACHE STRING
-            "Executable target name for this example")
-    else()
-        set(EXECUTABLE_TARGET "miaow_${example_name}")
-    endif()
-
-    # Add the framework without recursively adding its top-level examples
-    if(NOT TARGET miaow)
-        add_subdirectory("${MIAOW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/miaow-build")
-    endif()
-endmacro()
-
 # miaow_resolve_model_root(<out-var> [MODEL_ROOT <dir>]
 #     [MODEL_LOCAL_SUBDIR <dir>] [MODEL_LABEL <label>])
 #
@@ -86,7 +48,7 @@ function(miaow_add_example_smoke_test)
     cmake_parse_arguments(MIAOW_TEST
         "${options}" "${one_value_args}" "" ${ARGN})
 
-    # Run the built example without workflow-specific assertions
+    # Register the executable as a successful-run smoke test
     add_test(
         NAME ${MIAOW_TEST_TEST_NAME}
         COMMAND $<TARGET_FILE:${MIAOW_TEST_EXECUTABLE_TARGET}>

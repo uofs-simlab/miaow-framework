@@ -1,14 +1,3 @@
-cmake_minimum_required(VERSION 3.21)
-
-# If using a standalone build for this example, enable the required languages
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    project(miaow_summa_example LANGUAGES CXX Fortran)
-endif()
-
-# Load MIAOW and choose the executable name for this example
-include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/miaow_setup_example.cmake")
-miaow_setup_example(summa)
-
 # ExternalProject keeps SUMMA in its own configure and build process
 include(ExternalProject)
 
@@ -170,26 +159,26 @@ add_custom_target(miaow_summa_plugin_link
 )
 
 # Build the driver after the realization plugin link is ready
-add_executable(${EXECUTABLE_TARGET}
+add_executable(miaow_summa
     main.cpp
 )
 
-target_compile_features(${EXECUTABLE_TARGET} PRIVATE cxx_std_20)
-target_link_libraries(${EXECUTABLE_TARGET} PRIVATE miaow)
-target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
+target_compile_features(miaow_summa PRIVATE cxx_std_20)
+target_link_libraries(miaow_summa PRIVATE miaow)
+target_compile_definitions(miaow_summa PRIVATE
     MIAOW_SUMMA_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
 )
-add_dependencies(${EXECUTABLE_TARGET} miaow_summa_plugin_link)
+add_dependencies(miaow_summa miaow_summa_plugin_link)
 
 # Place the binary in the example directory for source-relative execution
-set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
+set_target_properties(miaow_summa PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
 )
 
 if(BUILD_TESTING)
     miaow_add_example_smoke_test(
         TEST_NAME miaow_example_04_summa
-        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
+        EXECUTABLE_TARGET miaow_summa
         EXTERNAL_MODEL
     )
 endif()
