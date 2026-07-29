@@ -23,18 +23,17 @@ macro(miaow_setup_example example_name)
             "Default base directory containing external model source trees")
     endif()
 
-    # Keep the executable name configurable only in standalone builds
+    # Enable CTest and configurable target naming only in standalone builds
     if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+        include(CTest)
         set(EXECUTABLE_TARGET "miaow_${example_name}" CACHE STRING
             "Executable target name for this example")
     else()
         set(EXECUTABLE_TARGET "miaow_${example_name}")
     endif()
 
-    # Force BUILD_EXAMPLES off in the nested miaow build so it does not
-    # recursively re-add this same example directory.
+    # Add the framework without recursively adding its top-level examples
     if(NOT TARGET miaow)
-        set(BUILD_EXAMPLES OFF CACHE BOOL "Build example programs" FORCE)
         add_subdirectory("${MIAOW_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/miaow-build")
     endif()
 endmacro()
@@ -74,46 +73,34 @@ function(miaow_resolve_model_root out_var)
     set(${out_var} "${resolved_model_root}" PARENT_SCOPE)
 endfunction()
 
-# miaow_add_workflow_test(TEST_NAME <name> EXECUTABLE_TARGET <target>
-#     [WORKING_DIRECTORY <dir>] [PASS_REGULAR_EXPRESSION <regex>]
-#     [RESOURCE_LOCK <lock>] [CLI_ARGS <arg>...])
+# miaow_add_example_smoke_test(TEST_NAME <name> EXECUTABLE_TARGET <target>
+#     [EXTERNAL_MODEL])
 #
-# Register an example executable as a CTest workflow
-function(miaow_add_workflow_test)
-    set(options)
+# Register one successful-run check for an illustrative example workflow
+function(miaow_add_example_smoke_test)
+    set(options EXTERNAL_MODEL)
     set(one_value_args
         TEST_NAME
         EXECUTABLE_TARGET
-        WORKING_DIRECTORY
-        PASS_REGULAR_EXPRESSION
-        RESOURCE_LOCK
     )
-    set(multi_value_args CLI_ARGS)
     cmake_parse_arguments(MIAOW_TEST
-        "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
+        "${options}" "${one_value_args}" "" ${ARGN})
 
-    # Forward CLI arguments directly to the built example
+    # Run the built example without workflow-specific assertions
     add_test(
         NAME ${MIAOW_TEST_TEST_NAME}
-        COMMAND
-            $<TARGET_FILE:${MIAOW_TEST_EXECUTABLE_TARGET}>
-            ${MIAOW_TEST_CLI_ARGS}
+        COMMAND $<TARGET_FILE:${MIAOW_TEST_EXECUTABLE_TARGET}>
     )
 
-    # Collect only the optional CTest properties supplied by the caller
-    set(test_properties)
-    if(MIAOW_TEST_WORKING_DIRECTORY)
-        list(APPEND test_properties
-            WORKING_DIRECTORY "${MIAOW_TEST_WORKING_DIRECTORY}")
+    # Label every example and identify workflows backed by external models
+    set(test_labels example)
+    if(MIAOW_TEST_EXTERNAL_MODEL)
+        list(APPEND test_labels external_model)
     endif()
-    if(MIAOW_TEST_PASS_REGULAR_EXPRESSION)
-        list(APPEND test_properties
-            PASS_REGULAR_EXPRESSION "${MIAOW_TEST_PASS_REGULAR_EXPRESSION}")
-    endif()
-    if(MIAOW_TEST_RESOURCE_LOCK)
-        list(APPEND test_properties RESOURCE_LOCK "${MIAOW_TEST_RESOURCE_LOCK}")
-    endif()
-    if(test_properties)
-        set_tests_properties(${MIAOW_TEST_TEST_NAME} PROPERTIES ${test_properties})
-    endif()
+
+    set_tests_properties(${MIAOW_TEST_TEST_NAME} PROPERTIES
+        LABELS "${test_labels}"
+        TIMEOUT 360
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
 endfunction()

@@ -1,7 +1,12 @@
 Examples
 ========
 
-Run built examples from their own ``examples/<example_name>`` directories:
+Examples are opt-in. Configure the curated set, build it, and run examples from their own ``examples/<example_name>`` directories:
+
+.. code-block:: sh
+
+   cmake -S . -B build -DBUILD_EXAMPLES=ON
+   cmake --build build
 
 .. code-block:: sh
 
@@ -21,11 +26,11 @@ Included examples
 
 - ``examples/00_hello``: minimal orchestration and diagnostics output
 - ``examples/01_heat``: BMI integration using the `CSDMS heat example <https://github.com/csdms/bmi-example-cxx>`_
-- ``examples/02_soil_freeze_thaw``: many-task `SoilFreezeThaw <https://github.com/NOAA-OWP/SoilFreezeThaw>`_ workflow with per-task forcing, including matched, short, and long forcing cases
-- ``examples/03_dynamic_bmi``: dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
+- ``examples/02_soil_freeze_thaw``: static `SoilFreezeThaw <https://github.com/NOAA-OWP/SoilFreezeThaw>`_ BMI integration with aligned per-task forcing
+- ``examples/03_dynamic_bmi``: in-process dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
 - ``examples/04_summa``: optional `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline execution and one MIAOW task per staged catchment feature described by a NextGen-style realization
-- ``examples/05_libtrixi_bmi``: optional `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin
-- ``examples/07_job_controller``: two initial hello tasks with randomized durations; each completion generates one replacement until the five-task budget is reached
+- ``examples/05_libtrixi_bmi``: optional `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin in a single-task subprocess
+- ``examples/07_job_controller``: one initial hello task whose completion generates two additional tasks
 
 SUMMA example
 -------------
@@ -35,6 +40,7 @@ The ``examples/04_summa`` example builds a SUMMA BMI library from a SUMMA source
 .. code-block:: sh
 
    cmake -S . -B build \
+     -DBUILD_EXAMPLES=ON \
      -DMIAOW_EXAMPLES=04_summa
    cmake --build build --target miaow_summa
 
@@ -69,6 +75,7 @@ The ``examples/05_libtrixi_bmi`` example runs `Trixi.jl <https://github.com/trix
 .. code-block:: sh
 
    cmake -S . -B build \
+     -DBUILD_EXAMPLES=ON \
      -DMIAOW_EXAMPLES=05_libtrixi_bmi
    cmake --build build --target miaow_libtrixi_bmi
 
@@ -116,7 +123,7 @@ These flags are relevant when configuring from an example directory or another p
      - example default
      - Override executable target name
 
-The helpers ``cmake/miaow_bmi_model.cmake`` and ``cmake/miaow_setup_example.cmake`` provide ``miaow_add_bmi_model(...)`` and ``miaow_add_workflow_test(...)``, respectively, for model integration and workflow tests. Model examples keep their MIAOW-specific source and input files under ``examples/<example_name>/``.
+The helpers ``cmake/miaow_bmi_model.cmake`` and ``cmake/miaow_setup_example.cmake`` provide ``miaow_add_bmi_model(...)`` for model integration and ``miaow_add_example_smoke_test(...)`` for one successful-run check per example. Model examples keep their MIAOW-specific source and input files under ``examples/<example_name>/``.
 
 External BMI model source is resolved separately: each model-backed example uses its corresponding ``MIAOW_*_MODEL_ROOT`` override when set, otherwise it resolves to ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/<model-subdir>``. If a required source directory is missing and the example declares a Git repository and tag, CMake fetches the model from GitHub into the resolved location under ``MIAOW_DEFAULT_MODEL_BASE_DIR``.
 

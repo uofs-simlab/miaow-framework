@@ -1,8 +1,5 @@
 /**
- * A simple "Hello World" example demonstrating the basic structure of a simulation unit
- * and runtime. This example defines a HelloSimulationUnit that echoes string task inputs
- * and uses the Runtime API to execute two async jobs, each with two tasks, that simply
- * pass string messages through the simulation unit and print the results and diagnostics.
+ * A minimal simulation unit and runtime workflow.
  */
 
 #include <exception>
@@ -50,39 +47,22 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Register simulation units and build runtime routing from the registry
+    // Register the simulation unit and construct the runtime
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId hello = registry.add<HelloSimulationUnit>();
     miaow::Runtime runtime(registry, runtime_options);
 
-    // Create two jobs with two tasks each
-    std::vector<miaow::Task> first_job_tasks{
+    // Submit one job containing two independent messages
+    const std::vector<miaow::Task> tasks{
         miaow::Task{hello, "hello"},
-        miaow::Task{hello, "cats"},
-    };
-    std::vector<miaow::Task> second_job_tasks{
         miaow::Task{hello, "hello again"},
-        miaow::Task{hello, "more cats"},
     };
+    miaow::JobHandle job = runtime.submit_job(tasks);
+    const miaow::JobRecord job_record = job.get();
 
-    // Submit tasks as two separate jobs and wait for results
-    miaow::JobHandle first_job = runtime.submit_job(first_job_tasks);
-    miaow::JobHandle second_job = runtime.submit_job(second_job_tasks);
-    const miaow::JobRecord first_job_record = first_job.get();
-    const miaow::JobRecord second_job_record = second_job.get();
+    // Print task results and aggregate timing information
+    miaow::print_job_summary(job_record);
 
-    // Print per-task status and message in completion order
-    miaow::print_task_results(first_job_record);
-    miaow::print_task_results(second_job_record);
-
-    // Print timing diagnostics for each job run
-    miaow::print_diagnostics(first_job_record);
-    miaow::print_diagnostics(second_job_record);
-
-    // Return 1 if any task failed, or 0 if all tasks succeeded
-    const bool all_jobs_succeeded =
-        miaow::all_tasks_succeeded(first_job_record) &&
-        miaow::all_tasks_succeeded(second_job_record);
-
-    return all_jobs_succeeded ? 0 : 1;
+    // Return 0 if all tasks succeeded, or 1 if any task failed
+    return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
 }

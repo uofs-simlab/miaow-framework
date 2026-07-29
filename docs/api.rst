@@ -109,9 +109,7 @@ Realization workflows
 I/O and CLI helpers
 -------------------
 
-.. doxygenfunction:: miaow::print_diagnostics
-
-.. doxygenfunction:: miaow::print_task_results
+.. doxygenfunction:: miaow::print_job_summary
 
 .. doxygenfunction:: miaow::all_tasks_succeeded
 

@@ -37,23 +37,9 @@ target_compile_definitions(${EXECUTABLE_TARGET} PRIVATE
 )
 
 if(BUILD_TESTING)
-    # Run both heat configurations and require both BMI workflows to succeed
-    string(CONCAT heat_pass_regex
-        "\\[task_0\\] succeeded: BMI workflow complete(.|\\n)*"
-        "\\[task_1\\] succeeded: BMI workflow complete"
-    )
-
-    miaow_add_workflow_test(
+    miaow_add_example_smoke_test(
         TEST_NAME miaow_example_01_heat
         EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "${heat_pass_regex}"
-        CLI_ARGS
-            --max_workers
-            2
-            --task_request_timeout
-            30
-            --job_request_timeout
-            300
+        EXTERNAL_MODEL
     )
 endif()

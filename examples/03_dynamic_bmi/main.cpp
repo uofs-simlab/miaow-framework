@@ -1,8 +1,5 @@
 /**
- * This example runs C++ and Fortran BMI heat models through MIAOW's dynamic
- * BMI plugin path in one job. The two upstream heat examples do not solve the
- * same discrete update, so the example checks that both languages run through
- * the same BMI task path rather than comparing numeric output.
+ * Run C++ and Fortran heat models through the dynamic BMI plugin interface.
  */
 
 #include <exception>
@@ -44,47 +41,26 @@ int main(int argc, char* argv[]) {
         registry.add<miaow::DynamicBmiSimulationUnit>();
     miaow::Runtime runtime(registry, runtime_options);
 
-    // Create dynamic BMI configs that exercise different plugin backends and modes
-    // plugin backends and execution modes
+    // Configure one in-process task for each supported plugin language
     const std::vector<miaow::DynamicBmiConfig> configs{
-        // Run the C++ plugin in the current process
         {.backend_ = miaow::DynamicBmiBackend::cpp,
          .plugin_path_ = cpp_heat_plugin_path,
          .init_config_ = heat_config},
-        // Run the Fortran plugin in the current process
         {.backend_ = miaow::DynamicBmiBackend::fortran,
          .plugin_path_ = fortran_heat_plugin_path,
          .init_config_ = heat_config},
-        // Run one C++ plugin task in a temporary subprocess
-        {.backend_ = miaow::DynamicBmiBackend::cpp,
-         .plugin_path_ = cpp_heat_plugin_path,
-         .init_config_ = heat_config,
-         .execution_mode_ = miaow::ExecutionMode::single_task_subprocess},
-        // Start a persistent subprocess with the C++ plugin
-        {.backend_ = miaow::DynamicBmiBackend::cpp,
-         .plugin_path_ = cpp_heat_plugin_path,
-         .init_config_ = heat_config,
-         .execution_mode_ = miaow::ExecutionMode::persistent_subprocess},
-        // Reuse the persistent subprocess for another C++ plugin task
-        {.backend_ = miaow::DynamicBmiBackend::cpp,
-         .plugin_path_ = cpp_heat_plugin_path,
-         .init_config_ = heat_config,
-         .execution_mode_ = miaow::ExecutionMode::persistent_subprocess},
     };
 
-    // Make a vector of tasks from the configs, all using the dynamic BMI simulation unit
+    // Build both tasks through the same dynamic simulation unit
     const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(dynamic_bmi, configs);
 
-    // Submit tasks and wait for results
+    // Submit a job containing the plugin tasks and wait for both BMI lifecycles
     miaow::JobHandle job = runtime.submit_job(tasks);
     const miaow::JobRecord job_record = job.get();
 
-    // Print per-task status and message in completion order
-    miaow::print_task_results(job_record);
+    // Print task results and aggregate timing information
+    miaow::print_job_summary(job_record);
 
-    // Print timing diagnostics for this job run
-    miaow::print_diagnostics(job_record);
-
-    // Return 1 if any task failed, or 0 if all tasks succeeded
+    // Return 0 if all tasks succeeded, or 1 if any task failed
     return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
 }

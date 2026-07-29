@@ -26,44 +26,8 @@ set_target_properties(${EXECUTABLE_TARGET} PROPERTIES
 )
 
 if(BUILD_TESTING)
-    # Check the expected task results in the order printed by the example
-    string(CONCAT hello_pass_regex
-        "succeeded: hello(.|\\n)*"
-        "succeeded: cats(.|\\n)*"
-        "succeeded: hello again(.|\\n)*"
-        "succeeded: more cats"
-    )
-    add_test(
-        NAME miaow_example_00_hello
-        COMMAND
-            $<TARGET_FILE:${EXECUTABLE_TARGET}>
-    )
-    set_tests_properties(miaow_example_00_hello PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-        PASS_REGULAR_EXPRESSION "${hello_pass_regex}"
-    )
-
-    # Run twice with file output and validate both run directories
-    set(hello_layout_cli_args
-        --output_root
-        "${CMAKE_CURRENT_LIST_DIR}/output"
-    )
-    list(JOIN hello_layout_cli_args ";" hello_layout_cli_args_serialized)
-
-    add_test(
-        NAME miaow_example_00_hello_job_record_layout
-        COMMAND
-            ${CMAKE_COMMAND}
-            -DEXECUTABLE=$<TARGET_FILE:${EXECUTABLE_TARGET}>
-            -DWORKING_DIRECTORY=${CMAKE_CURRENT_LIST_DIR}
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_LIST_DIR}/output
-            -DCHECK_SECOND_RUN=TRUE
-            -DREQUIRE_SUCCESS=TRUE
-            "-DEXECUTABLE_ARGS=${hello_layout_cli_args_serialized}"
-            -P
-            ${MIAOW_ROOT}/cmake/check_job_record_layout.cmake
-    )
-    set_tests_properties(miaow_example_00_hello_job_record_layout PROPERTIES
-        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+    miaow_add_example_smoke_test(
+        TEST_NAME miaow_example_00_hello
+        EXECUTABLE_TARGET "${EXECUTABLE_TARGET}"
     )
 endif()

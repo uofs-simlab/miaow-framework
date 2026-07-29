@@ -1,12 +1,9 @@
 /**
- * This example demonstrates how to use the MIAOW framework to run a simple BMI model of
- * heat diffusion on a plate. The example uses the CSDMS BMI C++ heat example
- * implementation (`BmiHeat`) and accepts runtime CLI options.
+ * Run one statically linked C++ BMI heat model through MIAOW.
  */
 
 #include <exception>
 #include <iostream>
-#include <vector>
 
 #include "bmi_heat.hxx" // defines the BmiHeat class that implements the BMI interface
 
@@ -35,23 +32,19 @@ int main(int argc, char* argv[]) {
         registry.add<miaow::StaticBmiSimulationUnit<BmiHeat>>();
     miaow::Runtime runtime(registry, runtime_options);
 
-    // Build the statically typed BMI tasks from their model configs
-    const std::vector<miaow::StaticBmiConfig> heat_configs{
-        {.init_config_ = "./data/configs/config_400x400.txt"},
-        {.init_config_ = "./data/configs/config_800x800.txt"},
+    // Build one task from the model initialization file
+    const miaow::StaticBmiConfig heat_config{
+        .init_config_ = "./data/configs/config_400x400.txt",
     };
-    const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(heat, heat_configs);
+    const miaow::Task task = miaow::make_bmi_task(heat, heat_config);
 
-    // Submit tasks and wait for results
-    miaow::JobHandle job = runtime.submit_job(tasks);
+    // Submit a job containing the BMI task and wait for its complete lifecycle
+    miaow::JobHandle job = runtime.submit_job(task);
     const miaow::JobRecord job_record = job.get();
 
-    // Print per-task status and message in completion order
-    miaow::print_task_results(job_record);
+    // Print task results and aggregate timing information
+    miaow::print_job_summary(job_record);
 
-    // Print timing diagnostics for this job run
-    miaow::print_diagnostics(job_record);
-
-    // Return 1 if any task failed, or 0 if all tasks succeeded
+    // Return 0 if all tasks succeeded, or 1 if any task failed
     return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
 }
