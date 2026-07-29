@@ -56,8 +56,10 @@ BOOST_AUTO_TEST_CASE(runtime_cli_options_are_parsed) {
                         runtime_options);
 
     BOOST_TEST(runtime_options.max_workers_ == 3);
-    BOOST_TEST(runtime_options.task_request_timeout_ == std::chrono::seconds(7));
-    BOOST_TEST(runtime_options.job_request_timeout_ == std::chrono::seconds(11));
+    BOOST_CHECK_MESSAGE(runtime_options.task_request_timeout_ == std::chrono::seconds(7),
+                        "task request timeout should be 7 seconds");
+    BOOST_CHECK_MESSAGE(runtime_options.job_request_timeout_ == std::chrono::seconds(11),
+                        "job request timeout should be 11 seconds");
     BOOST_TEST(runtime_options.output_root_ == "results");
 }
 
