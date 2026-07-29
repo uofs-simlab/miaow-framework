@@ -58,7 +58,7 @@ Use this path when the model is loaded from a C++ or Fortran plugin library. ``D
    };
    const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, config);
 
-Dynamic C++ plugins must export C-linkage ``bmi_model_create()`` and ``bmi_model_destroy(...)`` symbols. Dynamic Fortran plugins must export ``register_bmi(void**)`` for the linked `NOAA-OWP iso_c_fortran_bmi bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_. See ``examples/03_dynamic_bmi`` for concrete C++ and Fortran plugin exports.
+Dynamic C++ plugins must export C linkage ``bmi_model_create()`` and ``bmi_model_destroy(...)`` symbols. Dynamic Fortran plugins must export ``register_bmi(void**)`` for the linked `NOAA-OWP iso_c_fortran_bmi bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_. See ``examples/03_dynamic_bmi`` for concrete C++ and Fortran plugin exports.
 
 .. _realization-driven-task-creation:
 
@@ -79,18 +79,18 @@ Use this path when a `NextGen <https://noaa-owp.github.io/ngen/>`_-style realiza
        dynamic_bmi, realization,
        miaow::ExecutionMode::persistent_subprocess);
 
-``PartitionedBmiRealization`` resolves the plugin, initialization, forcing, feature, and output-root values. ``make_bmi_tasks(...)`` builds the dynamic task vector all at once.
+``PartitionedBmiRealization`` resolves the plugin, initialization, forcing, feature, and output root values. ``make_bmi_tasks(...)`` builds the dynamic task vector all at once.
 
 Configuring dynamic task execution
 ----------------------------------
 
-``StaticBmiConfig`` has no execution-mode setting; the ``make_bmi_task(...)`` and ``make_bmi_tasks(...)`` functions create static BMI tasks with ``ExecutionMode::in_process``, and ``StaticBmiSimulationUnit`` does not support subprocess execution. The dynamic task builders assign execution modes as follows:
+``StaticBmiConfig`` has no execution mode setting; the ``make_bmi_task(...)`` and ``make_bmi_tasks(...)`` functions create static BMI tasks with ``ExecutionMode::in_process``, and ``StaticBmiSimulationUnit`` does not support subprocess execution. The dynamic task builders assign execution modes as follows:
 
 - ``make_bmi_task(simulation_unit_id, config)`` copies ``DynamicBmiConfig::execution_mode_`` to the resulting ``Task``. The field defaults to ``ExecutionMode::in_process``.
 - ``make_bmi_tasks(simulation_unit_id, configs)`` builds one task per ``DynamicBmiConfig`` and preserves each configuration's execution mode. Tasks in the same vector can therefore use different modes.
 - ``make_bmi_tasks(simulation_unit_id, realization, execution_mode)`` applies the supplied mode to every task generated from the realization. The argument defaults to ``ExecutionMode::in_process``.
 
-Subprocess modes are available for dynamic BMI tasks. ``DynamicBmiConfig::subprocess_path_`` is copied to the corresponding ``Task`` and selects a non-default subprocess executable. See :ref:`task-execution-modes` for execution-mode selection and runtime behaviour.
+Subprocess modes are available for dynamic BMI tasks. ``DynamicBmiConfig::subprocess_path_`` is copied to the corresponding ``Task`` and selects a non-default subprocess executable. See :ref:`task-execution-modes` for execution mode selection and runtime behaviour.
 
 Reading forcing data
 --------------------
