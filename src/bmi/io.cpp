@@ -33,7 +33,8 @@ BmiModuleConfig::BmiModuleConfig(std::string name, DynamicBmiBackend backend,
       variables_names_map_(std::move(variables_names_map)) {}
 
 BmiPipelineConfig::BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs,
-                                     std::string forcing_file, std::string feature_id) {
+                                     std::string forcing_file, std::string feature_id,
+                                     std::size_t output_interval_steps) {
     if (module_configs.empty()) {
         throw std::runtime_error(
             "BMI pipeline config error: module_configs must contain at least one module");
@@ -41,6 +42,7 @@ BmiPipelineConfig::BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs
     module_configs_ = std::move(module_configs);
     forcing_file_ = std::move(forcing_file);
     feature_id_ = std::move(feature_id);
+    output_interval_steps_ = output_interval_steps;
 }
 
 caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline_config) {
@@ -63,7 +65,8 @@ caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline
     config_dictionary.insert(
         "global", bmi::make_bmi_multi_global_config(pipeline_config.module_configs_,
                                                     pipeline_config.forcing_file_,
-                                                    pipeline_config.output_module_));
+                                                    pipeline_config.output_module_,
+                                                    pipeline_config.output_interval_steps_));
     return caf::config_value{std::move(config_dictionary)};
 }
 
@@ -77,7 +80,8 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id, const StaticBmiConfig& c
                                   config.variables_names_map_);
     module_config.output_variables_ = config.output_variables_;
     const BmiPipelineConfig pipeline_config(
-        std::vector<BmiModuleConfig>{std::move(module_config)}, config.forcing_file_);
+        std::vector<BmiModuleConfig>{std::move(module_config)}, config.forcing_file_, "",
+        config.output_interval_steps_);
     return Task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config)};
 }
 
@@ -107,7 +111,7 @@ Task make_dynamic_bmi_task(SimulationUnitId simulation_unit_id,
 
     const BmiPipelineConfig pipeline_config(
         std::vector<BmiModuleConfig>{std::move(module_config)}, config.forcing_file_,
-        feature_id);
+        feature_id, config.output_interval_steps_);
     Task task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config),
               std::move(metadata)};
     task.execution_mode_ = config.execution_mode_;
@@ -253,6 +257,8 @@ BmiPipelineConfig parse_bmi_pipeline_config(const json::object& pipeline_config,
         io::throw_config_error(error_prefix,
                                "output_module must refer to a configured module");
     }
+    parsed_config.output_interval_steps_ =
+        bmi_multi_params.at("output_interval_steps").to_number<std::size_t>();
 
     if (const json::value* forcing_value = global.if_contains("forcing")) {
         const json::object& forcing = forcing_value->as_object();
@@ -379,7 +385,8 @@ BmiModuleConfig parse_bmi_module_config(const json::object& module_object,
 // Build the serialized bmi_multi global block for one pipeline config
 caf::config_value::dictionary
 make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
-                             const std::string& forcing_file, std::size_t output_module) {
+                             const std::string& forcing_file, std::size_t output_module,
+                             std::size_t output_interval_steps) {
     caf::config_value::list modules;
     for (const BmiModuleConfig& module_config : module_configs) {
         caf::config_value::dictionary module_params;
@@ -418,6 +425,10 @@ make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
     formulation_params.insert("output_module",
                               caf::config_value::integer{
                                   static_cast<caf::config_value::integer>(output_module)});
+    formulation_params.insert(
+        "output_interval_steps",
+        caf::config_value::integer{
+            static_cast<caf::config_value::integer>(output_interval_steps)});
     formulation_params.insert("modules", std::move(modules));
 
     caf::config_value::dictionary formulation;
@@ -503,12 +514,8 @@ OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
 
     const std::vector<std::string> model_var_names = model.GetOutputVarNames();
 
-    // Use model output order unless the config requests a CSV subset
-    const std::vector<std::string>& var_names =
-        output_variables.empty() ? model_var_names : output_variables;
-
     // Configured CSV output variables must exist on the exposed BMI model
-    for (const std::string& name : var_names) {
+    for (const std::string& name : output_variables) {
         const std::vector<std::string>::const_iterator it =
             std::find(model_var_names.begin(), model_var_names.end(), name);
         if (it == model_var_names.end()) {
@@ -519,7 +526,7 @@ OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
 
     OutputFile output_file;
     output_file.artifact_path_ = (output_directory.filename() / output_filename).string();
-    output_file.variables_.reserve(var_names.size());
+    output_file.variables_.reserve(output_variables.size());
     output_file.stream_.open(output_path);
     if (!output_file.stream_.is_open()) {
         throw std::runtime_error("unable to open BMI output file '" + output_path.string() +
@@ -527,7 +534,7 @@ OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
     }
 
     output_file.stream_ << "time";
-    for (const std::string& name : var_names) {
+    for (const std::string& name : output_variables) {
         const std::size_t n_items =
             static_cast<std::size_t>(model.GetVarNbytes(name) / model.GetVarItemsize(name));
 

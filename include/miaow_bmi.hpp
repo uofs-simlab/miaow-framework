@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <concepts>
 #include <exception>
 #include <functional>
@@ -52,8 +53,11 @@ struct StaticBmiConfig {
     /// Map from BMI input names to forcing CSV headers
     std::map<std::string, std::string> variables_names_map_;
 
-    /// BMI output variables written to task CSV output
+    /// BMI output variables written to task CSV output; empty disables CSV output
     std::vector<std::string> output_variables_;
+
+    /// Completed-update interval for task CSV output; zero writes only the final state
+    std::size_t output_interval_steps_{1};
 };
 
 /**
@@ -78,8 +82,11 @@ struct DynamicBmiConfig {
     /// Map from BMI input names to forcing CSV headers
     std::map<std::string, std::string> variables_names_map_;
 
-    /// BMI output variables written to task CSV output
+    /// BMI output variables written to task CSV output; empty disables CSV output
     std::vector<std::string> output_variables_;
+
+    /// Completed-update interval for task CSV output; zero writes only the final state
+    std::size_t output_interval_steps_{1};
 
     /// Execution location for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
@@ -222,6 +229,7 @@ class BmiPipeline : public bmi_api::Bmi {
 
   private:
     const std::vector<std::string>& output_variables() const;
+    std::size_t output_interval_steps() const;
 
     class Impl;
     std::unique_ptr<Impl> impl_;

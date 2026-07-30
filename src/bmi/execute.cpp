@@ -58,27 +58,43 @@ TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
         Initialize(config_path_string());
 
         {
-            // Open one CSV output file if an output directory exists
+            // Open one CSV output file when storage and output are enabled
             std::unique_ptr<bmi::OutputFile> output_file;
-            if (!task.task_output_dir_.empty()) {
+            const std::size_t output_interval_steps = this->output_interval_steps();
+            const std::vector<std::string>& selected_output_variables =
+                output_variables();
+            if (!task.task_output_dir_.empty() && !selected_output_variables.empty()) {
                 // Output variable selection comes from the initialized pipeline config
                 output_file = std::make_unique<bmi::OutputFile>(
                     bmi::open_output_file(*this, task.task_output_dir_,
-                                          task.task_name_, output_variables()));
+                                          task.task_name_, selected_output_variables));
                 runtime_artifact_paths.push_back(output_file->artifact_path_);
             }
 
             // Update until the selected BMI clock reaches its configured end time
             const double end_time = GetEndTime();
-            while (GetCurrentTime() < end_time) {
+            double current_time = GetCurrentTime();
+            while (current_time < end_time) {
                 // Update each model module and advance the forcing stream
                 Update();
-                ++update_steps;
 
-                const double current_time = GetCurrentTime();
-                if (output_file) {
+                // Update the time step count and model clock for the next iteration
+                ++update_steps;
+                current_time = GetCurrentTime();
+
+                // Positive intervals write every configured number of updates
+                if (output_file && output_interval_steps > 0 &&
+                    update_steps % output_interval_steps == 0) {
                     bmi::write_output_step(*this, *output_file, current_time);
                 }
+            }
+
+            // Write a final row unless the final update already produced one
+            const bool final_state_already_written =
+                output_interval_steps > 0 && update_steps > 0 &&
+                update_steps % output_interval_steps == 0;
+            if (output_file && !final_state_already_written) {
+                bmi::write_output_step(*this, *output_file, current_time);
             }
         }
 

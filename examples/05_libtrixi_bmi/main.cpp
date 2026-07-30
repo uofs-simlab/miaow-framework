@@ -51,6 +51,7 @@ int main(int argc, char* argv[]) {
         .plugin_path_ = plugin_path,
         .init_config_ = "./advection_basic_1d.jl",
         .output_variables_ = {"simulation_time"},
+        .output_interval_steps_ = 1,
         .execution_mode_ = miaow::ExecutionMode::single_task_subprocess,
     };
     const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, bmi_config);
