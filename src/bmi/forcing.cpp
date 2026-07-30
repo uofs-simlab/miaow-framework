@@ -236,13 +236,6 @@ bool ForcingBmi::read_next_row(ForcingRow& row) {
 }
 
 void ForcingBmi::Initialize(std::string config_file) {
-    Finalize();
-
-    // Empty config means this forcing module is present but inactive
-    if (io::trim(config_file).empty()) {
-        return;
-    }
-
     // The config string for this internal module is the forcing CSV path
     const std::filesystem::path forcing_path = resolve_forcing_path(config_file);
 

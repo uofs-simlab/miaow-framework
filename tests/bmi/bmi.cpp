@@ -112,6 +112,121 @@ BOOST_AUTO_TEST_CASE(forcing_values_reach_model) {
     std::filesystem::remove_all(output_root);
 }
 
+// Keep runtime artifacts without a CSV when no output variables are selected
+BOOST_AUTO_TEST_CASE(empty_output_variables_disable_task_csv) {
+    const std::filesystem::path output_root = MIAOW_BMI_TEST_OUTPUT_ROOT;
+    std::filesystem::remove_all(output_root);
+
+    miaow::SimulationUnitRegistry registry;
+    const miaow::SimulationUnitId dynamic_bmi =
+        registry.add<miaow::DynamicBmiSimulationUnit>();
+    miaow::Runtime runtime(registry, miaow::RuntimeOptions{1, std::chrono::minutes(1),
+                                                           std::chrono::minutes(5),
+                                                           output_root.string()});
+
+    const miaow::DynamicBmiConfig config{
+        .backend_ = miaow::DynamicBmiBackend::fortran,
+        .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
+    };
+    const miaow::JobRecord job_record =
+        runtime.submit_job(miaow::make_bmi_task(dynamic_bmi, config)).get();
+
+    BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);
+    BOOST_REQUIRE(job_record.tasks_.front().result_.status_ ==
+                  miaow::TaskStatus::succeeded);
+
+    const std::filesystem::path output_path =
+        output_root / ("run_" + std::to_string(job_record.run_id_)) /
+        ("job_" + std::to_string(job_record.job_id_)) / "results" / "task_0.csv";
+    BOOST_TEST(!std::filesystem::exists(output_path));
+
+    std::filesystem::remove_all(output_root);
+}
+
+// Write only the final state when the output interval is zero
+BOOST_AUTO_TEST_CASE(zero_output_interval_writes_final_state) {
+    const std::filesystem::path output_root = MIAOW_BMI_TEST_OUTPUT_ROOT;
+    std::filesystem::remove_all(output_root);
+
+    miaow::SimulationUnitRegistry registry;
+    const miaow::SimulationUnitId dynamic_bmi =
+        registry.add<miaow::DynamicBmiSimulationUnit>();
+    miaow::Runtime runtime(registry, miaow::RuntimeOptions{1, std::chrono::minutes(1),
+                                                           std::chrono::minutes(5),
+                                                           output_root.string()});
+
+    const miaow::DynamicBmiConfig config{
+        .backend_ = miaow::DynamicBmiBackend::fortran,
+        .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
+        .output_variables_ = {"temperature"},
+        .output_interval_steps_ = 0,
+    };
+    const miaow::JobRecord job_record =
+        runtime.submit_job(miaow::make_bmi_task(dynamic_bmi, config)).get();
+
+    BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);
+    BOOST_REQUIRE(job_record.tasks_.front().result_.status_ ==
+                  miaow::TaskStatus::succeeded);
+
+    const std::filesystem::path output_path =
+        output_root / ("run_" + std::to_string(job_record.run_id_)) /
+        ("job_" + std::to_string(job_record.job_id_)) / "results" / "task_0.csv";
+    std::ifstream output(output_path);
+    BOOST_REQUIRE(output.is_open());
+
+    std::string line;
+    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
+    BOOST_TEST(line == "time,temperature");
+    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
+    BOOST_TEST(line == "2,0");
+    BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
+
+    std::filesystem::remove_all(output_root);
+}
+
+// Write the final state when the run ends before the next output interval
+BOOST_AUTO_TEST_CASE(output_interval_writes_final_state) {
+    const std::filesystem::path output_root = MIAOW_BMI_TEST_OUTPUT_ROOT;
+    std::filesystem::remove_all(output_root);
+
+    miaow::SimulationUnitRegistry registry;
+    const miaow::SimulationUnitId dynamic_bmi =
+        registry.add<miaow::DynamicBmiSimulationUnit>();
+    miaow::Runtime runtime(registry, miaow::RuntimeOptions{1, std::chrono::minutes(1),
+                                                           std::chrono::minutes(5),
+                                                           output_root.string()});
+
+    const miaow::DynamicBmiConfig config{
+        .backend_ = miaow::DynamicBmiBackend::fortran,
+        .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
+        .forcing_file_ = MIAOW_TEST_BMI_FORCING_PATH,
+        .variables_names_map_ = {{"temperature", "air_temperature"}},
+        .output_variables_ = {"temperature"},
+        .output_interval_steps_ = 3,
+    };
+    const miaow::JobRecord job_record =
+        runtime.submit_job(miaow::make_bmi_task(dynamic_bmi, config)).get();
+
+    BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);
+    BOOST_REQUIRE(job_record.tasks_.front().result_.status_ ==
+                  miaow::TaskStatus::succeeded);
+
+    const std::filesystem::path output_path =
+        output_root / ("run_" + std::to_string(job_record.run_id_)) /
+        ("job_" + std::to_string(job_record.job_id_)) / "results" / "task_0.csv";
+    std::ifstream output(output_path);
+    BOOST_REQUIRE(output.is_open());
+
+    std::string line;
+    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
+    BOOST_TEST(line == "time,temperature");
+    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
+    BOOST_TEST(line == "2,20");
+    BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
+
+    std::filesystem::remove_all(output_root);
+}
+
 // Convert dynamic library loading errors into failed task results
 BOOST_AUTO_TEST_CASE(missing_dynamic_plugin_marks_task_failed) {
     miaow::SimulationUnitRegistry registry;

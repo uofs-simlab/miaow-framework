@@ -77,6 +77,7 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
     std::string config_path_string() const;
     std::vector<std::string> artifact_paths() const;
     const std::vector<std::string>& output_variables() const;
+    std::size_t output_interval_steps() const;
 
   private:
     std::size_t add_model_module(const BmiModuleConfig& module_config);
@@ -111,6 +112,9 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
 
     // BMI output variables selected for task CSV output
     std::vector<std::string> output_variables_;
+
+    // Completed-update interval for task CSV output
+    std::size_t output_interval_steps_{1};
 
     // Module whose BMI surface is exposed by the pipeline
     std::size_t output_module_{0};
@@ -150,21 +154,23 @@ std::size_t BmiPipeline::Impl::add_model_module(const BmiModuleConfig& module_co
     return modules_.size() - 1;
 }
 
-// Add the forcing module and return whether forcing is active
+// Add the optional forcing module and return whether it is present
 bool BmiPipeline::Impl::add_forcing_module(const BmiPipelineConfig& pipeline_config,
                                            std::size_t model_module,
                                            std::size_t& forcing_module) {
     const std::string forcing_file = io::trim(pipeline_config.forcing_file_);
-    const bool has_forcing = !forcing_file.empty();
+    if (forcing_file.empty()) {
+        return false;
+    }
 
-    // The forcing module is always last; empty config makes it a no-op
+    // The forcing module follows every configured model module
     forcing_module = modules_.size();
 
     // The receiving model clock defines CSV timestep alignment
     owned_modules_.push_back(std::make_unique<ForcingBmi>(*modules_.at(model_module)));
     modules_.push_back(owned_modules_.back().get());
     configs_.push_back(forcing_file);
-    return has_forcing;
+    return true;
 }
 
 // Clear pipeline state to prepare for the next pipeline config initialization
@@ -174,6 +180,7 @@ void BmiPipeline::Impl::reset_pipeline() {
     configs_.clear();
     couplings_.clear();
     output_variables_.clear();
+    output_interval_steps_ = 1;
     output_module_ = 0;
     initialized_count_ = 0;
 }
@@ -270,6 +277,7 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
 
     // The model module defines task CSV output selection
     output_variables_ = module_config.output_variables_;
+    output_interval_steps_ = pipeline_config.output_interval_steps_;
     const std::size_t model_module = add_model_module(module_config);
 
     if (output_module_ >= modules_.size()) {
@@ -529,6 +537,10 @@ const std::vector<std::string>& BmiPipeline::Impl::output_variables() const {
     return output_variables_;
 }
 
+std::size_t BmiPipeline::Impl::output_interval_steps() const {
+    return output_interval_steps_;
+}
+
 BmiPipeline::BmiPipeline(std::unique_ptr<bmi_api::Bmi> model)
     : impl_(std::make_unique<Impl>(std::move(model))) {}
 
@@ -712,6 +724,10 @@ std::vector<std::string> BmiPipeline::artifact_paths() const {
 // Forward selected CSV variables from the implementation
 const std::vector<std::string>& BmiPipeline::output_variables() const {
     return impl_->output_variables();
+}
+
+std::size_t BmiPipeline::output_interval_steps() const {
+    return impl_->output_interval_steps();
 }
 
 } // namespace miaow

@@ -41,12 +41,14 @@ struct BmiModuleConfig {
 // Internal task payload consumed by BmiPipeline
 struct BmiPipelineConfig {
     BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs,
-                      std::string forcing_file = "", std::string feature_id = "");
+                      std::string forcing_file = "", std::string feature_id = "",
+                      std::size_t output_interval_steps = 1);
 
     std::vector<BmiModuleConfig> module_configs_;
     std::size_t output_module_{0};
     std::string forcing_file_;
     std::string feature_id_;
+    std::size_t output_interval_steps_{1};
 };
 
 // Convert an internal pipeline config into the generic Task payload
@@ -255,7 +257,7 @@ class ForcingBmi : public ::bmi::Bmi {
     // True after Update reaches the end of the forcing CSV
     bool exhausted_{true};
 
-    // False for the no-op forcing module used when a pipeline config has no forcing
+    // True while forcing data is initialized
     bool active_{false};
 };
 
@@ -267,7 +269,8 @@ void write_bmi_pipeline_config_file(const Task& task, const std::filesystem::pat
 caf::config_value::dictionary
 make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
                              const std::string& forcing_file,
-                             std::size_t output_module = 0);
+                             std::size_t output_module = 0,
+                             std::size_t output_interval_steps = 1);
 
 BmiModuleConfig parse_bmi_module_config(const boost::json::object& module_object,
                                         std::string_view error_prefix);
@@ -281,7 +284,7 @@ std::filesystem::path bmi_pipeline_config_file_path(const Task& task);
 
 std::vector<std::string> bmi_pipeline_config_artifact_paths(const Task& task);
 
-// Output CSV writing; an empty output variable list writes all model outputs
+// Output CSV writing for an explicit non-empty variable selection
 OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,
                             const std::string& output_name,
                             const std::vector<std::string>& output_variables);

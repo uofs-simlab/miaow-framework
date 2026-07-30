@@ -95,13 +95,33 @@ Subprocess modes are available for dynamic BMI tasks. ``DynamicBmiConfig::subpro
 Reading forcing data
 --------------------
 
-Set ``forcing_file_`` in ``StaticBmiConfig`` or ``DynamicBmiConfig`` to enable the internal BMI forcing module. Currently, the forcing module is always appended after the model in the BMI pipeline, although it actually runs before the model's ``Update()`` calls. When no forcing is configured, it is initialized with an empty config and acts as a no-op. With configured forcing, the module reads a ``CsvFile`` entry and exposes data columns as BMI outputs. MIAOW derives explicit scalar couplings from ``variables_names_map_``, applies them immediately before model updates, and then advances the forcing source.
+Set ``forcing_file_`` in ``StaticBmiConfig`` or ``DynamicBmiConfig`` to enable the internal BMI forcing module. When no forcing is configured, MIAOW does not construct a forcing module. With configured forcing, MIAOW appends the forcing module after the model, reads the ``CsvFile`` data, and exposes its columns as BMI outputs. MIAOW derives explicit scalar couplings from ``variables_names_map_``, applies the current forcing values immediately before each model update, and then advances the forcing source after the model update.
 
-The variable map is interpreted as ``BMI input variable -> CSV header``. If it is empty, MIAOW derives an identity map from ``GetInputVarNames()`` and expects CSV headers with the same names as the corresponding variables. The ``output_variables_`` field controls which BMI output names are written to task CSV output; when empty, CSV output uses all names returned by ``GetOutputVarNames()``.
+The variable map is interpreted as ``BMI input variable -> CSV header``. If it is empty, MIAOW derives an identity map from ``GetInputVarNames()`` and expects CSV headers with the same names as the corresponding variables.
 
 MIAOW's external forcing reader currently only supports CSV files. The file must define a ``time`` or ``Time`` column plus all required numeric data columns. Supported timestamp formats are ``YYYY-MM-DD HH:MM:SS`` and ``YYYY/MM/DD HH:MM:SS``. MIAOW treats the first forcing row as the model-start forcing values, so users should ensure that the first forcing row timestamp matches the model's ``start_time`` after unit normalization. Later forcing rows are streamed as the model advances; each row-to-row timestamp delta must match the receiving BMI model timestep after unit normalization. Because the only supported forcing source is CSV, the forcing provider for global `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization files should be set to ``CsvPerFeature``.
 
 Exhausting the forcing data before the model's ``end_time`` fails the task with a ``Forcing alignment error``; forcing rows beyond ``end_time`` are silently ignored and the task completes successfully. The ``examples/02_soil_freeze_thaw`` workflow illustrates an aligned model end time and forcing series.
+
+Writing BMI output
+------------------
+
+Set ``output_variables_`` in ``StaticBmiConfig`` or ``DynamicBmiConfig`` to enable MIAOW-generated task CSV output and select its BMI output columns. The default empty list disables the task CSV; MIAOW does not implicitly select every name returned by ``GetOutputVarNames()``.
+
+The ``output_interval_steps_`` field controls the output cadence and defaults to one. A positive value writes output after each corresponding number of completed model updates. A value of zero writes only the final model state. MIAOW always includes the final state without duplicating it when the final update coincides with a positive interval.
+
+As an example, the following configuration writes a single CSV file with the ``streamflow`` output variable every 24 model updates:
+
+.. code-block:: cpp
+
+   const miaow::DynamicBmiConfig config{
+       .backend_ = miaow::DynamicBmiBackend::fortran,
+       .plugin_path_ = plugin_path,
+       .output_variables_ = {"streamflow"},
+       .output_interval_steps_ = 24,
+   };
+
+Task CSV output also requires a non-empty ``RuntimeOptions::output_root_`` or CLI ``--output_root`` value. The runtime output root continues to control directories for configuration artifacts, task metadata, model-generated artifacts, and subprocess logs when ``output_variables_`` is empty.
 
 Diagnostics and artifacts
 -------------------------
@@ -118,4 +138,4 @@ When ``RuntimeOptions::output_root_`` or CLI ``--output_root`` is set, MIAOW wri
            `-- results/
                `-- <feature_id or task_<task_id>>.csv
 
-Persisted run directories start at ``run_0`` and advance to the largest existing run ID plus one. MIAOW writes the resolved BMI config in the job directory and one CSV file per task under ``results/``. A non-empty ``metadata_["feature_id"]`` becomes the output file stem; otherwise MIAOW uses ``task_<task_id>``. Output stems must be unique within one job and cannot contain path separators.
+Persisted run directories start at ``run_0`` and advance to the largest existing run ID plus one. MIAOW writes the resolved BMI config in the job directory and, when ``output_variables_`` is non-empty, one CSV file per task under ``results/``. A non-empty ``metadata_["feature_id"]`` becomes the output file stem; otherwise MIAOW uses ``task_<task_id>``. Output stems must be unique within one job and cannot contain path separators.
