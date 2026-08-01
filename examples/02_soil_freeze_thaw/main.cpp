@@ -34,8 +34,10 @@ int main(int argc, char* argv[]) {
     // Pair one model configuration with matching one-day forcing data and input mapping
     const miaow::StaticBmiConfig config{
         .init_config_ = "./data/configs/laramie_config_1_day.txt",
-        .forcing_file_ = "./data/forcings/Laramie_14Jun09_to_15Jun09.csv",
-        .variables_names_map_ = {{"ground_temperature", "TMP_ground_surface"}},
+        .forcing_ = miaow::BmiForcingConfig{
+            .file_ = "./data/forcings/Laramie_14Jun09_to_15Jun09.csv",
+            .variables_names_map_ = {{"ground_temperature", "TMP_ground_surface"}},
+        },
     };
     const miaow::Task task = miaow::make_bmi_task(soil_freeze_thaw, config);
 

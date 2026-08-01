@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -15,8 +16,6 @@
 #include <boost/json.hpp>
 
 namespace miaow {
-
-namespace json = boost::json;
 
 namespace {
 
@@ -75,15 +74,15 @@ std::vector<std::string> read_feature_ids(const std::filesystem::path& path) {
         throw_realization_path_error("features path '" + path.string() +
                                      "' could not be opened");
     }
-    const json::object root = json::parse(input).as_object();
+    const boost::json::object root = boost::json::parse(input).as_object();
     std::vector<std::string> feature_ids;
-    const json::array& features = root.at("features").as_array();
+    const boost::json::array& features = root.at("features").as_array();
     feature_ids.reserve(features.size());
-    for (const json::value& feature_value : features) {
-        const json::object& feature = feature_value.as_object();
-        const json::value* id_value = feature.if_contains("id");
+    for (const boost::json::value& feature_value : features) {
+        const boost::json::object& feature = feature_value.as_object();
+        const boost::json::value* id_value = feature.if_contains("id");
         if (id_value == nullptr) {
-            const json::object& properties = feature.at("properties").as_object();
+            const boost::json::object& properties = feature.at("properties").as_object();
             id_value = properties.if_contains("id");
         }
         if (id_value == nullptr) {
@@ -149,13 +148,13 @@ std::string match_forcing_file(const std::filesystem::path& forcing_directory,
 }
 
 // The supported realization contains one bmi_multi Fortran module
-BmiModuleConfig parse_fortran_module_config(const json::object& global_object) {
-    const json::array& formulations = global_object.at("formulations").as_array();
+BmiModuleConfig parse_fortran_module_config(const boost::json::object& global_object) {
+    const boost::json::array& formulations = global_object.at("formulations").as_array();
     if (formulations.size() != 1) {
         throw_realization_config_error("formulations must contain one entry");
     }
 
-    const json::object& formulation = formulations.at(0).as_object();
+    const boost::json::object& formulation = formulations.at(0).as_object();
     const std::string formulation_name =
         io::trim(std::string(formulation.at("name").as_string()));
     if (formulation_name != "bmi_multi") {
@@ -163,8 +162,8 @@ BmiModuleConfig parse_fortran_module_config(const json::object& global_object) {
                                        "'");
     }
 
-    const json::object& bmi_multi_params = formulation.at("params").as_object();
-    const json::array& modules = bmi_multi_params.at("modules").as_array();
+    const boost::json::object& bmi_multi_params = formulation.at("params").as_object();
+    const boost::json::array& modules = bmi_multi_params.at("modules").as_array();
     if (modules.size() != 1) {
         throw_realization_config_error("bmi_multi modules must contain one entry");
     }
@@ -197,10 +196,10 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         throw_realization_path_error("realization path '" + normalized_path.string() +
                                      "' could not be opened");
     }
-    const json::object root = json::parse(input).as_object();
-    const json::object& global = root.at("global").as_object();
+    const boost::json::object root = boost::json::parse(input).as_object();
+    const boost::json::object& global = root.at("global").as_object();
     BmiModuleConfig module_config = parse_fortran_module_config(global);
-    const json::object& forcing = global.at("forcing").as_object();
+    const boost::json::object& forcing = global.at("forcing").as_object();
     const std::string provider = io::trim(std::string(forcing.at("provider").as_string()));
     if (provider != "CsvPerFeature") {
         throw_realization_config_error("unsupported forcing provider '" + provider + "'");
@@ -213,6 +212,21 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
     const std::string forcing_pattern_template =
         io::trim(std::string(forcing.at("file_pattern").as_string()));
 
+    std::optional<double> output_interval;
+    if (const boost::json::value* time_value = root.if_contains("time")) {
+        if (!time_value->is_object()) {
+            throw_realization_config_error("root key 'time' must be an object");
+        }
+        if (const boost::json::value* output_interval_value =
+                time_value->as_object().if_contains("output_interval")) {
+            if (!output_interval_value->is_number()) {
+                throw_realization_config_error(
+                    "time.output_interval must be a number");
+            }
+            output_interval = output_interval_value->to_number<double>();
+        }
+    }
+
     const std::filesystem::path library_path =
         resolve_path(base_directory, module_config.plugin_path_);
     module_config.plugin_path_ = require_existing_file(library_path, "module library_file");
@@ -223,7 +237,7 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
     require_existing_file(features_path, "features");
     const std::vector<std::string> feature_ids = read_feature_ids(features_path);
 
-    if (const json::value* output_root_value = root.if_contains("output_root")) {
+    if (const boost::json::value* output_root_value = root.if_contains("output_root")) {
         if (!output_root_value->is_string()) {
             throw_realization_config_error("root key 'output_root' must be a string");
         }
@@ -252,9 +266,14 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         config.backend_ = *module_config.backend_;
         config.plugin_path_ = module_config.plugin_path_;
         config.init_config_ = init_config_path;
-        config.forcing_file_ = forcing_file;
-        config.variables_names_map_ = module_config.variables_names_map_;
-        config.output_variables_ = module_config.output_variables_;
+        config.forcing_ = BmiForcingConfig{
+            .file_ = forcing_file,
+            .variables_names_map_ = module_config.variables_names_map_,
+        };
+        config.output_ = BmiOutputConfig{
+            .variables_ = module_config.output_variables_,
+            .interval_ = output_interval,
+        };
         feature_configs_.push_back({std::move(config), feature_id});
     }
 }
@@ -286,7 +305,7 @@ make_bmi_tasks(SimulationUnitId simulation_unit_id, const PartitionedBmiRealizat
                               {"feature_type", "catchment"},
                               {"hydrofabric_layer", "divides"},
                               {"hydrofabric_id_field", "id"}};
-        tasks.push_back(bmi::make_dynamic_bmi_task(
+        tasks.push_back(bmi::make_bmi_task(
             simulation_unit_id, config, feature_id, std::move(metadata)));
     }
 

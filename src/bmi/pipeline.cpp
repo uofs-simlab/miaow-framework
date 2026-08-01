@@ -3,8 +3,8 @@
 #include "io/internal.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
-#include <filesystem>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -14,12 +14,10 @@
 
 namespace miaow {
 
-using bmi::bmi_pipeline_config_artifact_paths;
-using bmi::bmi_pipeline_config_file_path;
 using bmi::BmiCoupling;
 using bmi::ForcingBmi;
+using bmi::bmi_pipeline_config_from_task;
 using bmi::read_bmi_pipeline_config_file;
-using bmi::write_bmi_pipeline_config_file;
 
 class BmiPipeline::Impl : public bmi_api::Bmi {
   public:
@@ -31,6 +29,7 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
 
     ~Impl() override = default;
 
+    void initialize_task();
     void Initialize(std::string config_file) override;
     void Update() override;
     void UpdateUntil(double time) override;
@@ -74,12 +73,13 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
     void GetGridFaceNodes(const int grid, int* face_nodes) override;
     void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
 
-    std::string config_path_string() const;
-    std::vector<std::string> artifact_paths() const;
     const std::vector<std::string>& output_variables() const;
-    std::size_t output_interval_steps() const;
+    const std::optional<double>& output_interval() const;
+    double time_step_tolerance() const;
+    std::size_t completed_update_count() const;
 
   private:
+    void initialize(const BmiPipelineConfig& pipeline_config);
     std::size_t add_model_module(const BmiModuleConfig& module_config);
     bool add_forcing_module(const BmiPipelineConfig& pipeline_config,
                             std::size_t model_module, std::size_t& forcing_module);
@@ -92,11 +92,8 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
     // Optional supplied model owned by the pipeline
     std::unique_ptr<::bmi::Bmi> supplied_model_;
 
-    // Path to the BmiPipelineConfig JSON file read by BMI Initialize
-    std::filesystem::path config_path_;
-
-    // Pipeline config artifacts relative to the job directory
-    std::vector<std::string> artifact_paths_;
+    // Internal config decoded from a runtime task
+    std::optional<BmiPipelineConfig> task_config_;
 
     // Modules constructed from dynamic plugins or internal adapters
     std::vector<std::unique_ptr<::bmi::Bmi>> owned_modules_;
@@ -113,8 +110,14 @@ class BmiPipeline::Impl : public bmi_api::Bmi {
     // BMI output variables selected for task CSV output
     std::vector<std::string> output_variables_;
 
-    // Completed-update interval for task CSV output
-    std::size_t output_interval_steps_{1};
+    // Optional model-time interval for runtime-managed output
+    std::optional<double> output_interval_;
+
+    // Absolute tolerance for model-time comparisons
+    double time_step_tolerance_{default_bmi_time_step_tolerance};
+
+    // Number of complete pipeline updates since initialization
+    std::size_t completed_update_count_{0};
 
     // Module whose BMI surface is exposed by the pipeline
     std::size_t output_module_{0};
@@ -129,11 +132,7 @@ BmiPipeline::Impl::Impl(std::unique_ptr<::bmi::Bmi> supplied_model)
 
 BmiPipeline::Impl::Impl(const Task& task, std::unique_ptr<::bmi::Bmi> supplied_model)
     : supplied_model_(std::move(supplied_model)),
-      config_path_(bmi_pipeline_config_file_path(task)),
-      artifact_paths_(bmi_pipeline_config_artifact_paths(task)) {
-    // Write the BmiPipelineConfig because BMI Initialize accepts a file path
-    write_bmi_pipeline_config_file(task, config_path_);
-}
+      task_config_(bmi_pipeline_config_from_task(task)) {}
 
 // Add a model module to the pipeline and return its module index
 std::size_t BmiPipeline::Impl::add_model_module(const BmiModuleConfig& module_config) {
@@ -180,7 +179,9 @@ void BmiPipeline::Impl::reset_pipeline() {
     configs_.clear();
     couplings_.clear();
     output_variables_.clear();
-    output_interval_steps_ = 1;
+    output_interval_.reset();
+    time_step_tolerance_ = default_bmi_time_step_tolerance;
+    completed_update_count_ = 0;
     output_module_ = 0;
     initialized_count_ = 0;
 }
@@ -257,15 +258,27 @@ void BmiPipeline::Impl::build_couplings(
     }
 }
 
+void BmiPipeline::Impl::initialize_task() {
+    if (!task_config_) {
+        throw std::runtime_error(
+            "BMI pipeline config error: task pipeline config is unavailable");
+    }
+    initialize(*task_config_);
+}
+
 void BmiPipeline::Impl::Initialize(std::string config_file) {
-    // Reset any previous BMI lifecycle before reading the next pipeline config
+    const BmiPipelineConfig pipeline_config = read_bmi_pipeline_config_file(config_file);
+    initialize(pipeline_config);
+}
+
+// Initialize pipeline modules from one decoded config
+void BmiPipeline::Impl::initialize(const BmiPipelineConfig& pipeline_config) {
+    // Reset any previous BMI lifecycle before applying the next pipeline config
     if (initialized_count_ > 0) {
         Finalize();
     }
     reset_pipeline();
 
-    // Read the typed BmiPipelineConfig consumed by this BMI lifecycle
-    const BmiPipelineConfig pipeline_config = read_bmi_pipeline_config_file(config_file);
     if (pipeline_config.module_configs_.size() != 1) {
         io::throw_config_error("BMI pipeline config error: ",
                                "bmi_multi modules must contain one entry");
@@ -277,13 +290,25 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
 
     // The model module defines task CSV output selection
     output_variables_ = module_config.output_variables_;
-    output_interval_steps_ = pipeline_config.output_interval_steps_;
+    output_interval_ = pipeline_config.output_interval_;
+    time_step_tolerance_ = pipeline_config.time_step_tolerance_;
+    if (!std::isfinite(time_step_tolerance_) || time_step_tolerance_ < 0.0) {
+        throw std::runtime_error(
+            "BMI pipeline config error: time_step_tolerance must be finite and "
+            "non-negative");
+    }
+    if (output_interval_ &&
+        (!std::isfinite(*output_interval_) || *output_interval_ <= 0.0)) {
+        throw std::runtime_error(
+            "BMI pipeline config error: output_interval must be finite and positive");
+    }
     const std::size_t model_module = add_model_module(module_config);
 
     if (output_module_ >= modules_.size()) {
         throw std::runtime_error("BMI pipeline error: output module is invalid");
     }
 
+    // Add the optional forcing module after the model module so couplings can be built
     std::size_t forcing_module = 0;
     const bool has_forcing =
         add_forcing_module(pipeline_config, model_module, forcing_module);
@@ -292,6 +317,18 @@ void BmiPipeline::Impl::Initialize(std::string config_file) {
     for (std::size_t module_index = 0; module_index < modules_.size(); ++module_index) {
         modules_.at(module_index)->Initialize(configs_.at(module_index));
         ++initialized_count_;
+    }
+
+    // Distinct native updates must remain distinguishable by the configured tolerance
+    const double time_step = GetTimeStep();
+    if (!std::isfinite(time_step) || time_step <= 0.0) {
+        throw std::runtime_error(
+            "BMI pipeline error: output model time step must be finite and positive");
+    }
+    if (time_step_tolerance_ >= time_step / 2.0) {
+        throw std::runtime_error(
+            "BMI pipeline error: time_step_tolerance must be less than half the output "
+            "model time step");
     }
 
     if (has_forcing) {
@@ -338,16 +375,26 @@ void BmiPipeline::Impl::Update() {
         }
         modules_.at(module_index)->Update();
     }
+    ++completed_update_count_;
 }
 
+// Calls Update() until the output model time is within tolerance of the requested time
 void BmiPipeline::Impl::UpdateUntil(double time) {
-    // Repeated pipeline updates preserve coupling order for each step
-    while (GetCurrentTime() < time) {
+    double remaining_time = time - GetCurrentTime();
+    while (remaining_time > time_step_tolerance_) {
         Update();
+        remaining_time = time - GetCurrentTime();
+    }
+
+    // Reject an update that overshoots the target beyond the configured tolerance
+    if (remaining_time < -time_step_tolerance_) {
+        throw std::runtime_error(
+            "BMI pipeline error: update passed the requested target time");
     }
 }
 
 void BmiPipeline::Impl::Finalize() {
+    // Finalize every module before rethrowing the first finalization error
     std::exception_ptr first_exception;
 
     // Finalize modules in update order so lifecycle order is explicit
@@ -364,6 +411,8 @@ void BmiPipeline::Impl::Finalize() {
     // Mark the schedule as finalized while preserving module ownership
     initialized_count_ = 0;
 
+    // Throw the first exception encountered during Finalize if one occurred; otherwise,
+    // assume all models in the pipeline finalized successfully
     if (first_exception) {
         std::rethrow_exception(first_exception);
     }
@@ -524,21 +573,21 @@ void BmiPipeline::Impl::GetGridNodesPerFace(const int grid, int* nodes_per_face)
     output_model().GetGridNodesPerFace(grid, nodes_per_face);
 }
 
-std::string BmiPipeline::Impl::config_path_string() const {
-    return config_path_.string();
-}
-
-std::vector<std::string> BmiPipeline::Impl::artifact_paths() const {
-    return artifact_paths_;
-}
-
 // Expose selected CSV variables to lifecycle output writing
 const std::vector<std::string>& BmiPipeline::Impl::output_variables() const {
     return output_variables_;
 }
 
-std::size_t BmiPipeline::Impl::output_interval_steps() const {
-    return output_interval_steps_;
+const std::optional<double>& BmiPipeline::Impl::output_interval() const {
+    return output_interval_;
+}
+
+double BmiPipeline::Impl::time_step_tolerance() const {
+    return time_step_tolerance_;
+}
+
+std::size_t BmiPipeline::Impl::completed_update_count() const {
+    return completed_update_count_;
 }
 
 BmiPipeline::BmiPipeline(std::unique_ptr<bmi_api::Bmi> model)
@@ -548,6 +597,10 @@ BmiPipeline::BmiPipeline(const Task& task, std::unique_ptr<bmi_api::Bmi> model)
     : impl_(std::make_unique<Impl>(task, std::move(model))) {}
 
 BmiPipeline::~BmiPipeline() = default;
+
+void BmiPipeline::initialize_task() {
+    impl_->initialize_task();
+}
 
 void BmiPipeline::Initialize(std::string config_file) {
     impl_->Initialize(std::move(config_file));
@@ -713,21 +766,21 @@ void BmiPipeline::GetGridNodesPerFace(const int grid, int* nodes_per_face) {
     impl_->GetGridNodesPerFace(grid, nodes_per_face);
 }
 
-std::string BmiPipeline::config_path_string() const {
-    return impl_->config_path_string();
-}
-
-std::vector<std::string> BmiPipeline::artifact_paths() const {
-    return impl_->artifact_paths();
-}
-
 // Forward selected CSV variables from the implementation
 const std::vector<std::string>& BmiPipeline::output_variables() const {
     return impl_->output_variables();
 }
 
-std::size_t BmiPipeline::output_interval_steps() const {
-    return impl_->output_interval_steps();
+const std::optional<double>& BmiPipeline::output_interval() const {
+    return impl_->output_interval();
+}
+
+double BmiPipeline::time_step_tolerance() const {
+    return impl_->time_step_tolerance();
+}
+
+std::size_t BmiPipeline::completed_update_count() const {
+    return impl_->completed_update_count();
 }
 
 } // namespace miaow
