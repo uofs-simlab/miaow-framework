@@ -263,10 +263,10 @@ class BmiPipeline : public bmi_api::Bmi {
  * The constructor reads a
  * [NextGen-style](https://github.com/NOAA-OWP/ngen) global realization with
  * one `bmi_fortran` module and `CsvPerFeature` forcing, resolves relative
- * paths and expands sibling `catchments.geojson` features. One `Task` is built for each 
- * feature (e.g., catchment or response unit) in the realization consisting of a sequential 
- * pipeline containing the BMI model and its associated forcing. These tasks can be 
- * executed concurrently by a `DynamicBmiSimulationUnit`.
+ * paths and expands sibling `catchments.geojson` features. One `Task` is built for each
+ * feature (e.g., catchment or response unit) with a sequential pipeline containing the BMI
+ * model and its associated forcing. The tasks can be executed concurrently by a
+ * `DynamicBmiSimulationUnit`.
  */
 class PartitionedBmiRealization {
   public:
@@ -291,7 +291,7 @@ class PartitionedBmiRealization {
     const std::string& output_root() const;
 
   private:
-    
+
     // Configuration and identifier for one realization feature
     struct FeatureConfig {
         DynamicBmiConfig config_;

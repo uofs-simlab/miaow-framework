@@ -6,15 +6,13 @@ MIAOW runs statically typed C++ BMI models and dynamically loaded C++ or Fortran
 BMI task lifecycle
 ------------------
 
-Build individual tasks with ``make_bmi_task(...)`` and task sets with ``make_bmi_tasks(...)``. Both functions translate typed BMI configuration into the generic ``Task`` representation used by the runtime.
+Build individual tasks with ``make_bmi_task(...)`` and task sets with ``make_bmi_tasks(...)``. Both functions translate typed BMI configuration into the generic ``Task`` representation that MIAOW passes to simulation unit actors for execution. During task execution, ``BmiPipeline`` initializes directly from the ``BmiPipelineConfig`` stored in ``Task::args_``. When runtime output is enabled, MIAOW also writes the resolved pipeline configuration beside the task results as ``<task_output_name>.json``. Task execution does not require this file; it is an optional pipeline configuration artifact that can later be passed to ``BmiPipeline::Initialize(std::string)`` for file-based initialization, for example, to reproduce a previous run.
 
-During execution, MIAOW writes the resolved BMI configuration beside the task results as ``<task_output_name>.json`` and runs the BMI lifecycle:
+After loading the pipeline configuration, ``BmiPipeline`` runs the BMI lifecycle for its components. Each model component receives its own ``init_config_`` through ``Initialize(std::string)`` rather than receiving the pipeline JSON artifact:
 
-1. ``Initialize(<task_output_name>.json)``
-2. zero or more ``Update()`` calls
-3. ``Finalize()``
-
-Static and dynamic tasks use the same forcing, output, and artifact handling.
+1. Call ``Initialize()`` on every component (including the forcing module if configured) with the component's ``init_config_``.
+2. Perform zero or more complete pipeline ``Update()`` calls, which involve applying the current forcing values, advancing the model, writing output if configured, and advancing the forcing source.
+3. ``Finalize()`` every initialized component
 
 Task configuration options
 --------------------------
