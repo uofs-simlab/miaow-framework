@@ -560,8 +560,9 @@ int run_subprocess_worker(int argc, char* argv[], SubprocessWorker worker_factor
         initialize_subprocess_caf();
         const int connection_fd = parse_subprocess_connection_fd(argc, argv);
 
-        // Start the local actor system with CAF middleman for parent communication
+        // Start a single-threaded subprocess actor system with CAF middleman communication
         caf::actor_system_config config;
+        config.set("caf.scheduler.max-threads", 1u);
         config.load<caf::io::middleman>();
         caf::actor_system actor_system(config);
 
