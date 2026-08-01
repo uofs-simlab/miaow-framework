@@ -71,6 +71,14 @@ BMI configuration
 
 .. doxygenenum:: miaow::DynamicBmiBackend
 
+.. doxygenenum:: miaow::BmiDataFormat
+
+.. doxygenstruct:: miaow::BmiForcingConfig
+   :members:
+
+.. doxygenstruct:: miaow::BmiOutputConfig
+   :members:
+
 .. doxygenstruct:: miaow::StaticBmiConfig
    :members:
 

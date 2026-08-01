@@ -42,13 +42,15 @@ struct BmiModuleConfig {
 struct BmiPipelineConfig {
     BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs,
                       std::string forcing_file = "", std::string feature_id = "",
-                      std::size_t output_interval_steps = 1);
+                      std::optional<double> output_interval = std::nullopt,
+                      double time_step_tolerance = default_bmi_time_step_tolerance);
 
     std::vector<BmiModuleConfig> module_configs_;
     std::size_t output_module_{0};
     std::string forcing_file_;
     std::string feature_id_;
-    std::size_t output_interval_steps_{1};
+    std::optional<double> output_interval_;
+    double time_step_tolerance_{default_bmi_time_step_tolerance};
 };
 
 // Convert an internal pipeline config into the generic Task payload
@@ -262,27 +264,30 @@ class ForcingBmi : public ::bmi::Bmi {
 };
 
 // BMI pipeline config and module IO
+BmiPipelineConfig bmi_pipeline_config_from_task(const Task& task);
+
 BmiPipelineConfig read_bmi_pipeline_config_file(const std::filesystem::path& path);
 
-void write_bmi_pipeline_config_file(const Task& task, const std::filesystem::path& path);
+std::optional<std::string> write_bmi_pipeline_config_artifact(const Task& task);
 
 caf::config_value::dictionary
 make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
                              const std::string& forcing_file,
                              std::size_t output_module = 0,
-                             std::size_t output_interval_steps = 1);
+                             std::optional<double> output_interval = std::nullopt,
+                             double time_step_tolerance =
+                                 default_bmi_time_step_tolerance);
 
 BmiModuleConfig parse_bmi_module_config(const boost::json::object& module_object,
                                         std::string_view error_prefix);
 
-Task make_dynamic_bmi_task(SimulationUnitId simulation_unit_id,
-                           const DynamicBmiConfig& config,
-                           const std::string& feature_id = "",
-                           TaskMetadata metadata = {});
+Task make_bmi_task(SimulationUnitId simulation_unit_id,
+                   const StaticBmiConfig& config);
 
-std::filesystem::path bmi_pipeline_config_file_path(const Task& task);
-
-std::vector<std::string> bmi_pipeline_config_artifact_paths(const Task& task);
+Task make_bmi_task(SimulationUnitId simulation_unit_id,
+                   const DynamicBmiConfig& config,
+                   const std::string& feature_id = "",
+                   TaskMetadata metadata = {});
 
 // Output CSV writing for an explicit non-empty variable selection
 OutputFile open_output_file(::bmi::Bmi& model, const std::string& output_dir,

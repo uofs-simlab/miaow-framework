@@ -6,6 +6,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -36,6 +37,39 @@ enum class DynamicBmiBackend {
     fortran,
 };
 
+/// Default absolute tolerance for BMI model time comparisons (in the model's time unit)
+inline constexpr double default_bmi_time_step_tolerance = 1e-4;
+
+/// Storage format for external BMI forcing and runtime-managed output
+enum class BmiDataFormat {
+    /// Comma-separated values
+    csv,
+};
+
+/// External forcing configuration for one BMI task
+struct BmiForcingConfig {
+    /// Forcing storage format
+    BmiDataFormat format_{BmiDataFormat::csv};
+
+    /// Forcing file path
+    std::string file_;
+
+    /// Map from BMI input variables to forcing source variables
+    std::map<std::string, std::string> variables_names_map_;
+};
+
+/// Runtime-managed output configuration for one BMI task
+struct BmiOutputConfig {
+    /// Output storage format
+    BmiDataFormat format_{BmiDataFormat::csv};
+
+    /// BMI output variables written to the task artifact
+    std::vector<std::string> variables_;
+
+    /// Positive model-time interval; absent writes the initial state and every update
+    std::optional<double> interval_;
+};
+
 /**
  * @brief Input and output configuration for one statically typed BMI task.
  *
@@ -47,17 +81,14 @@ struct StaticBmiConfig {
     /// BMI initialization config path
     std::string init_config_;
 
-    /// Optional CSV forcing file path
-    std::string forcing_file_;
+    /// Absolute tolerance for model-time comparisons in the model's time unit
+    double time_step_tolerance_{default_bmi_time_step_tolerance};
 
-    /// Map from BMI input names to forcing CSV headers
-    std::map<std::string, std::string> variables_names_map_;
+    /// Optional external forcing configuration
+    std::optional<BmiForcingConfig> forcing_;
 
-    /// BMI output variables written to task CSV output; empty disables CSV output
-    std::vector<std::string> output_variables_;
-
-    /// Completed-update interval for task CSV output; zero writes only the final state
-    std::size_t output_interval_steps_{1};
+    /// Optional runtime-managed output configuration
+    std::optional<BmiOutputConfig> output_;
 };
 
 /**
@@ -76,17 +107,14 @@ struct DynamicBmiConfig {
     /// Optional BMI initialization config path
     std::string init_config_;
 
-    /// Optional CSV forcing file path
-    std::string forcing_file_;
+    /// Absolute tolerance for model-time comparisons in the model's time unit
+    double time_step_tolerance_{default_bmi_time_step_tolerance};
 
-    /// Map from BMI input names to forcing CSV headers
-    std::map<std::string, std::string> variables_names_map_;
+    /// Optional external forcing configuration
+    std::optional<BmiForcingConfig> forcing_;
 
-    /// BMI output variables written to task CSV output; empty disables CSV output
-    std::vector<std::string> output_variables_;
-
-    /// Completed-update interval for task CSV output; zero writes only the final state
-    std::size_t output_interval_steps_{1};
+    /// Optional runtime-managed output configuration
+    std::optional<BmiOutputConfig> output_;
 
     /// Execution location for this task
     ExecutionMode execution_mode_{ExecutionMode::in_process};
@@ -155,7 +183,7 @@ class BmiPipeline : public bmi_api::Bmi {
     explicit BmiPipeline(std::unique_ptr<bmi_api::Bmi> model = nullptr);
 
     /**
-     * @brief Construct a task pipeline and write its initialization file.
+     * @brief Construct a pipeline from a task's internal BMI configuration.
      * @param task `Task` whose first argument stores internal BMI configuration.
      * @param model Optional model provided by `StaticBmiSimulationUnit`.
      */
@@ -209,18 +237,6 @@ class BmiPipeline : public bmi_api::Bmi {
     void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
 
     /**
-     * @brief Return the generated BMI pipeline initialization file path.
-     * @return Path passed to `Initialize()` for this pipeline.
-     */
-    std::string config_path_string() const;
-
-    /**
-     * @brief Return paths to runtime-managed pipeline configuration artifacts.
-     * @return Artifact paths relative to the job directory.
-     */
-    std::vector<std::string> artifact_paths() const;
-
-    /**
      * @brief Execute this pipeline through the standard BMI lifecycle.
      * @param task `Task` whose output settings receive BMI artifacts.
      * @return Structured `TaskResult` for pipeline lifecycle execution.
@@ -228,10 +244,16 @@ class BmiPipeline : public bmi_api::Bmi {
     TaskResult execute_bmi_lifecycle(const Task& task);
 
   private:
+    void initialize_task();
     const std::vector<std::string>& output_variables() const;
-    std::size_t output_interval_steps() const;
+    const std::optional<double>& output_interval() const;
+    double time_step_tolerance() const;
+    std::size_t completed_update_count() const;
 
+    // Hide private state from header with the pointer-to-implementation (PIMPL) pattern
     class Impl;
+
+    // Own the implementation; BmiPipeline destruction occurs where Impl is complete
     std::unique_ptr<Impl> impl_;
 };
 
@@ -241,7 +263,10 @@ class BmiPipeline : public bmi_api::Bmi {
  * The constructor reads a
  * [NextGen-style](https://github.com/NOAA-OWP/ngen) global realization with
  * one `bmi_fortran` module and `CsvPerFeature` forcing, resolves relative
- * paths and expands sibling `catchments.geojson` features.
+ * paths and expands sibling `catchments.geojson` features. One `Task` is built for each
+ * feature (e.g., catchment or response unit) with a sequential pipeline containing the BMI
+ * model and its associated forcing. The tasks can be executed concurrently by a
+ * `DynamicBmiSimulationUnit`.
  */
 class PartitionedBmiRealization {
   public:
@@ -266,6 +291,8 @@ class PartitionedBmiRealization {
     const std::string& output_root() const;
 
   private:
+
+    // Configuration and identifier for one realization feature
     struct FeatureConfig {
         DynamicBmiConfig config_;
         std::string feature_id_;
