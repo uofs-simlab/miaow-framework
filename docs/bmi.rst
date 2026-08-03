@@ -95,7 +95,7 @@ Subprocess modes are available for dynamic BMI tasks. ``DynamicBmiConfig::subpro
 Reading forcing data
 --------------------
 
-Set the ``forcing_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` to a ``BmiForcingConfig`` to enable external forcing; an absent value disables forcing. With configured forcing, MIAOW appends the internal forcing module (which currently supports per-task CSV files only as its backend) after the model and exposes the file's data columns as BMI outputs. MIAOW derives explicit scalar couplings from ``BmiForcingConfig::variables_names_map_``, applies the current forcing values immediately before each model update, and then advances the forcing source after the model update.
+Set the ``forcing_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` to a ``BmiForcingConfig`` to enable MIAOW-managed forcing; an absent value adds no MIAOW forcing module and delegates forcing to the model. With configured forcing, MIAOW appends the internal forcing module (which currently supports per-task CSV files only as its backend) after the model and exposes the file's data columns as BMI outputs. MIAOW derives explicit scalar couplings from ``BmiForcingConfig::variables_names_map_``, applies the current forcing values immediately before each model update, and then advances the forcing source after the model update.
 
 The variable map is interpreted as ``BMI input variable -> CSV header``. If it is empty, MIAOW derives an identity map from ``GetInputVarNames()`` and expects CSV headers with the same names as the corresponding variables.
 
@@ -106,7 +106,7 @@ Exhausting the forcing data before the model's ``end_time`` fails the task with 
 Writing BMI output
 ------------------
 
-Set the ``output_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` to a ``BmiOutputConfig`` to enable MIAOW-generated task output, which currently supports CSV files only; an absent output configuration or an empty ``BmiOutputConfig::variables_`` list disables the task artifact.
+Set the ``output_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` to a ``BmiOutputConfig`` to enable MIAOW-managed task output, which currently supports CSV files only. An absent output configuration or an empty ``BmiOutputConfig::variables_`` list disables the MIAOW-managed task artifact and delegates output to the model.
 
 ``BmiOutputConfig::interval_`` controls the output cadence in the units returned by the selected output model's ``GetTimeUnits()``. An absent interval writes the initialized state and every completed pipeline update. A present interval must be finite and positive; it writes the initialized state, each reachable model-time boundary, and the final state. Boundaries later than the model end time are not attempted, and a boundary within ``time_step_tolerance_`` of the end time shares one final row.
 

@@ -84,10 +84,10 @@ struct StaticBmiConfig {
     /// Absolute tolerance for model-time comparisons in the model's time unit
     double time_step_tolerance_{default_bmi_time_step_tolerance};
 
-    /// Optional external forcing configuration
+    /// Optional MIAOW-managed forcing; absent delegates forcing to the model
     std::optional<BmiForcingConfig> forcing_;
 
-    /// Optional runtime-managed output configuration
+    /// Optional MIAOW-managed output; absent delegates output to the model
     std::optional<BmiOutputConfig> output_;
 };
 
@@ -110,10 +110,10 @@ struct DynamicBmiConfig {
     /// Absolute tolerance for model-time comparisons in the model's time unit
     double time_step_tolerance_{default_bmi_time_step_tolerance};
 
-    /// Optional external forcing configuration
+    /// Optional MIAOW-managed forcing; absent delegates forcing to the model
     std::optional<BmiForcingConfig> forcing_;
 
-    /// Optional runtime-managed output configuration
+    /// Optional MIAOW-managed output; absent delegates output to the model
     std::optional<BmiOutputConfig> output_;
 
     /// Execution location for this task
