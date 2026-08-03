@@ -8,11 +8,11 @@ BMI task lifecycle
 
 Build individual tasks with ``make_bmi_task(...)`` and task sets with ``make_bmi_tasks(...)``. Both functions translate typed BMI configuration into the generic ``Task`` representation that MIAOW passes to simulation unit actors for execution. During task execution, ``BmiPipeline`` initializes directly from the ``BmiPipelineConfig`` stored in ``Task::args_``. When runtime output is enabled, MIAOW also writes the resolved pipeline configuration beside the task results as ``<task_output_name>.json``. Task execution does not require this file; it is an optional pipeline configuration artifact that can later be passed to ``BmiPipeline::Initialize(std::string)`` for file-based initialization, for example, to reproduce a previous run.
 
-After loading the pipeline configuration, ``BmiPipeline`` runs the BMI lifecycle for its components. Each model component receives its own ``init_config_`` through ``Initialize(std::string)`` rather than receiving the pipeline JSON artifact:
+After loading the pipeline configuration, ``BmiPipeline`` runs the BMI lifecycle for its components, which currently include a single BMI model and an optional internal forcing module. The pipeline lifecycle, which is implemented in `src/bmi/execute.cpp <https://github.com/uofs-simlab/miaow-framework/blob/main/src/bmi/execute.cpp>`_, consists of three phases:
 
 1. Call ``Initialize()`` on every component (including the forcing module if configured) with the component's ``init_config_``.
 2. Perform zero or more complete pipeline ``Update()`` calls, which involve applying the current forcing values, advancing the model, writing output if configured, and advancing the forcing source.
-3. ``Finalize()`` every initialized component
+3. ``Finalize()`` every initialized component.
 
 Task configuration options
 --------------------------
@@ -35,7 +35,7 @@ Use this path when the concrete BMI model type is known when compiling the execu
    };
    const miaow::Task task = miaow::make_bmi_task(heat, config);
 
-Static BMI model units always execute in the parent process.
+Static BMI model units always execute in the parent process, rather than in a subprocess.
 
 Dynamic BMI plugin
 ~~~~~~~~~~~~~~~~~~
