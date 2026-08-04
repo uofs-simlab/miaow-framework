@@ -1,5 +1,0 @@
-&parameters
-  file_manager          = "./data/logan_river/configs/fileManager-hru-13.txt"
-  attrib_file_HRU_order = 4
-  restart_print_freq    = "e"
-/

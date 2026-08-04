@@ -8,6 +8,11 @@
           "init_config": "",
           "allow_exceed_end_time": true,
           "main_output_variable": "land_surface_water__runoff_volume_flux",
+          "output_variables": [
+            "land_surface_water__runoff_volume_flux",
+            "snowpack_mass",
+            "land_surface_water__baseflow_volume_flux"
+          ],
           "modules": [
             {
               "name": "bmi_fortran",
@@ -18,6 +23,7 @@
                 "init_config": "configs/{{id}}.input",
                 "allow_exceed_end_time": true,
                 "main_output_variable": "land_surface_water__runoff_volume_flux",
+                "uses_forcing_file": false,
                 "variables_names_map": {
                   "atmosphere_water__precipitation_mass_flux": "precip_rate",
                   "land_surface_air__temperature": "TMP_2maboveground",
@@ -27,12 +33,7 @@
                   "land_surface_radiation~incoming~shortwave__energy_flux": "DSWRF_surface",
                   "land_surface_radiation~incoming~longwave__energy_flux": "DLWRF_surface",
                   "land_surface_air__pressure": "PRES_surface"
-                },
-                "output_variables": [
-                  "land_surface_water__runoff_volume_flux",
-                  "snowpack_mass",
-                  "land_surface_water__baseflow_volume_flux"
-                ]
+                }
               }
             }
           ]
@@ -49,6 +50,5 @@
     "start_time": "2015-12-01 00:00:00",
     "end_time": "2015-12-30 23:00:00",
     "output_interval": 3600
-  },
-  "output_root": "../../output/gauge_01073000"
+  }
 }

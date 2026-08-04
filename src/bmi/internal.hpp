@@ -35,7 +35,7 @@ struct BmiModuleConfig {
     std::optional<std::string> cpp_create_function_;
     std::optional<std::string> cpp_destroy_function_;
     std::map<std::string, std::string> variables_names_map_;
-    std::vector<std::string> output_variables_;
+    std::optional<std::vector<std::string>> output_variables_;
 };
 
 // Internal task payload consumed by BmiPipeline

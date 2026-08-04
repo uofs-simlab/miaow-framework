@@ -17,13 +17,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Use the realization output root as the default before parsing CLI overrides
+    // Use the gauge-specific output root as the default before parsing CLI overrides
     miaow::PartitionedBmiRealization realization;
     miaow::RuntimeOptions runtime_options;
+    runtime_options.output_root_ = "output/gauge_01073000";
     try {
         realization = miaow::PartitionedBmiRealization(
             "data/gauge_01073000/realization_config.json");
-        runtime_options.output_root_ = realization.output_root();
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";

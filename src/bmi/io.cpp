@@ -133,7 +133,7 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id, const StaticBmiConfig& c
     }
 
     // Validate and collect optional output settings
-    std::vector<std::string> output_variables;
+    std::optional<std::vector<std::string>> output_variables;
     std::optional<double> output_interval;
     if (config.output_) {
         validate_data_format(config.output_->format_, error_prefix, "output");
@@ -179,7 +179,7 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id,
     }
 
     // Validate and collect optional output settings
-    std::vector<std::string> output_variables;
+    std::optional<std::vector<std::string>> output_variables;
     std::optional<double> output_interval;
     if (config.output_) {
         validate_data_format(config.output_->format_, error_prefix, "output");
@@ -393,13 +393,14 @@ BmiModuleConfig parse_bmi_module_config(const boost::json::object& module_object
     }
 
     // CSV output variables preserve the order declared by the module config
-    std::vector<std::string> output_variables;
+    std::optional<std::vector<std::string>> output_variables;
     if (const boost::json::value* output_value =
             module_params.if_contains("output_variables")) {
         if (!output_value->is_array()) {
             io::throw_config_error(error_prefix,
                                    "output_variables must be an array of strings");
         }
+        output_variables.emplace();
         for (const boost::json::value& output_variable_value : output_value->as_array()) {
             if (!output_variable_value.is_string()) {
                 io::throw_config_error(
@@ -411,7 +412,7 @@ BmiModuleConfig parse_bmi_module_config(const boost::json::object& module_object
                 io::throw_config_error(
                     error_prefix, "output_variables entries must be non-empty strings");
             }
-            output_variables.push_back(output_variable);
+            output_variables->push_back(output_variable);
         }
     }
 
@@ -488,11 +489,11 @@ make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
         add_variables_names_map_to_params(module_params,
                                           module_config.variables_names_map_);
 
-        // Store explicit CSV output selection only when configured
-        if (!module_config.output_variables_.empty()) {
+        // Store an empty list when all BMI outputs are selected
+        if (module_config.output_variables_) {
             caf::config_value::list output_variables;
-            output_variables.reserve(module_config.output_variables_.size());
-            for (const std::string& output_variable : module_config.output_variables_) {
+            output_variables.reserve(module_config.output_variables_->size());
+            for (const std::string& output_variable : *module_config.output_variables_) {
                 output_variables.emplace_back(output_variable);
             }
             module_params.insert("output_variables", std::move(output_variables));

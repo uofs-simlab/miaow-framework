@@ -63,7 +63,7 @@ struct BmiOutputConfig {
     /// Output storage format
     BmiDataFormat format_{BmiDataFormat::csv};
 
-    /// BMI output variables written to the task artifact
+    /// BMI output variables written to the task artifact; empty selects all outputs
     std::vector<std::string> variables_;
 
     /// Positive model-time interval; absent writes the initial state and every update
@@ -284,22 +284,12 @@ class PartitionedBmiRealization {
      */
     explicit PartitionedBmiRealization(const std::string& realization_path);
 
-    /**
-     * @brief Return the resolved runtime output root from the realization.
-     * @return Resolved output root, or an empty string when none is configured.
-     */
-    const std::string& output_root() const;
-
   private:
-
     // Configuration and identifier for one realization feature
     struct FeatureConfig {
         DynamicBmiConfig config_;
         std::string feature_id_;
     };
-
-    // Root directory for realization-driven runtime output
-    std::string output_root_;
 
     // Resolved configuration and identifier for each feature
     std::vector<FeatureConfig> feature_configs_;

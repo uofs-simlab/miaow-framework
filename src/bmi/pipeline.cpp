@@ -198,20 +198,22 @@ void BmiPipeline::Impl::build_couplings(
 
     const auto append_validated_coupling = [&](const std::string& source_variable,
                                                const std::string& target_variable) {
+        // Variable maps currently apply only to model inputs receiving CSV forcing
+        const std::vector<std::string>::const_iterator target_it =
+            std::find(target_inputs.begin(), target_inputs.end(), target_variable);
+        if (target_it == target_inputs.end()) {
+            throw std::runtime_error(
+                "BMI forcing error: variables_names_map key '" + target_variable +
+                "' is not a BMI input variable; MIAOW maps BMI input variables to CSV "
+                "forcing headers");
+        }
+
         // Source variables must be available as BMI outputs
         const std::vector<std::string>::const_iterator source_it =
             std::find(source_outputs.begin(), source_outputs.end(), source_variable);
         if (source_it == source_outputs.end()) {
             throw std::runtime_error("BMI coupling error: source variable '" +
                                      source_variable + "' not found");
-        }
-
-        // Target variables must be available as BMI inputs
-        const std::vector<std::string>::const_iterator target_it =
-            std::find(target_inputs.begin(), target_inputs.end(), target_variable);
-        if (target_it == target_inputs.end()) {
-            throw std::runtime_error("BMI coupling error: target variable '" +
-                                     target_variable + "' not found");
         }
 
         // Scalar couplings target one float or double value
@@ -288,8 +290,10 @@ void BmiPipeline::Impl::initialize(const BmiPipelineConfig& pipeline_config) {
     // Add the configured model module before attaching optional forcing
     const BmiModuleConfig& module_config = pipeline_config.module_configs_.front();
 
-    // The model module defines task CSV output selection
-    output_variables_ = module_config.output_variables_;
+    // The model module defines whether task CSV output is disabled or selected
+    if (module_config.output_variables_) {
+        output_variables_ = *module_config.output_variables_;
+    }
     output_interval_ = pipeline_config.output_interval_;
     time_step_tolerance_ = pipeline_config.time_step_tolerance_;
     if (!std::isfinite(time_step_tolerance_) || time_step_tolerance_ < 0.0) {
@@ -317,6 +321,11 @@ void BmiPipeline::Impl::initialize(const BmiPipelineConfig& pipeline_config) {
     for (std::size_t module_index = 0; module_index < modules_.size(); ++module_index) {
         modules_.at(module_index)->Initialize(configs_.at(module_index));
         ++initialized_count_;
+    }
+
+    // An enabled empty selection resolves to every output exposed after initialization
+    if (module_config.output_variables_ && module_config.output_variables_->empty()) {
+        output_variables_ = GetOutputVarNames();
     }
 
     // Distinct native updates must remain distinguishable by the configured tolerance

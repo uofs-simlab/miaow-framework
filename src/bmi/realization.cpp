@@ -168,11 +168,52 @@ BmiModuleConfig parse_fortran_module_config(const boost::json::object& global_ob
         throw_realization_config_error("bmi_multi modules must contain one entry");
     }
 
+    const boost::json::object& module = modules.at(0).as_object();
     BmiModuleConfig module_config =
-        bmi::parse_bmi_module_config(modules.at(0).as_object(),
-                                     "Realization config error: ");
+        bmi::parse_bmi_module_config(module, "Realization config error: ");
     if (module_config.name_ != "bmi_fortran") {
         throw_realization_config_error("unsupported module '" + module_config.name_ + "'");
+    }
+
+    // The supported module receives forcing through MIAOW BMI setters
+    const boost::json::object& module_params = module.at("params").as_object();
+    const boost::json::value* uses_forcing_file =
+        module_params.if_contains("uses_forcing_file");
+    if (uses_forcing_file == nullptr || !uses_forcing_file->is_bool()) {
+        throw_realization_config_error(
+            "bmi_fortran uses_forcing_file must be a boolean");
+    }
+    if (uses_forcing_file->as_bool()) {
+        throw_realization_config_error(
+            "bmi_fortran uses_forcing_file must be false");
+    }
+    if (module_params.if_contains("output_variables") != nullptr) {
+        throw_realization_config_error(
+            "output_variables must be configured in bmi_multi params");
+    }
+
+    // Output selection belongs to the containing bmi_multi formulation
+    if (const boost::json::value* output_value =
+            bmi_multi_params.if_contains("output_variables")) {
+        if (!output_value->is_array()) {
+            throw_realization_config_error(
+                "output_variables must be an array of strings");
+        }
+        module_config.output_variables_.emplace();
+        for (const boost::json::value& output_variable_value :
+             output_value->as_array()) {
+            if (!output_variable_value.is_string()) {
+                throw_realization_config_error(
+                    "output_variables entries must be non-empty strings");
+            }
+            const std::string output_variable =
+                io::trim(std::string(output_variable_value.as_string()));
+            if (output_variable.empty()) {
+                throw_realization_config_error(
+                    "output_variables entries must be non-empty strings");
+            }
+            module_config.output_variables_->push_back(output_variable);
+        }
     }
 
     return module_config;
@@ -237,17 +278,6 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
     require_existing_file(features_path, "features");
     const std::vector<std::string> feature_ids = read_feature_ids(features_path);
 
-    if (const boost::json::value* output_root_value = root.if_contains("output_root")) {
-        if (!output_root_value->is_string()) {
-            throw_realization_config_error("root key 'output_root' must be a string");
-        }
-        const std::string output_root =
-            io::trim(std::string(output_root_value->as_string()));
-        if (!output_root.empty()) {
-            output_root_ = resolve_path(base_directory, output_root).string();
-        }
-    }
-
     feature_configs_.reserve(feature_ids.size());
     for (const std::string& feature_id : feature_ids) {
         const std::string init_config =
@@ -271,15 +301,12 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
             .variables_names_map_ = module_config.variables_names_map_,
         };
         config.output_ = BmiOutputConfig{
-            .variables_ = module_config.output_variables_,
+            .variables_ = module_config.output_variables_.value_or(
+                std::vector<std::string>{}),
             .interval_ = output_interval,
         };
         feature_configs_.push_back({std::move(config), feature_id});
     }
-}
-
-const std::string& PartitionedBmiRealization::output_root() const {
-    return output_root_;
 }
 
 // Build one dynamic BMI task for every realization feature

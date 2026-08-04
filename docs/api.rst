@@ -73,6 +73,8 @@ BMI configuration
 
 .. doxygenenum:: miaow::BmiDataFormat
 
+.. doxygenvariable:: miaow::default_bmi_time_step_tolerance
+
 .. doxygenstruct:: miaow::BmiForcingConfig
    :members:
 
