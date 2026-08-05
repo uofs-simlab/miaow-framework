@@ -69,6 +69,8 @@ void assign_task_runtime_fields(std::vector<Task>& tasks, std::size_t first_task
 
 // File paths and metadata for subprocess logs
 struct SubprocessPaths {
+    SubprocessPaths(const Task& task, const std::string& output_name);
+
     // Subprocess stdout log used for diagnostics
     std::filesystem::path stdout_path_;
 

@@ -1,4 +1,4 @@
-#include "miaow_bmi.hpp"
+#include "bmi/internal.hpp"
 #include "core/internal.hpp"
 
 #include <exception>
@@ -30,19 +30,18 @@ void validate_subprocess_task(const Task& task) {
 // Run BMI pipeline tasks until the parent process ends this subprocess
 caf::behavior worker_actor(caf::event_based_actor*) {
     return {[](caf::get_atom, const Task& task) -> TaskResult {
-                TaskResult task_result;
-                try {
-                    // Config-constructible pipelines build all models in the subprocess
-                    validate_subprocess_task(task);
-                    BmiPipeline pipeline(task);
-                    task_result = pipeline.execute_bmi_lifecycle(task);
-                } catch (...) {
-                    // Exceptions cannot propagate through the subprocess boundary
-                    task_result =
-                        make_failed_task_result(std::current_exception(), "BMI error");
-                }
-                return task_result;
-            }};
+        TaskResult task_result;
+        try {
+            // Config-constructible pipelines build all models in the subprocess
+            validate_subprocess_task(task);
+            bmi::BmiPipeline pipeline;
+            task_result = pipeline.execute_bmi_lifecycle(task);
+        } catch (...) {
+            // Exceptions cannot propagate through the subprocess boundary
+            task_result = make_failed_task_result(std::current_exception(), "BMI error");
+        }
+        return task_result;
+    }};
 }
 
 } // namespace

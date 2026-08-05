@@ -135,20 +135,6 @@ std::filesystem::path make_control_dir(const Task& task) {
     return control_dir;
 }
 
-// Create the control files used by one subprocess process
-SubprocessPaths make_subprocess_paths(const Task& task,
-                                      const std::string& output_name) {
-    const std::filesystem::path control_dir = make_control_dir(task);
-    const std::string control_stem =
-        std::string(subprocess_file_prefix) + "_" + output_name;
-
-    SubprocessPaths paths;
-    paths.stdout_path_ = control_dir / (control_stem + "_stdout.log");
-    paths.stderr_path_ = control_dir / (control_stem + "_stderr.log");
-    paths.temporary_control_dir_ = task.task_output_dir_.empty();
-    return paths;
-}
-
 // Include a bounded stderr prefix in parent-side failure messages
 std::string read_file_prefix(const std::filesystem::path& path, std::size_t max_chars) {
     std::ifstream input(path);
@@ -331,7 +317,7 @@ void start_subprocess(caf::actor_system& actor_system, SubprocessState& state,
 
     // Prepare state-owned diagnostics before launching the worker process
     state.io_context_.restart();
-    state.paths_ = make_subprocess_paths(task, output_name);
+    state.paths_.emplace(task, output_name);
     state.keep_logs_ = false;
     const SubprocessPaths& paths = *state.paths_;
 
@@ -375,6 +361,17 @@ void start_subprocess(caf::actor_system& actor_system, SubprocessState& state,
 }
 
 } // namespace
+
+// Construct the control file paths used by one subprocess process
+SubprocessPaths::SubprocessPaths(const Task& task, const std::string& output_name) {
+    const std::filesystem::path control_dir = make_control_dir(task);
+    const std::string control_stem =
+        std::string(subprocess_file_prefix) + "_" + output_name;
+
+    stdout_path_ = control_dir / (control_stem + "_stdout.log");
+    stderr_path_ = control_dir / (control_stem + "_stderr.log");
+    temporary_control_dir_ = task.task_output_dir_.empty();
+}
 
 TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& state,
                               const Task& task) {

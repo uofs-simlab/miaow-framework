@@ -1,5 +1,6 @@
 #include "miaow_io.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <iomanip>
 #include <iostream>
@@ -32,13 +33,15 @@ std::string task_label(const TaskRecord& task_record) {
 } // namespace
 
 void print_job_summary(const JobRecord& job_record) {
-    double sum_task_times = 0.0;
+    std::chrono::duration<double> sum_task_times{};
     for (const TaskRecord& task_record : job_record.tasks_) {
-        sum_task_times += task_record.run_time_s_;
+        sum_task_times += task_record.run_time_;
     }
 
-    const double total_time = job_record.run_time_s_;
-    const double concurrency = total_time > 0.0 ? (sum_task_times / total_time) : 0.0;
+    const std::chrono::duration<double> total_time = job_record.run_time_;
+    const double concurrency = total_time > std::chrono::duration<double>::zero()
+                                   ? sum_task_times / total_time
+                                   : 0.0;
 
     std::ostringstream output;
     output << "\n" << section_header("MIAOW Job Summary") << "\n";
@@ -48,10 +51,10 @@ void print_job_summary(const JobRecord& job_record) {
     for (const TaskRecord& task_record : job_record.tasks_) {
         output << "  [" << task_label(task_record) << "] "
                << task_status_to_string(task_record.result_.status_) << " ("
-               << task_record.run_time_s_ << " s): " << task_record.result_.message_
-               << "\n";
+               << task_record.run_time_.count() << " s): "
+               << task_record.result_.message_ << "\n";
     }
-    output << "total_time: " << total_time << "\n";
+    output << "total_time: " << total_time.count() << "\n";
     output << "concurrency: " << concurrency << "\n";
     output << section_rule() << "\n";
     std::cout << output.str();

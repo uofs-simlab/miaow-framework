@@ -10,8 +10,10 @@ target_link_libraries(miaow_core_tests PRIVATE miaow Boost::unit_test_framework)
 
 add_executable(miaow_bmi_tests
     bmi/bmi.cpp
+    bmi/variable.cpp
 )
 target_compile_features(miaow_bmi_tests PRIVATE cxx_std_20)
+target_include_directories(miaow_bmi_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(miaow_bmi_tests PRIVATE
     MIAOW_BMI_TEST_OUTPUT_ROOT="${CMAKE_CURRENT_BINARY_DIR}/output/bmi"
     MIAOW_TEST_BMI_FORCING_PATH="${CMAKE_CURRENT_SOURCE_DIR}/bmi/fixtures/forcing.csv"

@@ -60,12 +60,10 @@ static void complete_job(caf::event_based_actor* self,
               });
 
     // Build the final record and stop the job actor
-    const double job_run_time_s =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                      state->job_start_time_)
-            .count();
+    const std::chrono::duration<double> job_run_time =
+        std::chrono::steady_clock::now() - state->job_start_time_;
     JobRecord job_record{state->run_id_, state->job_id_, std::move(task_records),
-                         job_run_time_s};
+                         job_run_time};
 
     // Clean up
     state->job_timeout_.dispose();
@@ -130,14 +128,13 @@ static void complete_task(caf::event_based_actor* self,
     state->available_workers_.push(worker_id);
 
     // Record the wall-clock duration and success/failure message for this task ID
-    const double task_run_time_s =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                      state->task_start_times_.at(task_id)).count();
+    const std::chrono::duration<double> task_run_time =
+        std::chrono::steady_clock::now() - state->task_start_times_.at(task_id);
 
     // Runtime creates a task record only after the task has completed
     state->completed_task_records_.push_back(
         TaskRecord{state->tasks_.at(task_id), static_cast<TaskId>(task_id),
-                   std::move(task_result), task_run_time_s});
+                   std::move(task_result), task_run_time});
 
     // During error shutdown, record active results without generating or dispatching work
     if (state->pending_error_message_.has_value()) {
@@ -351,7 +348,8 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
                         "configured job timeout expired", "Job timeout");
                     state->completed_task_records_.push_back(
                         TaskRecord{state->tasks_.at(task_id), static_cast<TaskId>(task_id),
-                                   std::move(task_result), 0.0});
+                                   std::move(task_result),
+                                   std::chrono::duration<double>::zero()});
                 }
 
                 complete_job(self, state);

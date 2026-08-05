@@ -73,7 +73,7 @@ BMI configuration
 
 .. doxygenenum:: miaow::BmiDataFormat
 
-.. doxygenvariable:: miaow::default_bmi_time_step_tolerance
+.. doxygenvariable:: miaow::default_bmi_time_step_tolerance_seconds
 
 .. doxygenstruct:: miaow::BmiForcingConfig
    :members:
@@ -85,12 +85,6 @@ BMI configuration
    :members:
 
 .. doxygenstruct:: miaow::DynamicBmiConfig
-   :members:
-
-BMI pipeline
-~~~~~~~~~~~~
-
-.. doxygenclass:: miaow::BmiPipeline
    :members:
 
 Simulation units
@@ -126,7 +120,3 @@ I/O and CLI helpers
 .. doxygenfunction:: miaow::ensure_expected_run_dir
 
 .. doxygenfunction:: miaow::parse_runtime_cli_options
-
-.. doxygenfunction:: miaow::write_repeated_hourly_forcing_csv
-
-.. doxygenfunction:: miaow::make_forcing_config

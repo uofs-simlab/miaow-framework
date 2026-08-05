@@ -206,6 +206,7 @@ add_library(miaow STATIC
     src/bmi/io.cpp
     src/bmi/pipeline.cpp
     src/bmi/realization.cpp
+    src/bmi/variable.cpp
     src/core/actors.cpp
     src/core/process.cpp
     src/core/runtime.cpp
@@ -260,7 +261,7 @@ string(CONCAT MIAOW_INSTALLED_SUBPROCESS_PATH
 string(CONCAT MIAOW_SUBPROCESS_COMPILE_DEFINITIONS
     "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\";"
     "MIAOW_INSTALLED_SUBPROCESS_PATH=\"${MIAOW_INSTALLED_SUBPROCESS_PATH}\"")
-set_source_files_properties(src/bmi/execute.cpp src/core/process.cpp PROPERTIES
+set_source_files_properties(src/core/process.cpp PROPERTIES
     COMPILE_DEFINITIONS "${MIAOW_SUBPROCESS_COMPILE_DEFINITIONS}"
 )
 
