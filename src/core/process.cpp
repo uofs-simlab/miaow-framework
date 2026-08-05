@@ -20,6 +20,7 @@
 #include <vector>
 
 #include <sys/select.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <boost/json.hpp>
@@ -295,14 +296,33 @@ TaskResult request_remote_task(caf::actor_system& actor_system,
     return std::move(*task_result);
 }
 
-// Append subprocess stderr context to a parent-side subprocess failure
+// Format a subprocess failure with termination details and retained diagnostics
 std::string format_subprocess_failure(const std::string& message,
-                                      const SubprocessPaths& paths) {
+                                      const SubprocessPaths& paths,
+                                      const SubprocessTerminationInfo& termination_info) {
     std::string failure_message = message;
+
+    // Report whether the child exited normally or was terminated by a signal
+    if (termination_info.wait_status_.has_value()) {
+        const int wait_status = *termination_info.wait_status_;
+        if (WIFEXITED(wait_status)) {
+            failure_message +=
+                "; subprocess exited with code " + std::to_string(WEXITSTATUS(wait_status));
+        } else if (WIFSIGNALED(wait_status)) {
+            failure_message += termination_info.miaow_sent_termination_
+                                   ? "; MIAOW failure cleanup terminated the subprocess "
+                                     "with signal "
+                                   : "; subprocess was terminated by signal ";
+            failure_message += std::to_string(WTERMSIG(wait_status));
+        }
+    }
+
     const std::string stderr_text = read_file_prefix(paths.stderr_path_, 2000);
     if (!stderr_text.empty()) {
         failure_message += ": " + stderr_text;
     }
+    failure_message += "; subprocess stdout log: " + paths.stdout_path_.string();
+    failure_message += "; subprocess stderr log: " + paths.stderr_path_.string();
     return failure_message;
 }
 
@@ -369,8 +389,9 @@ void start_subprocess(caf::actor_system& actor_system, SubprocessState& state,
         close_file_descriptor(connection_pipe.read_fd_);
         close_file_descriptor(connection_pipe.write_fd_);
         state.keep_logs_ = true;
-        stop_subprocess(state);
-        throw std::runtime_error(format_subprocess_failure(message, failure_paths));
+        const SubprocessTerminationInfo termination_info = stop_subprocess(state);
+        throw std::runtime_error(
+            format_subprocess_failure(message, failure_paths, termination_info));
     }
 }
 
@@ -432,8 +453,11 @@ TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& 
 
         // Preserve logs and reset the worker subprocess after a failed task
         if (task_result.status_ == TaskStatus::failed) {
+            const SubprocessPaths paths = *state.paths_;
             state.keep_logs_ = true;
-            stop_subprocess(state);
+            const SubprocessTerminationInfo termination_info = stop_subprocess(state);
+            task_result.message_ =
+                format_subprocess_failure(task_result.message_, paths, termination_info);
         } else if (task.execution_mode_ == ExecutionMode::single_task_subprocess) {
             // Successful task-scoped execution stops its one-task subprocess
             stop_subprocess(state);
@@ -446,41 +470,59 @@ TaskResult execute_subprocess(caf::actor_system& actor_system, SubprocessState& 
         if (state.paths_) {
             const SubprocessPaths paths = *state.paths_;
             state.keep_logs_ = true;
-            stop_subprocess(state);
-            message = format_subprocess_failure(message, paths);
+            const SubprocessTerminationInfo termination_info = stop_subprocess(state);
+            message = format_subprocess_failure(message, paths, termination_info);
         }
         return make_failed_task_result(message, subprocess_error_prefix);
     } catch (...) {
         // Keep diagnostics when an unknown parent-side error escapes
+        std::string message = "unknown exception";
         if (state.paths_) {
+            const SubprocessPaths paths = *state.paths_;
             state.keep_logs_ = true;
-            stop_subprocess(state);
+            const SubprocessTerminationInfo termination_info = stop_subprocess(state);
+            message = format_subprocess_failure(message, paths, termination_info);
         }
-        return make_failed_task_result("unknown exception", subprocess_error_prefix);
+        return make_failed_task_result(message, subprocess_error_prefix);
     }
 }
 
-void stop_subprocess(SubprocessState& state) {
+SubprocessTerminationInfo stop_subprocess(SubprocessState& state) {
+    SubprocessTerminationInfo termination_info;
+
     // Clear stale actor handles when there is no active process
     if (!state.subprocess_.has_value()) {
         state.remote_worker_ = caf::actor{};
         state.subprocess_path_.clear();
         state.paths_.reset();
         state.keep_logs_ = false;
-        return;
+        return termination_info;
     }
 
-    // Terminate the owned process before clearing state
-    boost::system::error_code ignored_error;
-    if (state.subprocess_->running(ignored_error)) {
-        state.subprocess_->terminate(ignored_error);
+    // Ask if the child is running
+    boost::system::error_code running_query_error;
+    const bool subprocess_is_running = state.subprocess_->running(running_query_error);
+
+    // Terminate only when Boost confirmed that the child is still running and no error
+    // occurred while checking
+    if (!running_query_error && subprocess_is_running) {
+        boost::system::error_code termination_error;
+        state.subprocess_->terminate(termination_error);
+
+        // An empty termination error code means Boost sent the request successfully; we
+        // therefore mark that MIAOW sent termination to the child
+        termination_info.miaow_sent_termination_ = !termination_error;
     }
 
-    // Remove diagnostics only after clean subprocess shutdown
-    const bool remove_logs = !state.keep_logs_ && state.paths_.has_value();
-    state.subprocess_->wait(ignored_error);
+    // Collect the child termination status and release its process record
+    boost::system::error_code wait_error;
+    state.subprocess_->wait(wait_error);
+    if (!wait_error) {
+        termination_info.wait_status_ = state.subprocess_->native_exit_code();
+    }
 
-    if (remove_logs) {
+    // Remove subprocess logs unless a failure path requested their preservation
+    if (!state.keep_logs_ && state.paths_.has_value()) {
         remove_subprocess_files(*state.paths_);
     }
 
@@ -492,6 +534,7 @@ void stop_subprocess(SubprocessState& state) {
     state.connection_port_ = 0;
     state.paths_.reset();
     state.keep_logs_ = false;
+    return termination_info;
 }
 
 SubprocessState::~SubprocessState() {

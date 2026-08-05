@@ -80,6 +80,15 @@ struct SubprocessPaths {
     bool temporary_control_dir_{false};
 };
 
+// Child termination details collected while releasing a subprocess
+struct SubprocessTerminationInfo {
+    // Encoded POSIX status returned after waiting for the child
+    std::optional<int> wait_status_;
+
+    // True when MIAOW successfully sent a termination request to a running child
+    bool miaow_sent_termination_{false};
+};
+
 // Process and CAF connection resources retained by one simulation unit worker
 struct SubprocessState {
     ~SubprocessState();
@@ -116,8 +125,8 @@ struct SubprocessState {
 TaskResult execute_subprocess(caf::actor_system& actor_system,
                               SubprocessState& state, const Task& task);
 
-// Stop the active subprocess and release its process, actor, and diagnostic handles
-void stop_subprocess(SubprocessState& state);
+// Stop the active subprocess and return its termination details
+SubprocessTerminationInfo stop_subprocess(SubprocessState& state);
 
 // Run the subprocess executable with the requested simulation unit behaviour
 int run_subprocess_worker(int argc, char* argv[], SubprocessWorker worker_factory);
