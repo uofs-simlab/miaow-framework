@@ -29,6 +29,7 @@ void validate_subprocess_task(const Task& task) {
 
 // Run BMI pipeline tasks until the parent process ends this subprocess
 caf::behavior worker_actor(caf::event_based_actor*) {
+    // simulation_unit_actor -> worker_actor: execute one BMI task
     return {[](caf::get_atom, const Task& task) -> TaskResult {
                 TaskResult task_result;
                 try {
@@ -49,7 +50,7 @@ caf::behavior worker_actor(caf::event_based_actor*) {
 
 } // namespace miaow
 
-// Entry point for subprocess execution launched via Boost.Process
+// Entry point for subprocess execution launched through the POSIX process boundary
 int main(int argc, char* argv[]) {
     return miaow::core::run_subprocess_worker(argc, argv, miaow::worker_actor);
 }

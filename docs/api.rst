@@ -43,9 +43,6 @@ Task and job data
 Runtime orchestration
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. doxygenclass:: miaow::ExecutionContext
-   :members: execute_subprocess
-
 .. doxygenclass:: miaow::SimulationUnit
    :members:
 

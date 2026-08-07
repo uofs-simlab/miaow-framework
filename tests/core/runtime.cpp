@@ -17,8 +17,7 @@ namespace {
 // Return the first string task argument without model-specific behaviour
 class EchoSimulationUnit final : public miaow::SimulationUnit {
   public:
-    miaow::TaskResult execute(const miaow::Task& task,
-                              miaow::ExecutionContext& /*context*/) override {
+    miaow::TaskResult execute(const miaow::Task& task) override {
         const std::string* message = task.string_arg(0);
         if (message == nullptr) {
             return miaow::TaskResult{miaow::TaskStatus::failed, "missing message"};
@@ -30,8 +29,7 @@ class EchoSimulationUnit final : public miaow::SimulationUnit {
 // Sleep for the duration supplied as the first task argument
 class SleepSimulationUnit final : public miaow::SimulationUnit {
   public:
-    miaow::TaskResult execute(const miaow::Task& task,
-                              miaow::ExecutionContext& /*context*/) override {
+    miaow::TaskResult execute(const miaow::Task& task) override {
         const std::string* duration = task.string_arg(0);
         if (duration == nullptr) {
             return miaow::TaskResult{miaow::TaskStatus::failed, "missing duration"};
