@@ -358,14 +358,7 @@ class StaticBmiSimulationUnit : public SimulationUnit {
      * @param task `Task` built from `StaticBmiConfig`.
      * @return Structured `TaskResult` for this BMI task execution.
      */
-    TaskResult execute(const Task& task, ExecutionContext&) override {
-        // Static model units must supply the model instance in this process
-        if (task.execution_mode_ != ExecutionMode::in_process) {
-            return make_failed_task_result(
-                "subprocess execution requires DynamicBmiSimulationUnit",
-                "Subprocess error");
-        }
-
+    TaskResult execute(const Task& task) override {
         try {
             // Construct a BMI pipeline with the static unit's model factory
             std::unique_ptr<BmiModelType> bmi_model = model_factory_();
@@ -405,9 +398,9 @@ class StaticBmiSimulationUnit : public SimulationUnit {
 /**
  * @brief Simulation unit that runs dynamically loaded BMI plugin tasks.
  *
- * For in-process tasks, `DynamicBmiSimulationUnit` constructs and executes
- * `BmiPipeline` locally. Subprocess execution modes delegate the serialized
- * `Task` through `ExecutionContext`.
+ * `DynamicBmiSimulationUnit` constructs and executes `BmiPipeline` for tasks
+ * routed to the parent process. The worker actor routes subprocess tasks before
+ * constructing this class.
  */
 class DynamicBmiSimulationUnit : public SimulationUnit {
   public:
@@ -417,16 +410,9 @@ class DynamicBmiSimulationUnit : public SimulationUnit {
     /**
      * @brief Execute a dynamically loaded BMI plugin task.
      * @param task `Task` built from `DynamicBmiConfig`.
-     * @param context Runtime-local services for this worker task execution.
      * @return Structured `TaskResult` for this BMI pipeline task execution.
      */
-    TaskResult execute(const Task& task, ExecutionContext& context) override {
-        // Subprocess modes run the serialized BMI pipeline in the subprocess
-        if (task.execution_mode_ == ExecutionMode::single_task_subprocess ||
-            task.execution_mode_ == ExecutionMode::persistent_subprocess) {
-            return context.execute_subprocess(task);
-        }
-
+    TaskResult execute(const Task& task) override {
         try {
             // Construct all configured model modules locally for an in-process task
             BmiPipeline pipeline(task);

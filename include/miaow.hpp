@@ -26,10 +26,6 @@
 
 namespace miaow {
 
-namespace core {
-struct SubprocessState;
-}
-
 /**
  * @brief Monotonic identifier assigned to each registered `SimulationUnit`.
  */
@@ -373,40 +369,11 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
 }
 
 /**
- * @brief Runtime services available during `SimulationUnit::execute()`.
- *
- * Runtime dispatch constructs one context for each worker task execution.
- */
-class ExecutionContext {
-  public:
-    /**
-     * @brief Construct runtime services for one worker task execution.
-     * @param actor_system Runtime CAF actor system used for actor communication.
-     * @param active_subprocess Worker-owned subprocess state.
-     */
-    ExecutionContext(caf::actor_system& actor_system,
-                     core::SubprocessState& active_subprocess);
-
-    /**
-     * @brief Execute a task through this worker's subprocess slot.
-     * @param task Task to send to the subprocess worker.
-     * @return Structured `TaskResult` from subprocess execution.
-     */
-    TaskResult execute_subprocess(const Task& task) const;
-
-  private:
-    // Runtime actor system borrowed for the current worker task execution
-    caf::actor_system* actor_system_;
-
-    // Worker-owned subprocess state borrowed for subprocess task execution
-    core::SubprocessState* active_subprocess_;
-};
-
-/**
  * @brief Base class for model-specific simulation units.
  *
- * Implementations decide how to handle `Task::execution_mode_`. Subprocess
- * execution is available through `ExecutionContext::execute_subprocess()`.
+ * Runtime workers call implementations only for `ExecutionMode::in_process` tasks.
+ * Subprocess execution is routed by the worker actor before it constructs a
+ * `SimulationUnit`.
  */
 class SimulationUnit {
   public:
@@ -415,10 +382,9 @@ class SimulationUnit {
     /**
      * @brief Execute the simulation unit for a single task.
      * @param task Generic `Task` arguments.
-     * @param context Runtime-local services for this worker task execution.
      * @return Structured `TaskResult` for this execution.
      */
-    virtual TaskResult execute(const Task& task, ExecutionContext& context) = 0;
+    virtual TaskResult execute(const Task& task) = 0;
 };
 
 /**
@@ -702,6 +668,9 @@ class Runtime {
      * @throws std::invalid_argument if `simulation_unit_registry` is empty.
      */
     Runtime(const SimulationUnitRegistry& simulation_unit_registry, RuntimeOptions options);
+
+    /// Stop Runtime actors before destroying their shared CAF actor system
+    ~Runtime();
 
     /**
      * @brief Submit one `Task` as an asynchronous job.

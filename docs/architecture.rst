@@ -17,7 +17,7 @@ A typical workflow includes the following steps:
 2. Runtime assigns a ``job_id`` and sends the tasks and job controller to ``orchestrator_actor``.
 3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector and creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_workers_``.
 4. The ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
-5. Each worker resolves ``Task::simulation_unit_id_``, executes the task using the registered ``SimulationUnit``, and returns a ``TaskResult`` to the job actor.
+5. Each worker resolves ``Task::simulation_unit_id_``. It constructs and calls the registered ``SimulationUnit`` for an in-process task, or asynchronously delegates a subprocess task to its child actor, and then returns a ``TaskResult`` to the job actor.
 6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``, passes all completed task records to its controller, appends tasks returned by the controller's ``generate_new_tasks()`` method to its task vector, adds workers if needed, and returns to step 4. This continues until no tasks are waiting or running.
 7. Completed ``TaskRecord`` values are sorted by ``TaskId`` and stored in one ``JobRecord``.
 8. Runtime fulfils the caller's ``JobHandle`` future.
@@ -53,9 +53,9 @@ Task execution modes
      - The subprocess stops after one task result, whether the task succeeds or fails; the next task receives a fresh process
    * - ``ExecutionMode::persistent_subprocess``
      - Tasks benefit from process reuse while remaining isolated from the parent process
-     - One subprocess is reused per job worker after successful tasks with the same resolved subprocess path; each task receives a fresh ``SimulationUnit`` instance
+     - One subprocess is reused per job worker after successful tasks with the same resolved subprocess path; the child constructs a fresh BMI pipeline for each task
 
-The ``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` execution modes isolate model execution from the parent process. When using these modes, the parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defers the actual model execution to a subprocess with its own actor system. In ``single_task_subprocess`` mode, the subprocess is stopped after each task, whereas ``persistent_subprocess`` mode reuses one subprocess per job worker for tasks with the same resolved subprocess path. When a subprocess task fails, including when its remote request exceeds ``RuntimeOptions::task_request_timeout_``, MIAOW preserves the subprocess logs and terminates the process; the worker launches a fresh subprocess for its next task.
+The ``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` execution modes isolate model execution from the parent process. When using these modes, the parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defers the actual model execution to a subprocess with its own actor system. The local worker reserves a launch ID, starts the child with ``posix_spawn()``, and receives the child worker actor through one Runtime-local registration actor. CAF continuations deliver task results without blocking a parent scheduler thread, while delayed actor messages and ``waitpid(..., WNOHANG)`` implement startup deadlines and process cleanup. In ``single_task_subprocess`` mode, the subprocess is stopped after each task, whereas ``persistent_subprocess`` mode reuses one subprocess per job worker for tasks with the same resolved subprocess path. When a subprocess task fails, including when its remote request exceeds ``RuntimeOptions::task_request_timeout_``, MIAOW preserves the subprocess logs and terminates the process; the worker launches a fresh subprocess for its next task.
 
 Limitations
 -----------
