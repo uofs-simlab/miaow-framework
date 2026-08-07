@@ -5,7 +5,13 @@
 #     init_user_state, output_state, fuse_rmse, sobol, functn, sce_16plus.o
 #   added: metrics.f90, get_time_indices.f90, fuse_metric.f90
 if(NOT DEFINED MIAOW_FUSE_ROOT)
-    set(MIAOW_FUSE_ROOT "/home/mandana/fuse-chearth")
+    if(DEFINED ENV{MIAOW_FUSE_ROOT})
+        set(MIAOW_FUSE_ROOT "$ENV{MIAOW_FUSE_ROOT}")
+    else()
+        message(FATAL_ERROR
+            "MIAOW_FUSE_ROOT is not set. Pass -DMIAOW_FUSE_ROOT=/path/to/fuse "
+            "or export MIAOW_FUSE_ROOT in your environment.")
+    endif()
 endif()
 set(FUSE_ROOT "${MIAOW_FUSE_ROOT}")
 set(FUSE_SRC  "${FUSE_ROOT}/build/FUSE_SRC")

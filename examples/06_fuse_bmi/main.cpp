@@ -85,8 +85,7 @@ int main(int argc, char* argv[]) {
     const miaow::JobRecord job_record = job.get();
 
     // Print results and diagnostics
-    miaow::print_task_results(job_record);
-    miaow::print_diagnostics(job_record);
+    miaow::print_job_summary(job_record);
 
     return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
 }
