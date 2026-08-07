@@ -1,0 +1,3 @@
+/home/mandana/fuse/settings/f694_fuse_file_manager_v12_local.txt
+f694_cesm1-cam5_rcp85_r1i1p1_2003-2003_d8x8_04.04
+paramset_00120.nc
