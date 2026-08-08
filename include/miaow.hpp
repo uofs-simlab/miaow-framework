@@ -217,18 +217,19 @@ struct TaskResult {
 };
 
 /**
- * @brief Task implementation hosted by a MIAOW subprocess executable.
- */
-using SubprocessTaskHandler = std::function<TaskResult(const Task&)>;
-
-/**
  * @brief Run a subprocess worker that handles serialized tasks from its parent.
+ *
+ * Every executable registered with `SimulationUnitRegistry::add_subprocess()` must call
+ * this function once from its `main()`.
+ *
  * @param argc Command-line argument count supplied to the subprocess executable.
  * @param argv Command-line arguments supplied to the subprocess executable.
- * @param task_handler Function that executes one received `Task`.
+ * @param task_handler Callable that executes one received `Task` and returns its
+ * `TaskResult`.
  * @return Zero after orderly worker shutdown or one after setup failure.
  */
-int run_subprocess_worker(int argc, char* argv[], SubprocessTaskHandler task_handler);
+int run_subprocess_worker(int argc, char* argv[],
+                          std::function<TaskResult(const Task&)> task_handler);
 
 /**
  * @brief Runtime `TaskRecord` for one completed task.
@@ -387,7 +388,7 @@ class SimulationUnit {
     /**
      * @brief Execute the simulation unit for a single task.
      * @param task Generic `Task` arguments.
-     * @return Immediate or deferred result for this execution.
+     * @return Immediate `TaskResult`, CAF error, or delegated response.
      */
     virtual caf::result<TaskResult> execute(const Task& task) = 0;
 };
@@ -439,7 +440,8 @@ class SimulationUnitRegistry {
 
     /**
      * @brief Register a subprocess simulation unit.
-     * @param subprocess_executable Non-empty executable that handles `Task` messages.
+     * @param subprocess_executable Non-empty executable whose `main()` calls
+     * `run_subprocess_worker()`.
      * @param lifetime Select a single-task or persistent child process.
      * @return `SimulationUnitId` assigned to this subprocess simulation unit.
      */

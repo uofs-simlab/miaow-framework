@@ -38,7 +38,7 @@ Simulation unit execution
 
 Every ``simulation_unit_actor`` constructs the selected polymorphic ``SimulationUnit`` and calls ``execute(task)``. Ordinary (in-process) units registered using ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` return an immediate ``TaskResult``. A subprocess unit returns a delegated CAF response while its actor-owned state starts or reuses the child, sends the serialized ``Task``, receives ``TaskResult``, and completes required cleanup without blocking a parent scheduler thread. The child executable implements the ``Task`` to ``TaskResult`` contract through ``run_subprocess_worker()`` and does not receive the parent registry.
 
-``SubprocessLifetime::single_task`` starts one child for a task and stops and reaps it before delivering the result. ``SubprocessLifetime::persistent`` keeps a successful child available to the same job worker for later tasks registered with the same executable. Failures and task timeouts preserve subprocess diagnostics and stop and reap the child before completing the delegated response.
+``SubprocessLifetime::single_task`` starts one child for a task and stops and reaps it before delivering the result. ``SubprocessLifetime::persistent`` retains a child only after a successful task. The same idle ``simulation_unit_actor`` reuses that child only when the next task selects a persistent registration with exactly the same executable string and the child actor remains available. A failure, timeout, single-task registration, different executable, child termination, or worker shutdown prevents reuse. Failures and task timeouts preserve subprocess diagnostics and stop and reap the child before completing the delegated response.
 
 Limitations
 -----------

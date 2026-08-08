@@ -402,8 +402,8 @@ class SubprocessSimulationUnit final : public SimulationUnit {
 };
 
 // Host the public Task-to-TaskResult handler behind the child CAF message protocol
-caf::behavior subprocess_worker_actor(caf::event_based_actor*,
-                                      SubprocessTaskHandler task_handler) {
+caf::behavior subprocess_worker_actor(
+    caf::event_based_actor*, std::function<TaskResult(const Task&)> task_handler) {
     return {
         // simulation_unit_actor -> subprocess_worker_actor: execute one Task;
         // caf::get_atom matches the caf::get_atom_v value sent by simulation_unit_actor
@@ -849,7 +849,8 @@ SimulationUnitId SimulationUnitRegistry::add_subprocess(std::string subprocess_e
     return simulation_unit_id;
 }
 
-int run_subprocess_worker(int argc, char* argv[], SubprocessTaskHandler task_handler) {
+int run_subprocess_worker(int argc, char* argv[],
+                          std::function<TaskResult(const Task&)> task_handler) {
     try {
         // argv carries IPC settings; task data arrives over CAF
         core::initialize_subprocess_caf();

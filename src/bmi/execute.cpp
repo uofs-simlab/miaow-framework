@@ -53,13 +53,14 @@ std::string format_bmi_error_message(std::exception_ptr exception) {
 // Helper to locate the bundled BMI subprocess executable, which is either in the build
 // directory or the installed package directory
 std::string bmi_subprocess_executable_path() {
-    // When MIAOW is built from source, use the provided executable in the build directory
+    // Source-tree runs use the configured build executable while it exists
     const std::filesystem::path build_executable{MIAOW_SUBPROCESS_PATH};
     if (std::filesystem::exists(build_executable)) {
         return build_executable.string();
     }
 
-    // When using MIAOW as an installed package, use the installed executable path
+    // Installed packages use the configured install path when the build executable is
+    // unavailable
     const std::filesystem::path installed_executable{MIAOW_INSTALLED_SUBPROCESS_PATH};
     if (std::filesystem::exists(installed_executable)) {
         return installed_executable.string();

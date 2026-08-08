@@ -175,9 +175,11 @@ class SubprocessState : public std::enable_shared_from_this<SubprocessState> {
 
     // Resources retained in each lifecycle phase
     // - idle: no response is pending; a reusable persistent child may remain
-    // - starting_subprocess: task and response; launch ID after reservation completes
-    // - waiting_for_task_result: task, response, process identifier, and child actor
-    // - stopping_subprocess: child cleanup and possibly a result or replacement task
+    // - starting_subprocess: active request and response; child resources become
+    //   available during launch
+    // - waiting_for_task_result: active request, response, and all child resources
+    // - stopping_subprocess: child cleanup and possibly a result or replacement request
+    // An active request retains its Task, requested executable, and requested lifetime
     // Mutated only through callbacks serialized by the owning simulation_unit_actor
     SubprocessPhase phase_{SubprocessPhase::idle};
 

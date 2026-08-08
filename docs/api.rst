@@ -17,8 +17,6 @@ Identifiers and task status
 
 .. doxygenenum:: miaow::TaskStatus
 
-.. doxygenenum:: miaow::SubprocessLifetime
-
 .. doxygenfunction:: miaow::task_status_to_string
 
 Task and job data
@@ -50,7 +48,7 @@ Runtime orchestration
 .. doxygenclass:: miaow::SimulationUnitRegistry
    :members:
 
-.. doxygentypedef:: miaow::SubprocessTaskHandler
+.. doxygenenum:: miaow::SubprocessLifetime
 
 .. doxygenfunction:: miaow::run_subprocess_worker
 
