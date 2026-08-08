@@ -170,6 +170,7 @@ static void initialize_caf_once() {
     std::call_once(caf_init_flag, [] {
         caf::init_global_meta_objects<caf::id_block::core_module>();
         caf::init_global_meta_objects<caf::id_block::miaow_module>();
+        caf::init_global_meta_objects<caf::id_block::miaow_internal_module>();
         caf::io::middleman::init_global_meta_objects();
     });
 }
@@ -205,7 +206,8 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
         actor_system_->middleman().publish(subprocess_registration_actor, 0,
                                            core::subprocess_registration_host);
     if (!subprocess_registration_port) {
-        // A failed publication must not leave a live actor blocking system destruction
+        // Runtime -> subprocess_registration_actor: stop after publication fails; prevent
+        // the live actor from blocking actor-system destruction
         caf::anon_send_exit(subprocess_registration_actor, caf::exit_reason::user_shutdown);
         throw std::runtime_error("failed to publish subprocess registration actor: " +
                                  caf::to_string(subprocess_registration_port.error()));
@@ -219,9 +221,10 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
                              &pending_jobs_);
 }
 
-// Stop active jobs and registration before actor_system waits for actors to finish
+// Request actor shutdown before releasing the shared actor system
 Runtime::~Runtime() {
     if (orchestrator_) {
+        // Runtime -> orchestrator_actor: stop active jobs and child registration
         caf::anon_mail(core::shutdown_atom_v).urgent().send(orchestrator_);
     }
 }
@@ -258,18 +261,20 @@ JobHandle Runtime::submit_job(std::vector<Task> tasks,
     // through local messages to orchestrator_actor and then job_actor
     std::shared_ptr<JobController> shared_job_controller(std::move(job_controller));
 
-    // Pair the public JobHandle with the promise completed by the orchestrator
+    // Create a promise/future pair for this submitted job
     std::promise<JobRecord> promise;
+
     JobHandle job = promise.get_future();
     {
         std::lock_guard<std::mutex> lock(pending_jobs_mutex_);
-        // Retain the promise until the orchestrator reports this job's completion
+        // Register this in-progress job in the dictionary: job_id -> promise
         pending_jobs_.emplace(job_id, std::move(promise));
     }
 
-    // Send this job to the shared orchestrator
+    // Runtime -> orchestrator_actor: submit one job
     caf::anon_mail(caf::get_atom_v, job_id, std::move(tasks),
-                   std::move(shared_job_controller)).send(orchestrator_);
+                   std::move(shared_job_controller))
+        .send(orchestrator_);
     return job;
 }
 

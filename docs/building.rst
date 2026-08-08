@@ -104,7 +104,7 @@ The MIAOW package locates the required CAF and Boost components when ``find_pack
 
 .. note::
 
-   Select the MIAOW installation prefix with ``CMAKE_INSTALL_PREFIX`` during configuration. If the installation prefix is changed after configuration, including with ``cmake --install --prefix``, MIAOW continues to search for ``miaow_subprocess`` under the configured prefix. To change the default subprocess executable prefix, reconfigure and rebuild MIAOW with the new prefix. Alternatively, set ``Task::subprocess_path_`` explicitly for individual tasks.
+   Select the MIAOW installation prefix with ``CMAKE_INSTALL_PREFIX`` during configuration. ``bmi_subprocess_executable_path()`` resolves ``miaow_subprocess`` from the build tree or the configured installation prefix. If the installation prefix is changed after configuration, including with ``cmake --install --prefix``, reconfigure and rebuild MIAOW or pass another executable explicitly to ``SimulationUnitRegistry::add_subprocess()``.
 
 .. _build-options:
 

@@ -17,7 +17,7 @@ A typical workflow includes the following steps:
 2. Runtime assigns a ``job_id`` and sends the tasks and job controller to ``orchestrator_actor``.
 3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector and creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_workers_``.
 4. The ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
-5. Each worker resolves ``Task::simulation_unit_id_``. It constructs and calls the registered ``SimulationUnit`` for an in-process task, or asynchronously delegates a subprocess task to its child actor, and then returns a ``TaskResult`` to the job actor.
+5. Each worker resolves ``Task::simulation_unit_id_``, constructs a new ``SimulationUnit``, executes the task, and returns a ``TaskResult`` to the job actor.
 6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``, passes all completed task records to its controller, appends tasks returned by the controller's ``generate_new_tasks()`` method to its task vector, adds workers if needed, and returns to step 4. This continues until no tasks are waiting or running.
 7. Completed ``TaskRecord`` values are sorted by ``TaskId`` and stored in one ``JobRecord``.
 8. Runtime fulfils the caller's ``JobHandle`` future.
@@ -31,31 +31,14 @@ The following figure illustrates the task scheduling process managed by the ``jo
 
 When the controller generates new tasks, the job actor counts entries in its task vector that do not yet have a corresponding completed task record and adds workers only if this count exceeds the existing worker count. Workers are not removed while the job is running, so the job retains the largest worker count that has been required at any point so far, capped by ``RuntimeOptions::max_workers_``, until the job completes or shuts down. Idle ``simulation_unit_actor`` workers do not occupy CAF scheduler threads, so retaining them does not reduce scheduler capacity. Persistent subprocesses remain alive and retain their process resources while their workers are idle, but MIAOW does not reserve dedicated CPU cores for them.
 
-.. _task-execution-modes:
+Simulation unit execution
+-------------------------
 
-Task execution modes
---------------------
+``Task::simulation_unit_id_`` selects the complete execution implementation. ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` registers a unit constructed and executed in the parent process, while ``SimulationUnitRegistry::add_subprocess(executable, lifetime)`` registers an internal ``SimulationUnit`` implementation that delegates each task to the supplied executable. Tasks contain no separate execution-location or subprocess-deployment fields.
 
-``Task::execution_mode_`` determines whether a worker executes a task in the parent process or delegates it to an isolated subprocess specified by ``Task::subprocess_path_``. The following table describes the available modes:
+Every ``simulation_unit_actor`` constructs the selected polymorphic ``SimulationUnit`` and calls ``execute(task)``. Ordinary (in-process) units registered using ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` return an immediate ``TaskResult``. A subprocess unit returns a delegated CAF response while its actor-owned state starts or reuses the child, sends the serialized ``Task``, receives ``TaskResult``, and completes required cleanup without blocking a parent scheduler thread. The child executable implements the ``Task`` to ``TaskResult`` contract through ``run_subprocess_worker()`` and does not receive the parent registry.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 40 30 30
-
-   * - Execution mode
-     - Use when
-     - Behaviour
-   * - ``ExecutionMode::in_process``
-     - The simulation unit can run safely in the parent process and does not require process isolation
-     - This is the default mode; the worker constructs a fresh ``SimulationUnit`` instance for each task
-   * - ``ExecutionMode::single_task_subprocess``
-     - Each task requires a fresh process, for example, because the simulation unit uses persistent global state
-     - The subprocess stops after one task result, whether the task succeeds or fails; the next task receives a fresh process
-   * - ``ExecutionMode::persistent_subprocess``
-     - Tasks benefit from process reuse while remaining isolated from the parent process
-     - One subprocess is reused per job worker after successful tasks with the same resolved subprocess path; the child constructs a fresh BMI pipeline for each task
-
-The ``ExecutionMode::single_task_subprocess`` and ``ExecutionMode::persistent_subprocess`` execution modes isolate model execution from the parent process. When using these modes, the parent process still owns ``Runtime``, ``orchestrator_actor``, ``job_actor``, and the normal ``simulation_unit_actor`` workers, but defers the actual model execution to a subprocess with its own actor system. The local worker reserves a launch ID, starts the child with ``posix_spawn()``, and receives the child worker actor through one Runtime-local registration actor. CAF continuations deliver task results without blocking a parent scheduler thread, while delayed actor messages and ``waitpid(..., WNOHANG)`` implement startup deadlines and process cleanup. In ``single_task_subprocess`` mode, the subprocess is stopped after each task, whereas ``persistent_subprocess`` mode reuses one subprocess per job worker for tasks with the same resolved subprocess path. When a subprocess task fails, including when its remote request exceeds ``RuntimeOptions::task_request_timeout_``, MIAOW preserves the subprocess logs and terminates the process; the worker launches a fresh subprocess for its next task.
+``SubprocessLifetime::single_task`` starts one child for a task and stops and reaps it before delivering the result. ``SubprocessLifetime::persistent`` keeps a successful child available to the same job worker for later tasks registered with the same executable. Failures and task timeouts preserve subprocess diagnostics and stop and reap the child before completing the delegated response.
 
 Limitations
 -----------

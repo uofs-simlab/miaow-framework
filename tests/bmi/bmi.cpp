@@ -12,7 +12,7 @@
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
 
-// Build a static BMI task with its serialized config and in-process default
+// Build a static BMI task with its serialized configuration
 BOOST_AUTO_TEST_CASE(static_config_creates_a_task) {
     const miaow::StaticBmiConfig config{
         .init_config_ = "model.ini",
@@ -29,24 +29,19 @@ BOOST_AUTO_TEST_CASE(static_config_creates_a_task) {
 
     BOOST_TEST(task.simulation_unit_id_ == 7);
     BOOST_REQUIRE_EQUAL(task.args_.size(), 1);
-    BOOST_CHECK(task.execution_mode_ == miaow::ExecutionMode::in_process);
 }
 
-// Preserve dynamic plugin routing fields when constructing a BMI task
-BOOST_AUTO_TEST_CASE(dynamic_config_preserves_execution_fields) {
+// Build a dynamic BMI task without embedding execution policy
+BOOST_AUTO_TEST_CASE(dynamic_config_creates_a_task) {
     const miaow::DynamicBmiConfig config{
         .backend_ = miaow::DynamicBmiBackend::fortran,
         .plugin_path_ = "model.so",
-        .execution_mode_ = miaow::ExecutionMode::persistent_subprocess,
-        .subprocess_path_ = "miaow_subprocess",
     };
 
     const miaow::Task task = miaow::make_bmi_task(9, config);
 
     BOOST_TEST(task.simulation_unit_id_ == 9);
     BOOST_REQUIRE_EQUAL(task.args_.size(), 1);
-    BOOST_CHECK(task.execution_mode_ == miaow::ExecutionMode::persistent_subprocess);
-    BOOST_TEST(task.subprocess_path_ == "miaow_subprocess");
 }
 
 // Exercise dynamic Fortran BMI loading and lifecycle execution in the parent process
@@ -464,18 +459,18 @@ BOOST_AUTO_TEST_CASE(missing_dynamic_plugin_marks_task_failed) {
 }
 
 // Exercise the Fortran BMI lifecycle through a fresh task-owned subprocess
-BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_single_task_subprocess) {
+BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_fresh_subprocess) {
     miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId dynamic_bmi =
-        registry.add<miaow::DynamicBmiSimulationUnit>();
+    const miaow::SimulationUnitId bmi_subprocess =
+        registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
+                                miaow::SubprocessLifetime::single_task);
     miaow::Runtime runtime(registry);
 
     const miaow::DynamicBmiConfig config{
         .backend_ = miaow::DynamicBmiBackend::fortran,
         .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
-        .execution_mode_ = miaow::ExecutionMode::single_task_subprocess,
     };
-    const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, config);
+    const miaow::Task task = miaow::make_bmi_task(bmi_subprocess, config);
     const miaow::JobRecord job_record = runtime.submit_job(task).get();
 
     BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);

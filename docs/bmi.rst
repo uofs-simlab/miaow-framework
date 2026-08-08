@@ -22,7 +22,7 @@ Choose a setup pattern based on where the BMI model implementation comes from: a
 Static BMI model
 ~~~~~~~~~~~~~~~~
 
-Use this path when the concrete BMI model type is known when compiling the executable. ``StaticBmiSimulationUnit<YourModel>`` constructs one fresh model object per task.
+Use this path when the concrete BMI model type is known when compiling the executable. ``StaticBmiSimulationUnit<YourModel>`` constructs one new model object per task.
 
 .. code-block:: cpp
 
@@ -40,7 +40,7 @@ Static BMI model units always execute in the parent process, rather than in a su
 Dynamic BMI plugin
 ~~~~~~~~~~~~~~~~~~
 
-Use this path when the model is loaded from a C++ or Fortran plugin library. ``DynamicBmiConfig`` contains the plugin, model, forcing, output, and execution settings for one task.
+Use this path when the model is loaded from a C++ or Fortran plugin library. ``DynamicBmiConfig`` contains the plugin, model, forcing, and output settings for one task.
 
 .. code-block:: cpp
 
@@ -52,7 +52,6 @@ Use this path when the model is loaded from a C++ or Fortran plugin library. ``D
        .backend_ = miaow::DynamicBmiBackend::fortran,
        .plugin_path_ = plugin_path,
        .init_config_ = init_config,
-       .execution_mode_ = miaow::ExecutionMode::persistent_subprocess,
    };
    const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, config);
 
@@ -70,12 +69,13 @@ Use this path when a `NextGen <https://noaa-owp.github.io/ngen/>`_-style realiza
    const miaow::PartitionedBmiRealization realization(realization_path);
 
    miaow::SimulationUnitRegistry registry;
-   const miaow::SimulationUnitId dynamic_bmi =
-       registry.add<miaow::DynamicBmiSimulationUnit>();
+   const miaow::SimulationUnitId bmi_subprocess =
+       registry.add_subprocess(
+           miaow::bmi_subprocess_executable_path(),
+           miaow::SubprocessLifetime::persistent);
 
-   const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(
-       dynamic_bmi, realization,
-       miaow::ExecutionMode::persistent_subprocess);
+   const std::vector<miaow::Task> tasks =
+       miaow::make_bmi_tasks(bmi_subprocess, realization);
 
 ``PartitionedBmiRealization`` resolves relative plugin, initialization, and forcing paths against the directory containing the realization file and reads feature IDs from the sibling ``catchments.geojson``. ``make_bmi_tasks(...)`` builds the dynamic task vector all at once. Only a subset of the NextGen realization configuration is currently supported by MIAOW, with the following restrictions:
 
@@ -88,16 +88,14 @@ Use this path when a `NextGen <https://noaa-owp.github.io/ngen/>`_-style realiza
 
 MIAOW currently assumes that realization-driven models follow the `NextGen BMI time convention <https://noaa-owp.github.io/ngen/md_doc_2_b_m_iconventions.html>`_ and report model time in seconds.
 
-Configuring dynamic task execution
-----------------------------------
+Selecting BMI task execution
+----------------------------
 
-``StaticBmiConfig`` has no execution mode setting; the ``make_bmi_task(...)`` and ``make_bmi_tasks(...)`` functions create static BMI tasks with ``ExecutionMode::in_process``, and ``StaticBmiSimulationUnit`` does not support subprocess execution. The dynamic task builders assign execution modes as follows:
+The ``SimulationUnitId`` passed to ``make_bmi_task(...)`` or ``make_bmi_tasks(...)`` selects execution. Register ``DynamicBmiSimulationUnit`` for local plugin execution, or register an executable with ``SimulationUnitRegistry::add_subprocess(...)`` for isolated execution. ``DynamicBmiConfig`` and the resulting ``Task`` contain only BMI workload configuration.
 
-- ``make_bmi_task(simulation_unit_id, config)`` copies ``DynamicBmiConfig::execution_mode_`` to the resulting ``Task``. The field defaults to ``ExecutionMode::in_process``.
-- ``make_bmi_tasks(simulation_unit_id, configs)`` builds one task per ``DynamicBmiConfig`` and preserves each configuration's execution mode. Tasks in the same vector can therefore use different modes.
-- ``make_bmi_tasks(simulation_unit_id, realization, execution_mode)`` applies the supplied mode to every task generated from the realization. The argument defaults to ``ExecutionMode::in_process``.
+``bmi_subprocess_executable_path()`` resolves the bundled worker that constructs and executes ``BmiPipeline`` in the child. ``SubprocessLifetime::single_task`` starts one child for every task, while ``SubprocessLifetime::persistent`` retains each successful child for later tasks handled by the same job worker. Applications can instead register another executable that implements the public ``Task`` to ``TaskResult`` subprocess contract.
 
-Subprocess modes are available for dynamic BMI tasks. ``DynamicBmiConfig::subprocess_path_`` is copied to the corresponding ``Task`` and selects a non-default subprocess executable. See :ref:`task-execution-modes` for execution mode selection and runtime behaviour.
+``StaticBmiSimulationUnit`` constructs its linked model in the parent process. A subprocess can handle a task built from ``StaticBmiConfig`` only when the registered executable supplies the corresponding model implementation itself.
 
 Reading forcing data
 --------------------
