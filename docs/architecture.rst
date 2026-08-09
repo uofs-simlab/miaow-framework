@@ -29,16 +29,50 @@ The following figure illustrates the task scheduling process managed by the ``jo
    :align: center
    :width: 67%
 
-When the controller generates new tasks, the job actor counts entries in its task vector that do not yet have a corresponding completed task record and adds workers only if this count exceeds the existing worker count. Workers are not removed while the job is running, so the job retains the largest worker count that has been required at any point so far, capped by ``RuntimeOptions::max_workers_``, until the job completes or shuts down. Idle ``simulation_unit_actor`` workers do not occupy CAF scheduler threads, so retaining them does not reduce scheduler capacity. Persistent subprocesses remain alive and retain their process resources while their workers are idle, but MIAOW does not reserve dedicated CPU cores for them.
+When the controller generates new tasks, the job actor counts entries in its task vector that do not yet have a corresponding completed task record and adds workers only if this count exceeds the existing worker count. Workers are not removed while the job is running, so the job retains the largest worker count that has been required at any point during the job, capped by ``RuntimeOptions::max_workers_``, until the job completes or shuts down. Idle ``simulation_unit_actor`` workers do not occupy CAF scheduler threads, so retaining them does not reduce scheduler capacity.
+
+.. _simulation-unit-execution:
 
 Simulation unit execution
 -------------------------
 
 ``Task::simulation_unit_id_`` selects the complete execution implementation. ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` registers a unit constructed and executed in the parent process, while ``SimulationUnitRegistry::add_subprocess(executable, lifetime)`` registers an internal ``SimulationUnit`` implementation that delegates each task to the supplied executable. Tasks contain no separate execution-location or subprocess-deployment fields.
 
-Every ``simulation_unit_actor`` constructs the selected polymorphic ``SimulationUnit`` and calls ``execute(task)``. Ordinary (in-process) units registered using ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` return an immediate ``TaskResult``. A subprocess unit returns a delegated CAF response while its actor-owned state starts or reuses the child, sends the serialized ``Task``, receives ``TaskResult``, and completes required cleanup without blocking a parent scheduler thread. The child executable implements the ``Task`` to ``TaskResult`` contract through ``run_subprocess_worker()`` and does not receive the parent registry.
+Every ``simulation_unit_actor`` constructs the selected polymorphic ``SimulationUnit`` and calls ``execute(task)``. In-process units registered using ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` return an immediate ``TaskResult`` or CAF error. A subprocess unit returns a delegated CAF response while its actor-owned state starts or reuses the child, sends the serialized ``Task``, receives ``TaskResult``, and completes required cleanup without blocking a parent scheduler thread. The child executable implements the ``Task`` to ``TaskResult`` contract through ``run_subprocess_worker()`` and does not receive the parent registry.
 
-``SubprocessLifetime::single_task`` starts one child for a task and stops and reaps it before delivering the result. ``SubprocessLifetime::persistent`` retains a child only after a successful task. The same idle ``simulation_unit_actor`` reuses that child only when the next task selects a persistent registration with exactly the same executable string and the child actor remains available. A failure, timeout, single-task registration, different executable, child termination, or worker shutdown prevents reuse. Failures and task timeouts preserve subprocess diagnostics and stop and reap the child before completing the delegated response.
+``SubprocessLifetime::single_task`` starts one child for a task and stops and reaps it before delivering the result. ``SubprocessLifetime::persistent`` retains a child only after a successful task. An idle persistent child remains alive and retains its process resources, but MIAOW does not reserve a dedicated CPU core for it. The same idle ``simulation_unit_actor`` reuses that child only when the next task selects a persistent registration with exactly the same executable string and the child actor remains available. A failure, timeout, single-task registration, different executable, child termination, or worker shutdown prevents reuse. Failures and task timeouts preserve subprocess diagnostics and stop and reap the child before completing the delegated response.
+
+.. _custom-subprocess-executables:
+
+Custom subprocess executables
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The following setup registers the exact executable path and uses the returned ``SimulationUnitId`` when constructing a task:
+
+.. code-block:: cpp
+
+   miaow::SimulationUnitRegistry registry;
+   const miaow::SimulationUnitId custom_unit =
+       registry.add_subprocess("/path/to/my_worker",
+                               miaow::SubprocessLifetime::persistent);
+
+   const miaow::Task task{custom_unit, "input"};
+
+The parent registry supplies the polymorphic ``SubprocessSimulationUnit``. The selected executable links against MIAOW and implements the task contract by supplying any synchronous callable that accepts ``const Task&`` and returns ``TaskResult``:
+
+.. code-block:: cpp
+
+   #include <miaow.hpp>
+
+   miaow::TaskResult execute_task(const miaow::Task&) {
+       return {miaow::TaskStatus::succeeded, "custom task completed"};
+   }
+
+   int main(int argc, char* argv[]) {
+       return miaow::run_subprocess_worker(argc, argv, execute_task);
+   }
+
+The executable's ``main()`` must pass its supplied ``argc`` and ``argv`` to ``run_subprocess_worker()`` unchanged because MIAOW uses those arguments for parent registration. Custom configuration travels in ``Task`` rather than additional command-line arguments. The worker invokes the handler serially once per received task; a persistent subprocess may invoke the same handler object for multiple tasks. An exception from the handler becomes a failed ``TaskResult``.
 
 Limitations
 -----------

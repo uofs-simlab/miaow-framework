@@ -220,7 +220,10 @@ struct TaskResult {
  * @brief Run a subprocess worker that handles serialized tasks from its parent.
  *
  * Every executable registered with `SimulationUnitRegistry::add_subprocess()` must call
- * this function once from its `main()`.
+ * this function once from its `main()` and pass the supplied `argc` and `argv` unchanged.
+ * The handler runs serially for each received `Task`, and a persistent subprocess may
+ * invoke the same handler more than once. An exception from the handler produces a failed
+ * `TaskResult`.
  *
  * @param argc Command-line argument count supplied to the subprocess executable.
  * @param argv Command-line arguments supplied to the subprocess executable.
@@ -440,10 +443,15 @@ class SimulationUnitRegistry {
 
     /**
      * @brief Register a subprocess simulation unit.
-     * @param subprocess_executable Non-empty executable whose `main()` calls
+     *
+     * The executable path cannot contain command-line arguments because MIAOW supplies
+     * the arguments required for parent registration.
+     *
+     * @param subprocess_executable Non-empty path to an executable whose `main()` calls
      * `run_subprocess_worker()`.
      * @param lifetime Select a single-task or persistent child process.
      * @return `SimulationUnitId` assigned to this subprocess simulation unit.
+     * @throws std::invalid_argument if `subprocess_executable` is empty.
      */
     SimulationUnitId add_subprocess(std::string subprocess_executable,
                                     SubprocessLifetime lifetime);
@@ -516,14 +524,6 @@ struct RuntimeOptions {
  * `std::runtime_error` when the owning job actor reports a job-level failure.
  */
 using JobHandle = std::future<JobRecord>;
-
-/**
- * @brief Runtime-owned map of jobs waiting for actor completion.
- *
- * Each submitted `JobId` maps to the promise that the orchestrator fulfils with either
- * the final `JobRecord` or a job-level exception.
- */
-using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
 
 /**
  * @brief Serialize or deserialize a `Task` for CAF actor messaging.
@@ -695,6 +695,9 @@ class Runtime {
                          std::unique_ptr<JobController> job_controller) const;
 
   private:
+    // Map each submitted job to the promise fulfilled by the orchestrator
+    using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
+
     // Shared simulation unit registry used by all `simulation_unit_actor`s in this runtime
     std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry_;
 

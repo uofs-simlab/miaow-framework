@@ -275,7 +275,6 @@ class PartitionedBmiRealization {
 
     /**
      * @brief Partition a NextGen-style realization file by feature.
-     *
      * @param realization_path Path to the NextGen-style realization file.
      * @throws std::runtime_error if the realization is malformed or references
      * missing or unusable files.
@@ -395,7 +394,9 @@ class StaticBmiSimulationUnit : public SimulationUnit {
 /**
  * @brief Simulation unit that runs dynamically loaded BMI plugin tasks.
  *
- * `DynamicBmiSimulationUnit` constructs and executes `BmiPipeline` locally.
+ * `DynamicBmiSimulationUnit` constructs and executes `BmiPipeline` in the current
+ * process. To run BMI tasks in a separate process, register a subprocess executable with
+ * `SimulationUnitRegistry::add_subprocess()` rather than registering this simulation unit.
  */
 class DynamicBmiSimulationUnit : public SimulationUnit {
   public:

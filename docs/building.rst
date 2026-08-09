@@ -6,13 +6,13 @@ Prerequisites
 
 MIAOW requires `CMake <https://cmake.org/>`_ 3.21 or newer, a C++20 compiler, and a Fortran compiler. The Boost and CAF provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. See :ref:`build-options` for a description of the available provider settings.
 
-On Ubuntu:
+On Ubuntu, the required compiler and build tools can be installed with the following command:
 
 .. code-block:: sh
 
    sudo apt-get install build-essential cmake gfortran
 
-On macOS with `Homebrew <https://brew.sh/>`_:
+On macOS with `Homebrew <https://brew.sh/>`_, the required compiler and build tools can be installed using the following commands:
 
 .. code-block:: sh
 
@@ -22,7 +22,7 @@ On macOS with `Homebrew <https://brew.sh/>`_:
 Repository development build
 ----------------------------
 
-Configure and build from the repository root:
+The repository can be configured and built with the following commands:
 
 .. code-block:: sh
 
@@ -31,13 +31,13 @@ Configure and build from the repository root:
 
 The default development build includes the framework tests and does not build examples.
 
-Run all tests:
+The complete test suite runs with the following command:
 
 .. code-block:: sh
 
    ctest --test-dir build --output-on-failure
 
-Run a single test by name:
+A single test can be selected by name with the following command:
 
 .. code-block:: sh
 
@@ -48,21 +48,21 @@ Run a single test by name:
 Building examples
 -----------------
 
-Examples are disabled by default. Enable the default example set from the repository root:
+Examples are disabled by default. The following configuration enables and builds the default example set:
 
 .. code-block:: sh
 
    cmake -S . -B build -DBUILD_EXAMPLES=ON
    cmake --build build
 
-Override the default example set with a semicolon-separated ``MIAOW_EXAMPLES`` value, for example ``-DMIAOW_EXAMPLES=00_hello``. A normal ``cmake --build build`` builds every selected example; use ``--target miaow_hello`` only to narrow the build to that target.
+Override the default example set with a semicolon-separated ``MIAOW_EXAMPLES`` value, for example ``-DMIAOW_EXAMPLES="00_hello;01_heat"``. A normal ``cmake --build build`` builds every selected example; use ``--target miaow_hello`` to narrow the build to that specific target.
 
 Each model-backed example accepts a ``MIAOW_<MODEL_NAME>_MODEL_ROOT`` override. When the override is empty, CMake resolves the source beneath ``MIAOW_DEFAULT_MODEL_BASE_DIR``. If the resolved directory is missing and the example declares a Git repository and revision, CMake fetches the model into that directory. See :doc:`examples` for model-specific dependencies and options.
 
 Library installation build
 --------------------------
 
-Configure a build without tests and select an installation prefix. Examples are already disabled by default:
+The following example configures a build without tests and selects ``$HOME/.local`` as an example installation prefix. Any writable installation path can be supplied through ``CMAKE_INSTALL_PREFIX``:
 
 .. code-block:: sh
 
@@ -93,7 +93,14 @@ In another project, define the executable or library that uses MIAOW and link it
 
 The imported target supplies the installed MIAOW include directory, requests C++20, and links the required CAF, Boost, and procedural BMI bridge libraries. Source files can include ``miaow.hpp``, ``miaow_bmi.hpp``, and ``miaow_io.hpp`` as needed.
 
-If MIAOW was installed under ``$HOME/.local`` and that prefix is outside CMake's normal search locations, configure and build the downstream project with:
+A custom subprocess worker is another executable linked against ``miaow::miaow``:
+
+.. code-block:: cmake
+
+   add_executable(my_worker worker.cpp)
+   target_link_libraries(my_worker PRIVATE miaow::miaow)
+
+When the selected installation prefix is outside CMake's normal search locations, the downstream configuration supplies the same path through ``CMAKE_PREFIX_PATH``:
 
 .. code-block:: sh
 
@@ -104,7 +111,7 @@ The MIAOW package locates the required CAF and Boost components when ``find_pack
 
 .. note::
 
-   Select the MIAOW installation prefix with ``CMAKE_INSTALL_PREFIX`` during configuration. ``bmi_subprocess_executable_path()`` resolves ``miaow_subprocess`` from the build tree or the configured installation prefix. If the installation prefix is changed after configuration, including with ``cmake --install --prefix``, reconfigure and rebuild MIAOW or pass another executable explicitly to ``SimulationUnitRegistry::add_subprocess()``.
+   When MIAOW is configured, CMake supplies ``MIAOW_SUBPROCESS_PATH`` (the absolute build-tree path to ``miaow_subprocess``) and ``MIAOW_INSTALLED_SUBPROCESS_PATH`` (the absolute expected installed path derived from ``CMAKE_INSTALL_PREFIX``) as preprocessor definitions while compiling ``src/bmi/execute.cpp``. MIAOW's ``bmi_subprocess_executable_path()`` function returns ``MIAOW_SUBPROCESS_PATH`` when that executable exists, otherwise returns ``MIAOW_INSTALLED_SUBPROCESS_PATH`` when that executable exists, and throws if neither executable exists. Because ``cmake --install build --prefix <path>`` changes the installation destination without updating ``MIAOW_INSTALLED_SUBPROCESS_PATH``, downstream users should configure MIAOW with the correct ``-DCMAKE_INSTALL_PREFIX=<path>`` before building. To switch the install directory, users should reconfigure and rebuild MIAOW or pass the installed executable path directly to ``SimulationUnitRegistry::add_subprocess()`` when registering the subprocess executable, rather than using the default path returned by ``bmi_subprocess_executable_path()``.
 
 .. _build-options:
 
@@ -162,9 +169,9 @@ Provider values are interpreted as follows:
 Documentation build
 -------------------
 
-Generated API documentation uses Doxygen for C++ docstring extraction and Sphinx with Breathe for HTML rendering. Doxygen must be installed separately and available on ``PATH``.
+The generated API documentation uses `Doxygen <https://www.doxygen.nl/>`_ for C++ documentation-comment extraction and `Sphinx <https://www.sphinx-doc.org/>`_ with `Breathe <https://breathe.readthedocs.io/>`_ for HTML rendering. Doxygen must be installed separately and available on ``PATH``.
 
-Build the docs from a dedicated Python environment:
+The following commands create a dedicated Python environment and build the documentation:
 
 .. code-block:: sh
 

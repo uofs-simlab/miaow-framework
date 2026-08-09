@@ -54,6 +54,9 @@ inline constexpr const char* subprocess_registration_host = "127.0.0.1";
 // Prefix used to identify failures from the subprocess execution path
 inline constexpr const char* subprocess_error_prefix = "Subprocess error";
 
+// Map each submitted job to the promise fulfilled by the orchestrator
+using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
+
 // Assign runtime-owned fields to tasks at or after first_task_index
 // Derive each task name from feature_id metadata or its vector index; reject path
 // separators and duplicate names across both earlier and assigned tasks

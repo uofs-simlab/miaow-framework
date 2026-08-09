@@ -1,10 +1,6 @@
 #pragma once
 
-#include <cstddef>
-#include <map>
 #include <string>
-
-#include <caf/config_value.hpp>
 
 #include "miaow.hpp"
 
@@ -53,41 +49,5 @@ bool ensure_expected_run_dir(const std::string& expected_run_dir);
  * or has an invalid value.
  */
 void parse_runtime_cli_options(int argc, char* argv[], RuntimeOptions& runtime_options);
-
-/**
- * @brief Write a generated forcing CSV by repeating one hourly source cycle.
- *
- * The source CSV must define its timestamp in the first column, followed by
- * one or more data columns. The generated file is written under the system
- * temporary directory using `output_filename`.
- *
- * @param source_path Source CSV path.
- * @param output_filename Filename used under the system temporary directory.
- * @param total_rows Number of rows to write to the generated forcing CSV.
- * @return Filesystem path to the generated forcing CSV.
- * @throws std::runtime_error if the source CSV is missing, malformed, or
- * cannot be written to the generated output path.
- * @throws std::filesystem::filesystem_error if the temporary output path
- * cannot be resolved.
- */
-std::string write_repeated_hourly_forcing_csv(const std::string& source_path,
-                                              const std::string& output_filename,
-                                              std::size_t total_rows);
-
-/**
- * @brief Build the structured forcing payload consumed by BMI tasks.
- *
- * `variables_names_map` is optional. When omitted, forcing falls back to
- * identity mapping between BMI input names and CSV headers.
- *
- * @param forcing_file Path to the forcing CSV file.
- * @param variables_names_map Mapping from BMI input variable names to CSV headers.
- * @return Structured `caf::config_value` forcing payload for BMI tasks.
- * @throws std::runtime_error if `forcing_file` or any explicit mapping entry
- * is empty.
- */
-caf::config_value
-make_forcing_config(const std::string& forcing_file,
-                    const std::map<std::string, std::string>& variables_names_map = {});
 
 } // namespace miaow

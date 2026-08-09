@@ -17,6 +17,7 @@ class HelloSimulationUnit : public miaow::SimulationUnit {
   public:
     /**
      * @brief Override execute to return the first task string argument.
+     *
      * In a real simulation unit, this is where you would implement the logic to initialize
      * and run your model.
      * @param task Task payload; args[0] is expected to be a string.

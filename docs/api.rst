@@ -123,7 +123,3 @@ I/O and CLI helpers
 .. doxygenfunction:: miaow::ensure_expected_run_dir
 
 .. doxygenfunction:: miaow::parse_runtime_cli_options
-
-.. doxygenfunction:: miaow::write_repeated_hourly_forcing_csv
-
-.. doxygenfunction:: miaow::make_forcing_config
