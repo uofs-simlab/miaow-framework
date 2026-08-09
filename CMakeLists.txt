@@ -43,8 +43,8 @@ miaow_validate_provider(MIAOW_BOOST_PROVIDER)
 miaow_validate_provider(MIAOW_CAF_PROVIDER)
 
 # Resolve only the Boost components used by the selected build
-set(miaow_boost_components process json)
-set(miaow_boost_fetch_libraries process json)
+set(miaow_boost_components json)
+set(miaow_boost_fetch_libraries json)
 if(miaow_build_tests)
     list(APPEND miaow_boost_components unit_test_framework)
     list(APPEND miaow_boost_fetch_libraries test)
@@ -233,7 +233,6 @@ target_link_libraries(miaow
     PRIVATE
         ${MIAOW_CAF_CORE_TARGET}
         ${MIAOW_CAF_IO_TARGET}
-        Boost::process
         Boost::json
         iso_c_bmi
         ${CMAKE_DL_LIBS}
@@ -243,7 +242,6 @@ target_link_libraries(miaow
 set(miaow_interface_link_libraries
     "$<BUILD_INTERFACE:${MIAOW_CAF_CORE_TARGET}>"
     "$<BUILD_INTERFACE:${MIAOW_CAF_IO_TARGET}>"
-    "$<BUILD_INTERFACE:$<LINK_ONLY:Boost::process>>"
     "$<BUILD_INTERFACE:$<LINK_ONLY:Boost::json>>"
     "$<BUILD_INTERFACE:$<LINK_ONLY:iso_c_bmi>>"
 )
@@ -261,7 +259,7 @@ string(CONCAT MIAOW_INSTALLED_SUBPROCESS_PATH
 string(CONCAT MIAOW_SUBPROCESS_COMPILE_DEFINITIONS
     "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\";"
     "MIAOW_INSTALLED_SUBPROCESS_PATH=\"${MIAOW_INSTALLED_SUBPROCESS_PATH}\"")
-set_source_files_properties(src/core/process.cpp PROPERTIES
+set_source_files_properties(src/bmi/execute.cpp PROPERTIES
     COMPILE_DEFINITIONS "${MIAOW_SUBPROCESS_COMPILE_DEFINITIONS}"
 )
 
@@ -272,7 +270,7 @@ target_compile_features(miaow_subprocess PRIVATE cxx_std_20)
 target_include_directories(miaow_subprocess PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
-target_link_libraries(miaow_subprocess PRIVATE miaow Boost::process)
+target_link_libraries(miaow_subprocess PRIVATE miaow Boost::json)
 set_target_properties(miaow_subprocess PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
 )

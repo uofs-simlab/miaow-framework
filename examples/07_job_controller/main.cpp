@@ -22,8 +22,7 @@ constexpr std::size_t total_task_count = 3;
  */
 class HelloSimulationUnit final : public miaow::SimulationUnit {
   public:
-    miaow::TaskResult execute(const miaow::Task& task,
-                              miaow::ExecutionContext& /*context*/) override {
+    caf::result<miaow::TaskResult> execute(const miaow::Task& task) override {
         const std::string* message = task.string_arg(0);
         if (message == nullptr) {
             return miaow::TaskResult{miaow::TaskStatus::failed, "missing hello message"};

@@ -168,7 +168,7 @@ target_link_libraries(miaow_summa PRIVATE miaow)
 target_compile_definitions(miaow_summa PRIVATE
     MIAOW_SUMMA_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
 )
-add_dependencies(miaow_summa miaow_summa_plugin_link)
+add_dependencies(miaow_summa miaow_summa_plugin_link miaow_subprocess)
 
 # Place the binary in the example directory for source-relative execution
 set_target_properties(miaow_summa PROPERTIES

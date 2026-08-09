@@ -92,10 +92,9 @@ struct StaticBmiConfig {
 };
 
 /**
- * @brief Plugin, execution, input, and output configuration for one dynamic BMI task.
+ * @brief Plugin, input, and output configuration for one dynamic BMI task.
  *
- * `backend_` selects the plugin interface used to load `plugin_path_`. Dynamic
- * tasks may run in process or through either subprocess execution mode.
+ * `backend_` selects the plugin interface used to load `plugin_path_`.
  */
 struct DynamicBmiConfig {
     /// Backend implemented by the plugin
@@ -115,13 +114,14 @@ struct DynamicBmiConfig {
 
     /// Optional MIAOW-managed output; absent delegates output to the model
     std::optional<BmiOutputConfig> output_;
-
-    /// Execution location for this task
-    ExecutionMode execution_mode_{ExecutionMode::in_process};
-
-    /// Optional subprocess executable path
-    std::string subprocess_path_;
 };
+
+/**
+ * @brief Resolve the bundled subprocess executable that runs dynamic BMI tasks.
+ * @return Existing configured build or installation path.
+ * @throws std::runtime_error if neither configured executable exists.
+ */
+std::string bmi_subprocess_executable_path();
 
 /**
  * @brief Build one task for a statically typed BMI model.
@@ -181,7 +181,6 @@ class PartitionedBmiRealization {
 
     /**
      * @brief Partition a NextGen-style realization file by feature.
-     *
      * @param realization_path Path to the NextGen-style realization file.
      * @throws std::runtime_error if the realization is malformed or references
      * missing or unusable files.
@@ -200,21 +199,18 @@ class PartitionedBmiRealization {
     // Resolved configuration and identifier for each feature
     std::vector<FeatureConfig> feature_configs_;
 
-    friend std::vector<Task> make_bmi_tasks(
-        SimulationUnitId simulation_unit_id, const PartitionedBmiRealization& realization,
-        ExecutionMode execution_mode);
+    friend std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
+                                            const PartitionedBmiRealization& realization);
 };
 
 /**
  * @brief Build one dynamic BMI task per realization feature.
  * @param simulation_unit_id Registered dynamic BMI simulation unit id.
  * @param realization Parsed BMI realization.
- * @param execution_mode Execution mode applied to every generated task.
  * @return `Task`s ready to submit through `Runtime::submit_job()`.
  */
-std::vector<Task>
-make_bmi_tasks(SimulationUnitId simulation_unit_id, const PartitionedBmiRealization& realization,
-               ExecutionMode execution_mode = ExecutionMode::in_process);
+std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
+                                 const PartitionedBmiRealization& realization);
 
 namespace static_bmi_execution {
 
@@ -269,16 +265,9 @@ class StaticBmiSimulationUnit : public SimulationUnit {
     /**
      * @brief Execute a BMI model instance for a single task.
      * @param task `Task` built from `StaticBmiConfig`.
-     * @return Structured `TaskResult` for this BMI task execution.
+     * @return Immediate result for this BMI task execution.
      */
-    TaskResult execute(const Task& task, ExecutionContext&) override {
-        // Static model units must supply the model instance in this process
-        if (task.execution_mode_ != ExecutionMode::in_process) {
-            return make_failed_task_result(
-                "subprocess execution requires DynamicBmiSimulationUnit",
-                "Subprocess error");
-        }
-
+    caf::result<TaskResult> execute(const Task& task) override {
         try {
             // Pass one fresh static model through the internal execution bridge
             return static_bmi_execution::execute_task(task, model_factory_());
@@ -316,8 +305,9 @@ class StaticBmiSimulationUnit : public SimulationUnit {
 /**
  * @brief Simulation unit that runs dynamically loaded BMI plugin tasks.
  *
- * In-process tasks execute the configured model locally. Subprocess execution
- * modes delegate the serialized `Task` through `ExecutionContext`.
+ * `DynamicBmiSimulationUnit` executes the internal BMI pipeline in the current process.
+ * To run BMI tasks in a separate process, register the bundled subprocess executable with
+ * `SimulationUnitRegistry::add_subprocess()` instead.
  */
 class DynamicBmiSimulationUnit : public SimulationUnit {
   public:
@@ -327,10 +317,9 @@ class DynamicBmiSimulationUnit : public SimulationUnit {
     /**
      * @brief Execute a dynamically loaded BMI plugin task.
      * @param task `Task` built from `DynamicBmiConfig`.
-     * @param context Runtime-local services for this worker task execution.
-     * @return Structured `TaskResult` for this BMI pipeline task execution.
+     * @return Immediate result for this BMI pipeline task execution.
      */
-    TaskResult execute(const Task& task, ExecutionContext& context) override;
+    caf::result<TaskResult> execute(const Task& task) override;
 };
 
 } // namespace miaow

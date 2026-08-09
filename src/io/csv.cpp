@@ -4,7 +4,6 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
-#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -75,31 +74,6 @@ std::int64_t parse_timestamp_seconds(const std::string& raw_timestamp) {
         std::chrono::sys_days{calendar_date} + std::chrono::hours{hour} +
         std::chrono::minutes{minute} + std::chrono::seconds{second};
     return time_point.time_since_epoch().count();
-}
-
-std::string format_timestamp_seconds(std::int64_t seconds_since_epoch,
-                                     char date_separator) {
-    if (date_separator != '-' && date_separator != '/') {
-        throw std::runtime_error("invalid");
-    }
-
-    const std::chrono::sys_seconds time_point{std::chrono::seconds{seconds_since_epoch}};
-    const std::chrono::sys_days date = std::chrono::floor<std::chrono::days>(time_point);
-    const std::chrono::year_month_day calendar_date{date};
-    const std::chrono::seconds seconds_of_day = time_point - date;
-    const std::chrono::hours hours =
-        std::chrono::duration_cast<std::chrono::hours>(seconds_of_day);
-    const std::chrono::minutes minutes =
-        std::chrono::duration_cast<std::chrono::minutes>(seconds_of_day - hours);
-    const std::chrono::seconds seconds = seconds_of_day - hours - minutes;
-
-    std::ostringstream output;
-    output << std::setfill('0') << std::setw(4) << static_cast<int>(calendar_date.year())
-           << date_separator << std::setw(2) << static_cast<unsigned>(calendar_date.month())
-           << date_separator << std::setw(2) << static_cast<unsigned>(calendar_date.day())
-           << " " << std::setw(2) << hours.count() << ":" << std::setw(2) << minutes.count()
-           << ":" << std::setw(2) << seconds.count();
-    return output.str();
 }
 
 } // namespace miaow::io

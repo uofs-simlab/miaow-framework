@@ -22,6 +22,7 @@ static void dispatch_tasks(caf::event_based_actor* self,
 // Request shutdown from every worker and any subprocess it retains
 static void stop_workers(const std::shared_ptr<JobState>& state) {
     for (const caf::actor& worker : state->workers_) {
+        // job_actor -> simulation_unit_actor: stop work and release child resources
         caf::anon_mail(shutdown_atom_v).urgent().send(worker);
     }
 }
@@ -39,6 +40,8 @@ static void spawn_workers_for_tasks(caf::event_based_actor* self,
         const std::size_t worker_id = state->workers_.size();
         state->workers_.emplace_back(
             self->spawn(simulation_unit_actor, state->simulation_unit_registry_,
+                        state->subprocess_registration_actor_,
+                        state->subprocess_registration_port_,
                         state->runtime_options_.task_request_timeout_));
         state->available_workers_.push(worker_id);
     }
@@ -65,25 +68,28 @@ static void complete_job(caf::event_based_actor* self,
     JobRecord job_record{state->run_id_, state->job_id_, std::move(task_records),
                          job_run_time};
 
-    // Clean up
+    // Stop job-owned work before completing the deferred request from the orchestrator
     state->job_timeout_.dispose();
     stop_workers(state);
+
+    // Fulfil the job actor's CAF response so the orchestrator receives the JobRecord
     state->response_promise_->deliver(std::move(job_record));
     state->response_promise_.reset();
     self->quit();
 }
 
 // Deliver a pending job-level error after all active requests have finished
-static void complete_job_error_if_tasks_finished(
-    caf::event_based_actor* self, const std::shared_ptr<JobState>& state) {
-    if (!state->pending_error_message_.has_value() ||
-        state->active_task_count_ != 0 || !state->response_promise_.has_value()) {
+static void complete_job_error_if_tasks_finished(caf::event_based_actor* self,
+                                                 const std::shared_ptr<JobState>& state) {
+    if (!state->pending_error_message_.has_value() || state->active_task_count_ != 0 ||
+        !state->response_promise_.has_value()) {
         return;
     }
 
     // Complete the outstanding CAF request with an error for the orchestrator to forward
-    state->response_promise_->deliver(caf::make_error(
-        caf::sec::runtime_error, std::move(*state->pending_error_message_)));
+    state->response_promise_->deliver(
+        caf::make_error(caf::sec::runtime_error,
+                        std::move(*state->pending_error_message_)));
     state->response_promise_.reset();
     self->quit();
 }
@@ -204,19 +210,25 @@ static void dispatch_tasks(caf::event_based_actor* self,
         // Record dispatch time for per-task runtime diagnostics
         state->task_start_times_.at(task_id) = std::chrono::steady_clock::now();
 
-        // Subprocess execution enforces its timeout before returning to this actor
-        caf::timespan simulation_unit_request_timeout = caf::infinite;
-        if (state->tasks_.at(task_id).execution_mode_ == ExecutionMode::in_process) {
-            simulation_unit_request_timeout = state->runtime_options_.task_request_timeout_;
-        }
+        // SubprocessState owns its timeout so cleanup precedes the delegated response
+        const caf::timespan simulation_unit_request_timeout =
+            SimulationUnitRegistryAccess::uses_subprocess(
+                *state->simulation_unit_registry_,
+                state->tasks_.at(task_id).simulation_unit_id_)
+                ? caf::infinite
+                : state->runtime_options_.task_request_timeout_;
 
-        // Request one task execution from one simulation_unit actor
+        // job_actor -> simulation_unit_actor: request execution of one Task;
+        // caf::get_atom_v is matched by caf::get_atom in the worker handler, request()
+        // returns a response handle, and then() installs one response behaviour
         self->mail(caf::get_atom_v, state->tasks_.at(task_id))
             .request(state->workers_.at(worker_id), simulation_unit_request_timeout)
             .then(
+                // simulation_unit_actor -> job_actor: return the completed task result
                 [self, state, worker_id, task_id](TaskResult task_result) {
                     complete_task(self, state, worker_id, task_id, std::move(task_result));
                 },
+                // simulation_unit_actor -> job_actor: report a task request error
                 [self, state, worker_id, task_id](const caf::error& err) {
                     const TaskResult failed_task_result =
                         miaow::make_failed_task_result(caf::to_string(err), "CAF error");
@@ -232,39 +244,34 @@ static void dispatch_tasks(caf::event_based_actor* self,
 caf::behavior simulation_unit_actor(
     caf::event_based_actor* self,
     std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
+    caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
     std::chrono::milliseconds task_request_timeout) {
-    // Create a slot for the subprocess state - this will be empty for in-process execution
-    std::shared_ptr<SubprocessState> active_subprocess =
-        std::make_shared<SubprocessState>();
-    active_subprocess->subprocess_task_timeout_ = task_request_timeout;
+    // CAF callbacks outlive this function, so they share the subprocess lifecycle state
+    // Only this actor's serialized handlers and callbacks mutate the shared object
+    const std::shared_ptr<SubprocessState> subprocess_state =
+        std::make_shared<SubprocessState>(self,
+                                          std::move(subprocess_registration_actor),
+                                          subprocess_registration_port,
+                                          task_request_timeout);
 
     return {
-        // Execute one task using a fresh simulation unit instance from the shared registry
-        [self, simulation_unit_registry = std::move(simulation_unit_registry),
-         active_subprocess](caf::get_atom, const Task& task) -> caf::result<TaskResult> {
-            // Error if simulation unit registry is missing
-            if (!simulation_unit_registry) {
-                return caf::make_error(caf::sec::runtime_error,
-                                       "SimulationUnitRegistry is null");
-            }
-
-            // Resolve the simulation unit factory for this task's SimulationUnitId
-            const SimulationUnitFactory* simulation_unit_factory =
-                simulation_unit_registry->find_factory(task.simulation_unit_id_);
-            if (!simulation_unit_factory) {
-                return caf::make_error(caf::sec::runtime_error,
-                                       "unknown SimulationUnitId: " +
-                                           std::to_string(task.simulation_unit_id_));
-            }
-
+        // job_actor -> simulation_unit_actor: execute one Task and return or defer its
+        // result; caf::get_atom matches the caf::get_atom_v value sent by job_actor, and
+        // CAF interprets caf::result<TaskResult> as a value, error, or delegated response
+        [simulation_unit_registry = std::move(simulation_unit_registry),
+         subprocess_state](caf::get_atom, const Task& task) -> caf::result<TaskResult> {
             try {
-                // Context gives the unit access to this worker's subprocess slot
-                ExecutionContext context{self->system(), *active_subprocess};
-
-                // Execute a fresh simulation unit instance for this task
+                // Construct the registered polymorphic unit for this task
                 std::unique_ptr<SimulationUnit> simulation_unit =
-                    (*simulation_unit_factory)();
-                return simulation_unit->execute(task, context);
+                    SimulationUnitRegistryAccess::construct(*simulation_unit_registry,
+                                                            task.simulation_unit_id_,
+                                                            *subprocess_state);
+                if (!simulation_unit) {
+                    return caf::make_error(caf::sec::runtime_error,
+                                           "unknown SimulationUnitId: " +
+                                               std::to_string(task.simulation_unit_id_));
+                }
+                return simulation_unit->execute(task);
             } catch (const std::exception& exception) {
                 return caf::make_error(caf::sec::runtime_error, exception.what());
             } catch (...) {
@@ -272,11 +279,29 @@ caf::behavior simulation_unit_actor(
                                        "unknown SimulationUnit exception");
             }
         },
-        // Stop this worker's subprocess when it receives a shutdown message
-        [self, active_subprocess](shutdown_atom) {
-            stop_subprocess(*active_subprocess);
-            self->quit();
-        }};
+        // subprocess_registration_actor -> simulation_unit_actor: deliver the child
+        // handle; accept only the current launch, install CAF monitoring, and send the
+        // task retained while the child process started
+        [subprocess_state](register_subprocess_worker_atom, SubprocessLaunchId launch_id,
+                           const caf::actor& subprocess_worker) {
+            subprocess_state->accept_registration(launch_id, subprocess_worker);
+        },
+        // simulation_unit_actor -> simulation_unit_actor: enforce the registration
+        // deadline; the launch ID makes this delayed message harmless after registration,
+        // failure, or replacement advances the worker to another lifecycle state
+        [subprocess_state](subprocess_startup_timeout_atom, SubprocessLaunchId launch_id) {
+            subprocess_state->expire_startup(launch_id);
+        },
+        // simulation_unit_actor -> simulation_unit_actor: poll the stopping child process;
+        // each callback performs one non-blocking waitpid check and reschedules itself
+        // until the child is reaped and the worker can complete its next transition
+        [subprocess_state](poll_subprocess_exit_atom, SubprocessLaunchId launch_id) {
+            subprocess_state->poll_for_subprocess_exit(launch_id);
+        },
+        // job_actor -> simulation_unit_actor: stop work and release owned resources;
+        // resolve any pending task response and keep this actor alive until launch
+        // reservation or child process reaping completes
+        [subprocess_state](shutdown_atom) { subprocess_state->shutdown(); }};
 }
 
 // Per-job supervisor that owns simulation_unit actors
@@ -284,7 +309,9 @@ caf::behavior
 job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
           std::vector<Task> tasks, std::shared_ptr<JobController> job_controller,
           RuntimeOptions runtime_options,
-          std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry) {
+          std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
+          caf::actor subprocess_registration_actor,
+          std::uint16_t subprocess_registration_port) {
     // JobState holds all mutable state variables for the job actor
     const std::shared_ptr<JobState> state = std::make_shared<JobState>();
     state->run_id_ = run_id;
@@ -292,6 +319,8 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
     state->runtime_options_ = std::move(runtime_options);
     state->job_controller_ = std::move(job_controller);
     state->simulation_unit_registry_ = std::move(simulation_unit_registry);
+    state->subprocess_registration_actor_ = std::move(subprocess_registration_actor);
+    state->subprocess_registration_port_ = subprocess_registration_port;
     state->tasks_ = std::move(tasks);
     state->job_start_time_ = std::chrono::steady_clock::now();
 
@@ -301,32 +330,35 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
     // Task start times are filled when each task is dispatched
     state->task_start_times_.assign(state->tasks_.size(), state->job_start_time_);
 
-    // Workers use Task::simulation_unit_id_ to select a factory from the shared registry
-    // The selected factory creates a fresh SimulationUnit for each task
+    // Workers use Task::simulation_unit_id_ to construct one fresh registered unit
 
     // Spawn simulation unit actors and queue their worker indices
     spawn_workers_for_tasks(self, state);
 
-    return {// Start dispatching tasks when orchestrator requests this job
+    return {// orchestrator_actor -> job_actor: start dispatching tasks for this job
             [=](caf::get_atom) -> caf::result<JobRecord> {
                 if (state->response_promise_.has_value()) {
                     return caf::make_error(caf::sec::runtime_error,
                                            "job_actor only accepts one get_atom request");
                 }
 
-                // Keep handler non-blocking while workers execute
+                // Create a deferred CAF response for the orchestrator's pending request
                 state->response_promise_ = self->make_response_promise<JobRecord>();
 
-                // Schedule the whole-job deadline within the actor that owns all task state
+                // job_actor -> job_actor: enforce the configured job deadline; schedule
+                // the deadline within the actor that owns all task state
                 state->job_timeout_ =
                     self->mail(job_timeout_atom_v)
                         .delay(state->runtime_options_.job_request_timeout_)
                         .send(self);
 
                 dispatch_tasks(self, state);
+
+                // Return the response token that complete_job fulfils after all tasks
+                // finish
                 return *state->response_promise_;
             },
-            // Preserve completed records and fail every remaining task at the job deadline
+            // job_actor -> job_actor: fail every remaining task at the job deadline
             [=](job_timeout_atom) {
                 // A controller error takes precedence over an already queued timeout
                 if (state->pending_error_message_.has_value()) {
@@ -354,7 +386,7 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
 
                 complete_job(self, state);
             },
-            // Request worker shutdown when the owning job actor is asked to stop
+            // orchestrator_actor -> job_actor: request worker shutdown
             [=](shutdown_atom) {
                 state->job_timeout_.dispose();
                 stop_workers(state);
@@ -367,30 +399,42 @@ caf::behavior
 orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                    std::uint64_t run_id,
                    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
+                   caf::actor subprocess_registration_actor,
+                   std::uint16_t subprocess_registration_port,
                    std::mutex* pending_jobs_mutex, PendingJobs* pending_jobs) {
-    return {// Job submission event
+    // The orchestrator retains active jobs so Runtime teardown can stop their workers
+    const std::shared_ptr<std::unordered_map<JobId, caf::actor>> active_job_actors =
+        std::make_shared<std::unordered_map<JobId, caf::actor>>();
+
+    return {// Runtime -> orchestrator_actor: submit one job
             [=](caf::get_atom, JobId job_id, std::vector<Task> tasks,
                 std::shared_ptr<JobController> job_controller) {
                 const caf::actor orchestrator = self;
 
                 // Spawn one job actor for this request
-                caf::actor job = self->spawn(job_actor, run_id, job_id, std::move(tasks),
-                                             std::move(job_controller), runtime_options,
-                                             simulation_unit_registry);
+                caf::actor job =
+                    self->spawn(job_actor, run_id, job_id, std::move(tasks),
+                                std::move(job_controller), runtime_options,
+                                simulation_unit_registry, subprocess_registration_actor,
+                                subprocess_registration_port);
+                active_job_actors->emplace(job_id, job);
 
-                // The job actor returns a JobRecord or an error through this request
+                // orchestrator_actor -> job_actor: request execution of one job
                 self->mail(caf::get_atom_v)
                     .request(job, caf::infinite)
                     .then(
-                        // Forward successful completion back into this actor
+                        // job_actor -> orchestrator_actor: forward successful completion
                         [orchestrator, job_id](const JobRecord& job_record) {
+                            // orchestrator_actor -> orchestrator_actor: resolve this job
                             caf::anon_mail(caf::put_atom_v, job_id, job_record)
                                 .send(orchestrator);
                         },
-                        // Request job shutdown and make JobHandle::get() report its error
-                        [job, job_id, pending_jobs_mutex,
+                        // job_actor -> orchestrator_actor: report the job error
+                        [job, job_id, active_job_actors, pending_jobs_mutex,
                          pending_jobs](const caf::error& err) {
+                            // orchestrator_actor -> job_actor: stop after a request error
                             caf::anon_mail(shutdown_atom_v).send(job);
+                            active_job_actors->erase(job_id);
 
                             // Remove the matching promise so it is resolved exactly once
                             std::promise<JobRecord> promise;
@@ -411,9 +455,11 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                                                    caf::to_string(err))));
                         });
             },
-            // Resolve Runtime promise for this completed job and mark its future ready
-            [pending_jobs_mutex, pending_jobs,
+            // orchestrator_actor -> orchestrator_actor: resolve the completed job promise
+            [active_job_actors, pending_jobs_mutex, pending_jobs,
              runtime_options](caf::put_atom, JobId job_id, JobRecord job_record) mutable {
+                active_job_actors->erase(job_id);
+
                 std::promise<JobRecord> promise;
                 {
                     std::lock_guard<std::mutex> lock(*pending_jobs_mutex);
@@ -441,7 +487,20 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                     promise.set_exception(std::current_exception());
                     return;
                 }
+                // Fulfil the public JobHandle returned by Runtime::submit_job
                 promise.set_value(std::move(job_record));
+            },
+            // Runtime -> orchestrator_actor: stop jobs and child registration
+            [self, subprocess_registration_actor, active_job_actors](shutdown_atom) {
+                for (const std::pair<const JobId, caf::actor>& active_job :
+                     *active_job_actors) {
+                    // orchestrator_actor -> job_actor: stop one active job
+                    caf::anon_mail(shutdown_atom_v).urgent().send(active_job.second);
+                }
+                // orchestrator_actor -> subprocess_registration_actor: stop registration
+                caf::anon_send_exit(subprocess_registration_actor,
+                                    caf::exit_reason::user_shutdown);
+                self->quit();
             }};
 }
 

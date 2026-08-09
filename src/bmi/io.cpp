@@ -401,17 +401,14 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id, const DynamicBmiConfig& 
                                   std::move(io_settings.variables_names_map_));
     module_config.output_variables_ = std::move(io_settings.output_variables_);
 
-    // Build the pipeline task with its requested execution settings
+    // Build the pipeline task with its dynamic model configuration
     const BmiPipelineConfig pipeline_config(std::vector<BmiModuleConfig>{std::move(
                                                 module_config)},
                                             std::move(io_settings.forcing_file_),
                                             feature_id, io_settings.output_interval_,
                                             config.time_step_tolerance_seconds_);
-    Task task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config),
-              std::move(metadata)};
-    task.execution_mode_ = config.execution_mode_;
-    task.subprocess_path_ = config.subprocess_path_;
-    return task;
+    return Task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config),
+                std::move(metadata)};
 }
 
 namespace {
