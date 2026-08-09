@@ -40,10 +40,11 @@ int main(int argc, char* argv[]) {
     const std::string plugin_path = LIBTRIXI_BMI_PLUGIN_PATH;
     std::cout << "libtrixi BMI plugin: " << plugin_path << "\n";
 
-    // Register the dynamic BMI unit used inside each subprocess
+    // Register a fresh bundled BMI subprocess for this task
     miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId dynamic_bmi =
-        registry.add<miaow::DynamicBmiSimulationUnit>();
+    const miaow::SimulationUnitId bmi_subprocess =
+        registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
+                                miaow::SubprocessLifetime::single_task);
     miaow::Runtime runtime(registry, runtime_options);
 
     // Configure one dynamic BMI task in an isolated subprocess
@@ -53,9 +54,8 @@ int main(int argc, char* argv[]) {
         .output_ = miaow::BmiOutputConfig{
             .variables_ = {"simulation_time"},
         },
-        .execution_mode_ = miaow::ExecutionMode::single_task_subprocess,
     };
-    const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, bmi_config);
+    const miaow::Task task = miaow::make_bmi_task(bmi_subprocess, bmi_config);
 
     // Submit a job containing the task and wait for its BMI lifecycle to complete
     miaow::JobHandle job = runtime.submit_job(task);

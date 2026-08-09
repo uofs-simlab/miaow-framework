@@ -17,10 +17,6 @@ Identifiers and task status
 
 .. doxygenenum:: miaow::TaskStatus
 
-.. doxygenenum:: miaow::ExecutionMode
-
-See :ref:`task-execution-modes` for subprocess ownership, reuse, and lifetime behaviour.
-
 .. doxygenfunction:: miaow::task_status_to_string
 
 Task and job data
@@ -49,10 +45,12 @@ Runtime orchestration
 .. doxygenclass:: miaow::JobController
    :members:
 
-.. doxygentypedef:: miaow::SimulationUnitFactory
-
 .. doxygenclass:: miaow::SimulationUnitRegistry
    :members:
+
+.. doxygenenum:: miaow::SubprocessLifetime
+
+.. doxygenfunction:: miaow::run_subprocess_worker
 
 .. doxygenstruct:: miaow::RuntimeOptions
    :members:
@@ -99,6 +97,8 @@ Simulation units
 .. doxygenclass:: miaow::DynamicBmiSimulationUnit
    :members:
 
+.. doxygenfunction:: miaow::bmi_subprocess_executable_path
+
 .. doxygenfunction:: miaow::make_bmi_task(SimulationUnitId, const StaticBmiConfig&)
 
 .. doxygenfunction:: miaow::make_bmi_task(SimulationUnitId, const DynamicBmiConfig&)
@@ -111,7 +111,7 @@ Realization workflows
 .. doxygenclass:: miaow::PartitionedBmiRealization
    :members:
 
-.. doxygenfunction:: miaow::make_bmi_tasks(SimulationUnitId, const PartitionedBmiRealization&, ExecutionMode)
+.. doxygenfunction:: miaow::make_bmi_tasks(SimulationUnitId, const PartitionedBmiRealization&)
 
 I/O and CLI helpers
 -------------------
@@ -123,7 +123,3 @@ I/O and CLI helpers
 .. doxygenfunction:: miaow::ensure_expected_run_dir
 
 .. doxygenfunction:: miaow::parse_runtime_cli_options
-
-.. doxygenfunction:: miaow::write_repeated_hourly_forcing_csv
-
-.. doxygenfunction:: miaow::make_forcing_config

@@ -3,7 +3,6 @@
 
 #include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -73,69 +72,4 @@ BOOST_AUTO_TEST_CASE(invalid_runtime_cli_value_is_rejected) {
                               return std::string(exception.what()) ==
                                      "Error: --max_workers requires a positive integer";
                           });
-}
-
-// Repeat source values cyclically while advancing generated timestamps by one hour
-BOOST_AUTO_TEST_CASE(repeated_hourly_forcing_csv_preserves_cycle) {
-    const std::filesystem::path source_path =
-        std::filesystem::temp_directory_path() / "miaow_hourly_forcing_source.csv";
-    constexpr const char* output_filename = "miaow_hourly_forcing_output.csv";
-    const std::filesystem::path output_path =
-        std::filesystem::temp_directory_path() / output_filename;
-    std::filesystem::remove(source_path);
-    std::filesystem::remove(output_path);
-
-    std::ofstream source_stream(source_path);
-    BOOST_REQUIRE(source_stream.is_open());
-    source_stream << "time,value\n"
-                  << "2020-01-01 00:00:00,10\n"
-                  << "2020-01-01 01:00:00,20\n";
-    source_stream.close();
-
-    const std::string generated_path =
-        miaow::write_repeated_hourly_forcing_csv(source_path.string(), output_filename, 5);
-    std::ifstream generated_stream(generated_path);
-    BOOST_REQUIRE(generated_stream.is_open());
-    std::ostringstream generated_contents;
-    generated_contents << generated_stream.rdbuf();
-    generated_stream.close();
-
-    BOOST_TEST(generated_contents.str() == "time,value\n"
-                                           "2020-01-01 00:00:00,10\n"
-                                           "2020-01-01 01:00:00,20\n"
-                                           "2020-01-01 02:00:00,10\n"
-                                           "2020-01-01 03:00:00,20\n"
-                                           "2020-01-01 04:00:00,10\n");
-
-    std::filesystem::remove(source_path);
-    std::filesystem::remove(output_path);
-}
-
-// Report an invalid first timestamp before creating generated forcing output
-BOOST_AUTO_TEST_CASE(malformed_forcing_csv_is_rejected) {
-    const std::filesystem::path source_path =
-        std::filesystem::temp_directory_path() / "miaow_malformed_forcing_source.csv";
-    constexpr const char* output_filename = "miaow_malformed_forcing_output.csv";
-    const std::filesystem::path output_path =
-        std::filesystem::temp_directory_path() / output_filename;
-    std::filesystem::remove(source_path);
-    std::filesystem::remove(output_path);
-
-    std::ofstream source_stream(source_path);
-    BOOST_REQUIRE(source_stream.is_open());
-    source_stream << "time,value\n"
-                  << "not-a-timestamp,10\n";
-    source_stream.close();
-
-    BOOST_CHECK_EXCEPTION(
-        miaow::write_repeated_hourly_forcing_csv(source_path.string(), output_filename, 2),
-        std::runtime_error, [](const std::runtime_error& exception) {
-            return std::string(exception.what())
-                       .find("has an invalid timestamp in its first data row") !=
-                   std::string::npos;
-        });
-    BOOST_TEST(!std::filesystem::exists(output_path));
-
-    std::filesystem::remove(source_path);
-    std::filesystem::remove(output_path);
 }

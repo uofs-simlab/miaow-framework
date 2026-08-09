@@ -17,12 +17,13 @@ class HelloSimulationUnit : public miaow::SimulationUnit {
   public:
     /**
      * @brief Override execute to return the first task string argument.
+     *
      * In a real simulation unit, this is where you would implement the logic to initialize
      * and run your model.
      * @param task Task payload; args[0] is expected to be a string.
      * @return Structured task result with status and message.
      */
-    miaow::TaskResult execute(const miaow::Task& task) override {
+    caf::result<miaow::TaskResult> execute(const miaow::Task& task) override {
         const std::string* message = task.string_arg(0);
         if (message == nullptr) {
             return miaow::TaskResult{miaow::TaskStatus::failed, "missing message"};

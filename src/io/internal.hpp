@@ -54,6 +54,4 @@ std::vector<std::string> split_csv_line(const std::string& line);
 
 std::int64_t parse_timestamp_seconds(const std::string& raw_timestamp);
 
-std::string format_timestamp_seconds(std::int64_t seconds_since_epoch, char date_separator);
-
 } // namespace miaow::io

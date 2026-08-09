@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -48,6 +49,25 @@ std::string format_bmi_error_message(std::exception_ptr exception) {
 }
 
 } // namespace
+
+// Helper to locate the bundled BMI subprocess executable, which is either in the build
+// directory or the installed package directory
+std::string bmi_subprocess_executable_path() {
+    // Source-tree runs use the configured build executable while it exists
+    const std::filesystem::path build_executable{MIAOW_SUBPROCESS_PATH};
+    if (std::filesystem::exists(build_executable)) {
+        return build_executable.string();
+    }
+
+    // Installed packages use the configured install path when the build executable is
+    // unavailable
+    const std::filesystem::path installed_executable{MIAOW_INSTALLED_SUBPROCESS_PATH};
+    if (std::filesystem::exists(installed_executable)) {
+        return installed_executable.string();
+    }
+
+    throw std::runtime_error("bundled BMI subprocess executable was not found");
+}
 
 TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
     std::vector<std::string> runtime_artifact_paths;

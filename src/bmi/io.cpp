@@ -147,7 +147,7 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id, const StaticBmiConfig& c
                                   std::move(variables_names_map));
     module_config.output_variables_ = std::move(output_variables);
 
-    // Build the pipeline task for the registered static model
+    // Build the pipeline task for the static BMI model
     const BmiPipelineConfig pipeline_config(
         std::vector<BmiModuleConfig>{std::move(module_config)}, std::move(forcing_file), "",
         output_interval, config.time_step_tolerance_);
@@ -195,15 +195,12 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id,
                                   config.init_config_, std::move(variables_names_map));
     module_config.output_variables_ = std::move(output_variables);
 
-    // Build the pipeline task with its requested execution settings
+    // Build the pipeline task with its dynamic model configuration
     const BmiPipelineConfig pipeline_config(
         std::vector<BmiModuleConfig>{std::move(module_config)}, std::move(forcing_file),
         feature_id, output_interval, config.time_step_tolerance_);
-    Task task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config),
-              std::move(metadata)};
-    task.execution_mode_ = config.execution_mode_;
-    task.subprocess_path_ = config.subprocess_path_;
-    return task;
+    return Task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config),
+                std::move(metadata)};
 }
 
 namespace {

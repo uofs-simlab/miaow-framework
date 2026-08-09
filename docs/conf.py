@@ -24,6 +24,7 @@ nitpick_ignore = [
     ("cpp:identifier", "caf"),
     ("cpp:identifier", "caf::actor_system"),
     ("cpp:identifier", "caf::config_value"),
+    ("cpp:identifier", "caf::result<TaskResult>"),
     # Breathe does not create a standalone target for the enclosing namespace
     ("cpp:identifier", "miaow"),
 ]
