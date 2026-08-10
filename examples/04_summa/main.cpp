@@ -30,14 +30,15 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Register the dynamic unit that executes each realization feature task
+    // Register the bundled BMI worker as a persistent subprocess simulation unit
     miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId dynamic_bmi =
-        registry.add<miaow::DynamicBmiSimulationUnit>();
+    const miaow::SimulationUnitId bmi_subprocess =
+        registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
+                                miaow::SubprocessLifetime::persistent);
 
     // SUMMA tasks run in subprocesses because the model has global state
     const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(
-        dynamic_bmi, realization, miaow::ExecutionMode::persistent_subprocess);
+        bmi_subprocess, realization);
     std::cout << "Parsed realization with " << tasks.size() << " feature task(s)\n";
     miaow::Runtime runtime(registry, runtime_options);
 

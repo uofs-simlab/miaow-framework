@@ -206,6 +206,7 @@ add_library(miaow STATIC
     src/bmi/io.cpp
     src/bmi/pipeline.cpp
     src/bmi/realization.cpp
+    src/bmi/variable.cpp
     src/core/actors.cpp
     src/core/process.cpp
     src/core/runtime.cpp
@@ -258,7 +259,7 @@ string(CONCAT MIAOW_INSTALLED_SUBPROCESS_PATH
 string(CONCAT MIAOW_SUBPROCESS_COMPILE_DEFINITIONS
     "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\";"
     "MIAOW_INSTALLED_SUBPROCESS_PATH=\"${MIAOW_INSTALLED_SUBPROCESS_PATH}\"")
-set_source_files_properties(src/bmi/execute.cpp src/core/process.cpp PROPERTIES
+set_source_files_properties(src/bmi/execute.cpp PROPERTIES
     COMPILE_DEFINITIONS "${MIAOW_SUBPROCESS_COMPILE_DEFINITIONS}"
 )
 
@@ -269,7 +270,7 @@ target_compile_features(miaow_subprocess PRIVATE cxx_std_20)
 target_include_directories(miaow_subprocess PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
-target_link_libraries(miaow_subprocess PRIVATE miaow)
+target_link_libraries(miaow_subprocess PRIVATE miaow Boost::json)
 set_target_properties(miaow_subprocess PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
 )

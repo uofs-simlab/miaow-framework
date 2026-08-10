@@ -7,12 +7,14 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
+#include "bmi/internal.hpp"
 
-// Build a static BMI task with its serialized config and in-process default
+// Build a static BMI task with its serialized configuration
 BOOST_AUTO_TEST_CASE(static_config_creates_a_task) {
     const miaow::StaticBmiConfig config{
         .init_config_ = "model.ini",
@@ -29,24 +31,41 @@ BOOST_AUTO_TEST_CASE(static_config_creates_a_task) {
 
     BOOST_TEST(task.simulation_unit_id_ == 7);
     BOOST_REQUIRE_EQUAL(task.args_.size(), 1);
-    BOOST_CHECK(task.execution_mode_ == miaow::ExecutionMode::in_process);
+    // Confirm the seconds tolerance survives internal task serialization
+    const miaow::BmiPipelineConfig pipeline_config(task);
+    BOOST_TEST(pipeline_config.time_step_tolerance_seconds_ ==
+               miaow::default_bmi_time_step_tolerance_seconds);
 }
 
-// Preserve dynamic plugin routing fields when constructing a BMI task
-BOOST_AUTO_TEST_CASE(dynamic_config_preserves_execution_fields) {
+// Convert supported fixed-duration BMI time units to seconds
+BOOST_AUTO_TEST_CASE(bmi_time_units_convert_to_seconds) {
+    constexpr std::string_view error_prefix = "BMI test error: ";
+    BOOST_TEST(miaow::bmi::seconds_per_time_unit("s", error_prefix) == 1.0);
+    BOOST_TEST(miaow::bmi::seconds_per_time_unit("minutes", error_prefix) == 60.0);
+    BOOST_TEST(miaow::bmi::seconds_per_time_unit("HOURS", error_prefix) == 3600.0);
+    BOOST_TEST(miaow::bmi::seconds_per_time_unit("d", error_prefix) == 86400.0);
+}
+
+// Apply the configured seconds tolerance to forcing timestep alignment
+BOOST_AUTO_TEST_CASE(forcing_alignment_uses_seconds_tolerance) {
+    BOOST_CHECK_NO_THROW(miaow::bmi::validate_forcing_time_step_delta(
+        3600.00005, 3600.0, 1e-4, 2));
+    BOOST_CHECK_THROW(miaow::bmi::validate_forcing_time_step_delta(
+                          3600.0002, 3600.0, 1e-4, 2),
+                      std::runtime_error);
+}
+
+// Build a dynamic BMI task without embedding execution policy
+BOOST_AUTO_TEST_CASE(dynamic_config_creates_a_task) {
     const miaow::DynamicBmiConfig config{
         .backend_ = miaow::DynamicBmiBackend::fortran,
         .plugin_path_ = "model.so",
-        .execution_mode_ = miaow::ExecutionMode::persistent_subprocess,
-        .subprocess_path_ = "miaow_subprocess",
     };
 
     const miaow::Task task = miaow::make_bmi_task(9, config);
 
     BOOST_TEST(task.simulation_unit_id_ == 9);
     BOOST_REQUIRE_EQUAL(task.args_.size(), 1);
-    BOOST_CHECK(task.execution_mode_ == miaow::ExecutionMode::persistent_subprocess);
-    BOOST_TEST(task.subprocess_path_ == "miaow_subprocess");
 }
 
 // Exercise dynamic Fortran BMI loading and lifecycle execution in the parent process
@@ -71,8 +90,8 @@ BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_process) {
                "BMI workflow complete (updates: 2)");
 }
 
-// Initialize a fresh pipeline from a persisted resolved config artifact
-BOOST_AUTO_TEST_CASE(pipeline_reads_resolved_config_artifact) {
+// Write the resolved pipeline configuration beside task results
+BOOST_AUTO_TEST_CASE(pipeline_writes_resolved_config_artifact) {
     const std::filesystem::path output_root = MIAOW_BMI_TEST_OUTPUT_ROOT;
     std::filesystem::remove_all(output_root);
 
@@ -105,11 +124,6 @@ BOOST_AUTO_TEST_CASE(pipeline_reads_resolved_config_artifact) {
         output_root / ("run_" + std::to_string(job_record.run_id_)) /
         ("job_" + std::to_string(job_record.job_id_)) / "results" / "task_0.csv";
     BOOST_TEST(!std::filesystem::exists(output_path));
-
-    // Exercise the public file-based initialization path
-    miaow::BmiPipeline pipeline;
-    pipeline.Initialize(config_path.string());
-    pipeline.Finalize();
 
     std::filesystem::remove_all(output_root);
 }
@@ -203,7 +217,7 @@ BOOST_AUTO_TEST_CASE(empty_output_variables_write_all_task_outputs) {
     BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
     BOOST_TEST(line == "time,temperature");
 
-    // Verify persisted empty selections resolve identically during file initialization
+    // Verify the resolved artifact records selection of every output variable
     const std::filesystem::path config_path =
         output_root / ("run_" + std::to_string(job_record.run_id_)) /
         ("job_" + std::to_string(job_record.job_id_)) / "task_0.json";
@@ -213,10 +227,6 @@ BOOST_AUTO_TEST_CASE(empty_output_variables_write_all_task_outputs) {
     config_contents << config_artifact.rdbuf();
     BOOST_TEST(config_contents.str().find("\"output_variables\":[]") !=
                std::string::npos);
-
-    miaow::BmiPipeline pipeline;
-    pipeline.Initialize(config_path.string());
-    pipeline.Finalize();
 
     std::filesystem::remove_all(output_root);
 }
@@ -388,7 +398,7 @@ BOOST_AUTO_TEST_CASE(output_interval_writes_final_state) {
     std::filesystem::remove_all(output_root);
 }
 
-// Accept output boundaries within the configured model-time tolerance
+// Accept output boundaries within the configured seconds tolerance
 BOOST_AUTO_TEST_CASE(output_interval_uses_configured_tolerance) {
     const std::filesystem::path output_root = MIAOW_BMI_TEST_OUTPUT_ROOT;
     std::filesystem::remove_all(output_root);
@@ -403,7 +413,7 @@ BOOST_AUTO_TEST_CASE(output_interval_uses_configured_tolerance) {
     const miaow::DynamicBmiConfig config{
         .backend_ = miaow::DynamicBmiBackend::fortran,
         .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
-        .time_step_tolerance_ = 1e-6,
+        .time_step_tolerance_seconds_ = 1e-6,
         .output_ = miaow::BmiOutputConfig{
             .variables_ = {"temperature"},
             .interval_ = 1.0 + 4e-7,
@@ -464,18 +474,18 @@ BOOST_AUTO_TEST_CASE(missing_dynamic_plugin_marks_task_failed) {
 }
 
 // Exercise the Fortran BMI lifecycle through a fresh task-owned subprocess
-BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_single_task_subprocess) {
+BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_fresh_subprocess) {
     miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId dynamic_bmi =
-        registry.add<miaow::DynamicBmiSimulationUnit>();
+    const miaow::SimulationUnitId bmi_subprocess =
+        registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
+                                miaow::SubprocessLifetime::single_task);
     miaow::Runtime runtime(registry);
 
     const miaow::DynamicBmiConfig config{
         .backend_ = miaow::DynamicBmiBackend::fortran,
         .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
-        .execution_mode_ = miaow::ExecutionMode::single_task_subprocess,
     };
-    const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, config);
+    const miaow::Task task = miaow::make_bmi_task(bmi_subprocess, config);
     const miaow::JobRecord job_record = runtime.submit_job(task).get();
 
     BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);

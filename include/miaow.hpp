@@ -17,14 +17,21 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <caf/actor.hpp>
 #include <caf/actor_system.hpp>
 #include <caf/actor_system_config.hpp>
 #include <caf/config_value.hpp>
+#include <caf/result.hpp>
+#include <caf/type_id.hpp>
 
 namespace miaow {
+
+namespace core {
+class SimulationUnitRegistryAccess;
+}
 
 /**
  * @brief Monotonic identifier assigned to each registered `SimulationUnit`.
@@ -47,18 +54,14 @@ using JobId = std::uint64_t;
 using TaskMetadata = std::map<std::string, std::string>;
 
 /**
- * @brief Select whether a `Task` executes in the parent process or a subprocess
- * and whether a subprocess is reused across tasks.
+ * @brief Select whether a subprocess handles one task or remains available for reuse.
  */
-enum class ExecutionMode {
-    /// Execute the task in a parent-process worker actor
-    in_process,
+enum class SubprocessLifetime {
+    /// Stop the subprocess after one task result
+    single_task,
 
-    /// Launch one subprocess for one task and stop it after the result
-    single_task_subprocess,
-
-    /// Reuse one subprocess owned by a job worker for subprocess-routed tasks
-    persistent_subprocess,
+    /// Retain the subprocess after successful tasks
+    persistent,
 };
 
 /**
@@ -70,14 +73,6 @@ enum class ExecutionMode {
 struct Task {
     /// `SimulationUnitId` that selects which registered unit handles this task
     SimulationUnitId simulation_unit_id_{0};
-
-    /// Execution mode selected for this task
-    ExecutionMode execution_mode_{ExecutionMode::in_process};
-
-    /// Optional path to the `miaow_subprocess` executable; when empty, MIAOW first tries
-    /// `PROJECT_BINARY_DIR/miaow_subprocess`, then if not found there, tries
-    /// `CMAKE_INSTALL_FULL_LIBEXECDIR/miaow/miaow_subprocess`
-    std::string subprocess_path_;
 
     /// Generic arguments for this task to pass into `SimulationUnit::execute()`
     std::vector<caf::config_value> args_;
@@ -93,7 +88,7 @@ struct Task {
     /// Metadata preserves labels used by reporting and postprocessing tools
     TaskMetadata metadata_;
 
-    /// Construct an empty task with in-process execution
+    /// Construct an empty task
     Task() = default;
 
     /**
@@ -222,6 +217,24 @@ struct TaskResult {
 };
 
 /**
+ * @brief Run a subprocess worker that handles serialized tasks from its parent.
+ *
+ * Every executable registered with `SimulationUnitRegistry::add_subprocess()` must call
+ * this function once from its `main()` and pass the supplied `argc` and `argv` unchanged.
+ * The handler runs serially for each received `Task`, and a persistent subprocess may
+ * invoke the same handler more than once. An exception from the handler produces a failed
+ * `TaskResult`.
+ *
+ * @param argc Command-line argument count supplied to the subprocess executable.
+ * @param argv Command-line arguments supplied to the subprocess executable.
+ * @param task_handler Callable that executes one received `Task` and returns its
+ * `TaskResult`.
+ * @return Zero after orderly worker shutdown or one after setup failure.
+ */
+int run_subprocess_worker(int argc, char* argv[],
+                          std::function<TaskResult(const Task&)> task_handler);
+
+/**
  * @brief Runtime `TaskRecord` for one completed task.
  *
  * A task is completed when its result status is `TaskStatus::succeeded` or
@@ -236,12 +249,13 @@ struct TaskRecord {
      * @param task Submitted task whose metadata and simulation unit ID are copied.
      * @param task_id `TaskId` within the submitted job.
      * @param result Success or failure result for this task.
-     * @param run_time_s Wall-clock runtime for this task in seconds.
+     * @param run_time Wall-clock duration for this task.
      */
-    TaskRecord(const Task& task, TaskId task_id, TaskResult result, double run_time_s)
+    TaskRecord(const Task& task, TaskId task_id, TaskResult result,
+               std::chrono::duration<double> run_time)
         : task_id_{task_id}, simulation_unit_id_{task.simulation_unit_id_},
           task_name_{task.task_name_}, metadata_{task.metadata_},
-          result_{std::move(result)}, run_time_s_{run_time_s} {}
+          result_{std::move(result)}, run_time_{run_time} {}
 
     /// `TaskId` within the submitted job
     TaskId task_id_{0};
@@ -258,8 +272,8 @@ struct TaskRecord {
     /// Simulation-unit result for this task
     TaskResult result_;
 
-    /// Wall-clock runtime for this task in seconds
-    double run_time_s_{0.0};
+    /// Wall-clock duration for this task
+    std::chrono::duration<double> run_time_{};
 };
 
 /**
@@ -307,12 +321,12 @@ struct JobRecord {
      * @param run_id Runtime identifier for this `Runtime` instance.
      * @param job_id `JobId` assigned to this submitted job.
      * @param tasks Task records in submitted task order.
-     * @param run_time_s Wall-clock runtime for this job in seconds.
+     * @param run_time Wall-clock duration for this job.
      */
     JobRecord(std::uint64_t run_id, JobId job_id, std::vector<TaskRecord> tasks = {},
-              double run_time_s = 0.0)
+              std::chrono::duration<double> run_time = {})
         : run_id_{run_id}, job_id_{job_id}, tasks_{std::move(tasks)},
-          run_time_s_{run_time_s} {}
+          run_time_{run_time} {}
 
     /// Runtime identifier for this `Runtime` instance
     std::uint64_t run_id_{0};
@@ -323,8 +337,8 @@ struct JobRecord {
     /// Task records in submitted task order
     std::vector<TaskRecord> tasks_;
 
-    /// Wall-clock runtime for this job in seconds
-    double run_time_s_{0.0};
+    /// Wall-clock duration for this job
+    std::chrono::duration<double> run_time_{};
 };
 
 /**
@@ -369,11 +383,13 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
 }
 
 /**
- * @brief Base class for model-specific simulation units.
- *
- * Runtime workers call implementations only for `ExecutionMode::in_process` tasks.
- * Subprocess execution is routed by the worker actor before it constructs a
- * `SimulationUnit`.
+ * @brief Base class for model-specific simulation units 
+ * 
+ * The only requirement of a `SimulationUnit` is that it must implement an `execute` method 
+ * that takes a `Task` and returns a `caf::result<TaskResult>`, which can be an immediate 
+ * result, a CAF error, or a delegated response. The `SimulationUnit` class is intended to 
+ * be subclassed by concrete implementations that define the specific behavior of the 
+ * simulation unit.
  */
 class SimulationUnit {
   public:
@@ -382,22 +398,15 @@ class SimulationUnit {
     /**
      * @brief Execute the simulation unit for a single task.
      * @param task Generic `Task` arguments.
-     * @return Structured `TaskResult` for this execution.
+     * @return Immediate `TaskResult`, CAF error, or delegated response.
      */
-    virtual TaskResult execute(const Task& task) = 0;
+    virtual caf::result<TaskResult> execute(const Task& task) = 0;
 };
 
 /**
- * @brief Factory used by worker actors to create simulation units.
+ * @brief Registry of simulation unit implementations.
  *
- * Workers use this to construct in-process `SimulationUnit` instances.
- */
-using SimulationUnitFactory = std::function<std::unique_ptr<SimulationUnit>()>;
-
-/**
- * @brief Registry of simulation unit factories.
- *
- * Tracks `simulation_unit_id -> factory` mappings for runtime task routing.
+ * Tracks `simulation_unit_id -> registration` mappings for runtime task routing.
  */
 class SimulationUnitRegistry {
   public:
@@ -435,38 +444,47 @@ class SimulationUnitRegistry {
         };
 
         const SimulationUnitId simulation_unit_id = next_simulation_unit_id_++;
-        simulation_unit_factories_by_id_.emplace(simulation_unit_id,
-                                                 std::move(simulation_unit_factory));
+        registrations_.emplace(simulation_unit_id, std::move(simulation_unit_factory));
         return simulation_unit_id;
     }
+
+    /**
+     * @brief Register a subprocess simulation unit.
+     *
+     * The executable path cannot contain command-line arguments because MIAOW supplies
+     * the arguments required for parent registration.
+     *
+     * @param subprocess_executable Non-empty path to an executable whose `main()` calls
+     * `run_subprocess_worker()`.
+     * @param lifetime Select a single-task or persistent child process.
+     * @return `SimulationUnitId` assigned to this subprocess simulation unit.
+     * @throws std::invalid_argument if `subprocess_executable` is empty.
+     */
+    SimulationUnitId add_subprocess(std::string subprocess_executable,
+                                    SubprocessLifetime lifetime);
 
     /**
      * @brief Return true when no simulation units have been registered.
      * @return true when the registry contains no simulation units.
      */
     bool empty() const {
-        return simulation_unit_factories_by_id_.empty();
-    }
-
-    /**
-     * @brief Look up factory for a simulation unit ID.
-     * @param simulation_unit_id Registered ID to resolve.
-     * @return Pointer to factory, or null when ID is unknown.
-     */
-    const SimulationUnitFactory* find_factory(SimulationUnitId simulation_unit_id) const {
-        const std::unordered_map<SimulationUnitId, SimulationUnitFactory>::const_iterator
-            simulation_unit_entry =
-                simulation_unit_factories_by_id_.find(simulation_unit_id);
-        if (simulation_unit_entry == simulation_unit_factories_by_id_.end()) {
-            return nullptr;
-        }
-        return &simulation_unit_entry->second;
+        return registrations_.empty();
     }
 
   private:
-    std::unordered_map<SimulationUnitId, SimulationUnitFactory>
-        simulation_unit_factories_by_id_;
+    using SimulationUnitFactory = std::function<std::unique_ptr<SimulationUnit>()>;
+
+    struct SubprocessRegistration {
+        std::string executable_;
+        SubprocessLifetime lifetime_;
+    };
+
+    using Registration = std::variant<SimulationUnitFactory, SubprocessRegistration>;
+
+    std::unordered_map<SimulationUnitId, Registration> registrations_;
     SimulationUnitId next_simulation_unit_id_{1};
+
+    friend class core::SimulationUnitRegistryAccess;
 };
 
 /**
@@ -478,8 +496,8 @@ struct RuntimeOptions {
     /// Maximum number of worker actors used for each job
     std::size_t max_workers_;
 
-    /// Timeout for one task execution request; in either subprocess mode, MIAOW
-    /// terminates the child process when this timeout expires
+    /// Timeout for one task execution request; subprocess units terminate their child
+    /// process when this timeout expires
     std::chrono::milliseconds task_request_timeout_;
 
     /// Maximum runtime for a job; completed records are preserved when this expires
@@ -515,51 +533,6 @@ struct RuntimeOptions {
 using JobHandle = std::future<JobRecord>;
 
 /**
- * @brief Runtime-owned map of jobs waiting for actor completion.
- *
- * Each submitted `JobId` maps to the promise that the orchestrator fulfils with either
- * the final `JobRecord` or a job-level exception.
- */
-using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
-
-/**
- * @brief Serialize or deserialize an `ExecutionMode` for CAF actor messaging.
- * @tparam Inspector CAF inspector type.
- * @param inspector Inspector driving serialization or deserialization.
- * @param execution_mode `ExecutionMode` value to inspect.
- * @return true when the execution mode value was inspected successfully.
- */
-template <class Inspector>
-bool inspect(Inspector& inspector, ExecutionMode& execution_mode) {
-    // Execution mode uses explicit string values in actor messages and JSON
-    std::string mode_value = "in_process";
-    switch (execution_mode) {
-    case ExecutionMode::in_process:
-        break;
-    case ExecutionMode::single_task_subprocess:
-        mode_value = "single_task_subprocess";
-        break;
-    case ExecutionMode::persistent_subprocess:
-        mode_value = "persistent_subprocess";
-        break;
-    }
-
-    const bool inspected = inspector.apply(mode_value);
-    if (!inspected) {
-        return false;
-    }
-
-    if (mode_value == "single_task_subprocess") {
-        execution_mode = ExecutionMode::single_task_subprocess;
-    } else if (mode_value == "persistent_subprocess") {
-        execution_mode = ExecutionMode::persistent_subprocess;
-    } else {
-        execution_mode = ExecutionMode::in_process;
-    }
-    return true;
-}
-
-/**
  * @brief Serialize or deserialize a `Task` for CAF actor messaging.
  * @tparam Inspector CAF inspector type.
  * @param inspector Inspector driving serialization or deserialization.
@@ -570,8 +543,6 @@ template <class Inspector> bool inspect(Inspector& inspector, Task& task) {
     // Defines how CAF serializes/deserializes `Task` for actor messaging
     return inspector.object(task).fields(
         inspector.field("simulation_unit_id", task.simulation_unit_id_),
-        inspector.field("execution_mode", task.execution_mode_),
-        inspector.field("subprocess_path", task.subprocess_path_),
         inspector.field("args", task.args_),
         inspector.field("task_output_dir", task.task_output_dir_),
         inspector.field("task_name", task.task_name_),
@@ -626,7 +597,7 @@ template <class Inspector> bool inspect(Inspector& inspector, TaskRecord& task_r
                 inspector.field("task_name", task_record.task_name_),
                 inspector.field("metadata", task_record.metadata_),
                 inspector.field("result", task_record.result_),
-                inspector.field("run_time_s", task_record.run_time_s_));
+                inspector.field("run_time", task_record.run_time_));
 }
 
 /**
@@ -642,7 +613,7 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
         .fields(inspector.field("run_id", job_record.run_id_),
                 inspector.field("job_id", job_record.job_id_),
                 inspector.field("tasks", job_record.tasks_),
-                inspector.field("run_time_s", job_record.run_time_s_));
+                inspector.field("run_time", job_record.run_time_));
 }
 
 /**
@@ -669,7 +640,7 @@ class Runtime {
      */
     Runtime(const SimulationUnitRegistry& simulation_unit_registry, RuntimeOptions options);
 
-    /// Stop Runtime actors before destroying their shared CAF actor system
+    /// Request actor shutdown before releasing the shared CAF actor system
     ~Runtime();
 
     /**
@@ -731,6 +702,9 @@ class Runtime {
                          std::unique_ptr<JobController> job_controller) const;
 
   private:
+    // Map each submitted job to the promise fulfilled by the orchestrator
+    using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
+
     // Shared simulation unit registry used by all `simulation_unit_actor`s in this runtime
     std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry_;
 
@@ -761,3 +735,13 @@ class Runtime {
 };
 
 } // namespace miaow
+
+// Register the public types carried by MIAOW actor messages
+CAF_BEGIN_TYPE_ID_BLOCK(miaow_module, caf::first_custom_type_id)
+CAF_ADD_TYPE_ID(miaow_module, (miaow::Task))
+CAF_ADD_TYPE_ID(miaow_module, (miaow::TaskResult))
+CAF_ADD_TYPE_ID(miaow_module, (miaow::TaskRecord))
+CAF_ADD_TYPE_ID(miaow_module, (std::vector<miaow::TaskRecord>))
+CAF_ADD_TYPE_ID(miaow_module, (std::vector<miaow::Task>))
+CAF_ADD_TYPE_ID(miaow_module, (miaow::JobRecord))
+CAF_END_TYPE_ID_BLOCK(miaow_module)

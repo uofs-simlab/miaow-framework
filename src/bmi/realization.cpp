@@ -169,8 +169,7 @@ BmiModuleConfig parse_fortran_module_config(const boost::json::object& global_ob
     }
 
     const boost::json::object& module = modules.at(0).as_object();
-    BmiModuleConfig module_config =
-        bmi::parse_bmi_module_config(module, "Realization config error: ");
+    BmiModuleConfig module_config(module, "Realization config error: ");
     if (module_config.name_ != "bmi_fortran") {
         throw_realization_config_error("unsupported module '" + module_config.name_ + "'");
     }
@@ -310,9 +309,8 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
 }
 
 // Build one dynamic BMI task for every realization feature
-std::vector<Task>
-make_bmi_tasks(SimulationUnitId simulation_unit_id, const PartitionedBmiRealization& realization,
-               ExecutionMode execution_mode) {
+std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
+                                 const PartitionedBmiRealization& realization) {
     // Build one task for each feature in realization order
     std::vector<Task> tasks;
     tasks.reserve(realization.feature_configs_.size());
@@ -324,16 +322,13 @@ make_bmi_tasks(SimulationUnitId simulation_unit_id, const PartitionedBmiRealizat
                 "feature id must be a non-empty string");
         }
 
-        DynamicBmiConfig config = feature.config_;
-        config.execution_mode_ = execution_mode;
-
         // Feature metadata provides the hydrofabric join key for map outputs
         TaskMetadata metadata{{"feature_id", feature_id},
                               {"feature_type", "catchment"},
                               {"hydrofabric_layer", "divides"},
                               {"hydrofabric_id_field", "id"}};
-        tasks.push_back(bmi::make_bmi_task(
-            simulation_unit_id, config, feature_id, std::move(metadata)));
+        tasks.push_back(bmi::make_bmi_task(simulation_unit_id, feature.config_, feature_id,
+                                           std::move(metadata)));
     }
 
     return tasks;

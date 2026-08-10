@@ -1,10 +1,10 @@
 #include "miaow_bmi.hpp"
-#include "core/internal.hpp"
+
+#include "bmi/internal.hpp"
 
 #include <exception>
 #include <stdexcept>
 
-#include <caf/all.hpp>
 #include <caf/config_value.hpp>
 
 namespace miaow {
@@ -27,23 +27,17 @@ void validate_subprocess_task(const Task& task) {
     }
 }
 
-// Run BMI pipeline tasks until the parent process ends this subprocess
-caf::behavior worker_actor(caf::event_based_actor*) {
-    // simulation_unit_actor -> worker_actor: execute one BMI task
-    return {[](caf::get_atom, const Task& task) -> TaskResult {
-                TaskResult task_result;
-                try {
-                    // Config-constructible pipelines build all models in the subprocess
-                    validate_subprocess_task(task);
-                    BmiPipeline pipeline(task);
-                    task_result = pipeline.execute_bmi_lifecycle(task);
-                } catch (...) {
-                    // Exceptions cannot propagate through the subprocess boundary
-                    task_result =
-                        make_failed_task_result(std::current_exception(), "BMI error");
-                }
-                return task_result;
-            }};
+// Execute one BMI pipeline task received by the generic subprocess worker
+TaskResult execute_bmi_subprocess_task(const Task& task) {
+    try {
+        // Config-constructible pipelines build all models in the subprocess
+        validate_subprocess_task(task);
+        bmi::BmiPipeline pipeline;
+        return pipeline.execute_bmi_lifecycle(task);
+    } catch (...) {
+        // Exceptions cannot propagate through the subprocess boundary
+        return make_failed_task_result(std::current_exception(), "BMI error");
+    }
 }
 
 } // namespace
@@ -52,5 +46,5 @@ caf::behavior worker_actor(caf::event_based_actor*) {
 
 // Entry point for subprocess execution launched through the POSIX process boundary
 int main(int argc, char* argv[]) {
-    return miaow::core::run_subprocess_worker(argc, argv, miaow::worker_actor);
+    return miaow::run_subprocess_worker(argc, argv, miaow::execute_bmi_subprocess_task);
 }

@@ -91,3 +91,9 @@ __pycache__/
 docs/.venv/
 examples/06_fuse_bmi/data/configs/
 *.log
+
+# LaTeX intermediates
+/docs/tikz/*.aux
+/docs/tikz/*.fdb_latexmk
+/docs/tikz/*.fls
+/docs/tikz/*.log

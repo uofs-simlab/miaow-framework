@@ -37,8 +37,8 @@ enum class DynamicBmiBackend {
     fortran,
 };
 
-/// Default absolute tolerance for BMI model time comparisons (in the model's time unit)
-inline constexpr double default_bmi_time_step_tolerance = 1e-4;
+/// Default absolute tolerance for BMI model time comparisons in seconds
+inline constexpr double default_bmi_time_step_tolerance_seconds = 1e-4;
 
 /// Storage format for external BMI forcing and runtime-managed output
 enum class BmiDataFormat {
@@ -81,8 +81,8 @@ struct StaticBmiConfig {
     /// BMI initialization config path
     std::string init_config_;
 
-    /// Absolute tolerance for model-time comparisons in the model's time unit
-    double time_step_tolerance_{default_bmi_time_step_tolerance};
+    /// Absolute tolerance for model-time comparisons in seconds
+    double time_step_tolerance_seconds_{default_bmi_time_step_tolerance_seconds};
 
     /// Optional MIAOW-managed forcing; absent delegates forcing to the model
     std::optional<BmiForcingConfig> forcing_;
@@ -92,10 +92,9 @@ struct StaticBmiConfig {
 };
 
 /**
- * @brief Plugin, execution, input, and output configuration for one dynamic BMI task.
+ * @brief Plugin, input, and output configuration for one dynamic BMI task.
  *
- * `backend_` selects the plugin interface used to load `plugin_path_`. Dynamic
- * tasks may run in process or through either subprocess execution mode.
+ * `backend_` selects the plugin interface used to load `plugin_path_`.
  */
 struct DynamicBmiConfig {
     /// Backend implemented by the plugin
@@ -107,21 +106,22 @@ struct DynamicBmiConfig {
     /// Optional BMI initialization config path
     std::string init_config_;
 
-    /// Absolute tolerance for model-time comparisons in the model's time unit
-    double time_step_tolerance_{default_bmi_time_step_tolerance};
+    /// Absolute tolerance for model-time comparisons in seconds
+    double time_step_tolerance_seconds_{default_bmi_time_step_tolerance_seconds};
 
     /// Optional MIAOW-managed forcing; absent delegates forcing to the model
     std::optional<BmiForcingConfig> forcing_;
 
     /// Optional MIAOW-managed output; absent delegates output to the model
     std::optional<BmiOutputConfig> output_;
-
-    /// Execution location for this task
-    ExecutionMode execution_mode_{ExecutionMode::in_process};
-
-    /// Optional subprocess executable path
-    std::string subprocess_path_;
 };
+
+/**
+ * @brief Resolve the bundled subprocess executable that runs dynamic BMI tasks.
+ * @return Existing configured build or installation path.
+ * @throws std::runtime_error if neither configured executable exists.
+ */
+std::string bmi_subprocess_executable_path();
 
 /**
  * @brief Build one task for a statically typed BMI model.
@@ -164,100 +164,6 @@ std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
 }
 
 /**
- * @brief BMI task execution pipeline.
- *
- * `BmiPipeline` owns the
- * [BMI lifecycle](https://bmi.csdms.io/en/stable/) for one `Task`. It receives
- * a supplied statically typed model through the `bmi_api::Bmi` interface or
- * constructs a dynamically loaded model from the task configuration. The
- * pipeline currently supports one model component plus the BMI-controlled
- * `bmi::ForcingBmi` forcing provider. It exposes the configured model's BMI
- * surface, writes output, and reports artifacts through `TaskResult`.
- */
-class BmiPipeline : public bmi_api::Bmi {
-  public:
-    /**
-     * @brief Construct an empty pipeline that can be initialized from a config path.
-     * @param model Optional model provided by `StaticBmiSimulationUnit`.
-     */
-    explicit BmiPipeline(std::unique_ptr<bmi_api::Bmi> model = nullptr);
-
-    /**
-     * @brief Construct a pipeline from a task's internal BMI configuration.
-     * @param task `Task` whose first argument stores internal BMI configuration.
-     * @param model Optional model provided by `StaticBmiSimulationUnit`.
-     */
-    explicit BmiPipeline(const Task& task, std::unique_ptr<bmi_api::Bmi> model = nullptr);
-
-    BmiPipeline(const BmiPipeline&) = delete;
-    BmiPipeline& operator=(const BmiPipeline&) = delete;
-
-    ~BmiPipeline() override;
-
-    void Initialize(std::string config_file) override;
-    void Update() override;
-    void UpdateUntil(double time) override;
-    void Finalize() override;
-    std::string GetComponentName() override;
-    int GetInputItemCount() override;
-    int GetOutputItemCount() override;
-    std::vector<std::string> GetInputVarNames() override;
-    std::vector<std::string> GetOutputVarNames() override;
-    int GetVarGrid(std::string name) override;
-    std::string GetVarType(std::string name) override;
-    std::string GetVarUnits(std::string name) override;
-    int GetVarItemsize(std::string name) override;
-    int GetVarNbytes(std::string name) override;
-    std::string GetVarLocation(std::string name) override;
-    double GetCurrentTime() override;
-    double GetStartTime() override;
-    double GetEndTime() override;
-    std::string GetTimeUnits() override;
-    double GetTimeStep() override;
-    void GetValue(std::string name, void* dest) override;
-    void* GetValuePtr(std::string name) override;
-    void GetValueAtIndices(std::string name, void* dest, int* inds, int count) override;
-    void SetValue(std::string name, void* src) override;
-    void SetValueAtIndices(std::string name, int* inds, int count, void* src) override;
-    int GetGridRank(const int grid) override;
-    int GetGridSize(const int grid) override;
-    std::string GetGridType(const int grid) override;
-    void GetGridShape(const int grid, int* shape) override;
-    void GetGridSpacing(const int grid, double* spacing) override;
-    void GetGridOrigin(const int grid, double* origin) override;
-    void GetGridX(const int grid, double* x) override;
-    void GetGridY(const int grid, double* y) override;
-    void GetGridZ(const int grid, double* z) override;
-    int GetGridNodeCount(const int grid) override;
-    int GetGridEdgeCount(const int grid) override;
-    int GetGridFaceCount(const int grid) override;
-    void GetGridEdgeNodes(const int grid, int* edge_nodes) override;
-    void GetGridFaceEdges(const int grid, int* face_edges) override;
-    void GetGridFaceNodes(const int grid, int* face_nodes) override;
-    void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
-
-    /**
-     * @brief Execute this pipeline through the standard BMI lifecycle.
-     * @param task `Task` whose output settings receive BMI artifacts.
-     * @return Structured `TaskResult` for pipeline lifecycle execution.
-     */
-    TaskResult execute_bmi_lifecycle(const Task& task);
-
-  private:
-    void initialize_task();
-    const std::vector<std::string>& output_variables() const;
-    const std::optional<double>& output_interval() const;
-    double time_step_tolerance() const;
-    std::size_t completed_update_count() const;
-
-    // Hide private state from header with the pointer-to-implementation (PIMPL) pattern
-    class Impl;
-
-    // Own the implementation; BmiPipeline destruction occurs where Impl is complete
-    std::unique_ptr<Impl> impl_;
-};
-
-/**
  * @brief NextGen-style realization expanded into BMI tasks by feature.
  *
  * The constructor reads a
@@ -275,7 +181,6 @@ class PartitionedBmiRealization {
 
     /**
      * @brief Partition a NextGen-style realization file by feature.
-     *
      * @param realization_path Path to the NextGen-style realization file.
      * @throws std::runtime_error if the realization is malformed or references
      * missing or unusable files.
@@ -294,21 +199,25 @@ class PartitionedBmiRealization {
     // Resolved configuration and identifier for each feature
     std::vector<FeatureConfig> feature_configs_;
 
-    friend std::vector<Task> make_bmi_tasks(
-        SimulationUnitId simulation_unit_id, const PartitionedBmiRealization& realization,
-        ExecutionMode execution_mode);
+    friend std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
+                                            const PartitionedBmiRealization& realization);
 };
 
 /**
  * @brief Build one dynamic BMI task per realization feature.
  * @param simulation_unit_id Registered dynamic BMI simulation unit id.
  * @param realization Parsed BMI realization.
- * @param execution_mode Execution mode applied to every generated task.
  * @return `Task`s ready to submit through `Runtime::submit_job()`.
  */
-std::vector<Task>
-make_bmi_tasks(SimulationUnitId simulation_unit_id, const PartitionedBmiRealization& realization,
-               ExecutionMode execution_mode = ExecutionMode::in_process);
+std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
+                                 const PartitionedBmiRealization& realization);
+
+namespace static_bmi_execution {
+
+// Execute a statically supplied BMI model through the internal pipeline
+TaskResult execute_task(const Task& task, std::unique_ptr<bmi_api::Bmi> model);
+
+} // namespace static_bmi_execution
 
 /**
  * @brief Simulation unit for a statically typed BMI model.
@@ -356,14 +265,12 @@ class StaticBmiSimulationUnit : public SimulationUnit {
     /**
      * @brief Execute a BMI model instance for a single task.
      * @param task `Task` built from `StaticBmiConfig`.
-     * @return Structured `TaskResult` for this BMI task execution.
+     * @return Immediate result for this BMI task execution.
      */
-    TaskResult execute(const Task& task) override {
+    caf::result<TaskResult> execute(const Task& task) override {
         try {
-            // Construct a BMI pipeline with the static unit's model factory
-            std::unique_ptr<BmiModelType> bmi_model = model_factory_();
-            BmiPipeline pipeline(task, std::move(bmi_model));
-            return pipeline.execute_bmi_lifecycle(task);
+            // Pass one fresh static model through the internal execution bridge
+            return static_bmi_execution::execute_task(task, model_factory_());
         } catch (...) {
             // Exceptions become failed task results so the job can keep running
             return make_failed_task_result(std::current_exception(), "BMI error");
@@ -398,9 +305,9 @@ class StaticBmiSimulationUnit : public SimulationUnit {
 /**
  * @brief Simulation unit that runs dynamically loaded BMI plugin tasks.
  *
- * `DynamicBmiSimulationUnit` constructs and executes `BmiPipeline` for tasks
- * routed to the parent process. The worker actor routes subprocess tasks before
- * constructing this class.
+ * `DynamicBmiSimulationUnit` executes the internal BMI pipeline in the current process.
+ * To run BMI tasks in a separate process, register the bundled subprocess executable with
+ * `SimulationUnitRegistry::add_subprocess()` instead.
  */
 class DynamicBmiSimulationUnit : public SimulationUnit {
   public:
@@ -410,18 +317,9 @@ class DynamicBmiSimulationUnit : public SimulationUnit {
     /**
      * @brief Execute a dynamically loaded BMI plugin task.
      * @param task `Task` built from `DynamicBmiConfig`.
-     * @return Structured `TaskResult` for this BMI pipeline task execution.
+     * @return Immediate result for this BMI pipeline task execution.
      */
-    TaskResult execute(const Task& task) override {
-        try {
-            // Construct all configured model modules locally for an in-process task
-            BmiPipeline pipeline(task);
-            return pipeline.execute_bmi_lifecycle(task);
-        } catch (...) {
-            // Exceptions become failed task results so the job can keep running
-            return make_failed_task_result(std::current_exception(), "BMI error");
-        }
-    }
+    caf::result<TaskResult> execute(const Task& task) override;
 };
 
 } // namespace miaow
