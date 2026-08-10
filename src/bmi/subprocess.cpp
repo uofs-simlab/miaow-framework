@@ -1,5 +1,7 @@
 #include "miaow_bmi.hpp"
 
+#include "bmi/internal.hpp"
+
 #include <exception>
 #include <stdexcept>
 
@@ -30,7 +32,7 @@ TaskResult execute_bmi_subprocess_task(const Task& task) {
     try {
         // Config-constructible pipelines build all models in the subprocess
         validate_subprocess_task(task);
-        BmiPipeline pipeline(task);
+        bmi::BmiPipeline pipeline;
         return pipeline.execute_bmi_lifecycle(task);
     } catch (...) {
         // Exceptions cannot propagate through the subprocess boundary

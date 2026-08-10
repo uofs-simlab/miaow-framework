@@ -4,7 +4,6 @@
 #include <array>
 #include <cctype>
 #include <dlfcn.h>
-#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -179,81 +178,7 @@ DynamicBmiBackend require_dynamic_backend(const BmiModuleConfig& module_config) 
 
 } // namespace
 
-class DynamicBmiModel::Impl : public bmi_api::Bmi {
-  public:
-    explicit Impl(const BmiModuleConfig& module_config);
-
-    Impl(const Impl&) = delete;
-    Impl& operator=(const Impl&) = delete;
-
-    ~Impl() override;
-
-    void Initialize(std::string config_file) override;
-    void Update() override;
-    void UpdateUntil(double time) override;
-    void Finalize() override;
-    std::string GetComponentName() override;
-    int GetInputItemCount() override;
-    int GetOutputItemCount() override;
-    std::vector<std::string> GetInputVarNames() override;
-    std::vector<std::string> GetOutputVarNames() override;
-    int GetVarGrid(std::string name) override;
-    std::string GetVarType(std::string name) override;
-    std::string GetVarUnits(std::string name) override;
-    int GetVarItemsize(std::string name) override;
-    int GetVarNbytes(std::string name) override;
-    std::string GetVarLocation(std::string name) override;
-    double GetCurrentTime() override;
-    double GetStartTime() override;
-    double GetEndTime() override;
-    std::string GetTimeUnits() override;
-    double GetTimeStep() override;
-    void GetValue(std::string name, void* dest) override;
-    void* GetValuePtr(std::string name) override;
-    void GetValueAtIndices(std::string name, void* dest, int* inds, int count) override;
-    void SetValue(std::string name, void* src) override;
-    void SetValueAtIndices(std::string name, int* inds, int count, void* src) override;
-    int GetGridRank(const int grid) override;
-    int GetGridSize(const int grid) override;
-    std::string GetGridType(const int grid) override;
-    void GetGridShape(const int grid, int* shape) override;
-    void GetGridSpacing(const int grid, double* spacing) override;
-    void GetGridOrigin(const int grid, double* origin) override;
-    void GetGridX(const int grid, double* x) override;
-    void GetGridY(const int grid, double* y) override;
-    void GetGridZ(const int grid, double* z) override;
-    int GetGridNodeCount(const int grid) override;
-    int GetGridEdgeCount(const int grid) override;
-    int GetGridFaceCount(const int grid) override;
-    void GetGridEdgeNodes(const int grid, int* edge_nodes) override;
-    void GetGridFaceEdges(const int grid, int* face_edges) override;
-    void GetGridFaceNodes(const int grid, int* face_nodes) override;
-    void GetGridNodesPerFace(const int grid, int* nodes_per_face) override;
-
-  private:
-    using CreateBmiFunction = bmi_api::Bmi* (*)();
-    using DestroyBmiFunction = void (*)(bmi_api::Bmi*);
-    using RegisterBmiFunction = int (*)(void**);
-    using UnregisterBmiFunction = int (*)(void**);
-
-    void open_cpp_plugin(const BmiModuleConfig& module_config);
-    void open_fortran_plugin(const BmiModuleConfig& module_config);
-    void finalize_fortran_model();
-    void unregister_fortran_model();
-    void cleanup_model();
-
-    DynamicBmiBackend backend_;
-    void* library_handle_{nullptr};
-    bmi_api::Bmi* cpp_model_{nullptr};
-    CreateBmiFunction create_bmi_{nullptr};
-    DestroyBmiFunction destroy_bmi_{nullptr};
-    void* fortran_model_handle_{nullptr};
-    RegisterBmiFunction register_bmi_{nullptr};
-    UnregisterBmiFunction unregister_bmi_{nullptr};
-    bool initialized_{false};
-};
-
-DynamicBmiModel::Impl::Impl(const BmiModuleConfig& module_config)
+DynamicBmiModel::DynamicBmiModel(const BmiModuleConfig& module_config)
     : backend_(require_dynamic_backend(module_config)) {
     switch (backend_) {
     case DynamicBmiBackend::cpp:
@@ -265,13 +190,13 @@ DynamicBmiModel::Impl::Impl(const BmiModuleConfig& module_config)
     }
 }
 
-DynamicBmiModel::Impl::~Impl() {
+DynamicBmiModel::~DynamicBmiModel() {
     cleanup_model();
     close_dynamic_library(library_handle_);
 }
 
 // Open a C++ plugin and construct its BMI model instance
-void DynamicBmiModel::Impl::open_cpp_plugin(const BmiModuleConfig& module_config) {
+void DynamicBmiModel::open_cpp_plugin(const BmiModuleConfig& module_config) {
     const std::string create_function =
         module_config.cpp_create_function_.value_or("bmi_model_create");
     const std::string destroy_function =
@@ -288,14 +213,15 @@ void DynamicBmiModel::Impl::open_cpp_plugin(const BmiModuleConfig& module_config
         void* create_symbol =
             resolve_required_dynamic_symbol(library_handle_, create_function,
                                             cpp_plugin_error_prefix);
-        create_bmi_ = reinterpret_cast<CreateBmiFunction>(create_symbol);
+        const CreateBmiFunction create_bmi =
+            reinterpret_cast<CreateBmiFunction>(create_symbol);
 
         void* destroy_symbol =
             resolve_required_dynamic_symbol(library_handle_, destroy_function,
                                             cpp_plugin_error_prefix);
         destroy_bmi_ = reinterpret_cast<DestroyBmiFunction>(destroy_symbol);
 
-        cpp_model_ = create_bmi_();
+        cpp_model_ = create_bmi();
         if (cpp_model_ == nullptr) {
             throw std::runtime_error(
                 "BMI dynamic C++ plugin error: create function returned null model");
@@ -308,7 +234,7 @@ void DynamicBmiModel::Impl::open_cpp_plugin(const BmiModuleConfig& module_config
 }
 
 // Open a Fortran plugin and resolve the procedural BMI bridge symbols
-void DynamicBmiModel::Impl::open_fortran_plugin(const BmiModuleConfig& module_config) {
+void DynamicBmiModel::open_fortran_plugin(const BmiModuleConfig& module_config) {
     library_handle_ =
         open_dynamic_library(module_config.plugin_path_, fortran_plugin_error_prefix);
     try {
@@ -327,14 +253,14 @@ void DynamicBmiModel::Impl::open_fortran_plugin(const BmiModuleConfig& module_co
     }
 }
 
-void DynamicBmiModel::Impl::finalize_fortran_model() {
+void DynamicBmiModel::finalize_fortran_model() {
     if (fortran_model_handle_ != nullptr && initialized_) {
         check_bmi_status(finalize(&fortran_model_handle_), "finalize");
         initialized_ = false;
     }
 }
 
-void DynamicBmiModel::Impl::unregister_fortran_model() {
+void DynamicBmiModel::unregister_fortran_model() {
     if (fortran_model_handle_ == nullptr) {
         return;
     }
@@ -345,7 +271,7 @@ void DynamicBmiModel::Impl::unregister_fortran_model() {
 }
 
 // Release the backend model before its dynamic library is closed
-void DynamicBmiModel::Impl::cleanup_model() {
+void DynamicBmiModel::cleanup_model() {
     if (backend_ == DynamicBmiBackend::cpp) {
         if (cpp_model_ == nullptr) {
             return;
@@ -372,7 +298,7 @@ void DynamicBmiModel::Impl::cleanup_model() {
     unregister_fortran_model();
 }
 
-void DynamicBmiModel::Impl::Initialize(std::string config_file) {
+void DynamicBmiModel::Initialize(std::string config_file) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->Initialize(std::move(config_file));
         initialized_ = true;
@@ -389,7 +315,7 @@ void DynamicBmiModel::Impl::Initialize(std::string config_file) {
     initialized_ = true;
 }
 
-void DynamicBmiModel::Impl::Update() {
+void DynamicBmiModel::Update() {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->Update();
         return;
@@ -397,7 +323,7 @@ void DynamicBmiModel::Impl::Update() {
     check_bmi_status(update(&fortran_model_handle_), "update");
 }
 
-void DynamicBmiModel::Impl::UpdateUntil(double time) {
+void DynamicBmiModel::UpdateUntil(double time) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->UpdateUntil(time);
         return;
@@ -405,7 +331,7 @@ void DynamicBmiModel::Impl::UpdateUntil(double time) {
     check_bmi_status(update_until(&fortran_model_handle_, &time), "update_until");
 }
 
-void DynamicBmiModel::Impl::Finalize() {
+void DynamicBmiModel::Finalize() {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->Finalize();
         initialized_ = false;
@@ -415,7 +341,7 @@ void DynamicBmiModel::Impl::Finalize() {
     unregister_fortran_model();
 }
 
-std::string DynamicBmiModel::Impl::GetComponentName() {
+std::string DynamicBmiModel::GetComponentName() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetComponentName();
     }
@@ -425,7 +351,7 @@ std::string DynamicBmiModel::Impl::GetComponentName() {
     return name.data();
 }
 
-int DynamicBmiModel::Impl::GetInputItemCount() {
+int DynamicBmiModel::GetInputItemCount() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetInputItemCount();
     }
@@ -435,7 +361,7 @@ int DynamicBmiModel::Impl::GetInputItemCount() {
     return count;
 }
 
-int DynamicBmiModel::Impl::GetOutputItemCount() {
+int DynamicBmiModel::GetOutputItemCount() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetOutputItemCount();
     }
@@ -445,7 +371,7 @@ int DynamicBmiModel::Impl::GetOutputItemCount() {
     return count;
 }
 
-std::vector<std::string> DynamicBmiModel::Impl::GetInputVarNames() {
+std::vector<std::string> DynamicBmiModel::GetInputVarNames() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetInputVarNames();
     }
@@ -453,7 +379,7 @@ std::vector<std::string> DynamicBmiModel::Impl::GetInputVarNames() {
                           "get_input_var_names");
 }
 
-std::vector<std::string> DynamicBmiModel::Impl::GetOutputVarNames() {
+std::vector<std::string> DynamicBmiModel::GetOutputVarNames() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetOutputVarNames();
     }
@@ -461,7 +387,7 @@ std::vector<std::string> DynamicBmiModel::Impl::GetOutputVarNames() {
                           get_output_var_names, "get_output_var_names");
 }
 
-int DynamicBmiModel::Impl::GetVarGrid(std::string name) {
+int DynamicBmiModel::GetVarGrid(std::string name) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetVarGrid(std::move(name));
     }
@@ -472,7 +398,7 @@ int DynamicBmiModel::Impl::GetVarGrid(std::string name) {
     return grid;
 }
 
-std::string DynamicBmiModel::Impl::GetVarType(std::string name) {
+std::string DynamicBmiModel::GetVarType(std::string name) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetVarType(std::move(name));
     }
@@ -500,7 +426,7 @@ std::string DynamicBmiModel::Impl::GetVarType(std::string name) {
     return raw_type;
 }
 
-std::string DynamicBmiModel::Impl::GetVarUnits(std::string name) {
+std::string DynamicBmiModel::GetVarUnits(std::string name) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetVarUnits(std::move(name));
     }
@@ -512,7 +438,7 @@ std::string DynamicBmiModel::Impl::GetVarUnits(std::string name) {
     return units.data();
 }
 
-int DynamicBmiModel::Impl::GetVarItemsize(std::string name) {
+int DynamicBmiModel::GetVarItemsize(std::string name) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetVarItemsize(std::move(name));
     }
@@ -523,7 +449,7 @@ int DynamicBmiModel::Impl::GetVarItemsize(std::string name) {
     return size;
 }
 
-int DynamicBmiModel::Impl::GetVarNbytes(std::string name) {
+int DynamicBmiModel::GetVarNbytes(std::string name) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetVarNbytes(std::move(name));
     }
@@ -534,7 +460,7 @@ int DynamicBmiModel::Impl::GetVarNbytes(std::string name) {
     return nbytes;
 }
 
-std::string DynamicBmiModel::Impl::GetVarLocation(std::string name) {
+std::string DynamicBmiModel::GetVarLocation(std::string name) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetVarLocation(std::move(name));
     }
@@ -546,7 +472,7 @@ std::string DynamicBmiModel::Impl::GetVarLocation(std::string name) {
     return location.data();
 }
 
-double DynamicBmiModel::Impl::GetCurrentTime() {
+double DynamicBmiModel::GetCurrentTime() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetCurrentTime();
     }
@@ -555,7 +481,7 @@ double DynamicBmiModel::Impl::GetCurrentTime() {
     return time;
 }
 
-double DynamicBmiModel::Impl::GetStartTime() {
+double DynamicBmiModel::GetStartTime() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetStartTime();
     }
@@ -564,7 +490,7 @@ double DynamicBmiModel::Impl::GetStartTime() {
     return time;
 }
 
-double DynamicBmiModel::Impl::GetEndTime() {
+double DynamicBmiModel::GetEndTime() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetEndTime();
     }
@@ -573,7 +499,7 @@ double DynamicBmiModel::Impl::GetEndTime() {
     return time;
 }
 
-std::string DynamicBmiModel::Impl::GetTimeUnits() {
+std::string DynamicBmiModel::GetTimeUnits() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetTimeUnits();
     }
@@ -583,7 +509,7 @@ std::string DynamicBmiModel::Impl::GetTimeUnits() {
     return units.data();
 }
 
-double DynamicBmiModel::Impl::GetTimeStep() {
+double DynamicBmiModel::GetTimeStep() {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetTimeStep();
     }
@@ -592,7 +518,7 @@ double DynamicBmiModel::Impl::GetTimeStep() {
     return time_step;
 }
 
-void DynamicBmiModel::Impl::GetValue(std::string name, void* dest) {
+void DynamicBmiModel::GetValue(std::string name, void* dest) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetValue(std::move(name), dest);
         return;
@@ -620,7 +546,7 @@ void DynamicBmiModel::Impl::GetValue(std::string name, void* dest) {
     throw std::runtime_error("unsupported BMI variable type '" + type + "'");
 }
 
-void* DynamicBmiModel::Impl::GetValuePtr(std::string name) {
+void* DynamicBmiModel::GetValuePtr(std::string name) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetValuePtr(std::move(name));
     }
@@ -648,8 +574,8 @@ void* DynamicBmiModel::Impl::GetValuePtr(std::string name) {
     throw std::runtime_error("unsupported BMI variable type '" + type + "'");
 }
 
-void DynamicBmiModel::Impl::GetValueAtIndices(std::string name, void* dest, int* inds,
-                                              int count) {
+void DynamicBmiModel::GetValueAtIndices(std::string name, void* dest, int* inds,
+                                        int count) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetValueAtIndices(std::move(name), dest, inds, count);
         return;
@@ -681,7 +607,7 @@ void DynamicBmiModel::Impl::GetValueAtIndices(std::string name, void* dest, int*
     throw std::runtime_error("unsupported BMI variable type '" + type + "'");
 }
 
-void DynamicBmiModel::Impl::SetValue(std::string name, void* src) {
+void DynamicBmiModel::SetValue(std::string name, void* src) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->SetValue(std::move(name), src);
         return;
@@ -709,8 +635,7 @@ void DynamicBmiModel::Impl::SetValue(std::string name, void* src) {
     throw std::runtime_error("unsupported BMI variable type '" + type + "'");
 }
 
-void DynamicBmiModel::Impl::SetValueAtIndices(std::string name, int* inds, int count,
-                                              void* src) {
+void DynamicBmiModel::SetValueAtIndices(std::string name, int* inds, int count, void* src) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->SetValueAtIndices(std::move(name), inds, count, src);
         return;
@@ -742,7 +667,7 @@ void DynamicBmiModel::Impl::SetValueAtIndices(std::string name, int* inds, int c
     throw std::runtime_error("unsupported BMI variable type '" + type + "'");
 }
 
-int DynamicBmiModel::Impl::GetGridRank(const int grid) {
+int DynamicBmiModel::GetGridRank(const int grid) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetGridRank(grid);
     }
@@ -753,7 +678,7 @@ int DynamicBmiModel::Impl::GetGridRank(const int grid) {
     return rank;
 }
 
-int DynamicBmiModel::Impl::GetGridSize(const int grid) {
+int DynamicBmiModel::GetGridSize(const int grid) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetGridSize(grid);
     }
@@ -764,7 +689,7 @@ int DynamicBmiModel::Impl::GetGridSize(const int grid) {
     return size;
 }
 
-std::string DynamicBmiModel::Impl::GetGridType(const int grid) {
+std::string DynamicBmiModel::GetGridType(const int grid) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetGridType(grid);
     }
@@ -775,7 +700,7 @@ std::string DynamicBmiModel::Impl::GetGridType(const int grid) {
     return type.data();
 }
 
-void DynamicBmiModel::Impl::GetGridShape(const int grid, int* shape) {
+void DynamicBmiModel::GetGridShape(const int grid, int* shape) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridShape(grid, shape);
         return;
@@ -785,7 +710,7 @@ void DynamicBmiModel::Impl::GetGridShape(const int grid, int* shape) {
                      "get_grid_shape");
 }
 
-void DynamicBmiModel::Impl::GetGridSpacing(const int grid, double* spacing) {
+void DynamicBmiModel::GetGridSpacing(const int grid, double* spacing) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridSpacing(grid, spacing);
         return;
@@ -795,7 +720,7 @@ void DynamicBmiModel::Impl::GetGridSpacing(const int grid, double* spacing) {
                      "get_grid_spacing");
 }
 
-void DynamicBmiModel::Impl::GetGridOrigin(const int grid, double* origin) {
+void DynamicBmiModel::GetGridOrigin(const int grid, double* origin) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridOrigin(grid, origin);
         return;
@@ -805,7 +730,7 @@ void DynamicBmiModel::Impl::GetGridOrigin(const int grid, double* origin) {
                      "get_grid_origin");
 }
 
-void DynamicBmiModel::Impl::GetGridX(const int grid, double* x) {
+void DynamicBmiModel::GetGridX(const int grid, double* x) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridX(grid, x);
         return;
@@ -814,7 +739,7 @@ void DynamicBmiModel::Impl::GetGridX(const int grid, double* x) {
     check_bmi_status(get_grid_x(&fortran_model_handle_, &mutable_grid, x), "get_grid_x");
 }
 
-void DynamicBmiModel::Impl::GetGridY(const int grid, double* y) {
+void DynamicBmiModel::GetGridY(const int grid, double* y) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridY(grid, y);
         return;
@@ -823,7 +748,7 @@ void DynamicBmiModel::Impl::GetGridY(const int grid, double* y) {
     check_bmi_status(get_grid_y(&fortran_model_handle_, &mutable_grid, y), "get_grid_y");
 }
 
-void DynamicBmiModel::Impl::GetGridZ(const int grid, double* z) {
+void DynamicBmiModel::GetGridZ(const int grid, double* z) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridZ(grid, z);
         return;
@@ -832,7 +757,7 @@ void DynamicBmiModel::Impl::GetGridZ(const int grid, double* z) {
     check_bmi_status(get_grid_z(&fortran_model_handle_, &mutable_grid, z), "get_grid_z");
 }
 
-int DynamicBmiModel::Impl::GetGridNodeCount(const int grid) {
+int DynamicBmiModel::GetGridNodeCount(const int grid) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetGridNodeCount(grid);
     }
@@ -843,7 +768,7 @@ int DynamicBmiModel::Impl::GetGridNodeCount(const int grid) {
     return count;
 }
 
-int DynamicBmiModel::Impl::GetGridEdgeCount(const int grid) {
+int DynamicBmiModel::GetGridEdgeCount(const int grid) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetGridEdgeCount(grid);
     }
@@ -854,7 +779,7 @@ int DynamicBmiModel::Impl::GetGridEdgeCount(const int grid) {
     return count;
 }
 
-int DynamicBmiModel::Impl::GetGridFaceCount(const int grid) {
+int DynamicBmiModel::GetGridFaceCount(const int grid) {
     if (backend_ == DynamicBmiBackend::cpp) {
         return cpp_model_->GetGridFaceCount(grid);
     }
@@ -865,7 +790,7 @@ int DynamicBmiModel::Impl::GetGridFaceCount(const int grid) {
     return count;
 }
 
-void DynamicBmiModel::Impl::GetGridEdgeNodes(const int grid, int* edge_nodes) {
+void DynamicBmiModel::GetGridEdgeNodes(const int grid, int* edge_nodes) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridEdgeNodes(grid, edge_nodes);
         return;
@@ -875,7 +800,7 @@ void DynamicBmiModel::Impl::GetGridEdgeNodes(const int grid, int* edge_nodes) {
                      "get_grid_edge_nodes");
 }
 
-void DynamicBmiModel::Impl::GetGridFaceEdges(const int grid, int* face_edges) {
+void DynamicBmiModel::GetGridFaceEdges(const int grid, int* face_edges) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridFaceEdges(grid, face_edges);
         return;
@@ -885,7 +810,7 @@ void DynamicBmiModel::Impl::GetGridFaceEdges(const int grid, int* face_edges) {
                      "get_grid_face_edges");
 }
 
-void DynamicBmiModel::Impl::GetGridFaceNodes(const int grid, int* face_nodes) {
+void DynamicBmiModel::GetGridFaceNodes(const int grid, int* face_nodes) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridFaceNodes(grid, face_nodes);
         return;
@@ -895,7 +820,7 @@ void DynamicBmiModel::Impl::GetGridFaceNodes(const int grid, int* face_nodes) {
                      "get_grid_face_nodes");
 }
 
-void DynamicBmiModel::Impl::GetGridNodesPerFace(const int grid, int* nodes_per_face) {
+void DynamicBmiModel::GetGridNodesPerFace(const int grid, int* nodes_per_face) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->GetGridNodesPerFace(grid, nodes_per_face);
         return;
@@ -904,176 +829,6 @@ void DynamicBmiModel::Impl::GetGridNodesPerFace(const int grid, int* nodes_per_f
     check_bmi_status(get_grid_nodes_per_face(&fortran_model_handle_, &mutable_grid,
                                              nodes_per_face),
                      "get_grid_nodes_per_face");
-}
-
-DynamicBmiModel::DynamicBmiModel(const BmiModuleConfig& module_config)
-    : impl_(std::make_unique<Impl>(module_config)) {}
-
-DynamicBmiModel::~DynamicBmiModel() = default;
-
-void DynamicBmiModel::Initialize(std::string config_file) {
-    impl_->Initialize(std::move(config_file));
-}
-
-void DynamicBmiModel::Update() {
-    impl_->Update();
-}
-
-void DynamicBmiModel::UpdateUntil(double time) {
-    impl_->UpdateUntil(time);
-}
-
-void DynamicBmiModel::Finalize() {
-    impl_->Finalize();
-}
-
-std::string DynamicBmiModel::GetComponentName() {
-    return impl_->GetComponentName();
-}
-
-int DynamicBmiModel::GetInputItemCount() {
-    return impl_->GetInputItemCount();
-}
-
-int DynamicBmiModel::GetOutputItemCount() {
-    return impl_->GetOutputItemCount();
-}
-
-std::vector<std::string> DynamicBmiModel::GetInputVarNames() {
-    return impl_->GetInputVarNames();
-}
-
-std::vector<std::string> DynamicBmiModel::GetOutputVarNames() {
-    return impl_->GetOutputVarNames();
-}
-
-int DynamicBmiModel::GetVarGrid(std::string name) {
-    return impl_->GetVarGrid(std::move(name));
-}
-
-std::string DynamicBmiModel::GetVarType(std::string name) {
-    return impl_->GetVarType(std::move(name));
-}
-
-std::string DynamicBmiModel::GetVarUnits(std::string name) {
-    return impl_->GetVarUnits(std::move(name));
-}
-
-int DynamicBmiModel::GetVarItemsize(std::string name) {
-    return impl_->GetVarItemsize(std::move(name));
-}
-
-int DynamicBmiModel::GetVarNbytes(std::string name) {
-    return impl_->GetVarNbytes(std::move(name));
-}
-
-std::string DynamicBmiModel::GetVarLocation(std::string name) {
-    return impl_->GetVarLocation(std::move(name));
-}
-
-double DynamicBmiModel::GetCurrentTime() {
-    return impl_->GetCurrentTime();
-}
-
-double DynamicBmiModel::GetStartTime() {
-    return impl_->GetStartTime();
-}
-
-double DynamicBmiModel::GetEndTime() {
-    return impl_->GetEndTime();
-}
-
-std::string DynamicBmiModel::GetTimeUnits() {
-    return impl_->GetTimeUnits();
-}
-
-double DynamicBmiModel::GetTimeStep() {
-    return impl_->GetTimeStep();
-}
-
-void DynamicBmiModel::GetValue(std::string name, void* dest) {
-    impl_->GetValue(std::move(name), dest);
-}
-
-void* DynamicBmiModel::GetValuePtr(std::string name) {
-    return impl_->GetValuePtr(std::move(name));
-}
-
-void DynamicBmiModel::GetValueAtIndices(std::string name, void* dest, int* inds,
-                                        int count) {
-    impl_->GetValueAtIndices(std::move(name), dest, inds, count);
-}
-
-void DynamicBmiModel::SetValue(std::string name, void* src) {
-    impl_->SetValue(std::move(name), src);
-}
-
-void DynamicBmiModel::SetValueAtIndices(std::string name, int* inds, int count, void* src) {
-    impl_->SetValueAtIndices(std::move(name), inds, count, src);
-}
-
-int DynamicBmiModel::GetGridRank(const int grid) {
-    return impl_->GetGridRank(grid);
-}
-
-int DynamicBmiModel::GetGridSize(const int grid) {
-    return impl_->GetGridSize(grid);
-}
-
-std::string DynamicBmiModel::GetGridType(const int grid) {
-    return impl_->GetGridType(grid);
-}
-
-void DynamicBmiModel::GetGridShape(const int grid, int* shape) {
-    impl_->GetGridShape(grid, shape);
-}
-
-void DynamicBmiModel::GetGridSpacing(const int grid, double* spacing) {
-    impl_->GetGridSpacing(grid, spacing);
-}
-
-void DynamicBmiModel::GetGridOrigin(const int grid, double* origin) {
-    impl_->GetGridOrigin(grid, origin);
-}
-
-void DynamicBmiModel::GetGridX(const int grid, double* x) {
-    impl_->GetGridX(grid, x);
-}
-
-void DynamicBmiModel::GetGridY(const int grid, double* y) {
-    impl_->GetGridY(grid, y);
-}
-
-void DynamicBmiModel::GetGridZ(const int grid, double* z) {
-    impl_->GetGridZ(grid, z);
-}
-
-int DynamicBmiModel::GetGridNodeCount(const int grid) {
-    return impl_->GetGridNodeCount(grid);
-}
-
-int DynamicBmiModel::GetGridEdgeCount(const int grid) {
-    return impl_->GetGridEdgeCount(grid);
-}
-
-int DynamicBmiModel::GetGridFaceCount(const int grid) {
-    return impl_->GetGridFaceCount(grid);
-}
-
-void DynamicBmiModel::GetGridEdgeNodes(const int grid, int* edge_nodes) {
-    impl_->GetGridEdgeNodes(grid, edge_nodes);
-}
-
-void DynamicBmiModel::GetGridFaceEdges(const int grid, int* face_edges) {
-    impl_->GetGridFaceEdges(grid, face_edges);
-}
-
-void DynamicBmiModel::GetGridFaceNodes(const int grid, int* face_nodes) {
-    impl_->GetGridFaceNodes(grid, face_nodes);
-}
-
-void DynamicBmiModel::GetGridNodesPerFace(const int grid, int* nodes_per_face) {
-    impl_->GetGridNodesPerFace(grid, nodes_per_face);
 }
 
 } // namespace miaow

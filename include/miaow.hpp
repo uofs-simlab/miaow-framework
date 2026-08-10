@@ -249,12 +249,13 @@ struct TaskRecord {
      * @param task Submitted task whose metadata and simulation unit ID are copied.
      * @param task_id `TaskId` within the submitted job.
      * @param result Success or failure result for this task.
-     * @param run_time_s Wall-clock runtime for this task in seconds.
+     * @param run_time Wall-clock duration for this task.
      */
-    TaskRecord(const Task& task, TaskId task_id, TaskResult result, double run_time_s)
+    TaskRecord(const Task& task, TaskId task_id, TaskResult result,
+               std::chrono::duration<double> run_time)
         : task_id_{task_id}, simulation_unit_id_{task.simulation_unit_id_},
           task_name_{task.task_name_}, metadata_{task.metadata_},
-          result_{std::move(result)}, run_time_s_{run_time_s} {}
+          result_{std::move(result)}, run_time_{run_time} {}
 
     /// `TaskId` within the submitted job
     TaskId task_id_{0};
@@ -271,8 +272,8 @@ struct TaskRecord {
     /// Simulation-unit result for this task
     TaskResult result_;
 
-    /// Wall-clock runtime for this task in seconds
-    double run_time_s_{0.0};
+    /// Wall-clock duration for this task
+    std::chrono::duration<double> run_time_{};
 };
 
 /**
@@ -320,12 +321,12 @@ struct JobRecord {
      * @param run_id Runtime identifier for this `Runtime` instance.
      * @param job_id `JobId` assigned to this submitted job.
      * @param tasks Task records in submitted task order.
-     * @param run_time_s Wall-clock runtime for this job in seconds.
+     * @param run_time Wall-clock duration for this job.
      */
     JobRecord(std::uint64_t run_id, JobId job_id, std::vector<TaskRecord> tasks = {},
-              double run_time_s = 0.0)
+              std::chrono::duration<double> run_time = {})
         : run_id_{run_id}, job_id_{job_id}, tasks_{std::move(tasks)},
-          run_time_s_{run_time_s} {}
+          run_time_{run_time} {}
 
     /// Runtime identifier for this `Runtime` instance
     std::uint64_t run_id_{0};
@@ -336,8 +337,8 @@ struct JobRecord {
     /// Task records in submitted task order
     std::vector<TaskRecord> tasks_;
 
-    /// Wall-clock runtime for this job in seconds
-    double run_time_s_{0.0};
+    /// Wall-clock duration for this job
+    std::chrono::duration<double> run_time_{};
 };
 
 /**
@@ -382,7 +383,13 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
 }
 
 /**
- * @brief Base class for model-specific simulation units.
+ * @brief Base class for model-specific simulation units 
+ * 
+ * The only requirement of a `SimulationUnit` is that it must implement an `execute` method 
+ * that takes a `Task` and returns a `caf::result<TaskResult>`, which can be an immediate 
+ * result, a CAF error, or a delegated response. The `SimulationUnit` class is intended to 
+ * be subclassed by concrete implementations that define the specific behavior of the 
+ * simulation unit.
  */
 class SimulationUnit {
   public:
@@ -590,7 +597,7 @@ template <class Inspector> bool inspect(Inspector& inspector, TaskRecord& task_r
                 inspector.field("task_name", task_record.task_name_),
                 inspector.field("metadata", task_record.metadata_),
                 inspector.field("result", task_record.result_),
-                inspector.field("run_time_s", task_record.run_time_s_));
+                inspector.field("run_time", task_record.run_time_));
 }
 
 /**
@@ -606,7 +613,7 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
         .fields(inspector.field("run_id", job_record.run_id_),
                 inspector.field("job_id", job_record.job_id_),
                 inspector.field("tasks", job_record.tasks_),
-                inspector.field("run_time_s", job_record.run_time_s_));
+                inspector.field("run_time", job_record.run_time_));
 }
 
 /**

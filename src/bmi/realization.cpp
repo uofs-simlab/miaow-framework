@@ -169,8 +169,7 @@ BmiModuleConfig parse_fortran_module_config(const boost::json::object& global_ob
     }
 
     const boost::json::object& module = modules.at(0).as_object();
-    BmiModuleConfig module_config =
-        bmi::parse_bmi_module_config(module, "Realization config error: ");
+    BmiModuleConfig module_config(module, "Realization config error: ");
     if (module_config.name_ != "bmi_fortran") {
         throw_realization_config_error("unsupported module '" + module_config.name_ + "'");
     }

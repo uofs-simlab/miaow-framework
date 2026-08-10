@@ -68,7 +68,7 @@ BMI configuration
 
 .. doxygenenum:: miaow::BmiDataFormat
 
-.. doxygenvariable:: miaow::default_bmi_time_step_tolerance
+.. doxygenvariable:: miaow::default_bmi_time_step_tolerance_seconds
 
 .. doxygenstruct:: miaow::BmiForcingConfig
    :members:
@@ -80,12 +80,6 @@ BMI configuration
    :members:
 
 .. doxygenstruct:: miaow::DynamicBmiConfig
-   :members:
-
-BMI pipeline
-~~~~~~~~~~~~
-
-.. doxygenclass:: miaow::BmiPipeline
    :members:
 
 Simulation units

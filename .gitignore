@@ -89,3 +89,9 @@ examples/04_summa/data/*/summa_output/
 __pycache__/
 *.pyc
 docs/.venv/
+
+# LaTeX intermediates
+/docs/tikz/*.aux
+/docs/tikz/*.fdb_latexmk
+/docs/tikz/*.fls
+/docs/tikz/*.log

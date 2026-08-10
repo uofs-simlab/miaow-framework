@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -54,22 +55,6 @@ std::string to_lower_ascii(std::string value) {
     return value;
 }
 
-double time_unit_scale_seconds(const std::string& raw_units) {
-    // Normalize common BMI unit strings to seconds for timestep comparison
-    const std::string units = to_lower_ascii(io::trim(raw_units));
-    if (units == "s" || units == "sec" || units == "second" || units == "seconds") {
-        return 1.0;
-    }
-    if (units == "h" || units == "hr" || units == "hour" || units == "hours") {
-        return 3600.0;
-    }
-    if (units == "d" || units == "day" || units == "days") {
-        return 86400.0;
-    }
-    throw std::runtime_error("BMI forcing error: unsupported BMI time units '" + raw_units +
-                             "'");
-}
-
 double get_model_time_step_seconds(::bmi::Bmi& model) {
     const double model_time_step = model.GetTimeStep();
     if (!std::isfinite(model_time_step) || model_time_step <= 0.0) {
@@ -77,42 +62,19 @@ double get_model_time_step_seconds(::bmi::Bmi& model) {
                                  std::to_string(model_time_step) + "'");
     }
 
-    return model_time_step * time_unit_scale_seconds(model.GetTimeUnits());
-}
-
-void validate_time_step_delta(double actual_seconds, double expected_seconds,
-                              std::size_t row_number) {
-    if (actual_seconds <= 0.0) {
-        throw std::runtime_error(
-            "Forcing data error: forcing timestamps must increase strictly at row " +
-            std::to_string(row_number));
-    }
-
-    const double absolute_difference = std::abs(actual_seconds - expected_seconds);
-    const double tolerance =
-        std::max(1e-12, std::numeric_limits<double>::epsilon() *
-                            std::max(std::abs(actual_seconds), std::abs(expected_seconds)) *
-                            16.0);
-    if (absolute_difference > tolerance) {
-        std::ostringstream error;
-        error.precision(std::numeric_limits<double>::max_digits10);
-        error << "Forcing alignment error: forcing timestep " << actual_seconds
-              << " s must match BMI time step " << expected_seconds << " s at row "
-              << row_number;
-        throw std::runtime_error(error.str());
-    }
+    return model_time_step *
+           seconds_per_time_unit(model.GetTimeUnits(), "BMI forcing error: ");
 }
 
 // CSV parsing and loading helpers
 
 std::int64_t parse_timestamp_seconds(const std::string& raw_timestamp,
-                                     const std::string& time_column_name,
                                      std::size_t row_number) {
     try {
         return io::parse_timestamp_seconds(raw_timestamp);
     } catch (const std::exception&) {
-        throw std::runtime_error("Forcing data error: invalid timestamp in column '" +
-                                 time_column_name + "' at row " +
+        throw std::runtime_error("Forcing data error: invalid timestamp in column 'time' "
+                                 "at row " +
                                  std::to_string(row_number));
     }
 }
@@ -138,22 +100,68 @@ double parse_numeric_value(const std::string& raw_value, const std::string& colu
 
 } // namespace
 
-ForcingBmi::ForcingBmi(::bmi::Bmi& target_model) : target_model_(target_model) {}
+double seconds_per_time_unit(std::string_view raw_units, std::string_view error_prefix) {
+    // Normalize common fixed-duration BMI units to seconds
+    const std::string units = to_lower_ascii(io::trim(std::string(raw_units)));
+    if (units == "s" || units == "sec" || units == "second" || units == "seconds") {
+        return 1.0;
+    }
+    if (units == "min" || units == "minute" || units == "minutes") {
+        return 60.0;
+    }
+    if (units == "h" || units == "hr" || units == "hour" || units == "hours") {
+        return 3600.0;
+    }
+    if (units == "d" || units == "day" || units == "days") {
+        return 86400.0;
+    }
+    throw std::runtime_error(std::string(error_prefix) + "unsupported BMI time units '" +
+                             std::string(raw_units) + "'");
+}
 
-void ForcingBmi::open_stream(const std::filesystem::path& forcing_path) {
-    csv_stream_.open(forcing_path);
-    if (!csv_stream_.is_open()) {
+void validate_forcing_time_step_delta(double actual_seconds, double expected_seconds,
+                                      double tolerance_seconds, std::size_t record_number) {
+    if (actual_seconds <= 0.0) {
+        throw std::runtime_error(
+            "Forcing data error: forcing timestamps must increase strictly at record " +
+            std::to_string(record_number));
+    }
+
+    const double absolute_difference = std::abs(actual_seconds - expected_seconds);
+    if (absolute_difference > tolerance_seconds) {
+        std::ostringstream error;
+        error.precision(std::numeric_limits<double>::max_digits10);
+        error << "Forcing alignment error: forcing timestep " << actual_seconds
+              << " s must match BMI time step " << expected_seconds << " s at record "
+              << record_number;
+        throw std::runtime_error(error.str());
+    }
+}
+
+// Expose source metadata in its fixed reader order without format dispatch
+const std::vector<BmiVariable>& ForcingReader::variables() const {
+    return variables_;
+}
+
+// Initialize source metadata while constructing a concrete reader
+void ForcingReader::initialize_variables(std::vector<BmiVariable> variables) {
+    variables_ = std::move(variables);
+}
+
+CsvForcingReader::CsvForcingReader(const std::filesystem::path& forcing_path)
+    : stream_(forcing_path) {
+    if (!stream_.is_open()) {
         throw std::runtime_error("Forcing data error: unable to open CSV file '" +
                                  forcing_path.string() + "'");
     }
 
+    // Resolve the time column and source variables from the CSV header
     std::string header_line;
-    if (!std::getline(csv_stream_, header_line)) {
+    if (!std::getline(stream_, header_line)) {
         throw std::runtime_error("Forcing data error: CSV file '" + forcing_path.string() +
                                  "' is missing a header row");
     }
 
-    // Startup validation resolves time and forcing columns from the CSV header
     const std::vector<std::string> headers = io::split_csv_line(header_line);
     const std::vector<std::string>::const_iterator time_it =
         std::find_if(headers.begin(), headers.end(), [](const std::string& header) {
@@ -163,14 +171,14 @@ void ForcingBmi::open_stream(const std::filesystem::path& forcing_path) {
         throw std::runtime_error("Forcing data error: CSV file '" + forcing_path.string() +
                                  "' must define a 'time' or 'Time' column");
     }
-    csv_time_column_index_ =
-        static_cast<std::size_t>(std::distance(headers.begin(), time_it));
-    time_column_name_ = *time_it;
+    time_column_index_ = static_cast<std::size_t>(std::distance(headers.begin(), time_it));
 
-    // Store every non-time CSV data column as a forcing BMI output
-    forcing_columns_.reserve(headers.size() - 1);
+    // Align source column indices with the variable order fixed during construction
+    std::vector<BmiVariable> variables;
+    variables.reserve(headers.size() - 1);
+    source_column_indices_.reserve(headers.size() - 1);
     for (std::size_t column_index = 0; column_index < headers.size(); ++column_index) {
-        if (column_index == csv_time_column_index_) {
+        if (column_index == time_column_index_) {
             continue;
         }
 
@@ -180,101 +188,108 @@ void ForcingBmi::open_stream(const std::filesystem::path& forcing_path) {
                                      forcing_path.string() +
                                      "' contains an empty data column header");
         }
-        forcing_columns_.push_back(ForcingColumn{csv_header, column_index});
+        variables.emplace_back(csv_header, BmiValueType::bmi_double, "", "node", 0, 1);
+        source_column_indices_.push_back(column_index);
     }
 
-    if (forcing_columns_.empty()) {
+    if (variables.empty()) {
         throw std::runtime_error("Forcing data error: CSV file '" + forcing_path.string() +
                                  "' must define at least one data column");
     }
-
-    // Read the first data row now so GetValue can serve values before Update
-    if (!read_next_row(current_row_)) {
-        throw std::runtime_error("Forcing data error: CSV file '" + forcing_path.string() +
-                                 "' must contain at least one data row");
-    }
+    initialize_variables(std::move(variables));
 }
 
-bool ForcingBmi::read_next_row(ForcingRow& row) {
+double CsvForcingReader::time_seconds() const {
+    return static_cast<double>(current_timestamp_seconds_);
+}
+
+bool CsvForcingReader::advance() {
     // Read until the next non-empty row so blank lines do not count as timesteps
     std::string row_line;
-    while (std::getline(csv_stream_, row_line)) {
-        ++last_csv_row_number_;
+    while (std::getline(stream_, row_line)) {
+        ++last_line_number_;
         if (io::trim(row_line).empty()) {
             continue;
         }
 
         const std::vector<std::string> cells = io::split_csv_line(row_line);
-        if (csv_time_column_index_ >= cells.size()) {
+        if (time_column_index_ >= cells.size()) {
             throw std::runtime_error("Forcing data error: row " +
-                                     std::to_string(last_csv_row_number_) +
-                                     " is missing column '" + time_column_name_ + "'");
+                                     std::to_string(last_line_number_) +
+                                     " is missing column 'time'");
         }
 
-        row.timestamp_seconds_ =
-            parse_timestamp_seconds(cells.at(csv_time_column_index_), time_column_name_,
-                                    last_csv_row_number_);
-        row.row_number_ = last_csv_row_number_;
+        // Parse into local state so an invalid row cannot replace the current record
+        const std::int64_t next_timestamp =
+            parse_timestamp_seconds(cells.at(time_column_index_), last_line_number_);
+        std::vector<double> next_values;
+        next_values.reserve(source_column_indices_.size());
 
-        // Preserve output column order so BMI names index directly into values_
-        row.values_.clear();
-        row.values_.reserve(forcing_columns_.size());
-        for (const ForcingColumn& column : forcing_columns_) {
-            if (column.csv_column_index_ >= cells.size()) {
+        // Preserve reader variable order in the current value buffer
+        for (std::size_t variable_index = 0; variable_index < source_column_indices_.size();
+             ++variable_index) {
+            const std::size_t column_index = source_column_indices_.at(variable_index);
+            const std::string& variable_name = variables().at(variable_index).name();
+            if (column_index >= cells.size()) {
                 throw std::runtime_error("Forcing data error: row " +
-                                         std::to_string(last_csv_row_number_) +
-                                         " is missing column '" + column.csv_header_ + "'");
+                                         std::to_string(last_line_number_) +
+                                         " is missing column '" + variable_name + "'");
             }
-            row.values_.push_back(parse_numeric_value(cells.at(column.csv_column_index_),
-                                                      column.csv_header_,
-                                                      last_csv_row_number_));
+            next_values.push_back(parse_numeric_value(cells.at(column_index), variable_name,
+                                                      last_line_number_));
         }
+
+        current_timestamp_seconds_ = next_timestamp;
+        current_values_ = std::move(next_values);
         return true;
     }
 
     return false;
 }
 
+void CsvForcingReader::copy_value(std::size_t variable_index, void* destination) const {
+    *static_cast<double*>(destination) = current_values_.at(variable_index);
+}
+
+ForcingBmi::ForcingBmi(::bmi::Bmi& target_model, double time_step_tolerance_seconds)
+    : target_model_(target_model),
+      time_step_tolerance_seconds_(time_step_tolerance_seconds) {}
+
 void ForcingBmi::Initialize(std::string config_file) {
     // The config string for this internal module is the forcing CSV path
     const std::filesystem::path forcing_path = resolve_forcing_path(config_file);
 
-    // The receiving model clock defines the expected forcing timestep
+    // Construct and prime the source before exposing forcing values
     time_step_seconds_ = get_model_time_step_seconds(target_model_);
-    open_stream(forcing_path);
+    reader_ = std::make_unique<CsvForcingReader>(forcing_path);
+    if (!reader_->advance()) {
+        throw std::runtime_error("Forcing data error: CSV file '" + forcing_path.string() +
+                                 "' must contain at least one data row");
+    }
 
-    // The first CSV data row is already loaded by open_stream
-    step_ = 0;
-    current_time_seconds_ = 0.0;
     exhausted_ = false;
-    active_ = true;
 }
 
 void ForcingBmi::Update() {
-    if (!active_) {
-        return;
-    }
-
     if (exhausted_) {
         ++step_;
         current_time_seconds_ += time_step_seconds_;
         return;
     }
 
-    // No lookahead: advancing the forcing BMI consumes exactly one CSV row
-    ForcingRow next_row;
-    if (!read_next_row(next_row)) {
+    // Advance exactly one source record while retaining the previous timestamp
+    const double previous_source_time = reader_->time_seconds();
+    if (!reader_->advance()) {
         exhausted_ = true;
         ++step_;
         current_time_seconds_ += time_step_seconds_;
         return;
     }
 
-    // Timestamp spacing is validated as rows stream in
-    const double delta_seconds =
-        static_cast<double>(next_row.timestamp_seconds_ - current_row_.timestamp_seconds_);
-    validate_time_step_delta(delta_seconds, time_step_seconds_, next_row.row_number_);
-    current_row_ = std::move(next_row);
+    // Validate source alignment independently of its concrete storage format
+    const double delta_seconds = reader_->time_seconds() - previous_source_time;
+    validate_forcing_time_step_delta(delta_seconds, time_step_seconds_,
+                                     time_step_tolerance_seconds_, step_ + 2);
     ++step_;
     current_time_seconds_ += time_step_seconds_;
 }
@@ -284,20 +299,8 @@ void ForcingBmi::UpdateUntil(double /*time*/) {
 }
 
 void ForcingBmi::Finalize() {
-    // Reset all stream-derived state so Initialize can safely be called again
-    forcing_columns_.clear();
-    current_row_.values_.clear();
-    if (csv_stream_.is_open()) {
-        csv_stream_.close();
-    }
-    time_column_name_.clear();
-    csv_time_column_index_ = 0;
-    last_csv_row_number_ = 1;
-    step_ = 0;
-    current_time_seconds_ = 0.0;
-    time_step_seconds_ = 0.0;
-    exhausted_ = true;
-    active_ = false;
+    // Release the source at the end of this one-time lifecycle
+    reader_.reset();
 }
 
 std::string ForcingBmi::GetComponentName() {
@@ -309,7 +312,7 @@ int ForcingBmi::GetInputItemCount() {
 }
 
 int ForcingBmi::GetOutputItemCount() {
-    return static_cast<int>(forcing_columns_.size());
+    return reader_ ? static_cast<int>(reader_->variables().size()) : 0;
 }
 
 std::vector<std::string> ForcingBmi::GetInputVarNames() {
@@ -318,41 +321,49 @@ std::vector<std::string> ForcingBmi::GetInputVarNames() {
 
 std::vector<std::string> ForcingBmi::GetOutputVarNames() {
     std::vector<std::string> output_names;
-    output_names.reserve(forcing_columns_.size());
-    for (const ForcingColumn& column : forcing_columns_) {
-        output_names.push_back(column.csv_header_);
+    if (!reader_) {
+        return output_names;
+    }
+
+    // Preserve reader variable order in the BMI output name list
+    output_names.reserve(reader_->variables().size());
+    for (const BmiVariable& variable : reader_->variables()) {
+        output_names.push_back(variable.name());
     }
     return output_names;
 }
 
 int ForcingBmi::GetVarGrid(std::string name) {
-    find_output_index(name);
-    return 0;
+    const std::size_t variable_index = find_output_index(name);
+    return reader_->variables().at(variable_index).grid_id();
 }
 
 std::string ForcingBmi::GetVarType(std::string name) {
-    find_output_index(name);
-    return "double";
+    const std::size_t variable_index = find_output_index(name);
+    const BmiVariable& variable = reader_->variables().at(variable_index);
+    return std::string(bmi_value_type_name(variable.type()));
 }
 
 std::string ForcingBmi::GetVarUnits(std::string name) {
-    find_output_index(name);
-    return "";
+    const std::size_t variable_index = find_output_index(name);
+    return reader_->variables().at(variable_index).units();
 }
 
 int ForcingBmi::GetVarItemsize(std::string name) {
-    find_output_index(name);
-    return static_cast<int>(sizeof(double));
+    const std::size_t variable_index = find_output_index(name);
+    const BmiVariable& variable = reader_->variables().at(variable_index);
+    return static_cast<int>(bmi_value_type_size(variable.type()));
 }
 
 int ForcingBmi::GetVarNbytes(std::string name) {
-    find_output_index(name);
-    return static_cast<int>(sizeof(double));
+    const std::size_t variable_index = find_output_index(name);
+    const BmiVariable& variable = reader_->variables().at(variable_index);
+    return static_cast<int>(bmi_value_type_size(variable.type()) * variable.item_count());
 }
 
 std::string ForcingBmi::GetVarLocation(std::string name) {
-    find_output_index(name);
-    return "node";
+    const std::size_t variable_index = find_output_index(name);
+    return reader_->variables().at(variable_index).location();
 }
 
 double ForcingBmi::GetCurrentTime() {
@@ -383,7 +394,7 @@ void ForcingBmi::GetValue(std::string name, void* dest) {
             "Forcing alignment error: forcing series exhausted at step " +
             std::to_string(step_));
     }
-    *static_cast<double*>(dest) = current_row_.values_.at(output_index);
+    reader_->copy_value(output_index, dest);
 }
 
 void* ForcingBmi::GetValuePtr(std::string /*name*/) {
@@ -472,9 +483,12 @@ void ForcingBmi::GetGridNodesPerFace(const int /*grid*/, int* /*nodes_per_face*/
 }
 
 std::size_t ForcingBmi::find_output_index(const std::string& name) const {
-    for (std::size_t i = 0; i < forcing_columns_.size(); ++i) {
-        if (forcing_columns_[i].csv_header_ == name) {
-            return i;
+    if (reader_) {
+        for (std::size_t variable_index = 0; variable_index < reader_->variables().size();
+             ++variable_index) {
+            if (reader_->variables()[variable_index].name() == name) {
+                return variable_index;
+            }
         }
     }
     throw std::runtime_error("ForcingBmi: unknown variable '" + name + "'");

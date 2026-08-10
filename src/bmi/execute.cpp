@@ -1,4 +1,4 @@
-#include "miaow_bmi.hpp"
+#include "bmi/internal.hpp"
 
 #include <cmath>
 #include <exception>
@@ -10,8 +10,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-#include "bmi/internal.hpp"
 
 namespace miaow {
 
@@ -25,6 +23,7 @@ std::string format_bmi_error_message(const std::string& error_message) {
         error_message.starts_with("Forcing alignment error: ") ||
         error_message.starts_with("BMI coupling error: ") ||
         error_message.starts_with("BMI forcing error: ") ||
+        error_message.starts_with("BMI output error: ") ||
         error_message.starts_with("BMI pipeline config error: ") ||
         error_message.starts_with("BMI pipeline error: ");
     if (has_known_prefix) {
@@ -69,51 +68,54 @@ std::string bmi_subprocess_executable_path() {
     throw std::runtime_error("bundled BMI subprocess executable was not found");
 }
 
-TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
+TaskResult bmi::BmiPipeline::execute_bmi_lifecycle(const Task& task) {
+    const BmiPipelineConfig pipeline_config(task);
     std::vector<std::string> runtime_artifact_paths;
     if (std::optional<std::string> config_artifact =
             bmi::write_bmi_pipeline_config_artifact(task)) {
         runtime_artifact_paths.push_back(std::move(*config_artifact));
     }
-    bool needs_finalize = false;
-
     try {
         // Initialize before opening output so BMI variable metadata is available
-        needs_finalize = true;
-        initialize_task();
+        initialize(pipeline_config);
 
         {
             // Get the output configuration
-            std::unique_ptr<bmi::OutputFile> output_file;
-            const std::optional<double>& configured_output_interval = output_interval();
-            const double time_step_tolerance = this->time_step_tolerance();
-            const std::vector<std::string>& selected_output_variables = output_variables();
+            std::unique_ptr<bmi::OutputWriter> output_writer;
+            const std::optional<double>& configured_output_interval = output_interval_;
 
-            // If there are output variables and an output directory, open the output file
+            // Schedule comparisons use the time unit exposed by the pipeline
+            const double time_step_tolerance = time_step_tolerance_;
+            const std::vector<std::string>& selected_output_variables = output_variables_;
+            ::bmi::Bmi& selected_output_model = output_model();
+
+            // Construct the selected writer only when task output is enabled
             if (!task.task_output_dir_.empty() && !selected_output_variables.empty()) {
-                output_file = std::make_unique<bmi::OutputFile>(
-                    bmi::open_output_file(*this, task.task_output_dir_,
-                                          task.task_name_, selected_output_variables));
-                runtime_artifact_paths.push_back(output_file->artifact_path_);
+                output_writer =
+                    std::make_unique<bmi::CsvOutputWriter>(selected_output_model,
+                                                           task.task_output_dir_,
+                                                           task.task_name_,
+                                                           selected_output_variables);
+                runtime_artifact_paths.push_back(output_writer->artifact_path());
             }
 
             // The selected output model clock governs all schedule boundaries
-            const double end_time = GetEndTime();
-            double current_time = GetCurrentTime();
+            const double end_time = selected_output_model.GetEndTime();
+            double current_time = selected_output_model.GetCurrentTime();
             if (end_time - current_time < -time_step_tolerance) {
                 throw std::runtime_error(
                     "BMI pipeline error: current time is later than the end time");
             }
 
-            if (!output_file) {
-                // If there is no output file, just run the model to the end time
-                UpdateUntil(end_time);
+            if (!output_writer) {
+                // Run directly to the end time when task output is disabled
+                update_until(end_time);
             } else {
                 // Write output states and remember the last reported model time
                 double last_output_time = current_time;
                 const auto write_current_state = [&]() {
-                    current_time = GetCurrentTime();
-                    bmi::write_output_step(*this, *output_file, current_time);
+                    current_time = selected_output_model.GetCurrentTime();
+                    output_writer->write_step(selected_output_model, current_time);
                     last_output_time = current_time;
                 };
                 write_current_state();
@@ -122,8 +124,8 @@ TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
                     // An absent interval writes every completed update
                     double remaining_time = end_time - current_time;
                     while (remaining_time > time_step_tolerance) {
-                        Update();
-                        current_time = GetCurrentTime();
+                        update();
+                        current_time = selected_output_model.GetCurrentTime();
                         remaining_time = end_time - current_time;
                         if (remaining_time < -time_step_tolerance) {
                             throw std::runtime_error(
@@ -132,25 +134,25 @@ TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
                         write_current_state();
                     }
                 } else {
-                    // A positive interval writes reachable model-time boundaries
+                    // A positive interval requests output at successive model-time
+                    // boundaries
                     const double start_time = current_time;
                     std::size_t output_index = 1;
                     double target_time = start_time + static_cast<double>(output_index) *
-                                         *configured_output_interval;
+                                                          *configured_output_interval;
 
                     while (end_time - target_time > time_step_tolerance) {
-                        UpdateUntil(target_time);
+                        update_until(target_time);
                         write_current_state();
                         ++output_index;
                         target_time = start_time + static_cast<double>(output_index) *
-                                        *configured_output_interval;
+                                                       *configured_output_interval;
                     }
 
                     // Advance to the end time without duplicating a coincident boundary
-                    UpdateUntil(end_time);
-                    current_time = GetCurrentTime();
-                    if (std::abs(current_time - last_output_time) >
-                        time_step_tolerance) {
+                    update_until(end_time);
+                    current_time = selected_output_model.GetCurrentTime();
+                    if (std::abs(current_time - last_output_time) > time_step_tolerance) {
                         write_current_state();
                     }
                 }
@@ -158,19 +160,18 @@ TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
         }
 
         // Finalize after output streams have been closed
-        needs_finalize = false;
-        Finalize();
+        finalize();
 
         // Handle exceptions thrown during initialization, update, or finalization
     } catch (...) {
-        const std::size_t update_steps = completed_update_count();
+        const std::size_t update_steps = completed_update_count_;
         std::string failure_message = format_bmi_error_message(std::current_exception()) +
                                       " (updates: " + std::to_string(update_steps) + ")";
 
         // Try to finalize a model that failed after successful initialization
-        if (needs_finalize) {
+        if (initialized_module_count_ > 0) {
             try {
-                Finalize();
+                finalize();
             } catch (const std::exception& finalize_exception) {
                 failure_message +=
                     std::string(" | BMI finalize error: ") + finalize_exception.what();
@@ -182,9 +183,29 @@ TaskResult BmiPipeline::execute_bmi_lifecycle(const Task& task) {
     }
 
     std::ostringstream message;
-    message << "BMI workflow complete (updates: " << completed_update_count() << ")";
+    message << "BMI workflow complete (updates: " << completed_update_count_ << ")";
     return TaskResult{TaskStatus::succeeded, message.str(),
                       std::move(runtime_artifact_paths)};
+}
+
+namespace static_bmi_execution {
+
+TaskResult execute_task(const Task& task, std::unique_ptr<bmi_api::Bmi> model) {
+    bmi::BmiPipeline pipeline(std::move(model));
+    return pipeline.execute_bmi_lifecycle(task);
+}
+
+} // namespace static_bmi_execution
+
+caf::result<TaskResult> DynamicBmiSimulationUnit::execute(const Task& task) {
+    try {
+        // Construct all configured model modules locally for an in-process task
+        bmi::BmiPipeline pipeline;
+        return pipeline.execute_bmi_lifecycle(task);
+    } catch (...) {
+        // Exceptions become failed task results so the job can keep running
+        return make_failed_task_result(std::current_exception(), "BMI error");
+    }
 }
 
 } // namespace miaow

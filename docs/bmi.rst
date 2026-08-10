@@ -6,12 +6,9 @@ This page describes the Basic Model Interface (BMI) integration paths and how to
 BMI task lifecycle
 ------------------
 
-MIAOW supports the execution of BMI-compatible models through two different paths:
+Build individual tasks with ``make_bmi_task(...)`` and task sets with ``make_bmi_tasks(...)``. Both functions translate typed BMI configuration into the generic ``Task`` representation that MIAOW passes to simulation unit actors for execution. During task execution, the internal BMI task pipeline initializes directly from the serialized configuration stored in ``Task::args_``. When runtime output is enabled, MIAOW also writes the resolved pipeline configuration beside the task results as ``<task_output_name>.json``. Task execution does not require this file; it records the resolved configuration used for the task. ``PartitionedBmiRealization`` reads source NextGen-style realization files.
 
-1. Static BMI model execution, where the concrete model type ``BmiModelType`` is known at compile time and the model is constructed and executed in the parent process through a ``StaticBmiSimulationUnit<BmiModelType>`` configured with a ``StaticBmiConfig``.
-2. Dynamic BMI plugin execution, where the model is loaded from a C++ or Fortran plugin library and executed in the parent process as a ``DynamicBmiSimulationUnit`` or in a subprocess through the general ``SubprocessSimulationUnit`` path. These models are configured either with a ``DynamicBmiConfig`` or through a NextGen-style realization file that produces one dynamic BMI task per feature, which represents a spatial subdivision of the model domain, for example, a hydrologic catchment.
-
-After a single BMI task is constructed using ``make_bmi_task(...)`` or a task vector is constructed using ``make_bmi_tasks(...)``, MIAOW executes the tasks through the selected simulation unit implementation, using a ``BmiPipeline`` internally to manage the BMI lifecycle for each task. After loading the pipeline configuration, ``BmiPipeline`` runs the BMI lifecycle for its components, which currently include a single BMI model and an optional internal forcing module. The pipeline lifecycle, which is implemented in `src/bmi/execute.cpp <https://github.com/uofs-simlab/miaow-framework/blob/main/src/bmi/execute.cpp>`_, consists of three phases:
+After loading the pipeline configuration, the internal BMI task pipeline runs the BMI lifecycle for its components, which currently include a single BMI model and an optional internal forcing module. Each task supports one initialization lifecycle. The pipeline lifecycle, which is implemented in `src/bmi/execute.cpp <https://github.com/uofs-simlab/miaow-framework/blob/main/src/bmi/execute.cpp>`_, consists of three phases:
 
 1. Call ``Initialize()`` on every component (including the forcing module if configured) with the component's ``init_config_``.
 2. Perform zero or more complete pipeline ``Update()`` calls, which apply the current forcing values (see :ref:`bmi-forcing-data`), advance the model, and advance the forcing source. If MIAOW-managed output is enabled, the enclosing lifecycle writes output at the configured interval (see :ref:`bmi-output`).
@@ -22,15 +19,15 @@ Task configuration options
 
 The setup pattern depends on whether the BMI model implementation comes from a statically typed C++ model, a dynamic plugin, or a realization file.
 
-Selecting task execution
-~~~~~~~~~~~~~~~~~~~~~~~~
+BMI task configuration
+~~~~~~~~~~~~~~~~~~~~~~
 
-The ``SimulationUnitId`` passed to ``make_bmi_task(...)`` or ``make_bmi_tasks(...)`` selects execution. An ID returned by ``SimulationUnitRegistry::add<StaticBmiSimulationUnit<BmiModelType>>()`` selects static execution in the parent process, while an ID returned by ``SimulationUnitRegistry::add<DynamicBmiSimulationUnit>()`` selects dynamic plugin execution in the parent process. An ID returned by ``SimulationUnitRegistry::add_subprocess(bmi_subprocess_executable_path(), lifetime)`` selects dynamic plugin execution in a child subprocess, which is useful for non-thread-safe models. We describe the different options below.
+The ``SimulationUnitId`` passed to ``make_bmi_task(...)`` or ``make_bmi_tasks(...)`` selects the ``SimulationUnit`` subclass that executes the BMI task. An ID returned by ``SimulationUnitRegistry::add<StaticBmiSimulationUnit<BmiModelType>>()`` selects static execution in the parent process, while an ID returned by ``SimulationUnitRegistry::add<DynamicBmiSimulationUnit>()`` selects dynamic plugin execution in the parent process. An ID returned by ``SimulationUnitRegistry::add_subprocess(bmi_subprocess_executable_path(), lifetime)`` selects dynamic plugin execution in a child subprocess, which is useful for non-thread-safe models. We describe the different options below.
 
 Static BMI model
 ~~~~~~~~~~~~~~~~
 
-The static model setup applies when the concrete BMI model type is known when compiling the executable. ``StaticBmiSimulationUnit<YourModel>`` constructs one new model object per task. The following example registers the model type and constructs one task to be executed in the parent process:
+The static model setup applies when the concrete BMI model type is known when compiling the executable that uses MIAOW. Tasks which specify a ``SimulationUnitId`` returned by ``SimulationUnitRegistry::add<StaticBmiSimulationUnit<YourModel>>()`` construct one new model object per task and execute the BMI lifecycle in the parent process. The following example registers the model type and constructs one task.
 
 .. code-block:: cpp
 
@@ -53,6 +50,15 @@ The same registered simulation unit ID can be applied to several configurations.
    };
    const std::vector<miaow::Task> tasks =
        miaow::make_bmi_tasks(heat, configs);
+
+These tasks are then submitted to the MIAOW runtime to be dispatched by a ``job_actor`` and executed concurrently by instances of the registered ``StaticBmiSimulationUnit<BmiHeat>`` simulation unit. The ``submit_job(...)`` call returns a ``JobHandle`` immediately, and ``JobHandle::get()`` waits for the completed ``JobRecord``:
+
+.. code-block:: cpp
+
+   miaow::Runtime runtime(registry);
+   miaow::JobHandle job = runtime.submit_job(tasks);
+   const miaow::JobRecord job_record = job.get();
+
 
 Dynamic BMI plugin
 ~~~~~~~~~~~~~~~~~~
@@ -128,7 +134,9 @@ BMI models often require time-varying forcing data to be passed to the model at 
 1. The model reads its own forcing data from a file or other source as part of its own ``Update()`` implementation.
 2. MIAOW reads the forcing data and applies it to the model at each update.
 
-The ``forcing_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` selects the pattern. When the field is absent, MIAOW adds no forcing module and delegates forcing to the model. A configured ``BmiForcingConfig`` appends an internal forcing module to ``BmiPipeline`` and maps BMI input variables to forcing source columns through ``variables_names_map_``. The variable map is interpreted as ``BMI input variable -> CSV header``. An empty map derives an identity mapping from ``GetInputVarNames()`` and expects CSV headers with the same names as the corresponding model inputs. The following example configuration reads CSV forcing data and maps the ``TMP_ground_surface`` column to the BMI input variable ``ground_temperature``:
+The ``forcing_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` selects the pattern. When the field is absent, MIAOW adds no forcing module and delegates forcing to the model. A configured ``BmiForcingConfig`` appends the internal CSV forcing module after the model and exposes the file's data columns as BMI outputs. MIAOW derives explicit couplings from ``BmiForcingConfig::variables_names_map_``, requires equal source and target item counts, applies each complete flattened variable immediately before the model update, and then advances the forcing source after the model update. Each CSV data column currently exposes one scalar forcing variable, so a CSV forcing mapping requires a scalar target input.
+
+The variable map is interpreted as ``BMI input variable -> CSV header``. If it is empty, MIAOW derives an identity map from ``GetInputVarNames()`` and expects CSV headers with the same names as the corresponding variables. Every configured key must identify a BMI input variable; general output aliasing and aliases for model-to-model coupling are not supported. The following example configuration reads CSV forcing data and maps the ``TMP_ground_surface`` column to the BMI input variable ``ground_temperature``:
 
 .. code-block:: cpp
 
@@ -143,16 +151,18 @@ The ``forcing_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` selects th
        },
    };
 
-The forcing file must define a ``time`` or ``Time`` column plus all required numeric data columns. Supported timestamp formats are ``YYYY-MM-DD HH:MM:SS`` and ``YYYY/MM/DD HH:MM:SS``. MIAOW treats the first forcing row as the model-start forcing values without comparing its timestamp with the model's ``start_time``. Later forcing rows are streamed as the model advances; each row-to-row timestamp delta must match the receiving BMI model timestep after unit normalization. Because the only supported forcing source is CSV, the forcing provider for global `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization files should be set to ``CsvPerFeature``. Exhausting the forcing data before the model's ``end_time`` fails the task with a ``Forcing alignment error``; forcing rows beyond ``end_time`` are silently ignored and do not cause a task failure.
+The forcing file must define a ``time`` or ``Time`` column plus all required numeric data columns. Supported timestamp formats are ``YYYY-MM-DD HH:MM:SS`` and ``YYYY/MM/DD HH:MM:SS``. MIAOW treats the first forcing row as the model-start forcing values without comparing its timestamp with the model's ``start_time``, so users should ensure that the two times align. Later forcing rows are streamed as the model advances; each row-to-row timestamp delta must match the receiving BMI model timestep within ``time_step_tolerance_seconds_`` after conversion to seconds. Because the only supported forcing source is CSV, the forcing provider for global `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization files should be set to ``CsvPerFeature``. Exhausting the forcing data before the model's ``end_time`` fails the task with a ``Forcing alignment error``; forcing rows beyond ``end_time`` are silently ignored and do not cause a task failure.
 
 .. _bmi-output:
 
 Writing BMI output
 ------------------
 
-Similarly to the forcing configuration, MIAOW can either manage the output or delegate it to the model. The ``output_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` selects the pattern. When the field is absent, MIAOW writes no runtime-managed output and delegates output to the model. When set to a valid ``BmiOutputConfig`` with an empty ``BmiOutputConfig::variables_`` field, MIAOW writes every variable returned by ``GetOutputVarNames()``; a non-empty ``BmiOutputConfig::variables_`` field writes the selected variables in their configured order. The CSV writer supports BMI variables whose type is ``int``, ``float``, or ``double`` and fails the task when a selected variable has another type.
+Set the ``output_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` to a ``BmiOutputConfig`` to enable MIAOW-managed task output, which currently supports CSV files only. An absent output configuration disables the MIAOW-managed task artifact and delegates output to the model. An enabled configuration with an empty ``BmiOutputConfig::variables_`` list writes every variable returned by ``GetOutputVarNames()``; a non-empty list writes the selected variables in their configured order. The CSV writer supports BMI variables reported as ``int``, ``float``, or ``double`` and fails the task when a selected variable has another type. A multi-item variable is flattened into adjacent columns named ``name_0`` through ``name_(item_count - 1)`` in BMI value order.
 
-The ``BmiOutputConfig::interval_`` field controls the output cadence in the units returned by the selected output model's ``GetTimeUnits()``. An absent interval writes the initialized state and every completed pipeline update. A present interval must be finite and positive; it writes the initialized state, each reachable model-time boundary, and the final state. No interpolation is performed, so the interval should be a multiple of the model timestep; this is enforced by the ``time_step_tolerance_`` field, which defaults to ``1e-4`` in the model's time units and must be finite, non-negative, and less than half of ``GetTimeStep()``. For each interval between outputs, ``BmiPipeline::UpdateUntil()`` calls ``Update()`` repeatedly until the output model time is within tolerance of the requested boundary. If the update overshoots the requested boundary by more than the configured tolerance, the task fails. As an example, the following configuration writes a single CSV file with the ``streamflow`` output variable every 24 model-time units:
+``BmiOutputConfig::interval_`` controls the output cadence in the units returned by the selected output model's ``GetTimeUnits()``. An absent interval writes the initialized state and every completed pipeline update. A present interval must be finite and positive; MIAOW writes the initialized state, advances to successive interval boundaries, and writes the final state. Boundaries later than the model end time are not attempted, and a boundary within the converted ``time_step_tolerance_seconds_`` of the end time shares one final row.
+
+The ``time_step_tolerance_seconds_`` field in the BMI configuration defines the absolute tolerance for forcing timestep, output-boundary, and final-time comparisons. The default is ``1e-4`` seconds. The value must be finite, non-negative, and less than half of ``GetTimeStep()`` after conversion to the selected output model's time unit. MIAOW supports fixed-duration model time units expressed as seconds, minutes, hours, or days using common BMI abbreviations and singular or plural names. For each interval between outputs, the internal pipeline scheduler calls ``Update()`` repeatedly until the output model time is within the converted tolerance of the requested boundary. If the update overshoots the requested boundary by more than the configured tolerance, the task fails. As an example, the following configuration writes a single CSV file with the ``streamflow`` output variable every 24 model-time units:
 
 .. code-block:: cpp
 
