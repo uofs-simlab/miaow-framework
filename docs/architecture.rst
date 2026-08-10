@@ -36,10 +36,12 @@ When the controller generates new tasks, the job actor counts entries in its tas
 Simulation unit execution
 -------------------------
 
-``Task::simulation_unit_id_`` selects the complete execution implementation. ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` registers a unit constructed and executed in the parent process, while ``SimulationUnitRegistry::add_subprocess(executable, lifetime)`` registers an internal ``SimulationUnit`` implementation that delegates each task to the supplied executable. Tasks contain no separate execution-location or subprocess-deployment fields.
+The ``Task::simulation_unit_id_`` field selects the ``SimulationUnit`` implementation that 
+executes the task. ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` registers a unit constructed and executed in the parent process, while ``SimulationUnitRegistry::add_subprocess(executable, lifetime)`` registers an internal ``SimulationUnit`` implementation that delegates each task to the supplied ``executable``.
 
-Every ``simulation_unit_actor`` constructs the selected polymorphic ``SimulationUnit`` and calls ``execute(task)``. In-process units registered using ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` return an immediate ``TaskResult`` or CAF error. A subprocess unit returns a delegated CAF response while its actor-owned state starts or reuses the child, sends the serialized ``Task``, receives ``TaskResult``, and completes required cleanup without blocking a parent scheduler thread. The child executable implements the ``Task`` to ``TaskResult`` contract through ``run_subprocess_worker()`` and does not receive the parent registry.
+Every ``simulation_unit_actor`` constructs the selected ``SimulationUnit`` and calls ``execute(task)``. In-process units registered using ``SimulationUnitRegistry::add<SimulationUnitType>(...)`` return an immediate ``TaskResult`` or CAF error. A subprocess unit returns a delegated CAF response while its actor-owned state starts or reuses the subprocess, sends the serialized ``Task``, receives ``TaskResult``, and completes required cleanup without blocking a parent scheduler thread. The child process implements the ``Task`` to ``TaskResult`` contract through ``run_subprocess_worker()`` and does not receive the parent registry.
 
+The ``SubprocessLifetime`` argument to ``add_subprocess(...)`` controls whether the child process is started and stopped for each task or retained for reuse across multiple tasks.
 ``SubprocessLifetime::single_task`` starts one child for a task and stops and reaps it before delivering the result. ``SubprocessLifetime::persistent`` retains a child only after a successful task. An idle persistent child remains alive and retains its process resources, but MIAOW does not reserve a dedicated CPU core for it. The same idle ``simulation_unit_actor`` reuses that child only when the next task selects a persistent registration with exactly the same executable string and the child actor remains available. A failure, timeout, single-task registration, different executable, child termination, or worker shutdown prevents reuse. Failures and task timeouts preserve subprocess diagnostics and stop and reap the child before completing the delegated response.
 
 .. _custom-subprocess-executables:
@@ -47,7 +49,7 @@ Every ``simulation_unit_actor`` constructs the selected polymorphic ``Simulation
 Custom subprocess executables
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The following setup registers the exact executable path and uses the returned ``SimulationUnitId`` when constructing a task:
+The following setup registers an exact executable path and uses the returned ``SimulationUnitId`` when constructing a task:
 
 .. code-block:: cpp
 

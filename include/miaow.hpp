@@ -8,6 +8,7 @@
 #include <exception>
 #include <functional>
 #include <future>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -136,6 +137,20 @@ struct Task {
     Task(SimulationUnitId task_simulation_unit_id, std::string arg)
         : simulation_unit_id_(task_simulation_unit_id),
           args_{caf::config_value{std::move(arg)}} {}
+
+    /**
+     * @brief Construct a `Task` from positional string arguments.
+     * @param task_simulation_unit_id `SimulationUnitId` for this task.
+     * @param string_args Positional string arguments for this task.
+     */
+    Task(SimulationUnitId task_simulation_unit_id,
+         std::initializer_list<std::string> string_args)
+        : simulation_unit_id_(task_simulation_unit_id) {
+        args_.reserve(string_args.size());
+        for (const std::string& string_arg : string_args) {
+            args_.emplace_back(string_arg);
+        }
+    }
 
     /**
      * @brief Return a pointer to a string at a given positional argument index.
@@ -368,7 +383,13 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
 }
 
 /**
- * @brief Base class for model-specific simulation units.
+ * @brief Base class for model-specific simulation units 
+ * 
+ * The only requirement of a `SimulationUnit` is that it must implement an `execute` method 
+ * that takes a `Task` and returns a `caf::result<TaskResult>`, which can be an immediate 
+ * result, a CAF error, or a delegated response. The `SimulationUnit` class is intended to 
+ * be subclassed by concrete implementations that define the specific behavior of the 
+ * simulation unit.
  */
 class SimulationUnit {
   public:
