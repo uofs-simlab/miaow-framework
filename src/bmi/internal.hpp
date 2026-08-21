@@ -44,11 +44,12 @@ struct BmiModuleConfig {
 // Internal task payload consumed by BmiPipeline; created from a user-supplied or
 // realization-created StaticBmiConfig or DynamicBmiConfig
 struct BmiPipelineConfig {
-    BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs,
-                      std::string forcing_file = "", std::string feature_id = "",
-                      std::optional<double> output_interval = std::nullopt,
-                      double time_step_tolerance_seconds =
-                          default_bmi_time_step_tolerance_seconds);
+    BmiPipelineConfig(
+        std::vector<BmiModuleConfig> module_configs, std::string forcing_file = "",
+        std::string feature_id = "", std::optional<double> output_interval = std::nullopt,
+        double time_step_tolerance_seconds = default_bmi_time_step_tolerance_seconds,
+        BmiDataFormat forcing_format = BmiDataFormat::csv,
+        std::optional<std::string> forcing_feature_id_variable = std::nullopt);
 
     BmiPipelineConfig(const boost::json::object& pipeline_config,
                       std::string_view error_prefix);
@@ -57,7 +58,9 @@ struct BmiPipelineConfig {
 
     std::vector<BmiModuleConfig> module_configs_;
     std::size_t output_module_{0};
+    BmiDataFormat forcing_format_{BmiDataFormat::csv};
     std::string forcing_file_;
+    std::optional<std::string> forcing_feature_id_variable_;
     std::string feature_id_;
     std::optional<double> output_interval_;
     double time_step_tolerance_seconds_{default_bmi_time_step_tolerance_seconds};
@@ -242,7 +245,7 @@ class CsvOutputWriter final : public OutputWriter {
     std::ofstream stream_;
 };
 
-// Format-neutral forcing source (currently only CSV is supported)
+// Format-neutral forcing source
 class ForcingReader {
   public:
     virtual ~ForcingReader() = default;
@@ -286,6 +289,49 @@ class CsvForcingReader final : public ForcingReader {
 
     // Last physical CSV line read from the stream
     std::size_t last_line_number_{1};
+};
+
+// Read-only NetCDF file owned by one forcing reader
+class NetCdfFile {
+  public:
+    explicit NetCdfFile(const std::filesystem::path& path);
+
+    NetCdfFile(const NetCdfFile&) = delete;
+    NetCdfFile& operator=(const NetCdfFile&) = delete;
+
+    ~NetCdfFile();
+
+    int id() const;
+
+  private:
+    int id_{-1};
+};
+
+// Shared feature-indexed NetCDF forcing source
+class NetCdfForcingReader final : public ForcingReader {
+  public:
+    NetCdfForcingReader(const std::filesystem::path& forcing_path,
+                        const std::string& feature_id_variable,
+                        const std::string& feature_id);
+
+    double time_seconds() const override;
+    bool advance() override;
+    void copy_value(std::size_t variable_index, void* destination) const override;
+
+  private:
+    NetCdfFile file_;
+    int time_variable_id_{-1};
+    std::size_t time_size_{0};
+    std::size_t feature_index_{0};
+    std::string feature_id_;
+    std::size_t next_time_index_{0};
+    double first_time_{0.0};
+    double time_unit_seconds_{0.0};
+    double current_time_seconds_{0.0};
+    std::vector<int> variable_ids_;
+    std::vector<bool> time_dimension_first_;
+    std::vector<std::vector<double>> missing_values_;
+    std::vector<double> current_values_;
 };
 
 // Resolved pipeline coupling endpoints
@@ -336,7 +382,9 @@ class BmiPipeline {
   private:
     void initialize(const BmiPipelineConfig& pipeline_config);
     std::size_t add_model_module(const BmiModuleConfig& module_config);
-    bool add_forcing_module(const std::string& forcing_file,
+    bool add_forcing_module(BmiDataFormat forcing_format, const std::string& forcing_file,
+                            const std::optional<std::string>& feature_id_variable,
+                            const std::string& feature_id,
                             double time_step_tolerance_seconds,
                             std::size_t model_module_index,
                             std::size_t& forcing_module_index);
@@ -375,7 +423,9 @@ class BmiPipeline {
 // Internal BMI model adapters
 class ForcingBmi : public ::bmi::Bmi {
   public:
-    ForcingBmi(::bmi::Bmi& target_model, double time_step_tolerance_seconds);
+    ForcingBmi(::bmi::Bmi& target_model, BmiDataFormat format,
+               std::optional<std::string> feature_id_variable, std::string feature_id,
+               double time_step_tolerance_seconds);
 
     ForcingBmi(const ForcingBmi&) = delete;
     ForcingBmi& operator=(const ForcingBmi&) = delete;
@@ -432,6 +482,11 @@ class ForcingBmi : public ::bmi::Bmi {
     // Receiving model supplies timestep constraints for the forcing stream
     ::bmi::Bmi& target_model_;
 
+    // Source selection fixed by the serialized task configuration
+    BmiDataFormat format_{BmiDataFormat::csv};
+    std::optional<std::string> feature_id_variable_;
+    std::string feature_id_;
+
     // Format-specific forcing source active for this BMI lifecycle
     std::unique_ptr<ForcingReader> reader_;
 
@@ -453,13 +508,12 @@ class ForcingBmi : public ::bmi::Bmi {
 
 std::optional<std::string> write_bmi_pipeline_config_artifact(const Task& task);
 
-caf::config_value::dictionary
-make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
-                             const std::string& forcing_file,
-                             std::size_t output_module = 0,
-                             std::optional<double> output_interval = std::nullopt,
-                             double time_step_tolerance_seconds =
-                                 default_bmi_time_step_tolerance_seconds);
+caf::config_value::dictionary make_bmi_multi_global_config(
+    const std::vector<BmiModuleConfig>& module_configs, const std::string& forcing_file,
+    std::size_t output_module = 0, std::optional<double> output_interval = std::nullopt,
+    double time_step_tolerance_seconds = default_bmi_time_step_tolerance_seconds,
+    BmiDataFormat forcing_format = BmiDataFormat::csv,
+    std::optional<std::string> feature_id_variable = std::nullopt);
 
 Task make_bmi_task(SimulationUnitId simulation_unit_id,
                    const StaticBmiConfig& config);

@@ -13,6 +13,11 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+find_package(netCDF 4.8 CONFIG REQUIRED)
+if(NOT TARGET netCDF::netcdf)
+    message(FATAL_ERROR "NetCDF did not provide the expected netCDF::netcdf target")
+endif()
+
 # Add framework tests to top-level development builds
 set(miaow_build_tests OFF)
 if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
@@ -235,6 +240,7 @@ target_link_libraries(miaow
         ${MIAOW_CAF_IO_TARGET}
         Boost::json
         iso_c_bmi
+        netCDF::netcdf
         ${CMAKE_DL_LIBS}
 )
 
@@ -244,6 +250,7 @@ set(miaow_interface_link_libraries
     "$<BUILD_INTERFACE:${MIAOW_CAF_IO_TARGET}>"
     "$<BUILD_INTERFACE:$<LINK_ONLY:Boost::json>>"
     "$<BUILD_INTERFACE:$<LINK_ONLY:iso_c_bmi>>"
+    "$<BUILD_INTERFACE:$<LINK_ONLY:netCDF::netcdf>>"
 )
 if(CMAKE_DL_LIBS)
     list(APPEND miaow_interface_link_libraries "${CMAKE_DL_LIBS}")

@@ -44,6 +44,9 @@ inline constexpr double default_bmi_time_step_tolerance_seconds = 1e-4;
 enum class BmiDataFormat {
     /// Comma-separated values
     csv,
+
+    /// Network Common Data Form
+    netcdf,
 };
 
 /// External forcing configuration for one BMI task
@@ -53,6 +56,9 @@ struct BmiForcingConfig {
 
     /// Forcing file path
     std::string file_;
+
+    /// Optional variable containing feature identifiers
+    std::optional<std::string> feature_id_variable_;
 
     /// Map from BMI input variables to forcing source variables
     std::map<std::string, std::string> variables_names_map_;
@@ -140,6 +146,19 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id,
  */
 Task make_bmi_task(SimulationUnitId simulation_unit_id,
                    const DynamicBmiConfig& config);
+
+/**
+ * @brief Build one dynamic BMI task for a selected forcing feature.
+ * @param simulation_unit_id Registered dynamic BMI simulation unit id.
+ * @param config Dynamic BMI task configuration.
+ * @param feature_id Feature identifier selected from feature-indexed forcing.
+ * @param metadata Optional task metadata copied into the resulting `Task`.
+ * @return `Task` ready to submit through `Runtime::submit_job()`.
+ */
+Task make_bmi_task(SimulationUnitId simulation_unit_id,
+                   const DynamicBmiConfig& config,
+                   const std::string& feature_id,
+                   TaskMetadata metadata = {});
 
 /**
  * @brief Build tasks that use the same registered BMI simulation unit.
