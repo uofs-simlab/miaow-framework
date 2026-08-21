@@ -1,6 +1,7 @@
 #define BOOST_TEST_MODULE miaow_bmi
 #include <boost/test/unit_test.hpp>
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -10,9 +11,139 @@
 #include <string_view>
 #include <vector>
 
+#include <netcdf.h>
+
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
 #include "bmi/internal.hpp"
+
+namespace {
+
+struct NetCdfForcingFixture {
+    std::vector<double> feature_ids_;
+    std::vector<double> times_;
+    std::vector<double> air_temperatures_;
+    bool feature_indexed_temperature_{true};
+};
+
+void check_test_net_cdf(int status, const std::string& operation) {
+    if (status != NC_NOERR) {
+        throw std::runtime_error(operation + ": " + nc_strerror(status));
+    }
+}
+
+void write_net_cdf_forcing_fixture(const std::filesystem::path& path,
+                                   const NetCdfForcingFixture& fixture) {
+    const std::size_t expected_temperature_count =
+        fixture.feature_indexed_temperature_
+            ? fixture.feature_ids_.size() * fixture.times_.size()
+            : fixture.times_.size();
+    if (fixture.feature_ids_.empty() || fixture.times_.empty() ||
+        fixture.air_temperatures_.size() != expected_temperature_count) {
+        throw std::runtime_error("invalid NetCDF forcing test fixture");
+    }
+
+    int file_id = -1;
+    check_test_net_cdf(nc_create(path.string().c_str(), NC_CLOBBER, &file_id),
+                       "unable to create NetCDF test fixture");
+
+    int time_dimension_id = -1;
+    int feature_dimension_id = -1;
+    check_test_net_cdf(nc_def_dim(file_id, "time", fixture.times_.size(),
+                                  &time_dimension_id),
+                       "unable to define test time dimension");
+    check_test_net_cdf(nc_def_dim(file_id, "hru", fixture.feature_ids_.size(),
+                                  &feature_dimension_id),
+                       "unable to define test feature dimension");
+
+    int time_variable_id = -1;
+    int feature_variable_id = -1;
+    int temperature_variable_id = -1;
+    check_test_net_cdf(nc_def_var(file_id, "time", NC_DOUBLE, 1, &time_dimension_id,
+                                  &time_variable_id),
+                       "unable to define test time variable");
+    check_test_net_cdf(nc_def_var(file_id, "hruId", NC_DOUBLE, 1, &feature_dimension_id,
+                                  &feature_variable_id),
+                       "unable to define test feature variable");
+    if (fixture.feature_indexed_temperature_) {
+        const std::array<int, 2> forcing_dimensions{time_dimension_id,
+                                                    feature_dimension_id};
+        check_test_net_cdf(nc_def_var(file_id, "air_temperature", NC_DOUBLE,
+                                      forcing_dimensions.size(), forcing_dimensions.data(),
+                                      &temperature_variable_id),
+                           "unable to define test forcing variable");
+    } else {
+        check_test_net_cdf(nc_def_var(file_id, "air_temperature", NC_DOUBLE, 1,
+                                      &time_dimension_id, &temperature_variable_id),
+                           "unable to define test forcing variable");
+    }
+
+    const std::string axis = "T";
+    const std::string time_units = "seconds since 2000-01-01 00:00:00";
+    const std::string temperature_units = "K";
+    check_test_net_cdf(nc_put_att_text(file_id, time_variable_id, "axis", axis.size(),
+                                       axis.data()),
+                       "unable to write test time axis");
+    check_test_net_cdf(nc_put_att_text(file_id, time_variable_id, "units",
+                                       time_units.size(), time_units.data()),
+                       "unable to write test time units");
+    check_test_net_cdf(nc_put_att_text(file_id, temperature_variable_id, "units",
+                                       temperature_units.size(), temperature_units.data()),
+                       "unable to write test forcing units");
+    const double missing_value = -9999.0;
+    check_test_net_cdf(nc_put_att_double(file_id, temperature_variable_id, "_FillValue",
+                                         NC_DOUBLE, 1, &missing_value),
+                       "unable to write test forcing fill value");
+
+    check_test_net_cdf(nc_enddef(file_id), "unable to finish defining NetCDF test fixture");
+    check_test_net_cdf(nc_put_var_double(file_id, time_variable_id, fixture.times_.data()),
+                       "unable to write test times");
+    check_test_net_cdf(nc_put_var_double(file_id, feature_variable_id,
+                                         fixture.feature_ids_.data()),
+                       "unable to write test feature identifiers");
+    check_test_net_cdf(nc_put_var_double(file_id, temperature_variable_id,
+                                         fixture.air_temperatures_.data()),
+                       "unable to write test forcing values");
+    check_test_net_cdf(nc_close(file_id), "unable to close NetCDF test fixture");
+}
+
+// Execute one direct dynamic task against a test-owned NetCDF forcing file
+miaow::TaskResult run_net_cdf_forcing_fixture(const std::string& case_name,
+                                              const NetCdfForcingFixture& fixture,
+                                              const std::string& feature_id) {
+    const std::filesystem::path test_root =
+        std::filesystem::path(MIAOW_BMI_TEST_OUTPUT_ROOT) / ("net_cdf_" + case_name);
+    const std::filesystem::path forcing_path = test_root / "forcing.nc";
+    std::filesystem::remove_all(test_root);
+    std::filesystem::create_directories(test_root);
+    write_net_cdf_forcing_fixture(forcing_path, fixture);
+
+    miaow::TaskResult result;
+    {
+        miaow::SimulationUnitRegistry registry;
+        const miaow::SimulationUnitId dynamic_bmi =
+            registry.add<miaow::DynamicBmiSimulationUnit>();
+        miaow::Runtime runtime(registry);
+        const miaow::DynamicBmiConfig config{
+            .backend_ = miaow::DynamicBmiBackend::fortran,
+            .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
+            .forcing_ = miaow::BmiForcingConfig{
+                .format_ = miaow::BmiDataFormat::netcdf,
+                .file_ = forcing_path.string(),
+                .feature_id_variable_ = "hruId",
+                .variables_names_map_ = {{"temperature", "air_temperature"}},
+            },
+        };
+        const miaow::JobRecord job_record =
+            runtime.submit_job(miaow::make_bmi_task(dynamic_bmi, config, feature_id)).get();
+        result = job_record.tasks_.at(0).result_;
+    }
+
+    std::filesystem::remove_all(test_root);
+    return result;
+}
+
+} // namespace
 
 // Build a static BMI task with its serialized configuration
 BOOST_AUTO_TEST_CASE(static_config_creates_a_task) {
@@ -66,6 +197,32 @@ BOOST_AUTO_TEST_CASE(dynamic_config_creates_a_task) {
 
     BOOST_TEST(task.simulation_unit_id_ == 9);
     BOOST_REQUIRE_EQUAL(task.args_.size(), 1);
+}
+
+// Enforce fields that distinguish CSV forcing from feature-indexed NetCDF forcing
+BOOST_AUTO_TEST_CASE(forcing_config_enforces_format_specific_fields) {
+    miaow::DynamicBmiConfig dynamic_config{
+        .plugin_path_ = "model.so",
+        .forcing_ = miaow::BmiForcingConfig{
+            .file_ = "forcing.csv",
+            .feature_id_variable_ = "hruId",
+        },
+    };
+    BOOST_CHECK_THROW(miaow::make_bmi_task(0, dynamic_config), std::runtime_error);
+
+    dynamic_config.forcing_->format_ = miaow::BmiDataFormat::netcdf;
+    dynamic_config.forcing_->feature_id_variable_.reset();
+    BOOST_CHECK_THROW(miaow::make_bmi_task(0, dynamic_config, "202"),
+                      std::runtime_error);
+
+    dynamic_config.forcing_->feature_id_variable_ = "hruId";
+    BOOST_CHECK_THROW(miaow::make_bmi_task(0, dynamic_config), std::runtime_error);
+
+    const miaow::StaticBmiConfig static_config{
+        .init_config_ = "model.ini",
+        .forcing_ = dynamic_config.forcing_,
+    };
+    BOOST_CHECK_THROW(miaow::make_bmi_task(0, static_config), std::runtime_error);
 }
 
 // Exercise dynamic Fortran BMI loading and lifecycle execution in the parent process
@@ -180,6 +337,151 @@ BOOST_AUTO_TEST_CASE(forcing_values_reach_model) {
     BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
 
     std::filesystem::remove_all(output_root);
+}
+
+// Select one feature from a shared NetCDF file and apply its forcing values
+BOOST_AUTO_TEST_CASE(net_cdf_feature_forcing_reaches_model) {
+    const std::filesystem::path test_root =
+        std::filesystem::path(MIAOW_BMI_TEST_OUTPUT_ROOT) / "net_cdf_forcing";
+    const std::filesystem::path forcing_path = test_root / "forcing.nc";
+    const std::filesystem::path output_root = test_root / "output";
+    std::filesystem::remove_all(test_root);
+    std::filesystem::create_directories(test_root);
+
+    write_net_cdf_forcing_fixture(forcing_path,
+                                  NetCdfForcingFixture{
+                                      .feature_ids_ = {101.0, 202.0},
+                                      .times_ = {5.0, 6.0, 7.0},
+                                      .air_temperatures_ = {10.0, 100.0, 20.0, 200.0, 30.0,
+                                                            300.0},
+                                  });
+
+    miaow::SimulationUnitRegistry registry;
+    const miaow::SimulationUnitId dynamic_bmi =
+        registry.add<miaow::DynamicBmiSimulationUnit>();
+    miaow::Runtime runtime(registry, miaow::RuntimeOptions{1, std::chrono::minutes(1),
+                                                           std::chrono::minutes(5),
+                                                           output_root.string()});
+
+    const miaow::DynamicBmiConfig config{
+        .backend_ = miaow::DynamicBmiBackend::fortran,
+        .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
+        .forcing_ = miaow::BmiForcingConfig{
+            .format_ = miaow::BmiDataFormat::netcdf,
+            .file_ = forcing_path.string(),
+            .feature_id_variable_ = "hruId",
+            .variables_names_map_ = {{"temperature", "air_temperature"}},
+        },
+        .output_ = miaow::BmiOutputConfig{
+            .variables_ = {"temperature"},
+        },
+    };
+    const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, config, "202");
+    const miaow::BmiPipelineConfig pipeline_config(task);
+    BOOST_CHECK(pipeline_config.forcing_format_ == miaow::BmiDataFormat::netcdf);
+    BOOST_REQUIRE(pipeline_config.forcing_feature_id_variable_.has_value());
+    BOOST_TEST(*pipeline_config.forcing_feature_id_variable_ == "hruId");
+    BOOST_TEST(pipeline_config.feature_id_ == "202");
+
+    const miaow::JobRecord job_record = runtime.submit_job(task).get();
+    BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);
+    BOOST_REQUIRE(job_record.tasks_.front().result_.status_ ==
+                  miaow::TaskStatus::succeeded);
+    BOOST_TEST(job_record.tasks_.front().result_.message_ ==
+               "BMI workflow complete (updates: 2)");
+
+    const std::filesystem::path job_directory =
+        output_root / ("run_" + std::to_string(job_record.run_id_)) /
+        ("job_" + std::to_string(job_record.job_id_));
+    std::ifstream output(job_directory / "results" / "task_0.csv");
+    BOOST_REQUIRE(output.is_open());
+    std::string line;
+    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
+    BOOST_TEST(line == "time,temperature");
+    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
+    BOOST_TEST(line == "0,0");
+    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
+    BOOST_TEST(line == "1,100");
+    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
+    BOOST_TEST(line == "2,200");
+    BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
+
+    std::ifstream artifact(job_directory / "task_0.json");
+    BOOST_REQUIRE(artifact.is_open());
+    std::ostringstream artifact_contents;
+    artifact_contents << artifact.rdbuf();
+    BOOST_TEST(artifact_contents.str().find("\"provider\":\"NetCdf\"") !=
+               std::string::npos);
+    BOOST_TEST(artifact_contents.str().find("\"feature_id_variable\":\"hruId\"") !=
+               std::string::npos);
+    BOOST_TEST(artifact_contents.str().find("\"feature\":{\"id\":\"202\"}") !=
+               std::string::npos);
+
+    std::filesystem::remove_all(test_root);
+}
+
+// Reject a task feature that is absent from the configured identifier variable
+BOOST_AUTO_TEST_CASE(net_cdf_rejects_missing_feature) {
+    const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+        "missing_feature",
+        NetCdfForcingFixture{
+            .feature_ids_ = {101.0, 202.0},
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {10.0, 100.0, 20.0, 200.0, 30.0, 300.0},
+        },
+        "303");
+
+    BOOST_REQUIRE(result.status_ == miaow::TaskStatus::failed);
+    BOOST_TEST(result.message_.find("does not contain feature '303'") !=
+               std::string::npos);
+}
+
+// Reject a mapped forcing variable that does not use the feature dimension
+BOOST_AUTO_TEST_CASE(net_cdf_rejects_invalid_forcing_dimensions) {
+    const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+        "invalid_dimensions",
+        NetCdfForcingFixture{
+            .feature_ids_ = {101.0, 202.0},
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {10.0, 20.0, 30.0},
+            .feature_indexed_temperature_ = false,
+        },
+        "202");
+
+    BOOST_REQUIRE(result.status_ == miaow::TaskStatus::failed);
+    BOOST_TEST(result.message_.find("contains no numeric variables with the time and "
+                                    "feature dimensions") != std::string::npos);
+}
+
+// Reject NetCDF time spacing that differs from the receiving model timestep
+BOOST_AUTO_TEST_CASE(net_cdf_rejects_timestep_mismatch) {
+    const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+        "timestep_mismatch",
+        NetCdfForcingFixture{
+            .feature_ids_ = {101.0, 202.0},
+            .times_ = {0.0, 2.0, 4.0},
+            .air_temperatures_ = {10.0, 100.0, 20.0, 200.0, 30.0, 300.0},
+        },
+        "202");
+
+    BOOST_REQUIRE(result.status_ == miaow::TaskStatus::failed);
+    BOOST_TEST(result.message_.starts_with("Forcing alignment error: forcing timestep"));
+}
+
+// Reject a selected NetCDF forcing value marked with the variable fill value
+BOOST_AUTO_TEST_CASE(net_cdf_rejects_missing_forcing_value) {
+    const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+        "missing_value",
+        NetCdfForcingFixture{
+            .feature_ids_ = {101.0, 202.0},
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {10.0, -9999.0, 20.0, 200.0, 30.0, 300.0},
+        },
+        "202");
+
+    BOOST_REQUIRE(result.status_ == miaow::TaskStatus::failed);
+    BOOST_TEST(result.message_.find("contains a missing value for feature '202' at time "
+                                    "index 0") != std::string::npos);
 }
 
 // Resolve an enabled empty selection to every BMI output variable

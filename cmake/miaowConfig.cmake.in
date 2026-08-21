@@ -1,5 +1,8 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+find_dependency(netCDF 4.8 CONFIG)
+
 # Locate the Boost component used by the static MIAOW library
 find_package(Boost CONFIG QUIET COMPONENTS json)
 if(NOT TARGET Boost::json)
@@ -59,6 +62,7 @@ set_property(TARGET miaow::miaow APPEND PROPERTY INTERFACE_LINK_LIBRARIES
     "${MIAOW_CAF_IO_TARGET}"
     "$<LINK_ONLY:Boost::json>"
     "$<LINK_ONLY:${MIAOW_ISO_C_BMI_LIBRARY}>"
+    "$<LINK_ONLY:netCDF::netcdf>"
 )
 
 unset(MIAOW_CAF_CORE_TARGET)

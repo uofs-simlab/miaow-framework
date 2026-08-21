@@ -18,7 +18,11 @@ target_compile_definitions(miaow_bmi_tests PRIVATE
     MIAOW_BMI_TEST_OUTPUT_ROOT="${CMAKE_CURRENT_BINARY_DIR}/output/bmi"
     MIAOW_TEST_BMI_FORCING_PATH="${CMAKE_CURRENT_SOURCE_DIR}/bmi/fixtures/forcing.csv"
 )
-target_link_libraries(miaow_bmi_tests PRIVATE miaow Boost::unit_test_framework)
+target_link_libraries(miaow_bmi_tests PRIVATE
+    miaow
+    Boost::unit_test_framework
+    netCDF::netcdf
+)
 add_dependencies(miaow_bmi_tests miaow_subprocess)
 
 add_executable(miaow_io_tests
