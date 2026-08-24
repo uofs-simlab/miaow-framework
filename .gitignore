@@ -42,6 +42,7 @@ examples/*/build*/
 examples/*/extern/
 examples/*/data/plugins/
 examples/*/out/
+**/fuse_grid_data/
 /examples/06_summa_streamflow/
 
 # Local helper scripts
