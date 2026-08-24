@@ -30,6 +30,7 @@ Additional examples
 
 - `examples/04_summa <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_summa>`_: `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline execution and one MIAOW task per staged catchment feature described by a NextGen-style realization
 - `examples/05_libtrixi_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/05_libtrixi_bmi>`_: `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin in a single-task subprocess
+- `examples/06_fuse_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/06_fuse_bmi>`_: deterministic 256-member Saltelli ensemble using the `FUSE <https://github.com/uofs-simlab/fuse>`_ dynamic Fortran BMI plugin
 
 SUMMA
 ^^^^^
@@ -57,6 +58,8 @@ The following example-specific flags control the SUMMA build:
      - ``-framework Accelerate`` on macOS, empty otherwise
      - LAPACK/BLAS link flags passed to SUMMA
 
+SUMMA is distributed under the `GNU General Public License version 3 <https://github.com/CH-Earth/summa/blob/master/COPYING>`_.
+
 Trixi.jl
 ^^^^^^^^
 
@@ -81,6 +84,48 @@ The ``examples/05_libtrixi_bmi`` example runs `Trixi.jl <https://github.com/trix
    * - ``-DLIBTRIXI_DEPOT_PATH``
      - ``<libtrixi-bmi>/build/julia-depot``
      - Optional Julia depot passed to ``trixi_initialize``
+
+`Trixi.jl <https://github.com/trixi-framework/Trixi.jl/blob/main/LICENSE.md>`_ and `libtrixi <https://github.com/trixi-framework/libtrixi/blob/main/LICENSE.md>`_ are distributed under the MIT License.
+
+FUSE
+^^^^
+
+The ``examples/06_fuse_bmi`` example runs a deterministic 256-member Saltelli ensemble through FUSE's dynamic Fortran BMI plugin. It requires NetCDF Fortran and Python 3; the Python script that creates task configurations with machine-specific paths uses only the standard library. The parameter-set NetCDF files are tracked in ``examples/06_fuse_bmi/data/paramsets``, while CMake locates or downloads the forcing, elevation-band, and settings data. It is not part of the default example set.
+
+From the repository root, configure, build, and run the example with:
+
+.. code-block:: sh
+
+   cmake -S . -B build \
+       -DBUILD_EXAMPLES=ON \
+       -DMIAOW_EXAMPLES=06_fuse_bmi \
+       -DMIAOW_FUSE_FETCH_DATA=ON
+   cmake --build build --target miaow_fuse_bmi
+   cd examples/06_fuse_bmi
+   ./miaow_fuse_bmi --max_workers 6 --task_request_timeout 900 --job_request_timeout 14400
+
+The following example-specific flags control the FUSE model and data paths:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 30 45
+
+   * - Flag
+     - Default
+     - Description
+   * - ``-DMIAOW_FUSE_MODEL_ROOT``
+     - ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/fuse``
+     - Local FUSE checkout; CMake fetches the pinned revision when it is absent
+   * - ``-DMIAOW_FUSE_DATA_ROOT``
+     - Empty
+     - Extracted ``fuse_grid`` dataset; CMake first checks ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/fuse_grid`` when this is empty
+   * - ``-DMIAOW_FUSE_FETCH_DATA``
+     - ``OFF``
+     - Download the verified FUSE grid archive when no local dataset is available
+
+The opt-in download uses the `FUSE grid test case <https://dl.dropboxusercontent.com/s/g5193e0n01ao33d/fuse_grid.zip?dl=0>`_. The archive has SHA-256 ``96b933943e653a085b792be77c97854a9e04d1747fd60b12f62e882a36416f23`` and is approximately 40.3 MiB compressed or 61 MiB extracted. CMake stores the extracted dataset and generated task configurations under ``build/fuse_grid_data``, which is ignored by Git. The parameter sets were generated using FUSE's `bmi/generate_param_sets.py <https://github.com/uofs-simlab/fuse/blob/d73d24bb8678908973ca6f82f9d6eb6405cbb85f/bmi/generate_param_sets.py>`_ script at revision ``d73d24bb8678908973ca6f82f9d6eb6405cbb85f`` with ``N_BASE_SAMPLES = 8`` and ``CONSTRAINTS_FILE`` set to the ``settings/fuse_zConstraints_snow.txt`` file from the downloaded ``fuse_grid`` dataset. The script creates 256 parameter sets in NetCDF format, which are tracked in the repository under ``examples/06_fuse_bmi/data/paramsets``.
+
+The FUSE repository is distributed under GNU GPL version 3.
 
 Example command-line options
 ----------------------------

@@ -42,6 +42,7 @@ examples/*/build*/
 examples/*/extern/
 examples/*/data/plugins/
 examples/*/out/
+**/fuse_grid_data/
 /examples/06_summa_streamflow/
 
 # Local helper scripts
@@ -89,6 +90,8 @@ examples/04_summa/data/*/summa_output/
 __pycache__/
 *.pyc
 docs/.venv/
+examples/06_fuse_bmi/data/configs/
+*.log
 
 # LaTeX intermediates
 /docs/tikz/*.aux

@@ -1,0 +1,29 @@
+FUSE_FILEMANAGER_V1.5
+! Absolute paths keep each subprocess independent of its working directory
+'@FUSE_SETTINGS_DIR@/'          ! SETNGS_PATH
+'@FUSE_INPUT_DIR@/'             ! INPUT_PATH
+'@FUSE_OUTPUT_DIR@/'            ! OUTPUT_PATH
+! Input suffixes are appended to the domain name from the BMI configuration
+'_input.nc'                      ! suffix_forcing
+'_elev_bands.nc'                 ! suffix_elev_bands
+! Settings files are resolved beneath SETNGS_PATH
+'input_info.txt '                ! FORCING INFO
+'fuse_zConstraints_snow.txt'     ! CONSTRAINTS
+'fuse_zNumerix.txt'              ! MOD_NUMERIX
+'fuse_zDecisions_902.txt'        ! M_DECISIONS
+! Output settings retain the validated FUSE grid model structure
+'902'                            ! FMODEL_ID
+'TRUE'                           ! Q_ONLY
+! The reference FUSE grid experiment uses this one-year simulation period
+'2001-10-01'                     ! date_start_sim
+'2002-09-30'                     ! date_end_sim
+'2002-07-01'                     ! date_start_eval
+'2002-09-30'                     ! date_end_eval
+'-9999'                          ! numtim_sub
+! This FUSE revision requires an objective metric and streamflow transformation
+'KGE'                            ! METRIC
+'1'                              ! TRANSFO: identity power transformation
+! Calibration controls are parsed by FUSE but unused by the BMI ensemble
+'20'                             ! MAXN
+'3'                              ! KSTOP
+'0.001'                          ! PCENTO
