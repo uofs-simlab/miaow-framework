@@ -90,9 +90,9 @@ The ``examples/05_libtrixi_bmi`` example runs `Trixi.jl <https://github.com/trix
 FUSE
 ^^^^
 
-The ``examples/06_fuse_bmi`` example runs a deterministic 256-member Saltelli ensemble through FUSE's dynamic Fortran BMI plugin. It requires NetCDF Fortran and Python 3; the Python script that creates task configurations with machine-specific paths uses only the standard library. The parameter-set NetCDF files are tracked in ``examples/06_fuse_bmi/data/paramsets``, while CMake locates or downloads the forcing, elevation-band, and settings data. It is not part of the default example set.
+The ``examples/06_fuse_bmi`` example runs a deterministic 256-member Saltelli ensemble through FUSE's dynamic Fortran BMI plugin. It requires NetCDF Fortran and Python 3 with no additional packages. The NetCDF parameter files are tracked in ``examples/06_fuse_bmi/data/paramsets``, while CMake locates or downloads the forcing, elevation-band, and settings data. This case is not part of the default example set.
 
-From the repository root, configure, build, and run the example with:
+Using six workers, the ensemble can be run from the example root directory with the following commands:
 
 .. code-block:: sh
 
@@ -123,9 +123,9 @@ The following example-specific flags control the FUSE model and data paths:
      - ``OFF``
      - Download the verified FUSE grid archive when no local dataset is available
 
-The opt-in download uses the `FUSE grid test case <https://dl.dropboxusercontent.com/s/g5193e0n01ao33d/fuse_grid.zip?dl=0>`_. The archive has SHA-256 ``96b933943e653a085b792be77c97854a9e04d1747fd60b12f62e882a36416f23`` and is approximately 40.3 MiB compressed or 61 MiB extracted. CMake stores the extracted dataset and generated task configurations under ``build/fuse_grid_data``, which is ignored by Git. The parameter sets were generated using FUSE's `bmi/generate_param_sets.py <https://github.com/uofs-simlab/fuse/blob/d73d24bb8678908973ca6f82f9d6eb6405cbb85f/bmi/generate_param_sets.py>`_ script at revision ``d73d24bb8678908973ca6f82f9d6eb6405cbb85f`` with ``N_BASE_SAMPLES = 8`` and ``CONSTRAINTS_FILE`` set to the ``settings/fuse_zConstraints_snow.txt`` file from the downloaded ``fuse_grid`` dataset. The script creates 256 parameter sets in NetCDF format, which are tracked in the repository under ``examples/06_fuse_bmi/data/paramsets``.
+The opt-in download uses the `FUSE grid test case <https://dl.dropboxusercontent.com/s/g5193e0n01ao33d/fuse_grid.zip?dl=0>`_. CMake stores the extracted dataset and generated task configurations under ``build/fuse_grid_data``, which is ignored by Git. The provided parameter sets were generated using FUSE's `bmi/generate_param_sets.py <https://github.com/uofs-simlab/fuse/blob/d73d24bb8678908973ca6f82f9d6eb6405cbb85f/bmi/generate_param_sets.py>`_ script at revision ``d73d24bb8678908973ca6f82f9d6eb6405cbb85f`` with ``N_BASE_SAMPLES = 8`` and ``CONSTRAINTS_FILE`` set to the ``settings/fuse_zConstraints_snow.txt`` file from the downloaded ``fuse_grid`` dataset. The script creates 256 parameter sets in NetCDF format, which are tracked in this repository under ``examples/06_fuse_bmi/data/paramsets``.
 
-The FUSE repository is distributed under GNU GPL version 3.
+The FUSE repository is distributed under the `GNU General Public License version 3 <https://github.com/uofs-simlab/fuse/blob/master/COPYING>`_.
 
 Example command-line options
 ----------------------------
