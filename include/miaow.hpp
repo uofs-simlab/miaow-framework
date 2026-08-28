@@ -190,6 +190,10 @@ inline std::string task_status_to_string(TaskStatus status) {
 
 /**
  * @brief `TaskResult` returned by one simulation unit task execution.
+ *
+ * `output_` stores optional output data as a scalar, list, dictionary, or
+ * recursively nested combination. Large or independently consumable files remain
+ * artifacts referenced by `artifact_paths_`.
  */
 struct TaskResult {
     /// Construct an empty failed task result
@@ -198,7 +202,7 @@ struct TaskResult {
     /**
      * @brief Construct a `TaskResult` from status, message, and artifact paths.
      * @param status Terminal status for this task execution.
-     * @param message Message interpreted by `status` as output or failure detail.
+     * @param message Human-readable completion or failure detail.
      * @param artifact_paths Relative paths to artifacts under the job directory.
      */
     TaskResult(TaskStatus status, std::string message,
@@ -206,11 +210,26 @@ struct TaskResult {
         : status_{status}, message_{std::move(message)},
           artifact_paths_{std::move(artifact_paths)} {}
 
+    /**
+     * @brief Construct a `TaskResult` from status, message, output, and artifacts.
+     * @param status Terminal status for this task execution.
+     * @param message Human-readable completion or failure detail.
+     * @param output Structured output for controllers and callers.
+     * @param artifact_paths Relative paths to artifacts under the job directory.
+     */
+    TaskResult(TaskStatus status, std::string message, caf::config_value output,
+               std::vector<std::string> artifact_paths = {})
+        : status_{status}, message_{std::move(message)}, output_{std::move(output)},
+          artifact_paths_{std::move(artifact_paths)} {}
+
     /// Simulation-unit status for this task execution
     TaskStatus status_{TaskStatus::failed};
 
     /// Message interpreted by `status_` as output or failure detail
     std::string message_;
+
+    /// Structured output available to the JobController and runtime caller
+    caf::config_value output_;
 
     /// Relative paths to task artifacts produced under the job directory
     std::vector<std::string> artifact_paths_;
@@ -577,9 +596,11 @@ template <class Inspector> bool inspect(Inspector& inspector, TaskStatus& task_s
 template <class Inspector> bool inspect(Inspector& inspector, TaskResult& task_result) {
     // Defines how CAF serializes/deserializes `TaskResult` for actor messaging
     return inspector.object(task_result)
-        .fields(inspector.field("status", task_result.status_),
-                inspector.field("message", task_result.message_),
-                inspector.field("artifact_paths", task_result.artifact_paths_));
+        .fields(
+            inspector.field("status", task_result.status_),
+            inspector.field("message", task_result.message_),
+            inspector.field("output", task_result.output_).fallback(caf::config_value{}),
+            inspector.field("artifact_paths", task_result.artifact_paths_));
 }
 
 /**
