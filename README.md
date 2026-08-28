@@ -1,4 +1,4 @@
-# MIAOW: Model-Independent Actor Orchestration Workflows for Scientific Computing
+# MIAOW: Model-Independent Actor-Orchestrated Workflows for Scientific Computing
 
 <a href="https://github.com/uofs-simlab/miaow-framework/actions/workflows/ci.yml"><img
     alt="CI"
