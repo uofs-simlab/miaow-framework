@@ -23,7 +23,7 @@ Default examples
 - `examples/01_heat <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/01_heat>`_: BMI integration using the `CSDMS heat example <https://github.com/csdms/bmi-example-cxx>`_
 - `examples/02_soil_freeze_thaw <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/02_soil_freeze_thaw>`_: static `SoilFreezeThaw <https://github.com/NOAA-OWP/SoilFreezeThaw>`_ BMI integration with aligned per-task forcing
 - `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: in-process dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
-- `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: one initial hello task whose completion generates two additional tasks
+- `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: computes a square root using Heron's method, where tasks output the next estimate and residual for the job controller to check for convergence and generate the next task
 
 Additional examples
 -------------------
