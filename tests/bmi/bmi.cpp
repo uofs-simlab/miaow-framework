@@ -179,6 +179,7 @@ BOOST_AUTO_TEST_CASE(forcing_values_reach_model) {
     BOOST_TEST(line == "2,20");
     BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
 
+    output.close();
     std::filesystem::remove_all(output_root);
 }
 
@@ -228,6 +229,8 @@ BOOST_AUTO_TEST_CASE(empty_output_variables_write_all_task_outputs) {
     BOOST_TEST(config_contents.str().find("\"output_variables\":[]") !=
                std::string::npos);
 
+    output.close();
+    config_artifact.close();
     std::filesystem::remove_all(output_root);
 }
 
@@ -327,6 +330,7 @@ BOOST_AUTO_TEST_CASE(realization_without_output_variables_writes_all_outputs) {
     BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
     BOOST_TEST(line == "time,temperature");
 
+    output.close();
     std::filesystem::remove_all(test_root);
 }
 
@@ -395,6 +399,7 @@ BOOST_AUTO_TEST_CASE(output_interval_writes_final_state) {
     BOOST_TEST(line == "2,20");
     BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
 
+    output.close();
     std::filesystem::remove_all(output_root);
 }
 
@@ -445,6 +450,7 @@ BOOST_AUTO_TEST_CASE(output_interval_uses_configured_tolerance) {
     BOOST_TEST(line == "2,0");
     BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
 
+    output.close();
     std::filesystem::remove_all(output_root);
 }
 
