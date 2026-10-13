@@ -1,29 +1,28 @@
 cff-version: "1.2.0"
 message: "If you use MIAOW in your work, please cite this software."
-type: software
+type: "software"
 title: "MIAOW: Model-Independent Actor-Orchestrated Workflows for Scientific Computing"
 authors:
-  - family-names: Montoya
-    given-names: Tristan
+  - family-names: "Montoya"
+    given-names: "Tristan"
     affiliation: "University of Saskatchewan"
     orcid: "https://orcid.org/0000-0002-4259-1449"
-  - family-names: Bidarvand
-    given-names: Mandana
+  - family-names: "Bidarvand"
+    given-names: "Mandana"
     affiliation: "University of Saskatchewan"
     orcid: "https://orcid.org/0009-0003-0047-0301"
-  - family-names: Spiteri
-    given-names: Raymond J.
+  - family-names: "Spiteri"
+    given-names: "Raymond J."
     affiliation: "University of Saskatchewan"
     orcid: "https://orcid.org/0000-0002-3513-6237"
 version: "0.1.0"
-license: MIT
+license: "MIT"
 repository-code: "https://github.com/uofs-simlab/miaow-framework"
 url: "https://tjbmontoya.com/miaow-framework/"
-abstract: >-
-  MIAOW is a C++ library for actor-based asynchronous orchestration of scientific
-  computing workflows, supporting integration with the Basic Model Interface (BMI).
+abstract: "MIAOW is a C++ library for actor-based asynchronous orchestration of scientific
+  computing workflows."
 keywords:
-  - scientific computing
-  - actor model
-  - asynchronous parallelism
-  - Basic Model Interface
+  - "scientific computing"
+  - "actor model"
+  - "asynchronous parallelism"
+  - "Basic Model Interface"
