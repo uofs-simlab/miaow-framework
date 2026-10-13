@@ -19,8 +19,8 @@ version: "0.1.0"
 license: "MIT"
 repository-code: "https://github.com/uofs-simlab/miaow-framework"
 url: "https://tjbmontoya.com/miaow-framework/"
-abstract: "MIAOW is a C++ library for actor-based asynchronous orchestration of scientific
-  computing workflows."
+abstract: "MIAOW is a C++ library for actor-based asynchronous orchestration of parallel
+  scientific computing workflows."
 keywords:
   - "scientific computing"
   - "actor model"
