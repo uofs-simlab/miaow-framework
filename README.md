@@ -35,6 +35,13 @@ brew install cmake gcc
 
 ## Quick start
 
+Clone the repository and enter the top-level directory:
+
+```sh
+git clone https://github.com/uofs-simlab/miaow-framework.git
+cd miaow-framework
+```
+
 Use the following commands to build MIAOW and run the `00_hello` example workflow:
 
 ```sh
