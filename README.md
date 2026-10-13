@@ -7,6 +7,12 @@
 <a href="https://tjbmontoya.com/miaow-framework/"><img
     alt="Documentation"
     src="https://img.shields.io/badge/docs-latest-blue.svg"></a>
+<a href="https://doi.org/10.5281/zenodo.23350882"><img
+    alt="DOI"
+    src="https://zenodo.org/badge/DOI/10.5281/zenodo.23350882.svg"></a>
+<a href="LICENSE"><img
+    alt="MIT License"
+    src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 
 <p align="center">
   <img src="docs/images/miaow_logo.svg" alt="MIAOW logo" width="360">
