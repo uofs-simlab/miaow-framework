@@ -110,10 +110,10 @@ static void begin_job_error_shutdown(caf::event_based_actor* self,
     complete_job_error_if_tasks_finished(self, state);
 }
 
-// Complete only when all tasks have been dispatched and finished
+// Complete when no queued tasks remain to dispatch and no dispatched tasks await results
 static void complete_job_if_all_tasks_finished(caf::event_based_actor* self,
                                                const std::shared_ptr<JobState>& state) {
-    // There is still undispatched work or at least one running task
+    // There is still queued work or at least one dispatched task awaiting a result
     if (state->next_task_to_dispatch_ < state->tasks_.size() ||
         state->active_task_count_ != 0) {
         return;
@@ -146,6 +146,20 @@ static void complete_task(caf::event_based_actor* self,
     if (state->pending_error_message_.has_value()) {
         complete_job_error_if_tasks_finished(self, state);
         return;
+    }
+
+    // Check whether the controller uses batch-synchronous task generation
+    if (state->job_controller_->task_generation_policy() ==
+        TaskGenerationPolicy::batch_synchronous) {
+        // Check whether queued tasks remain to dispatch or there are dispatched tasks
+        // awaiting results; if so, dispatch tasks and return without generating new tasks.
+        if (state->next_task_to_dispatch_ < state->tasks_.size() ||
+            state->active_task_count_ != 0) {
+            dispatch_tasks(self, state);
+            return;
+        }
+        // If we reach this point, it means there are no queued tasks and no active tasks,
+        // so we can proceed to generate new tasks. This will be a new batch of tasks.
     }
 
     try {

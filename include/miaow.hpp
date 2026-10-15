@@ -296,6 +296,18 @@ struct TaskRecord {
 };
 
 /**
+ * @brief Select when a job controller generates tasks from completed records.
+ */
+enum class TaskGenerationPolicy {
+    /// Call the controller after each task reports success or failure
+    asynchronous,
+
+    /// Call the controller when no queued tasks remain to dispatch and no dispatched
+    /// tasks are awaiting results
+    batch_synchronous,
+};
+
+/**
  * @brief Per-job policy for generating tasks from completed task records.
  *
  * One controller instance belongs to each submitted job and remains in the parent
@@ -311,13 +323,26 @@ struct TaskRecord {
  * returned task receives the next available `TaskId`, and the remaining tasks receive
  * consecutive `TaskId` values. Before dispatch, returned tasks undergo the same
  * runtime-field assignment and duplicate-name validation as initial tasks.
+ * With `TaskGenerationPolicy::batch_synchronous`, the initial tasks form the first batch
+ * and each returned vector forms the next batch. Failed tasks, including task timeouts,
+ * count toward batch completion; the controller decides how to handle their results.
  */
 class JobController {
   public:
+    /// Select when the job actor calls generate_new_tasks()
+    explicit JobController(
+        TaskGenerationPolicy task_generation_policy = TaskGenerationPolicy::asynchronous)
+        : task_generation_policy_{task_generation_policy} {}
+
     virtual ~JobController() = default;
 
+    /// Task generation policy selected at construction
+    TaskGenerationPolicy task_generation_policy() const {
+        return task_generation_policy_;
+    }
+
     /**
-     * @brief Generate tasks after one task execution returns success or failure.
+     * @brief Generate tasks when the selected task generation policy permits.
      * @param completed_task_records All completed task records in completion order.
      * @return Tasks to append to the current job in the order returned.
      */
@@ -326,6 +351,9 @@ class JobController {
         static_cast<void>(completed_task_records);
         return {};
     }
+
+  private:
+    TaskGenerationPolicy task_generation_policy_;
 };
 
 /**
@@ -701,9 +729,9 @@ class Runtime {
      * @brief Submit tasks with a controller that may generate additional work.
      *
      * The runtime takes ownership of `job_controller`. After each task execution
-     * returns success or failure, the owning job actor creates its `TaskRecord`, passes
-     * all completed task records to the controller, and appends any returned tasks to
-     * the job.
+     * returns success or failure, the owning job actor creates its `TaskRecord`. When
+     * the controller's task generation policy permits, it passes all completed task
+     * records to the controller and appends any returned tasks to the job.
      * An empty `tasks` vector returns an empty `JobRecord` without invoking
      * `job_controller`.
      *

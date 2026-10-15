@@ -13,14 +13,16 @@ MIAOW executes simulation workflows through an actor hierarchy inspired by `SUMM
 
 A typical workflow includes the following steps:
 
-1. Caller invokes ``Runtime::submit_job(task)``, ``Runtime::submit_job(tasks)``, or ``Runtime::submit_job(tasks, std::move(job_controller))``. In the third overload, ``job_controller`` has type ``std::unique_ptr<JobController>``, and ``Runtime`` takes ownership of the controller. The controller's role is to generate additional tasks after each task completes, and it can inspect all completed task records to determine what new tasks to generate.
+1. Caller invokes ``Runtime::submit_job(task)``, ``Runtime::submit_job(tasks)``, or ``Runtime::submit_job(tasks, std::move(job_controller))``. In the third overload, ``job_controller`` has type ``std::unique_ptr<JobController>``, and ``Runtime`` takes ownership of the controller. The controller's role is to generate additional tasks according to its task generation policy, and it can inspect all completed task records to determine what new tasks to generate.
 2. Runtime assigns a ``job_id`` and sends the tasks and job controller to ``orchestrator_actor``.
 3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector and creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_workers_``.
 4. The ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
 5. Each worker resolves ``Task::simulation_unit_id_``, constructs a new ``SimulationUnit``, executes the task, and returns a ``TaskResult`` to the job actor.
-6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``, passes all completed task records to its controller, appends tasks returned by the controller's ``generate_new_tasks()`` method to its task vector, adds workers if needed, and returns to step 4. This continues until no tasks are waiting or running.
+6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``. When the controller's task generation policy permits, it passes all completed task records to its controller, appends tasks returned by the controller's ``generate_new_tasks()`` method to its task vector, and adds workers if needed. It then returns to step 4. This continues until no queued tasks remain to dispatch and no dispatched tasks are awaiting results, and the controller returns no new tasks.
 7. Completed ``TaskRecord`` values are sorted by ``TaskId`` and stored in one ``JobRecord``.
 8. Runtime fulfils the caller's ``JobHandle`` future.
+
+``JobController`` uses ``TaskGenerationPolicy::asynchronous`` by default, calling ``generate_new_tasks()`` after each task reports a result. Alternatively, a derived controller can select synchronized batches by passing ``TaskGenerationPolicy::batch_synchronous`` to the ``JobController`` constructor. This policy calls ``generate_new_tasks()`` only when no queued tasks remain to dispatch and no dispatched tasks are awaiting results. The initial task vector forms the first batch, and each returned vector forms the next batch. Successful and failed results, including task timeouts, count toward batch completion; the controller decides how to handle failures. Both policies receive the full completed-record history in completion order. Tasks from earlier batches remain in the job's task vector.
 
 The following figure illustrates the task scheduling process managed by the ``job_actor`` in steps 4 through 6 of the above workflow, where the orange cat icons represent tasks:
 

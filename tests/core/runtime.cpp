@@ -150,6 +150,31 @@ class ThrowingJobController final : public miaow::JobController {
     }
 };
 
+// Retain controller inputs and generate one additional batch on the first call
+class RecordingJobController final : public miaow::JobController {
+  public:
+    RecordingJobController(
+        miaow::SimulationUnitId simulation_unit_id,
+        std::shared_ptr<std::vector<std::vector<miaow::TaskRecord>>> record_histories,
+        miaow::TaskGenerationPolicy policy = miaow::TaskGenerationPolicy::asynchronous)
+        : JobController(policy), simulation_unit_id_{simulation_unit_id},
+          record_histories_{std::move(record_histories)} {}
+
+    std::vector<miaow::Task> generate_new_tasks(
+        const std::vector<miaow::TaskRecord>& completed_task_records) override {
+        record_histories_->push_back(completed_task_records);
+        if (record_histories_->size() == 1) {
+            return {miaow::Task{simulation_unit_id_, "1"},
+                    miaow::Task{simulation_unit_id_, "1"}};
+        }
+        return {};
+    }
+
+  private:
+    miaow::SimulationUnitId simulation_unit_id_;
+    std::shared_ptr<std::vector<std::vector<miaow::TaskRecord>>> record_histories_;
+};
+
 } // namespace
 
 // Preserve recursively nested output through the TaskResult CAF inspector
@@ -293,6 +318,65 @@ BOOST_AUTO_TEST_CASE(controller_reports_the_heron_iteration_limit) {
             return std::string(exception.what()).find("maximum iteration count reached") !=
                    std::string::npos;
         });
+}
+
+// The default policy calls the controller after every result, including generated work
+BOOST_AUTO_TEST_CASE(asynchronous_controller_receives_each_task_result) {
+    miaow::SimulationUnitRegistry registry;
+    const miaow::SimulationUnitId echo = registry.add<EchoSimulationUnit>();
+    miaow::Runtime runtime(registry, miaow::RuntimeOptions{2});
+    const auto record_histories =
+        std::make_shared<std::vector<std::vector<miaow::TaskRecord>>>();
+
+    const miaow::JobRecord job_record =
+        runtime
+            .submit_job({miaow::Task{echo, "first"}, miaow::Task{echo, "second"}},
+                        std::make_unique<RecordingJobController>(echo, record_histories))
+            .get();
+
+    BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 4);
+    BOOST_REQUIRE_EQUAL(record_histories->size(), 4);
+    for (std::size_t index = 0; index < record_histories->size(); ++index) {
+        BOOST_TEST(record_histories->at(index).size() == index + 1);
+    }
+}
+
+// Wait for queued tasks and outstanding results, then include failures in the next call
+BOOST_AUTO_TEST_CASE(batch_synchronous_controller_waits_for_all_results) {
+    for (const std::size_t worker_count : {1, 2}) {
+        BOOST_TEST_CONTEXT("worker_count = " << worker_count) {
+            miaow::SimulationUnitRegistry registry;
+            const miaow::SimulationUnitId sleeper = registry.add<SleepSimulationUnit>();
+            miaow::Runtime runtime(registry, miaow::RuntimeOptions{worker_count});
+            const auto record_histories =
+                std::make_shared<std::vector<std::vector<miaow::TaskRecord>>>();
+
+            // Unequal durations exercise results arriving out of order with two workers;
+            // the missing duration produces a failed result within the first batch
+            const miaow::JobRecord job_record =
+                runtime
+                    .submit_job({miaow::Task{sleeper, "50"}, miaow::Task{sleeper, "1"},
+                                 miaow::Task{sleeper, std::vector<caf::config_value>{}}},
+                                std::make_unique<RecordingJobController>(
+                                    sleeper, record_histories,
+                                    miaow::TaskGenerationPolicy::batch_synchronous))
+                    .get();
+
+            BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 5);
+            BOOST_REQUIRE_EQUAL(record_histories->size(), 2);
+            const std::vector<miaow::TaskRecord>& first_batch = record_histories->front();
+            const std::vector<miaow::TaskRecord>& full_history = record_histories->back();
+            BOOST_REQUIRE_EQUAL(first_batch.size(), 3);
+            BOOST_REQUIRE_EQUAL(full_history.size(), 5);
+            for (std::size_t index = 0; index < first_batch.size(); ++index) {
+                const miaow::TaskRecord& record = first_batch.at(index);
+                BOOST_CHECK(record.result_.status_ == (record.task_id_ == 2
+                                                           ? miaow::TaskStatus::failed
+                                                           : miaow::TaskStatus::succeeded));
+                BOOST_TEST(full_history.at(index).task_id_ == record.task_id_);
+            }
+        }
+    }
 }
 
 // Reject feature identifiers that would assign the same artifact name to two tasks

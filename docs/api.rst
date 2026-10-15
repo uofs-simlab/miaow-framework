@@ -42,6 +42,8 @@ Runtime orchestration
 .. doxygenclass:: miaow::SimulationUnit
    :members:
 
+.. doxygenenum:: miaow::TaskGenerationPolicy
+
 .. doxygenclass:: miaow::JobController
    :members:
 
