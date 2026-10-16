@@ -271,15 +271,18 @@ struct TaskRecord {
      * @param result Success or failure result for this task.
      * @param run_time Elapsed time from dispatch until the result or timeout is recorded.
      * @param dispatch_offset_from_job_start Time from job start to dispatch, if known.
+     * @param worker_id Zero-based worker index within the job, if assigned.
      */
     TaskRecord(const Task& task, TaskId task_id, TaskResult result,
                std::chrono::duration<double> run_time,
                std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start =
-                   std::nullopt)
+                   std::nullopt,
+               std::optional<std::size_t> worker_id = std::nullopt)
         : task_id_{task_id}, simulation_unit_id_{task.simulation_unit_id_},
           task_name_{task.task_name_}, metadata_{task.metadata_},
           result_{std::move(result)}, run_time_{run_time},
-          dispatch_offset_from_job_start_{dispatch_offset_from_job_start} {}
+          dispatch_offset_from_job_start_{dispatch_offset_from_job_start},
+          worker_id_{worker_id} {}
 
     /// `TaskId` within the submitted job
     TaskId task_id_{0};
@@ -301,6 +304,9 @@ struct TaskRecord {
 
     /// Time from job start to dispatch; absent if not dispatched or timing is unavailable
     std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start_;
+
+    /// Zero-based worker index within the job; absent if no worker assignment is available
+    std::optional<std::size_t> worker_id_;
 };
 
 /**
@@ -657,7 +663,8 @@ template <class Inspector> bool inspect(Inspector& inspector, TaskRecord& task_r
                 inspector.field("result", task_record.result_),
                 inspector.field("run_time", task_record.run_time_),
                 inspector.field("dispatch_offset_from_job_start",
-                                task_record.dispatch_offset_from_job_start_));
+                                task_record.dispatch_offset_from_job_start_),
+                inspector.field("worker_id", task_record.worker_id_));
 }
 
 /**

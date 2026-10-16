@@ -218,17 +218,21 @@ BOOST_AUTO_TEST_CASE(task_result_output_round_trips_through_binary_serialization
     BOOST_TEST(!restored_no_output.output_);
 }
 
-// Preserve missing, zero, and positive dispatch offsets in actor messages and JSON
-BOOST_AUTO_TEST_CASE(task_record_dispatch_offset_round_trips_through_serialization) {
+// Preserve optional dispatch timing and worker assignment in actor messages and JSON
+BOOST_AUTO_TEST_CASE(task_record_dispatch_metadata_round_trips_through_serialization) {
     const miaow::Task task{1, "input"};
     const std::vector<std::optional<std::chrono::duration<double>>> dispatch_offsets{
         std::nullopt, std::chrono::duration<double>::zero(),
         std::chrono::duration<double>{0.125}, std::chrono::duration<double>{1.23456789}};
 
     for (const auto& dispatch_offset : dispatch_offsets) {
+        std::optional<std::size_t> worker_id;
+        if (dispatch_offset.has_value()) {
+            worker_id = *dispatch_offset == std::chrono::duration<double>::zero() ? 0 : 2;
+        }
         const miaow::TaskRecord original{
             task, 0, miaow::TaskResult{miaow::TaskStatus::succeeded, "finished"},
-            std::chrono::duration<double>{0.25}, dispatch_offset};
+            std::chrono::duration<double>{0.25}, dispatch_offset, worker_id};
 
         caf::byte_buffer buffer;
         caf::binary_serializer serializer{buffer};
@@ -237,6 +241,7 @@ BOOST_AUTO_TEST_CASE(task_record_dispatch_offset_round_trips_through_serializati
         caf::binary_deserializer deserializer{buffer};
         BOOST_REQUIRE(deserializer.apply(binary_record));
         BOOST_CHECK(binary_record.dispatch_offset_from_job_start_ == dispatch_offset);
+        BOOST_CHECK(binary_record.worker_id_ == worker_id);
         BOOST_CHECK(binary_record.run_time_ == original.run_time_);
 
         caf::json_writer writer;
@@ -247,6 +252,7 @@ BOOST_AUTO_TEST_CASE(task_record_dispatch_offset_round_trips_through_serializati
         BOOST_REQUIRE(reader.load(writer.str()));
         miaow::TaskRecord json_record;
         BOOST_REQUIRE(reader.apply(json_record));
+        BOOST_CHECK(json_record.worker_id_ == worker_id);
         const auto& json_offset = json_record.dispatch_offset_from_job_start_;
         BOOST_REQUIRE(json_offset.has_value() == dispatch_offset.has_value());
         if (dispatch_offset.has_value()) {
@@ -258,8 +264,8 @@ BOOST_AUTO_TEST_CASE(task_record_dispatch_offset_round_trips_through_serializati
     }
 }
 
-// Saved records without dispatch timing retain their original runtime
-BOOST_AUTO_TEST_CASE(task_record_reads_json_without_a_dispatch_offset) {
+// Saved records without dispatch metadata retain their original runtime
+BOOST_AUTO_TEST_CASE(task_record_reads_json_without_dispatch_metadata) {
     caf::json_reader reader;
     BOOST_REQUIRE(reader.load(R"({
         "task_id": 0,
@@ -272,8 +278,10 @@ BOOST_AUTO_TEST_CASE(task_record_reads_json_without_a_dispatch_offset) {
 
     miaow::TaskRecord record;
     record.dispatch_offset_from_job_start_ = std::chrono::duration<double>{1.0};
+    record.worker_id_ = 2;
     BOOST_REQUIRE(reader.apply(record));
     BOOST_TEST(!record.dispatch_offset_from_job_start_.has_value());
+    BOOST_TEST(!record.worker_id_.has_value());
     BOOST_TEST(record.run_time_.count() == 0.25);
 }
 
@@ -334,6 +342,9 @@ BOOST_AUTO_TEST_CASE(runtime_executes_tasks_and_writes_a_job_record) {
 
     for (std::size_t index = 0; index < job_record.tasks_.size(); ++index) {
         const miaow::TaskRecord& record = job_record.tasks_.at(index);
+        BOOST_REQUIRE(record.worker_id_.has_value());
+        BOOST_TEST(*record.worker_id_ == index);
+        BOOST_CHECK(stored_job_record.tasks_.at(index).worker_id_ == record.worker_id_);
         const auto& dispatch_offset = record.dispatch_offset_from_job_start_;
         BOOST_REQUIRE(dispatch_offset.has_value());
         BOOST_TEST(dispatch_offset->count() >= 0.0);
@@ -361,6 +372,10 @@ BOOST_AUTO_TEST_CASE(dispatch_offsets_describe_serial_task_intervals) {
     BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 2);
     const miaow::TaskRecord& first = job_record.tasks_.at(0);
     const miaow::TaskRecord& second = job_record.tasks_.at(1);
+    BOOST_REQUIRE(first.worker_id_.has_value());
+    BOOST_REQUIRE(second.worker_id_.has_value());
+    BOOST_TEST(*first.worker_id_ == 0);
+    BOOST_TEST(*second.worker_id_ == 0);
     BOOST_REQUIRE(first.dispatch_offset_from_job_start_.has_value());
     BOOST_REQUIRE(second.dispatch_offset_from_job_start_.has_value());
     BOOST_TEST(second.dispatch_offset_from_job_start_->count() >=
@@ -462,6 +477,9 @@ BOOST_AUTO_TEST_CASE(controller_task_generation_policies_control_callback_timing
                 for (const miaow::TaskRecord& record : full_history) {
                     const miaow::TaskRecord& final_record =
                         job_record.tasks_.at(record.task_id_);
+                    BOOST_REQUIRE(record.worker_id_.has_value());
+                    BOOST_TEST(*record.worker_id_ < worker_count);
+                    BOOST_CHECK(record.worker_id_ == final_record.worker_id_);
                     BOOST_REQUIRE(record.dispatch_offset_from_job_start_.has_value());
                     BOOST_TEST(record.dispatch_offset_from_job_start_->count() >= 0.0);
                     BOOST_TEST(
@@ -545,6 +563,8 @@ BOOST_AUTO_TEST_CASE(job_timeout_includes_a_generated_task) {
     BOOST_TEST(job_record.tasks_.at(1).result_.message_ ==
                "Job timeout: configured job timeout expired");
     const miaow::TaskRecord& timed_out_task = job_record.tasks_.at(1);
+    BOOST_REQUIRE(timed_out_task.worker_id_.has_value());
+    BOOST_TEST(*timed_out_task.worker_id_ == 0);
     BOOST_REQUIRE(timed_out_task.dispatch_offset_from_job_start_.has_value());
     BOOST_TEST(timed_out_task.run_time_.count() > 0.0);
     BOOST_TEST((*timed_out_task.dispatch_offset_from_job_start_ + timed_out_task.run_time_)
@@ -555,21 +575,29 @@ BOOST_AUTO_TEST_CASE(job_timeout_includes_a_generated_task) {
 BOOST_AUTO_TEST_CASE(job_timeout_distinguishes_dispatched_and_queued_task_timing) {
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId sleeper = registry.add<SleepSimulationUnit>();
-    miaow::Runtime runtime(registry, miaow::RuntimeOptions{1, std::chrono::seconds(1),
+    miaow::Runtime runtime(registry, miaow::RuntimeOptions{2, std::chrono::seconds(1),
                                                            std::chrono::milliseconds(20)});
     const miaow::JobRecord job_record =
-        runtime.submit_job({miaow::Task{sleeper, "250"}, miaow::Task{sleeper, "1"}}).get();
+        runtime
+            .submit_job({miaow::Task{sleeper, "250"}, miaow::Task{sleeper, "250"},
+                         miaow::Task{sleeper, "1"}})
+            .get();
 
-    BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 2);
-    const miaow::TaskRecord& dispatched = job_record.tasks_.at(0);
-    const miaow::TaskRecord& queued = job_record.tasks_.at(1);
-    BOOST_CHECK(dispatched.result_.status_ == miaow::TaskStatus::failed);
+    BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 3);
+    for (std::size_t index = 0; index < 2; ++index) {
+        const miaow::TaskRecord& dispatched = job_record.tasks_.at(index);
+        BOOST_CHECK(dispatched.result_.status_ == miaow::TaskStatus::failed);
+        BOOST_REQUIRE(dispatched.worker_id_.has_value());
+        BOOST_TEST(*dispatched.worker_id_ == index);
+        BOOST_REQUIRE(dispatched.dispatch_offset_from_job_start_.has_value());
+        BOOST_TEST(dispatched.dispatch_offset_from_job_start_->count() >= 0.0);
+        BOOST_TEST(dispatched.run_time_.count() > 0.0);
+        BOOST_TEST((*dispatched.dispatch_offset_from_job_start_ + dispatched.run_time_)
+                       .count() <= job_record.run_time_.count());
+    }
+    const miaow::TaskRecord& queued = job_record.tasks_.at(2);
     BOOST_CHECK(queued.result_.status_ == miaow::TaskStatus::failed);
-    BOOST_REQUIRE(dispatched.dispatch_offset_from_job_start_.has_value());
-    BOOST_TEST(dispatched.dispatch_offset_from_job_start_->count() >= 0.0);
-    BOOST_TEST(dispatched.run_time_.count() > 0.0);
-    BOOST_TEST((*dispatched.dispatch_offset_from_job_start_ + dispatched.run_time_).count()
-               <= job_record.run_time_.count());
+    BOOST_TEST(!queued.worker_id_.has_value());
     BOOST_TEST(!queued.dispatch_offset_from_job_start_.has_value());
     BOOST_TEST(queued.run_time_.count() == 0.0);
 }
@@ -590,6 +618,8 @@ BOOST_AUTO_TEST_CASE(task_timeout_marks_task_failed) {
     BOOST_TEST(job_record.tasks_.front().result_.message_.find("request_timeout") !=
                std::string::npos);
     const miaow::TaskRecord& timed_out_task = job_record.tasks_.front();
+    BOOST_REQUIRE(timed_out_task.worker_id_.has_value());
+    BOOST_TEST(*timed_out_task.worker_id_ == 0);
     BOOST_REQUIRE(timed_out_task.dispatch_offset_from_job_start_.has_value());
     BOOST_TEST(timed_out_task.run_time_.count() > 0.0);
     BOOST_TEST((*timed_out_task.dispatch_offset_from_job_start_ + timed_out_task.run_time_)

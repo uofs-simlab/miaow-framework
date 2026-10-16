@@ -143,7 +143,8 @@ static void complete_task(caf::event_based_actor* self,
     // Runtime creates a task record only after the task has completed
     state->completed_task_records_.push_back(
         TaskRecord{state->tasks_.at(task_id), static_cast<TaskId>(task_id),
-                   std::move(task_result), task_run_time, dispatch_offset_from_job_start});
+                   std::move(task_result), task_run_time, dispatch_offset_from_job_start,
+                   worker_id});
 
     // During error shutdown, record active results without generating or dispatching work
     if (state->pending_error_message_.has_value()) {
@@ -186,6 +187,7 @@ static void complete_task(caf::event_based_actor* self,
                                        state->runtime_options_, state->run_id_,
                                        state->job_id_);
             state->task_start_times_.resize(state->tasks_.size(), state->job_start_time_);
+            state->task_worker_ids_.resize(state->tasks_.size());
             spawn_workers_for_tasks(self, state);
         }
     } catch (const std::exception& exception) {
@@ -224,8 +226,9 @@ static void dispatch_tasks(caf::event_based_actor* self,
         // Task is active now that it's dispatched, so increment active_task_count
         ++state->active_task_count_;
 
-        // Record dispatch time for per-task runtime diagnostics
+        // Retain the dispatch time and worker assignment for task diagnostics
         state->task_start_times_.at(task_id) = std::chrono::steady_clock::now();
+        state->task_worker_ids_.at(task_id) = worker_id;
 
         // SubprocessState owns its timeout so cleanup precedes the delegated response
         const caf::timespan simulation_unit_request_timeout =
@@ -346,6 +349,7 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
 
     // Task start times are filled when each task is dispatched
     state->task_start_times_.assign(state->tasks_.size(), state->job_start_time_);
+    state->task_worker_ids_.resize(state->tasks_.size());
 
     // Workers use Task::simulation_unit_id_ to construct one fresh registered unit
 
@@ -411,7 +415,8 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
                     state->completed_task_records_.push_back(
                         TaskRecord{state->tasks_.at(task_id), static_cast<TaskId>(task_id),
                                    std::move(task_result), task_run_time,
-                                   dispatch_offset_from_job_start});
+                                   dispatch_offset_from_job_start,
+                                   state->task_worker_ids_.at(task_id)});
                 }
 
                 complete_job(self, state);

@@ -330,6 +330,9 @@ struct JobState {
 
     // Start times for each task, indexed by task ID
     std::vector<std::chrono::steady_clock::time_point> task_start_times_;
+
+    // Worker indices assigned at dispatch, indexed by task ID; queued tasks have no worker
+    std::vector<std::optional<std::size_t>> task_worker_ids_;
 };
 
 } // namespace miaow::core
