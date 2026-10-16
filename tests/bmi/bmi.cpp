@@ -498,4 +498,6 @@ BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_fresh_subprocess) {
     BOOST_CHECK(job_record.tasks_.front().result_.status_ == miaow::TaskStatus::succeeded);
     BOOST_TEST(job_record.tasks_.front().result_.message_ ==
                "BMI workflow complete (updates: 2)");
+    BOOST_REQUIRE(job_record.tasks_.front().worker_id_.has_value());
+    BOOST_TEST(*job_record.tasks_.front().worker_id_ == 0);
 }

@@ -144,10 +144,10 @@ Examples use the following runtime command-line options where applicable:
      - Maximum number of worker actors used for each job
    * - ``--task_request_timeout``
      - ``5``
-     - Timeout for one task execution, in seconds; MIAOW terminates the child process when a subprocess task exceeds this timeout
+     - Task-response timeout, in seconds; timed-out tasks fail. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.
    * - ``--job_request_timeout``
      - ``300``
-     - Maximum runtime for one job, in seconds
+     - Job timeout, in seconds; unfinished tasks fail and worker shutdown is requested. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.
    * - ``--output_root``
      - ``""``
      - Root directory path for runtime-managed output folders, disabled by default

@@ -281,7 +281,7 @@ struct JobState {
     RuntimeOptions runtime_options_;
 
     // Controller received through local CAF messages and retained for this job
-    // The job actor calls generate_new_tasks() after appending each TaskRecord
+    // The task generation policy determines when the job actor calls generate_new_tasks()
     // Returned tasks are appended to tasks_; the controller never leaves the parent process
     std::shared_ptr<JobController> job_controller_;
 
@@ -313,7 +313,7 @@ struct JobState {
     // Task ID of the next task to dispatch into an available worker slot
     std::size_t next_task_to_dispatch_{0};
 
-    // Number of tasks currently executing
+    // Number of dispatched task requests awaiting results
     std::size_t active_task_count_{0};
 
     // Job-level error reported after all active task requests finish
@@ -330,6 +330,9 @@ struct JobState {
 
     // Start times for each task, indexed by task ID
     std::vector<std::chrono::steady_clock::time_point> task_start_times_;
+
+    // Worker indices assigned at dispatch, indexed by task ID; queued tasks have no worker
+    std::vector<std::optional<std::size_t>> task_worker_ids_;
 };
 
 } // namespace miaow::core
