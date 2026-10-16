@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -268,13 +269,17 @@ struct TaskRecord {
      * @param task Submitted task whose metadata and simulation unit ID are copied.
      * @param task_id `TaskId` within the submitted job.
      * @param result Success or failure result for this task.
-     * @param run_time Wall-clock duration for this task.
+     * @param run_time Elapsed time from dispatch until the result or timeout is recorded.
+     * @param dispatch_offset_from_job_start Time from job start to dispatch, if known.
      */
     TaskRecord(const Task& task, TaskId task_id, TaskResult result,
-               std::chrono::duration<double> run_time)
+               std::chrono::duration<double> run_time,
+               std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start =
+                   std::nullopt)
         : task_id_{task_id}, simulation_unit_id_{task.simulation_unit_id_},
           task_name_{task.task_name_}, metadata_{task.metadata_},
-          result_{std::move(result)}, run_time_{run_time} {}
+          result_{std::move(result)}, run_time_{run_time},
+          dispatch_offset_from_job_start_{dispatch_offset_from_job_start} {}
 
     /// `TaskId` within the submitted job
     TaskId task_id_{0};
@@ -291,8 +296,11 @@ struct TaskRecord {
     /// Simulation-unit result for this task
     TaskResult result_;
 
-    /// Wall-clock duration for this task
+    /// Elapsed time from dispatch until the result or timeout is recorded
     std::chrono::duration<double> run_time_{};
+
+    /// Time from job start to dispatch; absent if not dispatched or timing is unavailable
+    std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start_;
 };
 
 /**
@@ -543,23 +551,24 @@ struct RuntimeOptions {
     /// Maximum number of worker actors used for each job
     std::size_t max_workers_;
 
-    /// Timeout for one task execution request; subprocess units terminate their child
-    /// process when this timeout expires
+    /// Timeout for one task response; expiry marks the task as failed. Subprocess tasks
+    /// are terminated; in-process execute() calls are not interrupted.
     std::chrono::milliseconds task_request_timeout_;
 
-    /// Maximum runtime for a job; completed records are preserved when this expires
+    /// Job timeout; expiry marks unfinished tasks as failed and requests worker shutdown.
+    /// Only subprocess tasks are terminated; in-process calls are not interrupted.
     std::chrono::milliseconds job_request_timeout_;
 
     /// Root output directory for run and job artifact folders; an empty value disables
-    /// all output directories and files
+    /// all output directories and files.
     std::string output_root_;
 
     /**
      * @brief Construct runtime options.
      * @param workers Maximum number of worker actors used for each job. Values of zero are
      *                clamped to one.
-     * @param task_timeout Timeout used for one simulation task request.
-     * @param job_timeout Maximum runtime for one submitted job.
+     * @param task_timeout Task-response timeout; terminates only subprocess tasks.
+     * @param job_timeout Timeout that fails unfinished tasks and requests worker shutdown.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      */
@@ -646,7 +655,9 @@ template <class Inspector> bool inspect(Inspector& inspector, TaskRecord& task_r
                 inspector.field("task_name", task_record.task_name_),
                 inspector.field("metadata", task_record.metadata_),
                 inspector.field("result", task_record.result_),
-                inspector.field("run_time", task_record.run_time_));
+                inspector.field("run_time", task_record.run_time_),
+                inspector.field("dispatch_offset_from_job_start",
+                                task_record.dispatch_offset_from_job_start_));
 }
 
 /**

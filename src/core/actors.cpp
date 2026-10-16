@@ -5,6 +5,7 @@
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -136,11 +137,13 @@ static void complete_task(caf::event_based_actor* self,
     // Record the wall-clock duration and success/failure message for this task ID
     const std::chrono::duration<double> task_run_time =
         std::chrono::steady_clock::now() - state->task_start_times_.at(task_id);
+    const std::chrono::duration<double> dispatch_offset_from_job_start =
+        state->task_start_times_.at(task_id) - state->job_start_time_;
 
     // Runtime creates a task record only after the task has completed
     state->completed_task_records_.push_back(
         TaskRecord{state->tasks_.at(task_id), static_cast<TaskId>(task_id),
-                   std::move(task_result), task_run_time});
+                   std::move(task_result), task_run_time, dispatch_offset_from_job_start});
 
     // During error shutdown, record active results without generating or dispatching work
     if (state->pending_error_message_.has_value()) {
@@ -379,6 +382,8 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
                     return;
                 }
 
+                // Use one observed timeout time for every unfinished task
+                const auto timeout_time = std::chrono::steady_clock::now();
                 std::vector<bool> task_has_record(state->tasks_.size(), false);
                 for (const TaskRecord& task_record : state->completed_task_records_) {
                     const std::size_t task_id =
@@ -392,10 +397,21 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
                     }
                     TaskResult task_result = make_failed_task_result(
                         "configured job timeout expired", "Job timeout");
+
+                    // Queued tasks have no dispatch offset or elapsed execution interval
+                    std::optional<std::chrono::duration<double>>
+                        dispatch_offset_from_job_start;
+                    std::chrono::duration<double> task_run_time{};
+                    if (task_id < state->next_task_to_dispatch_) {
+                        const auto task_start_time = state->task_start_times_.at(task_id);
+                        dispatch_offset_from_job_start =
+                            task_start_time - state->job_start_time_;
+                        task_run_time = timeout_time - task_start_time;
+                    }
                     state->completed_task_records_.push_back(
                         TaskRecord{state->tasks_.at(task_id), static_cast<TaskId>(task_id),
-                                   std::move(task_result),
-                                   std::chrono::duration<double>::zero()});
+                                   std::move(task_result), task_run_time,
+                                   dispatch_offset_from_job_start});
                 }
 
                 complete_job(self, state);
