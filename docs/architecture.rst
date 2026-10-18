@@ -38,6 +38,8 @@ Structured task output
 
 When ``RuntimeOptions::output_root_`` is configured, each task's structured output (or a ``null`` value) is included in the ``job_record.json`` written when the job completes.
 
+CAF uses MIAOW's ``inspect()`` functions to collect each job record's fields. nlohmann/json then writes the record to a JSON file. It also handles JSON text parsing and formatting for realization files and GeoJSON. Saved records retain CAF's type annotations and duration strings, with enough digits to round-trip finite double values. Non-finite numerical values are written as JSON ``null``.
+
 .. _simulation-unit-execution:
 
 Simulation unit execution

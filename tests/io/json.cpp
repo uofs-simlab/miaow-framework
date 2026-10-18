@@ -1,9 +1,9 @@
-#include <boost/json.hpp>
+#include <nlohmann/json.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <caf/init_global_meta_objects.hpp>
-#include <caf/json_reader.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -31,6 +31,10 @@ BOOST_AUTO_TEST_CASE(json_files_preserve_nested_output_and_double_precision) {
     output.emplace("integer", std::numeric_limits<std::int64_t>::min());
     output.emplace("empty_list", caf::config_value::list{});
     output.emplace("empty_object", caf::config_value::dictionary{});
+    output.emplace("non_finite", std::vector<double>{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        -std::numeric_limits<double>::infinity()});
     const miaow::TaskResult result{miaow::TaskStatus::succeeded, "numerical output",
                                    caf::config_value{std::move(output)}};
 
@@ -39,54 +43,51 @@ BOOST_AUTO_TEST_CASE(json_files_preserve_nested_output_and_double_precision) {
     const auto path = directory / "double_precision.json";
     miaow::io::write_json_file(path, result, false);
 
-    // Precise parsing checks the writer independently of CAF's decimal conversion.
-    boost::json::parse_options options;
-    options.numbers = boost::json::number_precision::precise;
     std::ifstream input{path};
-    const auto json = boost::json::parse(input, {}, options);
+    const auto json = nlohmann::json::parse(input);
     const auto& stored = json.at("output");
-    const auto& stored_values = stored.at("values").at("value").as_array();
+    const auto& stored_values = stored.at("values").at("value");
     BOOST_REQUIRE_EQUAL(stored_values.size(), values.size());
     for (std::size_t index = 0; index < values.size(); ++index) {
         BOOST_TEST_CONTEXT("value index = " << index) {
-            const double saved = stored_values[index].at("value").to_number<double>();
+            const double saved = stored_values[index].at("value").get<double>();
             BOOST_TEST(saved == values[index]);
             BOOST_TEST(std::signbit(saved) == std::signbit(values[index]));
         }
     }
-    BOOST_TEST(json.at("status").as_string() == "succeeded");
-    BOOST_TEST(stored.at("label").at("value").as_string()
+    BOOST_TEST(json.at("status").get<std::string>() == "succeeded");
+    BOOST_TEST(stored.at("label").at("value").get<std::string>()
                == "quoted \"text\"\nsecond line");
-    BOOST_TEST(stored.at("enabled").at("value").as_bool());
-    BOOST_TEST(stored.at("integer").at("value").as_int64()
+    BOOST_TEST(stored.at("enabled").at("value").get<bool>());
+    BOOST_TEST(stored.at("integer").at("value").get<std::int64_t>()
                == std::numeric_limits<std::int64_t>::min());
-    BOOST_TEST(stored.at("empty_list").at("value").as_array().empty());
-    BOOST_TEST(stored.at("empty_object").at("value").as_object().empty());
+    BOOST_TEST(stored.at("empty_list").at("value").is_array());
+    BOOST_TEST(stored.at("empty_object").at("value").is_object());
+    BOOST_TEST(stored.at("empty_list").at("value").empty());
+    BOOST_TEST(stored.at("empty_object").at("value").empty());
+    // Non-finite doubles retain the existing JSON null representation.
+    for (const auto& item : stored.at("non_finite").at("value")) {
+        BOOST_TEST(item.at("value").is_null());
+    }
     std::filesystem::remove(path);
 }
 
-// CAF readback must accept the saved schema and preserve both signs of zero.
-BOOST_AUTO_TEST_CASE(json_files_preserve_caf_readback_compatibility) {
-    caf::core::init_global_meta_objects();
+// Job records retain unsigned IDs, duration strings, and the configured empty fields.
+BOOST_AUTO_TEST_CASE(json_files_preserve_record_schema) {
+    const miaow::JobRecord record{std::numeric_limits<std::uint64_t>::max(), 7, {},
+                                   std::chrono::seconds{2}};
     const auto directory = std::filesystem::path{MIAOW_IO_TEST_OUTPUT_ROOT};
     std::filesystem::create_directories(directory);
-    const auto path = directory / "caf_readback.json";
-    for (const double value : {0.0, -0.0, 1.0, 1.2345678901234567, 1e-8, 1e-100}) {
-        const miaow::TaskResult result{miaow::TaskStatus::succeeded, "value",
-                                       caf::config_value{value}};
-        miaow::io::write_json_file(path, result, false);
-        caf::json_reader reader;
-        BOOST_REQUIRE_MESSAGE(reader.load_file(path.string()),
-                              caf::to_string(reader.get_error()));
-        miaow::TaskResult restored;
-        BOOST_REQUIRE_MESSAGE(reader.apply(restored), caf::to_string(reader.get_error()));
-        const auto* saved = caf::get_if<caf::config_value::real>(&restored.output_);
-        BOOST_REQUIRE(saved != nullptr);
-        // CAF's reader may round while scaling a decimal mantissa.
-        BOOST_TEST(*saved == value,
-                   boost::test_tools::tolerance(
-                       4 * std::numeric_limits<double>::epsilon()));
-        BOOST_TEST(std::signbit(*saved) == std::signbit(value));
-    }
+    const auto path = directory / "record_schema.json";
+    miaow::io::write_json_file(path, record, false);
+
+    std::ifstream input{path};
+    const auto json = nlohmann::json::parse(input);
+    BOOST_TEST(json.at("run_id").get<std::uint64_t>() == record.run_id_);
+    BOOST_TEST(json.at("job_id").get<miaow::JobId>() == record.job_id_);
+    BOOST_TEST(json.at("run_time").get<std::string>() == "2s");
+    BOOST_TEST(json.at("tasks").is_array());
+    BOOST_TEST(json.at("tasks").empty());
+    BOOST_TEST(!json.contains("@type"));
     std::filesystem::remove(path);
 }

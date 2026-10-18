@@ -22,6 +22,9 @@ endif()
 set(MIAOW_BOOST_PROVIDER "auto" CACHE STRING "Boost provider: auto, system, fetch")
 set(MIAOW_BOOST_VERSION "1.86.0" CACHE STRING "Boost version for FetchContent")
 set_property(CACHE MIAOW_BOOST_PROVIDER PROPERTY STRINGS auto system fetch)
+set(MIAOW_JSON_PROVIDER "auto" CACHE STRING "nlohmann/json provider: auto, system, fetch")
+set_property(CACHE MIAOW_JSON_PROVIDER PROPERTY STRINGS auto system fetch)
+set(MIAOW_JSON_VERSION "3.12.0" CACHE STRING "nlohmann/json version")
 set(MIAOW_CAF_PROVIDER "auto" CACHE STRING "CAF provider: auto, system, fetch")
 set_property(CACHE MIAOW_CAF_PROVIDER PROPERTY STRINGS auto system fetch)
 set(MIAOW_CAF_VERSION "1.1.0" CACHE STRING "CAF version")
@@ -40,67 +43,57 @@ function(miaow_validate_provider provider_name)
 endfunction()
 
 miaow_validate_provider(MIAOW_BOOST_PROVIDER)
+miaow_validate_provider(MIAOW_JSON_PROVIDER)
 miaow_validate_provider(MIAOW_CAF_PROVIDER)
 
-# Resolve only the Boost components used by the selected build
-set(miaow_boost_components json)
-set(miaow_boost_fetch_libraries json)
+# Boost is required only for the framework tests
 if(miaow_build_tests)
-    list(APPEND miaow_boost_components unit_test_framework)
-    list(APPEND miaow_boost_fetch_libraries test)
-endif()
-
-function(miaow_find_missing_boost_targets output_variable)
-    set(missing_targets)
-    foreach(boost_component IN LISTS miaow_boost_components)
-        if(NOT TARGET Boost::${boost_component})
-            list(APPEND missing_targets Boost::${boost_component})
+    if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
+        find_package(Boost CONFIG QUIET COMPONENTS unit_test_framework)
+        if(NOT TARGET Boost::unit_test_framework)
+            find_package(Boost QUIET COMPONENTS unit_test_framework)
         endif()
-    endforeach()
-    set(${output_variable} "${missing_targets}" PARENT_SCOPE)
-endfunction()
-
-if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
-    find_package(Boost CONFIG QUIET COMPONENTS ${miaow_boost_components})
-    miaow_find_missing_boost_targets(miaow_missing_boost_targets)
-    if(miaow_missing_boost_targets)
-        find_package(Boost QUIET COMPONENTS ${miaow_boost_components})
-        miaow_find_missing_boost_targets(miaow_missing_boost_targets)
     endif()
-else()
-    set(miaow_missing_boost_targets TRUE)
+
+    if(NOT TARGET Boost::unit_test_framework)
+        if(MIAOW_BOOST_PROVIDER STREQUAL "system")
+            message(FATAL_ERROR
+                "Boost.Test not found. Use Conan, install Boost, or set "
+                "MIAOW_BOOST_PROVIDER to auto or fetch.")
+        endif()
+
+        include(FetchContent)
+        set(BOOST_INCLUDE_LIBRARIES test CACHE STRING
+            "Boost libraries included by FetchContent" FORCE)
+        set(BOOST_ENABLE_CMAKE ON CACHE BOOL "Enable Boost CMake support" FORCE)
+        string(CONCAT miaow_boost_url
+            "https://github.com/boostorg/boost/releases/download/boost-"
+            "${MIAOW_BOOST_VERSION}/boost-${MIAOW_BOOST_VERSION}-cmake.tar.gz")
+        message(STATUS "Boost.Test not found. Fetching Boost ${MIAOW_BOOST_VERSION}...")
+        FetchContent_Declare(boost URL ${miaow_boost_url})
+        FetchContent_MakeAvailable(boost)
+    endif()
 endif()
 
-if(miaow_missing_boost_targets)
-    if(MIAOW_BOOST_PROVIDER STREQUAL "system")
+# JSON text parsing and formatting use one private, header-only dependency
+if(NOT MIAOW_JSON_PROVIDER STREQUAL "fetch")
+    find_package(nlohmann_json ${MIAOW_JSON_VERSION} QUIET CONFIG)
+endif()
+if(NOT TARGET nlohmann_json::nlohmann_json)
+    if(MIAOW_JSON_PROVIDER STREQUAL "system")
         message(FATAL_ERROR
-            "Required Boost targets not found: ${miaow_missing_boost_targets}. "
-            "Use Conan, install Boost, or set MIAOW_BOOST_PROVIDER to auto or fetch.")
+            "nlohmann/json not found. Use Conan, install nlohmann/json, or set "
+            "MIAOW_JSON_PROVIDER to auto or fetch.")
     endif()
-
     include(FetchContent)
-    set(BOOST_INCLUDE_LIBRARIES ${miaow_boost_fetch_libraries} CACHE STRING
-        "Boost libraries included by FetchContent" FORCE)
-    set(BOOST_ENABLE_CMAKE ON CACHE BOOL "Enable Boost CMake support" FORCE)
-    set(miaow_boost_release_url
-        "https://github.com/boostorg/boost/releases/download")
-    set(miaow_boost_cmake_archive
-        "boost-${MIAOW_BOOST_VERSION}-cmake.tar.gz")
-    string(CONCAT miaow_boost_url
-        "${miaow_boost_release_url}/boost-${MIAOW_BOOST_VERSION}"
-        "/${miaow_boost_cmake_archive}")
-    message(STATUS "Boost components not found. Fetching Boost ${MIAOW_BOOST_VERSION}...")
+    set(JSON_BuildTests OFF CACHE BOOL "Disable nlohmann/json tests" FORCE)
+    set(JSON_Install OFF CACHE BOOL "Disable nlohmann/json installation" FORCE)
+    message(STATUS "nlohmann/json not found. Fetching ${MIAOW_JSON_VERSION}...")
     FetchContent_Declare(
-        boost
-        URL ${miaow_boost_url}
+        nlohmann_json
+        URL https://github.com/nlohmann/json/releases/download/v${MIAOW_JSON_VERSION}/json.tar.xz
     )
-    FetchContent_MakeAvailable(boost)
-    miaow_find_missing_boost_targets(miaow_missing_boost_targets)
-endif()
-
-if(miaow_missing_boost_targets)
-    message(FATAL_ERROR
-        "Boost did not provide the expected targets: ${miaow_missing_boost_targets}")
+    FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
 set(MIAOW_CAF_CORE_TARGET "")
@@ -234,7 +227,7 @@ target_link_libraries(miaow
     PRIVATE
         ${MIAOW_CAF_CORE_TARGET}
         ${MIAOW_CAF_IO_TARGET}
-        Boost::json
+        nlohmann_json::nlohmann_json
         iso_c_bmi
         ${CMAKE_DL_LIBS}
 )
@@ -243,7 +236,6 @@ target_link_libraries(miaow
 set(miaow_interface_link_libraries
     "$<BUILD_INTERFACE:${MIAOW_CAF_CORE_TARGET}>"
     "$<BUILD_INTERFACE:${MIAOW_CAF_IO_TARGET}>"
-    "$<BUILD_INTERFACE:$<LINK_ONLY:Boost::json>>"
     "$<BUILD_INTERFACE:$<LINK_ONLY:iso_c_bmi>>"
 )
 if(CMAKE_DL_LIBS)
@@ -271,7 +263,7 @@ target_compile_features(miaow_subprocess PRIVATE cxx_std_20)
 target_include_directories(miaow_subprocess PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
-target_link_libraries(miaow_subprocess PRIVATE miaow Boost::json)
+target_link_libraries(miaow_subprocess PRIVATE miaow nlohmann_json::nlohmann_json)
 set_target_properties(miaow_subprocess PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
 )
