@@ -1,20 +1,18 @@
 #define BOOST_TEST_MODULE miaow_core
 #include <boost/test/unit_test.hpp>
-#include <boost/json.hpp>
 
 #include <caf/binary_deserializer.hpp>
 #include <caf/binary_serializer.hpp>
 #include <caf/byte_buffer.hpp>
-#include <caf/json_reader.hpp>
-#include <caf/json_writer.hpp>
+#include <caf/config_value_reader.hpp>
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -25,6 +23,7 @@
 #include <vector>
 
 #include "miaow.hpp"
+#include "io/internal.hpp"
 
 namespace {
 
@@ -375,6 +374,11 @@ BOOST_AUTO_TEST_CASE(task_record_dispatch_metadata_round_trips_through_serializa
         std::nullopt, std::chrono::duration<double>::zero(),
         std::chrono::duration<double>{0.125}, std::chrono::duration<double>{1.23456789}};
 
+    const auto directory = std::filesystem::path{MIAOW_CORE_TEST_OUTPUT_ROOT}
+                           / "dispatch_metadata";
+    std::filesystem::create_directories(directory);
+    const auto path = directory / "task_record.json";
+
     for (const auto& dispatch_offset : dispatch_offsets) {
         std::optional<std::size_t> worker_id;
         if (dispatch_offset.has_value()) {
@@ -394,37 +398,45 @@ BOOST_AUTO_TEST_CASE(task_record_dispatch_metadata_round_trips_through_serializa
         BOOST_CHECK(binary_record.worker_id_ == worker_id);
         BOOST_CHECK(binary_record.run_time_ == original.run_time_);
 
-        caf::json_writer writer;
-        writer.skip_object_type_annotation(true);
-        writer.skip_empty_fields(false);
-        BOOST_REQUIRE(writer.apply(original));
-        caf::json_reader reader;
-        BOOST_REQUIRE(reader.load(writer.str()));
-        miaow::TaskRecord json_record;
-        BOOST_REQUIRE(reader.apply(json_record));
-        BOOST_CHECK(json_record.worker_id_ == worker_id);
-        const auto& json_offset = json_record.dispatch_offset_from_job_start_;
-        BOOST_REQUIRE(json_offset.has_value() == dispatch_offset.has_value());
-        if (dispatch_offset.has_value()) {
-            // CAF prints six decimal places in the duration's selected unit
-            BOOST_TEST(json_offset->count() == dispatch_offset->count(),
-                       boost::test_tools::tolerance(1e-6));
+        miaow::io::write_json_file(path, original, false);
+        std::ifstream input{path};
+        const auto stored = nlohmann::json::parse(input);
+        if (worker_id.has_value()) {
+            BOOST_TEST(stored.at("worker_id").get<std::size_t>() == *worker_id);
+        } else {
+            BOOST_TEST(stored.at("worker_id").is_null());
         }
-        BOOST_CHECK(json_record.run_time_ == original.run_time_);
+        if (dispatch_offset.has_value()) {
+            const auto stored_offset = caf::get_as<std::chrono::duration<double>>(
+                caf::config_value{stored.at("dispatch_offset_from_job_start")
+                                      .get<std::string>()});
+            BOOST_REQUIRE(stored_offset);
+            // CAF prints six decimal places in the duration's selected unit
+            BOOST_TEST(stored_offset->count() == dispatch_offset->count(),
+                       boost::test_tools::tolerance(1e-6));
+        } else {
+            BOOST_TEST(stored.at("dispatch_offset_from_job_start").is_null());
+        }
+        BOOST_TEST(stored.at("run_time").get<std::string>() == "250ms");
     }
+    std::filesystem::remove_all(directory);
 }
 
-// Saved records without dispatch metadata retain their original runtime
-BOOST_AUTO_TEST_CASE(task_record_reads_json_without_dispatch_metadata) {
-    caf::json_reader reader;
-    BOOST_REQUIRE(reader.load(R"({
-        "task_id": 0,
-        "simulation_unit_id": 1,
-        "task_name": "task_0",
-        "metadata": {},
-        "result": {"status": "succeeded", "message": "finished", "artifact_paths": []},
-        "run_time": "0.25s"
-    })"));
+// Legacy fields without dispatch metadata retain their original runtime
+BOOST_AUTO_TEST_CASE(task_record_reads_fields_without_dispatch_metadata) {
+    caf::config_value::dictionary result;
+    result.emplace("status", "succeeded");
+    result.emplace("message", "finished");
+    result.emplace("artifact_paths", caf::config_value::list{});
+    caf::config_value::dictionary fields;
+    fields.emplace("task_id", 0);
+    fields.emplace("simulation_unit_id", 1);
+    fields.emplace("task_name", "task_0");
+    fields.emplace("metadata", caf::config_value::dictionary{});
+    fields.emplace("result", std::move(result));
+    fields.emplace("run_time", "0.25s");
+    const caf::config_value legacy_record{std::move(fields)};
+    caf::config_value_reader reader{&legacy_record};
 
     miaow::TaskRecord record;
     record.dispatch_offset_from_job_start_ = std::chrono::duration<double>{1.0};
@@ -479,31 +491,32 @@ BOOST_AUTO_TEST_CASE(runtime_executes_tasks_and_writes_a_job_record) {
     const std::filesystem::path job_record_path =
         output_root / "run_0" / "job_0" / "job_record.json";
     BOOST_REQUIRE(std::filesystem::is_regular_file(job_record_path));
-    BOOST_TEST(std::filesystem::file_size(job_record_path) > 0);
 
-    caf::json_reader reader;
-    BOOST_REQUIRE(reader.load_file(job_record_path.string()));
-    miaow::JobRecord stored_job_record;
-    BOOST_REQUIRE(reader.apply(stored_job_record));
-    BOOST_REQUIRE_EQUAL(stored_job_record.tasks_.size(), 2);
-    BOOST_CHECK(stored_job_record.tasks_.at(0).result_.output_ ==
-                job_record.tasks_.at(0).result_.output_);
-    BOOST_CHECK(stored_job_record.tasks_.at(1).result_.output_ ==
-                job_record.tasks_.at(1).result_.output_);
+    std::ifstream input(job_record_path);
+    const auto stored = nlohmann::json::parse(input);
+    BOOST_TEST(stored.at("run_id").get<std::uint64_t>() == job_record.run_id_);
+    BOOST_TEST(stored.at("job_id").get<miaow::JobId>() == job_record.job_id_);
+    BOOST_REQUIRE_EQUAL(stored.at("tasks").size(), 2);
+    BOOST_TEST(stored.at("tasks").at(0).at("result").at("output")
+                   .at("echo").at("value").get<std::string>() == "hello");
+    BOOST_TEST(stored.at("tasks").at(1).at("result").at("output")
+                   .at("echo").at("value").get<std::string>() == "world");
 
     for (std::size_t index = 0; index < job_record.tasks_.size(); ++index) {
         const miaow::TaskRecord& record = job_record.tasks_.at(index);
         BOOST_REQUIRE(record.worker_id_.has_value());
         BOOST_TEST(*record.worker_id_ == index);
-        BOOST_CHECK(stored_job_record.tasks_.at(index).worker_id_ == record.worker_id_);
+        const auto& stored_record = stored.at("tasks").at(index);
+        BOOST_TEST(stored_record.at("worker_id").get<std::size_t>() == *record.worker_id_);
         const auto& dispatch_offset = record.dispatch_offset_from_job_start_;
         BOOST_REQUIRE(dispatch_offset.has_value());
         BOOST_TEST(dispatch_offset->count() >= 0.0);
         BOOST_TEST((*dispatch_offset + record.run_time_).count() <=
                    job_record.run_time_.count());
-        const auto& stored_offset =
-            stored_job_record.tasks_.at(index).dispatch_offset_from_job_start_;
-        BOOST_REQUIRE(stored_offset.has_value());
+        const auto stored_offset = caf::get_as<std::chrono::duration<double>>(
+            caf::config_value{stored_record.at("dispatch_offset_from_job_start")
+                                  .get<std::string>()});
+        BOOST_REQUIRE(stored_offset);
         // CAF duration formatting can round the persisted value in its selected unit
         BOOST_TEST(stored_offset->count() == dispatch_offset->count(),
                    boost::test_tools::tolerance(1e-6));
@@ -862,57 +875,45 @@ BOOST_AUTO_TEST_CASE(controller_output_is_returned_and_persisted) {
 
             const auto path = output_root / ("run_" + std::to_string(job.run_id_))
                               / ("job_" + std::to_string(job.job_id_)) / "job_record.json";
-            caf::json_reader reader;
-            BOOST_REQUIRE_MESSAGE(reader.load_file(path.string()),
-                                  caf::to_string(reader.get_error()));
-            BOOST_REQUIRE(reader.apply(restored));
-            BOOST_TEST(restored.tasks_.size() == tasks.size());
-
-            // Check the saved doubles exactly with an independent JSON parser. CAF 1.1's
-            // decimal reader scales a parsed mantissa and can introduce rounding itself.
             std::ifstream input{path};
-            const std::string text{std::istreambuf_iterator<char>{input},
-                                   std::istreambuf_iterator<char>{}};
-            const auto json = boost::json::parse(text);
+            const auto json = nlohmann::json::parse(input);
+            BOOST_TEST(json.at("tasks").size() == tasks.size());
             const auto& stored = json.at("output");
             const auto& values = caf::get<caf::config_value::list>(output, "values");
-            const auto& readback =
-                caf::get<caf::config_value::dictionary>(restored.output_);
-            const auto& readback_values =
-                caf::get<caf::config_value::list>(readback, "values");
-            BOOST_REQUIRE_EQUAL(stored.at("values").at("value").as_array().size(),
-                                values.size());
-            BOOST_REQUIRE_EQUAL(readback_values.size(), values.size());
+            const auto& stored_values = stored.at("values").at("value");
+            BOOST_REQUIRE_EQUAL(stored_values.size(), values.size());
             for (std::size_t index = 0; index < values.size(); ++index) {
                 const double expected = caf::get<caf::config_value::real>(values[index]);
-                const double saved =
-                    stored.at("values").at("value").at(index).at("value").as_double();
+                const double saved = stored_values.at(index).at("value").get<double>();
                 BOOST_TEST(saved == expected);
                 BOOST_TEST(std::signbit(saved) == std::signbit(expected));
-                BOOST_TEST(caf::get<caf::config_value::real>(readback_values[index])
-                               == expected,
-                           boost::test_tools::tolerance(
-                               4 * std::numeric_limits<double>::epsilon()));
             }
-            for (const auto& [key, value] : output) {
-                if (key != "values") {
-                    const auto entry = readback.find(key);
-                    BOOST_REQUIRE(entry != readback.end());
-                    BOOST_CHECK(entry->second == value);
-                }
+            for (const auto key : {"completed", "callbacks", "finalizations"}) {
+                BOOST_TEST(stored.at(key).at("value").get<caf::config_value::integer>()
+                           == caf::get<caf::config_value::integer>(output, key));
             }
+            BOOST_TEST(stored.at("label").at("value").get<std::string>()
+                       == caf::get<std::string>(output, "label"));
+            BOOST_TEST(stored.at("enabled").at("value").get<bool>()
+                       == caf::get<bool>(output, "enabled"));
+            BOOST_TEST(stored.at("empty").at("value").is_object());
+            BOOST_TEST(stored.at("empty").at("value").empty());
         }
     }
     std::filesystem::remove_all(output_root);
 }
 
-// Older records have null controller output when the field is absent.
-BOOST_AUTO_TEST_CASE(job_record_reads_json_without_controller_output) {
-    caf::json_reader reader;
-    BOOST_REQUIRE(reader.load(R"({"run_id": 0, "job_id": 0, "tasks": [],
-                                  "run_time": "0s"})"));
+// Legacy fields without controller output retain the null default.
+BOOST_AUTO_TEST_CASE(job_record_reads_fields_without_controller_output) {
+    caf::config_value::dictionary fields;
+    fields.emplace("run_id", 0);
+    fields.emplace("job_id", 0);
+    fields.emplace("tasks", caf::config_value::list{});
+    fields.emplace("run_time", "0s");
+    const caf::config_value legacy_record{std::move(fields)};
+    caf::config_value_reader reader{&legacy_record};
     miaow::JobRecord job;
-    job.output_ = "previous output";
+    job.output_ = caf::config_value{"previous output"};
     BOOST_REQUIRE(reader.apply(job));
     BOOST_TEST(!job.output_);
 }

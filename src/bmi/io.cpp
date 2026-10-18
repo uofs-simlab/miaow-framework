@@ -16,9 +16,11 @@
 #include <utility>
 #include <vector>
 
-#include <boost/json.hpp>
+#include <nlohmann/json.hpp>
 
 namespace miaow {
+
+using nlohmann::json;
 
 namespace {
 
@@ -96,10 +98,10 @@ const caf::config_value& bmi_pipeline_config_value(const Task& task) {
 }
 
 // Convert CAF task argument values into standard JSON values
-boost::json::value config_value_to_json(const caf::config_value& value) {
+json config_value_to_json(const caf::config_value& value) {
     if (const caf::config_value::dictionary* dictionary =
             caf::get_if<caf::config_value::dictionary>(&value)) {
-        boost::json::object object;
+        json::object_t object;
         for (const std::pair<const std::string, caf::config_value>& entry : *dictionary) {
             object.emplace(entry.first, config_value_to_json(entry.second));
         }
@@ -107,7 +109,7 @@ boost::json::value config_value_to_json(const caf::config_value& value) {
     }
     if (const caf::config_value::list* list =
             caf::get_if<caf::config_value::list>(&value)) {
-        boost::json::array array;
+        json::array_t array;
         array.reserve(list->size());
         for (const caf::config_value& list_value : *list) {
             array.emplace_back(config_value_to_json(list_value));
@@ -115,7 +117,7 @@ boost::json::value config_value_to_json(const caf::config_value& value) {
         return array;
     }
     if (const std::string* string_value = caf::get_if<std::string>(&value)) {
-        return boost::json::value_from(*string_value);
+        return *string_value;
     }
     if (const caf::config_value::integer* integer_value =
             caf::get_if<caf::config_value::integer>(&value)) {
@@ -147,26 +149,24 @@ BmiModuleConfig::BmiModuleConfig(std::string name, DynamicBmiBackend backend,
       variables_names_map_(std::move(variables_names_map)) {}
 
 // Decode one pipeline module from its JSON representation
-BmiModuleConfig::BmiModuleConfig(const boost::json::object& module_object,
+BmiModuleConfig::BmiModuleConfig(const json::object_t& module_object,
                                  std::string_view error_prefix)
-    : name_(io::trim(std::string(module_object.at("name").as_string()))) {
-    const boost::json::object& module_params = module_object.at("params").as_object();
-    config_file_ =
-        io::trim(std::string(module_params.at("init_config").as_string()));
+    : name_(io::trim(module_object.at("name").get<std::string>())) {
+    const auto& module_params = module_object.at("params").get_ref<const json::object_t&>();
+    config_file_ = io::trim(module_params.at("init_config").get<std::string>());
 
-    if (const boost::json::value* map_value =
-            module_params.if_contains("variables_names_map")) {
-        const boost::json::object& map_object = map_value->as_object();
-        for (const boost::json::key_value_pair& map_entry : map_object) {
-            const std::string map_key = io::trim(std::string(map_entry.key()));
-            if (map_key.empty() || !map_entry.value().is_string()) {
+    if (const auto map_value = module_params.find("variables_names_map");
+        map_value != module_params.end()) {
+        const auto& map_object = map_value->second.get_ref<const json::object_t&>();
+        for (const auto& [key, value] : map_object) {
+            const std::string map_key = io::trim(key);
+            if (map_key.empty() || !value.is_string()) {
                 io::throw_config_error(
                     error_prefix,
                     "variables_names_map entries must map non-empty strings to strings");
             }
 
-            const std::string map_value_text =
-                io::trim(std::string(map_entry.value().as_string()));
+            const std::string map_value_text = io::trim(value.get<std::string>());
             if (map_value_text.empty()) {
                 io::throw_config_error(
                     error_prefix,
@@ -177,21 +177,21 @@ BmiModuleConfig::BmiModuleConfig(const boost::json::object& module_object,
     }
 
     // CSV output variables preserve the order declared by the module config
-    if (const boost::json::value* output_value =
-            module_params.if_contains("output_variables")) {
-        if (!output_value->is_array()) {
+    if (const auto output_value = module_params.find("output_variables");
+        output_value != module_params.end()) {
+        if (!output_value->second.is_array()) {
             io::throw_config_error(error_prefix,
                                    "output_variables must be an array of strings");
         }
         output_variables_.emplace();
-        for (const boost::json::value& output_variable_value :
-             output_value->as_array()) {
+        for (const json& output_variable_value :
+             output_value->second.get_ref<const json::array_t&>()) {
             if (!output_variable_value.is_string()) {
                 io::throw_config_error(
                     error_prefix, "output_variables entries must be non-empty strings");
             }
             const std::string output_variable =
-                io::trim(std::string(output_variable_value.as_string()));
+                io::trim(output_variable_value.get<std::string>());
             if (output_variable.empty()) {
                 io::throw_config_error(
                     error_prefix, "output_variables entries must be non-empty strings");
@@ -206,8 +206,7 @@ BmiModuleConfig::BmiModuleConfig(const boost::json::object& module_object,
     }
 
     // Dynamic modules require a plugin library path
-    plugin_path_ =
-        io::trim(std::string(module_params.at("library_file").as_string()));
+    plugin_path_ = io::trim(module_params.at("library_file").get<std::string>());
 
     if (name_ == "bmi_fortran") {
         backend_ = DynamicBmiBackend::fortran;
@@ -218,18 +217,18 @@ BmiModuleConfig::BmiModuleConfig(const boost::json::object& module_object,
         backend_ = DynamicBmiBackend::cpp;
         cpp_create_function_ = "bmi_model_create";
         cpp_destroy_function_ = "bmi_model_destroy";
-        if (const boost::json::value* create_function =
-                module_params.if_contains("cpp_create_function")) {
+        if (const auto create_function = module_params.find("cpp_create_function");
+            create_function != module_params.end()) {
             const std::string parsed =
-                io::trim(std::string(create_function->as_string()));
+                io::trim(create_function->second.get<std::string>());
             if (!parsed.empty()) {
                 cpp_create_function_ = parsed;
             }
         }
-        if (const boost::json::value* destroy_function =
-                module_params.if_contains("cpp_destroy_function")) {
+        if (const auto destroy_function = module_params.find("cpp_destroy_function");
+            destroy_function != module_params.end()) {
             const std::string parsed =
-                io::trim(std::string(destroy_function->as_string()));
+                io::trim(destroy_function->second.get<std::string>());
             if (!parsed.empty()) {
                 cpp_destroy_function_ = parsed;
             }
@@ -255,67 +254,74 @@ BmiPipelineConfig::BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs
 }
 
 // Decode a pipeline config from its JSON representation
-BmiPipelineConfig::BmiPipelineConfig(const boost::json::object& pipeline_config,
+BmiPipelineConfig::BmiPipelineConfig(const json::object_t& pipeline_config,
                                      std::string_view error_prefix) {
-    const boost::json::object& global = pipeline_config.at("global").as_object();
-    const boost::json::array& formulations = global.at("formulations").as_array();
+    const auto& global = pipeline_config.at("global").get_ref<const json::object_t&>();
+    const auto& formulations = global.at("formulations").get_ref<const json::array_t&>();
     if (formulations.size() != 1) {
         io::throw_config_error(error_prefix, "formulations must contain one entry");
     }
 
-    const boost::json::object& formulation = formulations.at(0).as_object();
+    const auto& formulation = formulations.at(0).get_ref<const json::object_t&>();
     const std::string formulation_name =
-        io::trim(std::string(formulation.at("name").as_string()));
+        io::trim(formulation.at("name").get<std::string>());
     if (formulation_name != "bmi_multi") {
         io::throw_config_error(error_prefix,
                                "unsupported formulation '" + formulation_name + "'");
     }
 
-    const boost::json::object& bmi_multi_params = formulation.at("params").as_object();
-    const boost::json::array& modules = bmi_multi_params.at("modules").as_array();
+    const auto& bmi_multi_params =
+        formulation.at("params").get_ref<const json::object_t&>();
+    const auto& modules = bmi_multi_params.at("modules").get_ref<const json::array_t&>();
     module_configs_.reserve(modules.size());
-    for (const boost::json::value& module_value : modules) {
-        module_configs_.emplace_back(module_value.as_object(), error_prefix);
+    for (const json& module_value : modules) {
+        module_configs_.emplace_back(module_value.get_ref<const json::object_t&>(),
+                                     error_prefix);
     }
     if (module_configs_.empty()) {
         io::throw_config_error(error_prefix,
                                "module_configs must contain at least one module");
     }
 
-    output_module_ = bmi_multi_params.at("output_module").to_number<std::size_t>();
-    if (output_module_ >= module_configs_.size()) {
+    // Check the module index before converting; JSON integer conversion can truncate.
+    const double output_module = bmi_multi_params.at("output_module").get<double>();
+    if (output_module < 0.0 || output_module >= module_configs_.size() ||
+        std::trunc(output_module) != output_module) {
         io::throw_config_error(error_prefix,
                                "output_module must refer to a configured module");
     }
-    if (const boost::json::value* output_interval =
-            bmi_multi_params.if_contains("output_interval")) {
-        output_interval_ = output_interval->to_number<double>();
+    output_module_ = static_cast<std::size_t>(output_module);
+    if (const auto output_interval = bmi_multi_params.find("output_interval");
+        output_interval != bmi_multi_params.end()) {
+        output_interval_ = output_interval->second.get<double>();
     }
     time_step_tolerance_seconds_ =
-        bmi_multi_params.at("time_step_tolerance_seconds").to_number<double>();
+        bmi_multi_params.at("time_step_tolerance_seconds").get<double>();
 
-    if (const boost::json::value* forcing_value = global.if_contains("forcing")) {
-        const boost::json::object& forcing = forcing_value->as_object();
+    if (const auto forcing_value = global.find("forcing");
+        forcing_value != global.end()) {
+        const auto& forcing = forcing_value->second.get_ref<const json::object_t&>();
         const std::string provider =
-            io::trim(std::string(forcing.at("provider").as_string()));
+            io::trim(forcing.at("provider").get<std::string>());
         if (provider != "CsvFile") {
             io::throw_config_error(error_prefix,
                                    "unsupported forcing provider '" + provider + "'");
         }
-        forcing_file_ = io::trim(std::string(forcing.at("file").as_string()));
+        forcing_file_ = io::trim(forcing.at("file").get<std::string>());
     }
 
-    if (const boost::json::value* feature_value =
-            pipeline_config.if_contains("feature")) {
-        const boost::json::object& feature = feature_value->as_object();
-        feature_id_ = io::trim(std::string(feature.at("id").as_string()));
+    if (const auto feature_value = pipeline_config.find("feature");
+        feature_value != pipeline_config.end()) {
+        const auto& feature = feature_value->second.get_ref<const json::object_t&>();
+        feature_id_ = io::trim(feature.at("id").get<std::string>());
     }
 }
 
 // Decode the internal pipeline config carried by a task
 BmiPipelineConfig::BmiPipelineConfig(const Task& task)
     : BmiPipelineConfig(
-          config_value_to_json(bmi_pipeline_config_value(task)).as_object(),
+          config_value_to_json(bmi_pipeline_config_value(task))
+              .get_ref<const json::object_t&>(),
           "BMI pipeline config error: ") {}
 
 caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline_config) {
@@ -550,9 +556,7 @@ std::optional<std::string> write_bmi_pipeline_config_artifact(const Task& task) 
         throw std::runtime_error("unable to open BMI pipeline config file '" +
                                  config_path.string() + "'");
     }
-    output << boost::json::serialize(
-                  config_value_to_json(bmi_pipeline_config_value(task)))
-           << "\n";
+    output << config_value_to_json(bmi_pipeline_config_value(task)).dump() << '\n';
     return artifact_path;
 }
 

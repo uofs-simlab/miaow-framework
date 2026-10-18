@@ -9,6 +9,7 @@
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "MIAOW_BOOST_PROVIDER": "auto",
+        "MIAOW_JSON_PROVIDER": "auto",
         "MIAOW_CAF_PROVIDER": "auto",
         "CMAKE_BUILD_TYPE": "Debug"
       }

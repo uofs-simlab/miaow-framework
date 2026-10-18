@@ -1,55 +1,47 @@
 #include "internal.hpp"
 
-#include <boost/json.hpp>
+#include <caf/json_array.hpp>
+#include <caf/json_object.hpp>
+#include <nlohmann/json.hpp>
 
-#include <cstddef>
-#include <cmath>
-#include <ostream>
+#include <fstream>
 
 namespace miaow::io {
 namespace {
 
-// CAF builds the JSON tree and type annotations; Boost formats doubles with enough
-// digits to round-trip. Keep the same two-space indentation for human-readable files.
-void write_json(std::ostream& output, const caf::json_value& value, std::size_t indent) {
+// Copy typed values without passing numbers through CAF's text formatter.
+// Preserve field order, type annotations, and duration strings from the CAF builder.
+nlohmann::ordered_json to_json_tree(const caf::json_value& value) {
     if (value.is_object()) {
-        output << '{';
-        bool first = true;
+        auto object = nlohmann::ordered_json::object();
         for (const auto& [key, item] : value.to_object()) {
-            output << (first ? "\n" : ",\n") << std::string(indent + 2, ' ')
-                   << boost::json::serialize(boost::json::value{key}) << ": ";
-            write_json(output, item, indent + 2);
-            first = false;
+            object[std::string(key)] = to_json_tree(item);
         }
-        if (!first) {
-            output << '\n' << std::string(indent, ' ');
-        }
-        output << '}';
-    } else if (value.is_array()) {
-        output << '[';
-        bool first = true;
-        for (const auto& item : value.to_array()) {
-            output << (first ? "\n" : ",\n") << std::string(indent + 2, ' ');
-            write_json(output, item, indent + 2);
-            first = false;
-        }
-        if (!first) {
-            output << '\n' << std::string(indent, ' ');
-        }
-        output << ']';
-    } else if (value.is_double()) {
-        const double number = value.to_double();
-        // CAF 1.1 rejects exponent notation for zero, including Boost's -0E0.
-        if (number == 0.0) {
-            output << (std::signbit(number) ? "-0.0" : "0.0");
-        } else {
-            output << boost::json::serialize(boost::json::value{number});
-        }
-    } else {
-        std::string text;
-        value.print_to(text);
-        output << text;
+        return object;
     }
+    if (value.is_array()) {
+        auto array = nlohmann::ordered_json::array();
+        for (const auto& item : value.to_array()) {
+            array.push_back(to_json_tree(item));
+        }
+        return array;
+    }
+    if (value.is_double()) {
+        return value.to_double();
+    }
+    if (value.is_integer()) {
+        return value.to_integer();
+    }
+    if (value.is_unsigned()) {
+        return value.to_unsigned();
+    }
+    if (value.is_bool()) {
+        return value.to_bool();
+    }
+    if (value.is_string()) {
+        return std::string(value.to_string());
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -60,8 +52,7 @@ void write_json_file(const std::filesystem::path& path, const caf::json_value& v
         throw std::runtime_error("unable to open JSON file '" + path.string() + "'");
     }
     output.exceptions(std::ios::failbit | std::ios::badbit);
-    write_json(output, value, 0);
-    output << '\n';
+    output << to_json_tree(value).dump(2) << '\n';
     output.close();
 }
 

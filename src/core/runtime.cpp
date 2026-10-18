@@ -20,9 +20,6 @@
 #include <caf/ipv6_endpoint.hpp>
 #include <caf/ipv6_subnet.hpp>
 #include <caf/io/middleman.hpp>
-#include <caf/json_array.hpp>
-#include <caf/json_object.hpp>
-#include <caf/json_value.hpp>
 #include <caf/type_id.hpp>
 
 #include "internal.hpp"
@@ -161,7 +158,7 @@ void core::assign_task_runtime_fields(std::vector<Task>& tasks,
 // Initialize CAF global meta objects exactly once in a thread-safe way
 static void initialize_caf_once() {
     std::call_once(caf_init_flag, [] {
-        caf::init_global_meta_objects<caf::id_block::core_module>();
+        caf::core::init_global_meta_objects();
         caf::init_global_meta_objects<caf::id_block::miaow_module>();
         caf::init_global_meta_objects<caf::id_block::miaow_internal_module>();
         caf::io::middleman::init_global_meta_objects();

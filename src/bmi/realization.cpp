@@ -13,9 +13,11 @@
 #include <utility>
 #include <vector>
 
-#include <boost/json.hpp>
+#include <nlohmann/json.hpp>
 
 namespace miaow {
+
+using nlohmann::json;
 
 namespace {
 
@@ -74,22 +76,28 @@ std::vector<std::string> read_feature_ids(const std::filesystem::path& path) {
         throw_realization_path_error("features path '" + path.string() +
                                      "' could not be opened");
     }
-    const boost::json::object root = boost::json::parse(input).as_object();
+    const auto document = json::parse(input);
+    const auto& root = document.get_ref<const json::object_t&>();
     std::vector<std::string> feature_ids;
-    const boost::json::array& features = root.at("features").as_array();
+    const auto& features = root.at("features").get_ref<const json::array_t&>();
     feature_ids.reserve(features.size());
-    for (const boost::json::value& feature_value : features) {
-        const boost::json::object& feature = feature_value.as_object();
-        const boost::json::value* id_value = feature.if_contains("id");
+    for (const json& feature_value : features) {
+        const auto& feature = feature_value.get_ref<const json::object_t&>();
+        const auto id = feature.find("id");
+        const json* id_value = id == feature.end() ? nullptr : &id->second;
         if (id_value == nullptr) {
-            const boost::json::object& properties = feature.at("properties").as_object();
-            id_value = properties.if_contains("id");
+            const auto& properties =
+                feature.at("properties").get_ref<const json::object_t&>();
+            const auto property_id = properties.find("id");
+            if (property_id != properties.end()) {
+                id_value = &property_id->second;
+            }
         }
         if (id_value == nullptr) {
             throw_realization_config_error("feature id must be present");
         }
 
-        const std::string feature_id = io::trim(std::string(id_value->as_string()));
+        const std::string feature_id = io::trim(id_value->get<std::string>());
         if (feature_id.empty()) {
             throw_realization_config_error("feature id must be non-empty");
         }
@@ -148,65 +156,67 @@ std::string match_forcing_file(const std::filesystem::path& forcing_directory,
 }
 
 // The supported realization contains one bmi_multi Fortran module
-BmiModuleConfig parse_fortran_module_config(const boost::json::object& global_object) {
-    const boost::json::array& formulations = global_object.at("formulations").as_array();
+BmiModuleConfig parse_fortran_module_config(const json::object_t& global_object) {
+    const auto& formulations =
+        global_object.at("formulations").get_ref<const json::array_t&>();
     if (formulations.size() != 1) {
         throw_realization_config_error("formulations must contain one entry");
     }
 
-    const boost::json::object& formulation = formulations.at(0).as_object();
+    const auto& formulation = formulations.at(0).get_ref<const json::object_t&>();
     const std::string formulation_name =
-        io::trim(std::string(formulation.at("name").as_string()));
+        io::trim(formulation.at("name").get<std::string>());
     if (formulation_name != "bmi_multi") {
         throw_realization_config_error("unsupported formulation '" + formulation_name +
                                        "'");
     }
 
-    const boost::json::object& bmi_multi_params = formulation.at("params").as_object();
-    const boost::json::array& modules = bmi_multi_params.at("modules").as_array();
+    const auto& bmi_multi_params =
+        formulation.at("params").get_ref<const json::object_t&>();
+    const auto& modules = bmi_multi_params.at("modules").get_ref<const json::array_t&>();
     if (modules.size() != 1) {
         throw_realization_config_error("bmi_multi modules must contain one entry");
     }
 
-    const boost::json::object& module = modules.at(0).as_object();
+    const auto& module = modules.at(0).get_ref<const json::object_t&>();
     BmiModuleConfig module_config(module, "Realization config error: ");
     if (module_config.name_ != "bmi_fortran") {
         throw_realization_config_error("unsupported module '" + module_config.name_ + "'");
     }
 
     // The supported module receives forcing through MIAOW BMI setters
-    const boost::json::object& module_params = module.at("params").as_object();
-    const boost::json::value* uses_forcing_file =
-        module_params.if_contains("uses_forcing_file");
-    if (uses_forcing_file == nullptr || !uses_forcing_file->is_bool()) {
+    const auto& module_params = module.at("params").get_ref<const json::object_t&>();
+    const auto uses_forcing_file = module_params.find("uses_forcing_file");
+    if (uses_forcing_file == module_params.end() ||
+        !uses_forcing_file->second.is_boolean()) {
         throw_realization_config_error(
             "bmi_fortran uses_forcing_file must be a boolean");
     }
-    if (uses_forcing_file->as_bool()) {
+    if (uses_forcing_file->second.get<bool>()) {
         throw_realization_config_error(
             "bmi_fortran uses_forcing_file must be false");
     }
-    if (module_params.if_contains("output_variables") != nullptr) {
+    if (module_params.contains("output_variables")) {
         throw_realization_config_error(
             "output_variables must be configured in bmi_multi params");
     }
 
     // Output selection belongs to the containing bmi_multi formulation
-    if (const boost::json::value* output_value =
-            bmi_multi_params.if_contains("output_variables")) {
-        if (!output_value->is_array()) {
+    if (const auto output_value = bmi_multi_params.find("output_variables");
+        output_value != bmi_multi_params.end()) {
+        if (!output_value->second.is_array()) {
             throw_realization_config_error(
                 "output_variables must be an array of strings");
         }
         module_config.output_variables_.emplace();
-        for (const boost::json::value& output_variable_value :
-             output_value->as_array()) {
+        for (const json& output_variable_value :
+             output_value->second.get_ref<const json::array_t&>()) {
             if (!output_variable_value.is_string()) {
                 throw_realization_config_error(
                     "output_variables entries must be non-empty strings");
             }
             const std::string output_variable =
-                io::trim(std::string(output_variable_value.as_string()));
+                io::trim(output_variable_value.get<std::string>());
             if (output_variable.empty()) {
                 throw_realization_config_error(
                     "output_variables entries must be non-empty strings");
@@ -236,11 +246,12 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
         throw_realization_path_error("realization path '" + normalized_path.string() +
                                      "' could not be opened");
     }
-    const boost::json::object root = boost::json::parse(input).as_object();
-    const boost::json::object& global = root.at("global").as_object();
+    const auto document = json::parse(input);
+    const auto& root = document.get_ref<const json::object_t&>();
+    const auto& global = root.at("global").get_ref<const json::object_t&>();
     BmiModuleConfig module_config = parse_fortran_module_config(global);
-    const boost::json::object& forcing = global.at("forcing").as_object();
-    const std::string provider = io::trim(std::string(forcing.at("provider").as_string()));
+    const auto& forcing = global.at("forcing").get_ref<const json::object_t&>();
+    const std::string provider = io::trim(forcing.at("provider").get<std::string>());
     if (provider != "CsvPerFeature") {
         throw_realization_config_error("unsupported forcing provider '" + provider + "'");
     }
@@ -248,22 +259,24 @@ PartitionedBmiRealization::PartitionedBmiRealization(const std::string& realizat
     const std::string init_template = module_config.config_file_;
 
     const std::string forcing_path_text =
-        io::trim(std::string(forcing.at("path").as_string()));
+        io::trim(forcing.at("path").get<std::string>());
     const std::string forcing_pattern_template =
-        io::trim(std::string(forcing.at("file_pattern").as_string()));
+        io::trim(forcing.at("file_pattern").get<std::string>());
 
     std::optional<double> output_interval;
-    if (const boost::json::value* time_value = root.if_contains("time")) {
-        if (!time_value->is_object()) {
+    if (const auto time_value = root.find("time");
+        time_value != root.end()) {
+        if (!time_value->second.is_object()) {
             throw_realization_config_error("root key 'time' must be an object");
         }
-        if (const boost::json::value* output_interval_value =
-                time_value->as_object().if_contains("output_interval")) {
-            if (!output_interval_value->is_number()) {
+        const auto& time = time_value->second.get_ref<const json::object_t&>();
+        if (const auto output_interval_value = time.find("output_interval");
+            output_interval_value != time.end()) {
+            if (!output_interval_value->second.is_number()) {
                 throw_realization_config_error(
                     "time.output_interval must be a number");
             }
-            output_interval = output_interval_value->to_number<double>();
+            output_interval = output_interval_value->second.get<double>();
         }
     }
 

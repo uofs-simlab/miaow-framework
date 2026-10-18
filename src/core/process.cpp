@@ -33,9 +33,6 @@
 #include <caf/ipv6_address.hpp>
 #include <caf/ipv6_endpoint.hpp>
 #include <caf/ipv6_subnet.hpp>
-#include <caf/json_array.hpp>
-#include <caf/json_object.hpp>
-#include <caf/json_value.hpp>
 #include <caf/scoped_actor.hpp>
 #include <caf/type_id.hpp>
 
@@ -59,7 +56,7 @@ struct SubprocessRegistrationState {
 
 // CAF actor messages require core and MIAOW meta objects
 void initialize_subprocess_caf() {
-    caf::init_global_meta_objects<caf::id_block::core_module>();
+    caf::core::init_global_meta_objects();
     caf::init_global_meta_objects<caf::id_block::miaow_module>();
     caf::init_global_meta_objects<caf::id_block::miaow_internal_module>();
     caf::io::middleman::init_global_meta_objects();
