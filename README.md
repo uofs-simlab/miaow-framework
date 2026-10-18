@@ -18,7 +18,7 @@
   <img src="docs/images/miaow_logo.svg" alt="MIAOW logo" width="360">
 </p>
 
-Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
+Managing concurrent numerical simulation tasks with dynamic workloads can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
 
 MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its actor backend, uses [nlohmann/json](https://json.nlohmann.me/) for JSON files and [Boost.Test](https://www.boost.org/) for framework tests, and includes C++/Fortran [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) integration paths.
 
