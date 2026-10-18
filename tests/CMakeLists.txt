@@ -27,9 +27,14 @@ add_dependencies(miaow_bmi_tests miaow_subprocess)
 
 add_executable(miaow_io_tests
     io/io.cpp
+    io/json.cpp
 )
 target_compile_features(miaow_io_tests PRIVATE cxx_std_20)
-target_link_libraries(miaow_io_tests PRIVATE miaow Boost::unit_test_framework)
+target_include_directories(miaow_io_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_definitions(miaow_io_tests PRIVATE
+    MIAOW_IO_TEST_OUTPUT_ROOT="${CMAKE_CURRENT_BINARY_DIR}/output/io"
+)
+target_link_libraries(miaow_io_tests PRIVATE miaow Boost::json Boost::unit_test_framework)
 
 # Build the local Fortran BMI fixture used by the interoperability tests
 include("${PROJECT_SOURCE_DIR}/cmake/miaow_dynamic_bmi_plugin.cmake")
