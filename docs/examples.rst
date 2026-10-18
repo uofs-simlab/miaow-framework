@@ -160,14 +160,14 @@ Replace ``<id>`` with the run number in the path printed by the executable (``0`
 Example command-line options
 ----------------------------
 
-Examples use the following runtime command-line options where applicable:
+Examples accept the following runtime command-line options where applicable. The table shows ``RuntimeOptions`` defaults; individual examples may override them. For example, ``08_particle_swarm`` defaults to eight workers and an output root of ``output``.
 
 .. list-table::
    :header-rows: 1
    :widths: 30 30 50
 
    * - Option
-     - Default
+     - Runtime default
      - Description
    * - ``--max_workers``
      - ``1``

@@ -111,7 +111,7 @@ The MIAOW package locates the required CAF components when ``find_package(miaow)
 
 .. note::
 
-   When MIAOW is configured, CMake supplies ``MIAOW_SUBPROCESS_PATH`` (the absolute build-tree path to ``miaow_subprocess``) and ``MIAOW_INSTALLED_SUBPROCESS_PATH`` (the absolute expected installed path derived from ``CMAKE_INSTALL_PREFIX``) as preprocessor definitions while compiling ``src/bmi/execute.cpp``. MIAOW's ``bmi_subprocess_executable_path()`` function returns ``MIAOW_SUBPROCESS_PATH`` when that executable exists, otherwise returns ``MIAOW_INSTALLED_SUBPROCESS_PATH`` when that executable exists, and throws if neither executable exists. Because ``cmake --install build --prefix <path>`` changes the installation destination without updating ``MIAOW_INSTALLED_SUBPROCESS_PATH``, downstream users should configure MIAOW with the correct ``-DCMAKE_INSTALL_PREFIX=<path>`` before building. To switch the install directory, users should reconfigure and rebuild MIAOW or pass the installed executable path directly to ``SimulationUnitRegistry::add_subprocess()`` when registering the subprocess executable, rather than using the default path returned by ``bmi_subprocess_executable_path()``.
+   Configure ``CMAKE_INSTALL_PREFIX`` before building so ``bmi_subprocess_executable_path()`` can locate the installed worker. Changing only ``cmake --install build --prefix <path>`` does not update this lookup. If you relocate the installation, reconfigure and rebuild MIAOW or pass the installed worker path directly to ``SimulationUnitRegistry::add_subprocess()``.
 
 .. _build-options:
 

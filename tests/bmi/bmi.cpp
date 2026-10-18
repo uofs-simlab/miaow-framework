@@ -85,14 +85,19 @@ BOOST_AUTO_TEST_CASE(forcing_alignment_uses_seconds_tolerance) {
                       std::runtime_error);
 }
 
-// Exercise dynamic Fortran BMI loading and lifecycle execution in the parent process
-BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_process) {
+// Run the Fortran BMI lifecycle and write its resolved configuration
+BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_process_and_writes_config_artifact) {
+    const std::filesystem::path output_root = MIAOW_BMI_TEST_OUTPUT_ROOT;
+    std::filesystem::remove_all(output_root);
+
     miaow::SimulationUnitRegistry registry;
     // A nonzero registration ID verifies that task creation preserves the chosen unit.
     registry.add<miaow::DynamicBmiSimulationUnit>();
     const miaow::SimulationUnitId dynamic_bmi =
         registry.add<miaow::DynamicBmiSimulationUnit>();
-    miaow::Runtime runtime(registry);
+    miaow::Runtime runtime(registry, miaow::RuntimeOptions{1, std::chrono::minutes(1),
+                                                           std::chrono::minutes(5),
+                                                           output_root.string()});
 
     // Load the test-owned Fortran plugin through the public dynamic BMI path
     const miaow::DynamicBmiConfig config{
@@ -100,41 +105,15 @@ BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_process) {
         .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
     };
     const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, config);
-
     BOOST_TEST(task.simulation_unit_id_ == dynamic_bmi);
     BOOST_REQUIRE_EQUAL(task.args_.size(), 1);
 
     const miaow::JobRecord job_record = runtime.submit_job(task).get();
 
     BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);
-    BOOST_CHECK(job_record.tasks_.front().result_.status_ == miaow::TaskStatus::succeeded);
-    BOOST_TEST(job_record.tasks_.front().result_.message_ ==
-               "BMI workflow complete (updates: 2)");
-}
-
-// Write the resolved pipeline configuration beside task results
-BOOST_AUTO_TEST_CASE(pipeline_writes_resolved_config_artifact) {
-    const std::filesystem::path output_root = MIAOW_BMI_TEST_OUTPUT_ROOT;
-    std::filesystem::remove_all(output_root);
-
-    miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId dynamic_bmi =
-        registry.add<miaow::DynamicBmiSimulationUnit>();
-    miaow::Runtime runtime(registry, miaow::RuntimeOptions{1, std::chrono::minutes(1),
-                                                           std::chrono::minutes(5),
-                                                           output_root.string()});
-
-    // Run one task so lifecycle execution writes the resolved config artifact
-    const miaow::DynamicBmiConfig config{
-        .backend_ = miaow::DynamicBmiBackend::fortran,
-        .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
-    };
-    const miaow::JobRecord job_record =
-        runtime.submit_job(miaow::make_bmi_task(dynamic_bmi, config)).get();
-
-    BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);
     const miaow::TaskResult& task_result = job_record.tasks_.front().result_;
     BOOST_REQUIRE(task_result.status_ == miaow::TaskStatus::succeeded);
+    BOOST_TEST(task_result.message_ == "BMI workflow complete (updates: 2)");
     BOOST_REQUIRE_EQUAL(task_result.artifact_paths_.size(), 1);
     BOOST_TEST(task_result.artifact_paths_.front() == "task_0.json");
 

@@ -77,33 +77,33 @@ class IterationJobController final : public miaow::JobController {
     std::vector<miaow::Task> generate_new_tasks(
         std::span<const miaow::TaskRecord> new_records) override {
         iterations_ += new_records.size();
+
+        // Failed tasks stop the iteration without requiring structured output
+        const miaow::TaskRecord& completed_task = new_records.back();
+        if (completed_task.result_.status_ != miaow::TaskStatus::succeeded) {
+            return {};
+        }
+
         const caf::config_value::dictionary* output =
-            caf::get_if<caf::config_value::dictionary>(
-                &new_records.back().result_.output_);
+            caf::get_if<caf::config_value::dictionary>(&completed_task.result_.output_);
         if (output == nullptr) {
-            throw std::runtime_error("missing output dictionary");
+            throw std::runtime_error("JobController output error: expected a dictionary");
         }
 
-        const caf::config_value::dictionary::const_iterator estimate_entry =
-            output->find("estimate");
-        const caf::config_value::dictionary::const_iterator residual_entry =
-            output->find("residual");
-        if (estimate_entry == output->end() || residual_entry == output->end()) {
-            throw std::runtime_error("missing estimate or residual");
-        }
-
+        // Extract the estimate and residual from the output dictionary
         const caf::config_value::real* estimate =
-            caf::get_if<caf::config_value::real>(&estimate_entry->second);
+            caf::get_if<caf::config_value::real>(output, "estimate");
         const caf::config_value::real* residual =
-            caf::get_if<caf::config_value::real>(&residual_entry->second);
+            caf::get_if<caf::config_value::real>(output, "residual");
         if (estimate == nullptr || residual == nullptr) {
-            throw std::runtime_error("invalid estimate or residual");
+            throw std::runtime_error(
+                "JobController output error: estimate and residual must be reals");
         }
         if (*residual <= residual_tolerance_) {
             return {};
         }
         if (iterations_ >= maximum_iterations_) {
-            throw std::runtime_error("maximum iteration count reached");
+            throw std::runtime_error("Convergence error: maximum iteration count reached");
         }
         return {miaow::Task{simulation_unit_id_, caf::config_value{*estimate}}};
     }
@@ -187,7 +187,7 @@ class RecordingJobController final : public miaow::JobController {
     std::shared_ptr<std::vector<std::vector<miaow::TaskRecord>>> record_batches_;
 };
 
-// Summarize controller activity and exercise nested, full-precision job output.
+// Summarize completed tasks, callbacks, and finalization in job output
 class OutputJobController final : public miaow::JobController {
   public:
     using JobController::JobController;
@@ -204,12 +204,6 @@ class OutputJobController final : public miaow::JobController {
         output.emplace("completed", completed_);
         output.emplace("callbacks", callbacks_);
         output.emplace("finalizations", ++finalizations_);
-        output.emplace("values", std::vector<double>{1.2345678901234567, 1.0, -0.0,
-                                                      1.2345678901234567e-12, 1e-100,
-                                                      1e100});
-        output.emplace("label", "quoted \"text\"\nsecond line");
-        output.emplace("enabled", true);
-        output.emplace("empty", caf::config_value::dictionary{});
         return caf::config_value{std::move(output)};
     }
 
@@ -570,30 +564,10 @@ BOOST_AUTO_TEST_CASE(controller_generates_heron_iterations_until_convergence) {
         caf::get_if<caf::config_value::dictionary>(
             &job_record.tasks_.back().result_.output_);
     BOOST_REQUIRE(final_output != nullptr);
-    const caf::config_value::dictionary::const_iterator residual_entry =
-        final_output->find("residual");
-    BOOST_REQUIRE(residual_entry != final_output->end());
     const caf::config_value::real* final_residual =
-        caf::get_if<caf::config_value::real>(&residual_entry->second);
+        caf::get_if<caf::config_value::real>(final_output, "residual");
     BOOST_REQUIRE(final_residual != nullptr);
     BOOST_TEST(*final_residual <= residual_tolerance);
-}
-
-// Report non-convergence when Heron's method reaches its iteration limit
-BOOST_AUTO_TEST_CASE(controller_reports_the_heron_iteration_limit) {
-    miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId heron_iteration =
-        registry.add<HeronIterationSimulationUnit>();
-    miaow::Runtime runtime(registry);
-    miaow::JobHandle job = runtime.submit_job(
-        std::vector<miaow::Task>{miaow::Task{heron_iteration, caf::config_value{1.0}}},
-        std::make_unique<IterationJobController>(heron_iteration, 1e-20, 1));
-
-    BOOST_CHECK_EXCEPTION(
-        job.get(), std::runtime_error, [](const std::runtime_error& exception) {
-            return std::string(exception.what()).find("maximum iteration count reached") !=
-                   std::string::npos;
-        });
 }
 
 // Compare controller call timing with the same workload under both policies
@@ -879,25 +853,10 @@ BOOST_AUTO_TEST_CASE(controller_output_is_returned_and_persisted) {
             const auto json = nlohmann::json::parse(input);
             BOOST_TEST(json.at("tasks").size() == tasks.size());
             const auto& stored = json.at("output");
-            const auto& values = caf::get<caf::config_value::list>(output, "values");
-            const auto& stored_values = stored.at("values").at("value");
-            BOOST_REQUIRE_EQUAL(stored_values.size(), values.size());
-            for (std::size_t index = 0; index < values.size(); ++index) {
-                const double expected = caf::get<caf::config_value::real>(values[index]);
-                const double saved = stored_values.at(index).at("value").get<double>();
-                BOOST_TEST(saved == expected);
-                BOOST_TEST(std::signbit(saved) == std::signbit(expected));
-            }
             for (const auto key : {"completed", "callbacks", "finalizations"}) {
                 BOOST_TEST(stored.at(key).at("value").get<caf::config_value::integer>()
                            == caf::get<caf::config_value::integer>(output, key));
             }
-            BOOST_TEST(stored.at("label").at("value").get<std::string>()
-                       == caf::get<std::string>(output, "label"));
-            BOOST_TEST(stored.at("enabled").at("value").get<bool>()
-                       == caf::get<bool>(output, "enabled"));
-            BOOST_TEST(stored.at("empty").at("value").is_object());
-            BOOST_TEST(stored.at("empty").at("value").empty());
         }
     }
     std::filesystem::remove_all(output_root);

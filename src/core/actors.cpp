@@ -206,10 +206,16 @@ static void complete_task(caf::event_based_actor* self,
     try {
         // Deliver each completion once through a view of the new records
         const std::span<const TaskRecord> records{state->completed_task_records_};
+
+        // Call the job controller to generate new tasks based on the completed task records
         std::vector<Task> generated_tasks =
             state->job_controller_->generate_new_tasks(
                 records.subspan(state->reported_task_count_));
+        
+        // Update the count of reported tasks to include the newly completed ones
         state->reported_task_count_ = records.size();
+
+        // Add the generated tasks to the queue for dispatching
         append_controller_tasks(self, state, std::move(generated_tasks));
     } catch (const std::exception& exception) {
         begin_job_error_shutdown(
