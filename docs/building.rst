@@ -4,7 +4,7 @@ Building and installation
 Prerequisites
 -------------
 
-MIAOW requires `CMake <https://cmake.org/>`_ 3.21 or newer, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See :ref:`build-options` for a description of the available provider settings.
+MIAOW requires `CMake <https://cmake.org/>`_ 3.30 or newer, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See :ref:`build-options` for a description of the available provider settings.
 
 On Ubuntu, the required compiler and build tools can be installed with the following command:
 
@@ -82,7 +82,7 @@ In another project, define the executable or library that uses MIAOW and link it
 
 .. code-block:: cmake
 
-   cmake_minimum_required(VERSION 3.21)
+   cmake_minimum_required(VERSION 3.30)
 
    project(my_program LANGUAGES CXX)
 
@@ -111,7 +111,7 @@ The MIAOW package locates the required CAF components when ``find_package(miaow)
 
 .. note::
 
-   When MIAOW is configured, CMake supplies ``MIAOW_SUBPROCESS_PATH`` (the absolute build-tree path to ``miaow_subprocess``) and ``MIAOW_INSTALLED_SUBPROCESS_PATH`` (the absolute expected installed path derived from ``CMAKE_INSTALL_PREFIX``) as preprocessor definitions while compiling ``src/bmi/execute.cpp``. MIAOW's ``bmi_subprocess_executable_path()`` function returns ``MIAOW_SUBPROCESS_PATH`` when that executable exists, otherwise returns ``MIAOW_INSTALLED_SUBPROCESS_PATH`` when that executable exists, and throws if neither executable exists. Because ``cmake --install build --prefix <path>`` changes the installation destination without updating ``MIAOW_INSTALLED_SUBPROCESS_PATH``, downstream users should configure MIAOW with the correct ``-DCMAKE_INSTALL_PREFIX=<path>`` before building. To switch the install directory, users should reconfigure and rebuild MIAOW or pass the installed executable path directly to ``SimulationUnitRegistry::add_subprocess()`` when registering the subprocess executable, rather than using the default path returned by ``bmi_subprocess_executable_path()``.
+   Configure ``CMAKE_INSTALL_PREFIX`` before building so ``bmi_subprocess_executable_path()`` can locate the installed worker. Changing only ``cmake --install build --prefix <path>`` does not update this lookup. If you relocate the installation, reconfigure and rebuild MIAOW or pass the installed worker path directly to ``SimulationUnitRegistry::add_subprocess()``.
 
 .. _build-options:
 

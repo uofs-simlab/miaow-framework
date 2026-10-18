@@ -12,6 +12,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <span>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -268,13 +270,20 @@ struct TaskRecord {
      * @param task Submitted task whose metadata and simulation unit ID are copied.
      * @param task_id `TaskId` within the submitted job.
      * @param result Success or failure result for this task.
-     * @param run_time Wall-clock duration for this task.
+     * @param run_time Elapsed time from dispatch until the result or timeout is recorded.
+     * @param dispatch_offset_from_job_start Time from job start to dispatch, if known.
+     * @param worker_id Zero-based worker index within the job, if assigned.
      */
     TaskRecord(const Task& task, TaskId task_id, TaskResult result,
-               std::chrono::duration<double> run_time)
+               std::chrono::duration<double> run_time,
+               std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start =
+                   std::nullopt,
+               std::optional<std::size_t> worker_id = std::nullopt)
         : task_id_{task_id}, simulation_unit_id_{task.simulation_unit_id_},
           task_name_{task.task_name_}, metadata_{task.metadata_},
-          result_{std::move(result)}, run_time_{run_time} {}
+          result_{std::move(result)}, run_time_{run_time},
+          dispatch_offset_from_job_start_{dispatch_offset_from_job_start},
+          worker_id_{worker_id} {}
 
     /// `TaskId` within the submitted job
     TaskId task_id_{0};
@@ -291,41 +300,105 @@ struct TaskRecord {
     /// Simulation-unit result for this task
     TaskResult result_;
 
-    /// Wall-clock duration for this task
+    /// Elapsed time from dispatch until the result or timeout is recorded
     std::chrono::duration<double> run_time_{};
+
+    /// Time from job start to dispatch; absent if not dispatched or timing is unavailable
+    std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start_;
+
+    /// Zero-based worker index within the job; absent if no worker assignment is available
+    std::optional<std::size_t> worker_id_;
+};
+
+/**
+ * @brief Select when a job controller generates tasks from completed records.
+ */
+enum class TaskGenerationPolicy {
+    /// Call the controller after each task reports success or failure
+    asynchronous,
+
+    /// Call the controller when no queued tasks remain to dispatch and no dispatched
+    /// tasks are awaiting results
+    batch_synchronous,
 };
 
 /**
  * @brief Per-job policy for generating tasks from completed task records.
  *
  * One controller instance belongs to each submitted job and remains in the parent
- * process that owns `Runtime`. Only the owning job actor calls `generate_new_tasks()`.
+ * process that owns `Runtime`. Only the owning job actor calls controller hooks.
  * Calls are serialized even when multiple workers finish concurrently, so controller
- * members accessed only by this method do not require a mutex. Results from workers
+ * members accessed only by these hooks do not require a mutex. Results from workers
  * that finish concurrently may be processed in either order.
  *
- * `generate_new_tasks()` runs synchronously and should return promptly. Long-running or
+ * Controller hooks run synchronously and should return promptly. Long-running or
  * blocking work delays queued task results, shutdown requests, and the job timeout.
  *
  * Tasks returned by one call are appended to the job in vector order. The first
  * returned task receives the next available `TaskId`, and the remaining tasks receive
  * consecutive `TaskId` values. Before dispatch, returned tasks undergo the same
  * runtime-field assignment and duplicate-name validation as initial tasks.
+ * With `TaskGenerationPolicy::batch_synchronous`, the initial tasks form the first batch
+ * and each returned vector forms the next batch. Failed tasks, including task timeouts,
+ * count toward batch completion; the controller decides how to handle their results.
  */
 class JobController {
   public:
+    /// Select when the job actor calls generate_new_tasks()
+    explicit JobController(
+        TaskGenerationPolicy task_generation_policy = TaskGenerationPolicy::asynchronous)
+        : task_generation_policy_{task_generation_policy} {}
+
     virtual ~JobController() = default;
 
+    /// Task generation policy selected at construction
+    TaskGenerationPolicy task_generation_policy() const {
+        return task_generation_policy_;
+    }
+
     /**
-     * @brief Generate tasks after one task execution returns success or failure.
-     * @param completed_task_records All completed task records in completion order.
-     * @return Tasks to append to the current job in the order returned.
+     * @brief Generate the initial tasks for controller-only submission.
+     *
+     * Called once at job start, before dispatch. Explicit task submission skips this
+     * hook. Returning no tasks produces an empty job and still calls finalize().
      */
-    virtual std::vector<Task>
-    generate_new_tasks(const std::vector<TaskRecord>& completed_task_records) {
-        static_cast<void>(completed_task_records);
+    virtual std::vector<Task> generate_initial_tasks() {
         return {};
     }
+
+    /**
+     * @brief Generate tasks when the selected task generation policy permits.
+     * @param new_records Completions since the previous callback, valid only during
+     * this call. The span and references into it must not be retained.
+     *
+     * Contains successful and failed results in completion order: one record for
+     * asynchronous callbacks or the completed batch for batch-synchronous callbacks.
+     * The span is never empty, and each completion is delivered exactly once.
+     * Synthetic job-timeout records are retained only in the final JobRecord.
+     * @return Tasks to append to the current job in the order returned.
+     */
+    virtual std::vector<Task> generate_new_tasks(
+        std::span<const TaskRecord> new_records) {
+        static_cast<void>(new_records);
+        return {};
+    }
+
+    /**
+     * @brief Return structured output for the final `JobRecord`.
+     *
+     * Called once by the job actor on completion, including a job timeout or an empty
+     * job. Calls are serialized with generate_new_tasks(), and this method should
+     * return promptly. Implementations may move accumulated data into the result.
+     * Task-generation errors and runtime shutdown produce no final record and do not call
+     * this method. Exceptions propagate through `JobHandle::get()` as job errors.
+     * @return Optional scalar, list, or dictionary output; null by default.
+     */
+    virtual caf::config_value finalize() {
+        return {};
+    }
+
+  private:
+    TaskGenerationPolicy task_generation_policy_;
 };
 
 /**
@@ -341,11 +414,12 @@ struct JobRecord {
      * @param job_id `JobId` assigned to this submitted job.
      * @param tasks Task records in submitted task order.
      * @param run_time Wall-clock duration for this job.
+     * @param output Structured output returned by the job controller.
      */
     JobRecord(std::uint64_t run_id, JobId job_id, std::vector<TaskRecord> tasks = {},
-              std::chrono::duration<double> run_time = {})
+              std::chrono::duration<double> run_time = {}, caf::config_value output = {})
         : run_id_{run_id}, job_id_{job_id}, tasks_{std::move(tasks)},
-          run_time_{run_time} {}
+          run_time_{run_time}, output_{std::move(output)} {}
 
     /// Runtime identifier for this `Runtime` instance
     std::uint64_t run_id_{0};
@@ -358,6 +432,9 @@ struct JobRecord {
 
     /// Wall-clock duration for this job
     std::chrono::duration<double> run_time_{};
+
+    /// Structured output returned by JobController::finalize(); null by default
+    caf::config_value output_;
 };
 
 /**
@@ -515,23 +592,24 @@ struct RuntimeOptions {
     /// Maximum number of worker actors used for each job
     std::size_t max_workers_;
 
-    /// Timeout for one task execution request; subprocess units terminate their child
-    /// process when this timeout expires
+    /// Timeout for one task response; expiry marks the task as failed. Subprocess tasks
+    /// are terminated; in-process execute() calls are not interrupted.
     std::chrono::milliseconds task_request_timeout_;
 
-    /// Maximum runtime for a job; completed records are preserved when this expires
+    /// Job timeout; expiry marks unfinished tasks as failed and requests worker shutdown.
+    /// Only subprocess tasks are terminated; in-process calls are not interrupted.
     std::chrono::milliseconds job_request_timeout_;
 
     /// Root output directory for run and job artifact folders; an empty value disables
-    /// all output directories and files
+    /// all output directories and files.
     std::string output_root_;
 
     /**
      * @brief Construct runtime options.
      * @param workers Maximum number of worker actors used for each job. Values of zero are
      *                clamped to one.
-     * @param task_timeout Timeout used for one simulation task request.
-     * @param job_timeout Maximum runtime for one submitted job.
+     * @param task_timeout Task-response timeout; terminates only subprocess tasks.
+     * @param job_timeout Timeout that fails unfinished tasks and requests worker shutdown.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      */
@@ -618,7 +696,10 @@ template <class Inspector> bool inspect(Inspector& inspector, TaskRecord& task_r
                 inspector.field("task_name", task_record.task_name_),
                 inspector.field("metadata", task_record.metadata_),
                 inspector.field("result", task_record.result_),
-                inspector.field("run_time", task_record.run_time_));
+                inspector.field("run_time", task_record.run_time_),
+                inspector.field("dispatch_offset_from_job_start",
+                                task_record.dispatch_offset_from_job_start_),
+                inspector.field("worker_id", task_record.worker_id_));
 }
 
 /**
@@ -634,7 +715,9 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
         .fields(inspector.field("run_id", job_record.run_id_),
                 inspector.field("job_id", job_record.job_id_),
                 inspector.field("tasks", job_record.tasks_),
-                inspector.field("run_time", job_record.run_time_));
+                inspector.field("run_time", job_record.run_time_),
+                inspector.field("output", job_record.output_)
+                    .fallback(caf::config_value{}));
 }
 
 /**
@@ -698,14 +781,26 @@ class Runtime {
     JobHandle submit_job(std::vector<Task> tasks) const;
 
     /**
+     * @brief Submit a controller that generates its own initial tasks at job start.
+     *
+     * Calls generate_initial_tasks() once in the job actor. Controller hooks are
+     * serialized, and their errors propagate through JobHandle::get().
+     * @param job_controller Controller transferred to the submitted job.
+     * @return Handle for retrieving the final JobRecord.
+     * @throws std::invalid_argument if job_controller is null.
+     */
+    JobHandle submit_job(std::unique_ptr<JobController> job_controller) const;
+
+    /**
      * @brief Submit tasks with a controller that may generate additional work.
      *
      * The runtime takes ownership of `job_controller`. After each task execution
-     * returns success or failure, the owning job actor creates its `TaskRecord`, passes
-     * all completed task records to the controller, and appends any returned tasks to
-     * the job.
-     * An empty `tasks` vector returns an empty `JobRecord` without invoking
-     * `job_controller`.
+     * returns success or failure, the owning job actor creates its `TaskRecord`. When
+     * the controller's task generation policy permits, it passes new completions to
+     * the controller and appends any returned tasks to the job.
+     * This overload skips generate_initial_tasks().
+     * An empty `tasks` vector skips task generation and calls only finalize().
+     * The controller's finalize() output is retained in `JobRecord::output_`.
      *
      * If the controller or preparation of its returned tasks fails, the job stops
      * dispatching pending tasks and allows active tasks to finish. The returned handle
@@ -723,6 +818,10 @@ class Runtime {
                          std::unique_ptr<JobController> job_controller) const;
 
   private:
+    JobHandle submit_job_impl(std::vector<Task> tasks,
+                              std::unique_ptr<JobController> job_controller,
+                              bool initialize_controller) const;
+
     // Map each submitted job to the promise fulfilled by the orchestrator
     using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
 

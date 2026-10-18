@@ -31,6 +31,7 @@ Additional examples
 - `examples/04_summa <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_summa>`_: `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline execution and one MIAOW task per staged catchment feature described by a NextGen-style realization
 - `examples/05_libtrixi_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/05_libtrixi_bmi>`_: `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin in a single-task subprocess
 - `examples/06_fuse_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/06_fuse_bmi>`_: deterministic 256-member Saltelli ensemble using the `FUSE <https://github.com/uofs-simlab/fuse>`_ dynamic Fortran BMI plugin
+- `examples/08_particle_swarm <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/08_particle_swarm>`_: compares batch-synchronous and asynchronous particle swarm optimization on Rastrigin, with randomized evaluation delays and Matplotlib playback
 
 SUMMA
 ^^^^^
@@ -127,27 +128,56 @@ The opt-in download uses the `FUSE grid test case <https://dl.dropboxusercontent
 
 The FUSE repository is distributed under the `GNU General Public License version 3 <https://github.com/uofs-simlab/fuse/blob/master/COPYING>`_.
 
+Particle swarm optimization
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``08_particle_swarm`` example compares two methods for scheduling particle swarm optimization. Each task evaluates one particle's position on the Rastrigin function, with randomized delays to simulate varying evaluation costs.
+
+- ``batch_synchronous``: the controller waits for every particle in a generation to finish, then updates the whole swarm using that generation's best result and submits the next generation.
+- ``asynchronous``: the controller updates each particle as its result arrives, using the best result available at that time, and submits its next evaluation without waiting for the other particles.
+
+The synchronous job runs to completion first, then the asynchronous job starts. Both start from identical particle positions and velocities, using 32 particles and eight workers by default. Each stops submitting work after 30 seconds or 100,000 evaluations; queued and active evaluations finish normally.
+
+Select, build, and run this additional example from the repository root:
+
+.. code-block:: sh
+
+   cmake -S . -B build -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=08_particle_swarm
+   cmake --build build --target miaow_particle_swarm
+   cd examples/08_particle_swarm
+   ./miaow_particle_swarm
+
+Results are saved under ``output/run_<id>``. To compare particle histories, worker usage, and convergence, use the provided Python script:
+
+.. code-block:: sh
+
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -r requirements.txt
+   .venv/bin/python animate.py "output/run_<id>"
+
+Replace ``<id>`` with the run number in the path printed by the executable (``0`` for the first run). Figures are written to its ``figures`` subdirectory; MP4 export requires FFmpeg.
+
 Example command-line options
 ----------------------------
 
-Examples use the following runtime command-line options where applicable:
+Examples accept the following runtime command-line options where applicable. The table shows ``RuntimeOptions`` defaults; individual examples may override them. For example, ``08_particle_swarm`` defaults to eight workers and an output root of ``output``.
 
 .. list-table::
    :header-rows: 1
    :widths: 30 30 50
 
    * - Option
-     - Default
+     - Runtime default
      - Description
    * - ``--max_workers``
      - ``1``
      - Maximum number of worker actors used for each job
    * - ``--task_request_timeout``
      - ``5``
-     - Timeout for one task execution, in seconds; MIAOW terminates the child process when a subprocess task exceeds this timeout
+     - Task-response timeout, in seconds; timed-out tasks fail. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.
    * - ``--job_request_timeout``
      - ``300``
-     - Maximum runtime for one job, in seconds
+     - Job timeout, in seconds; unfinished tasks fail and worker shutdown is requested. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.
    * - ``--output_root``
      - ``""``
      - Root directory path for runtime-managed output folders, disabled by default

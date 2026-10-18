@@ -257,7 +257,7 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
 caf::behavior
 job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
           std::vector<Task> tasks, std::shared_ptr<JobController> job_controller,
-          RuntimeOptions runtime_options,
+          bool initialize_controller, RuntimeOptions runtime_options,
           std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
           caf::actor subprocess_registration_actor,
           std::uint16_t subprocess_registration_port);
@@ -281,7 +281,7 @@ struct JobState {
     RuntimeOptions runtime_options_;
 
     // Controller received through local CAF messages and retained for this job
-    // The job actor calls generate_new_tasks() after appending each TaskRecord
+    // The task generation policy determines when the job actor calls generate_new_tasks()
     // Returned tasks are appended to tasks_; the controller never leaves the parent process
     std::shared_ptr<JobController> job_controller_;
 
@@ -300,9 +300,12 @@ struct JobState {
     std::vector<Task> tasks_;
 
     // Successful and failed task records stored in completion order
-    // Each record stores its task ID; the controller receives this complete vector
+    // Controllers borrow a view of new records during each callback
     // The records are sorted by task ID when the final JobRecord is constructed
     std::vector<TaskRecord> completed_task_records_;
+
+    // Boundary between records already delivered to the controller and new completions
+    std::size_t reported_task_count_{0};
 
     // Array of worker actors currently running, indexed by worker ID
     std::vector<caf::actor> workers_;
@@ -313,7 +316,7 @@ struct JobState {
     // Task ID of the next task to dispatch into an available worker slot
     std::size_t next_task_to_dispatch_{0};
 
-    // Number of tasks currently executing
+    // Number of dispatched task requests awaiting results
     std::size_t active_task_count_{0};
 
     // Job-level error reported after all active task requests finish
@@ -330,6 +333,9 @@ struct JobState {
 
     // Start times for each task, indexed by task ID
     std::vector<std::chrono::steady_clock::time_point> task_start_times_;
+
+    // Worker indices assigned at dispatch, indexed by task ID; queued tasks have no worker
+    std::vector<std::optional<std::size_t>> task_worker_ids_;
 };
 
 } // namespace miaow::core

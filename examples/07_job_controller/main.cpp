@@ -22,6 +22,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -80,10 +81,16 @@ class IterationJobController final : public miaow::JobController {
         : simulation_unit_id_{simulation_unit_id}, residual_tolerance_{residual_tolerance},
           maximum_iterations_{maximum_iterations} {}
 
+    std::vector<miaow::Task> generate_initial_tasks() override {
+        return {miaow::Task{simulation_unit_id_, caf::config_value{initial_estimate}}};
+    }
+
     std::vector<miaow::Task> generate_new_tasks(
-        const std::vector<miaow::TaskRecord>& completed_task_records) override {
+        std::span<const miaow::TaskRecord> new_records) override {
+        iterations_ += new_records.size();
+
         // Get the last completed task record
-        const miaow::TaskRecord& completed_task = completed_task_records.back();
+        const miaow::TaskRecord& completed_task = new_records.back();
 
         // If the last task failed, stop generating new tasks
         if (completed_task.result_.status_ != miaow::TaskStatus::succeeded) {
@@ -113,7 +120,7 @@ class IterationJobController final : public miaow::JobController {
         }
 
         // If the maximum iteration count has been reached, throw an error
-        if (completed_task_records.size() >= maximum_iterations_) {
+        if (iterations_ >= maximum_iterations_) {
             throw std::runtime_error("Convergence error: maximum iteration count reached");
         }
 
@@ -125,6 +132,7 @@ class IterationJobController final : public miaow::JobController {
     miaow::SimulationUnitId simulation_unit_id_;
     double residual_tolerance_;
     std::size_t maximum_iterations_;
+    std::size_t iterations_ = 0;
 };
 
 } // namespace
@@ -151,10 +159,8 @@ int main(int argc, char* argv[]) {
             std::make_unique<IterationJobController>(heron_iteration, residual_tolerance,
                                                      maximum_iterations);
 
-        // Submit the first task with the initial estimate and the job controller
-        miaow::Task first_iteration{heron_iteration, caf::config_value{initial_estimate}};
-        miaow::JobHandle job = runtime.submit_job(std::vector<miaow::Task>{first_iteration},
-                                                  std::move(controller));
+        // Runtime asks the controller for its first task when the job starts
+        miaow::JobHandle job = runtime.submit_job(std::move(controller));
 
         // Get the final job record and check if all tasks succeeded
         const miaow::JobRecord job_record = job.get();

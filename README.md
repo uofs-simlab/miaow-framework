@@ -24,7 +24,7 @@ MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), u
 
 ## Requirements
 
-MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See the [building and installation documentation](https://tjbmontoya.com/miaow-framework/building.html) for a description of the available provider settings.
+MIAOW requires [CMake](https://cmake.org/) 3.30+, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See the [building and installation documentation](https://tjbmontoya.com/miaow-framework/building.html) for a description of the available provider settings.
 
 On Ubuntu:
 
@@ -67,19 +67,22 @@ MIAOW is an open-source project and welcomes contributions from the community. T
 
 ## Contributors and funding
 
-MIAOW was developed with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/) and is maintained by the [Numerical Simulation Laboratory](https://github.com/uofs-simlab) at the [University of Saskatchewan](https://www.usask.ca/). See the [CONTRIBUTORS](CONTRIBUTORS.md) file for a full list of individual contributors to the project.
-
+MIAOW was developed with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/) and the [Natural Sciences and Engineering Research Council of Canada (NSERC)](https://nserc-crsng.canada.ca/en). It is maintained by the [Numerical Simulation Laboratory](https://github.com/uofs-simlab) at the [University of Saskatchewan](https://www.usask.ca/). See the [CONTRIBUTORS](CONTRIBUTORS.md) file for a full list of individual contributors to the project.
 <p align="center">
-  <a href="https://www.usask.ca/"><img
-      src="docs/images/usask_logo.png"
-      alt="University of Saskatchewan logo"
-      height="60"></a>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://ciroh.ua.edu/"><img
       src="docs/images/ciroh_logo.jpg"
       alt="CIROH logo"
       height="80"></a>
-
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://nserc-crsng.canada.ca/en"><img
+      src="docs/images/nserc_logo.svg"
+      alt="NSERC / CRSNG logo"
+      height="60"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.usask.ca/"><img
+      src="docs/images/usask_logo.png"
+      alt="University of Saskatchewan logo"
+      height="60"></a>
 </p>
 
 ## License
