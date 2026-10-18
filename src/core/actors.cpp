@@ -211,7 +211,7 @@ static void complete_task(caf::event_based_actor* self,
         std::vector<Task> generated_tasks =
             state->job_controller_->generate_new_tasks(
                 records.subspan(state->reported_task_count_));
-        
+
         // Update the count of reported tasks to include the newly completed ones
         state->reported_task_count_ = records.size();
 

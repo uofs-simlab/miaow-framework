@@ -67,19 +67,22 @@ MIAOW is an open-source project and welcomes contributions from the community. T
 
 ## Contributors and funding
 
-MIAOW was developed with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/) and is maintained by the [Numerical Simulation Laboratory](https://github.com/uofs-simlab) at the [University of Saskatchewan](https://www.usask.ca/). See the [CONTRIBUTORS](CONTRIBUTORS.md) file for a full list of individual contributors to the project.
-
+MIAOW was developed with funding support from the [Cooperative Institute for Research to Operations in Hydrology (CIROH)](https://ciroh.ua.edu/) and the [Natural Sciences and Engineering Research Council of Canada (NSERC)](https://nserc-crsng.canada.ca/en). It is maintained by the [Numerical Simulation Laboratory](https://github.com/uofs-simlab) at the [University of Saskatchewan](https://www.usask.ca/). See the [CONTRIBUTORS](CONTRIBUTORS.md) file for a full list of individual contributors to the project.
 <p align="center">
-  <a href="https://www.usask.ca/"><img
-      src="docs/images/usask_logo.png"
-      alt="University of Saskatchewan logo"
-      height="60"></a>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://ciroh.ua.edu/"><img
       src="docs/images/ciroh_logo.jpg"
       alt="CIROH logo"
       height="80"></a>
-
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://nserc-crsng.canada.ca/en"><img
+      src="docs/images/nserc_logo.svg"
+      alt="NSERC / CRSNG logo"
+      height="60"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.usask.ca/"><img
+      src="docs/images/usask_logo.png"
+      alt="University of Saskatchewan logo"
+      height="60"></a>
 </p>
 
 ## License

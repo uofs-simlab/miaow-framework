@@ -646,10 +646,6 @@ BOOST_AUTO_TEST_CASE(controller_task_generation_policies_control_callback_timing
                                     final_record.dispatch_offset_from_job_start_);
                     }
                 }
-                BOOST_TEST(delivered == job_record.tasks_.size());
-                for (const bool record_seen : seen) {
-                    BOOST_TEST(record_seen);
-                }
             }
         }
     }

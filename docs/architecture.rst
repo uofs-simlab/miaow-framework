@@ -27,7 +27,7 @@ Each ``JobController`` selects a ``TaskGenerationPolicy`` through its constructo
 - ``asynchronous`` (default): call ``generate_new_tasks()`` after each task reports a result.
 - ``batch_synchronous``: call ``generate_new_tasks()`` when every task in the current batch has reported a result. The initial task vector forms the first batch, and each returned vector forms the next batch.
 
-Successful and failed results, including task timeouts, count toward batch completion; the controller decides how to handle failures. Both policies pass a ``std::span<const TaskRecord>`` containing only new completions to ``JobController::generate_new_tasks()``, in completion order: one record for asynchronous callbacks, or the completed batch for batch-synchronous callbacks.
+Successful and failed results, including task timeouts, count toward batch completion; the controller decides how to handle failures. Both policies pass a ``std::span<const TaskRecord>`` containing only new completions to ``JobController::generate_new_tasks()``, in completion order: one record for asynchronous callbacks, or the completed batch for batch-synchronous callbacks. The controller is responsible for maintaining its own history-dependent state across multiple invocations of ``generate_new_tasks()``.
 
 Controller policies run serially in the job actor. Controller-only job submission calls ``generate_initial_tasks()`` before the initial dispatch and finalizes normally if it returns no tasks. Explicit task submission skips ``generate_initial_tasks()``, including when an empty vector is supplied. Initialization errors propagate through ``JobHandle::get()`` and produce no final job record.
 
