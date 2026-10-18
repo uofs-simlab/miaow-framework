@@ -107,7 +107,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
           -DBUILD_EXAMPLES=ON
-          "-DMIAOW_EXAMPLES=00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;07_job_controller"
+          "-DMIAOW_EXAMPLES=00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;07_job_controller;08_particle_swarm"
           -DCMAKE_TOOLCHAIN_FILE=build-examples/conan/conan_toolchain.cmake
           -DMIAOW_BOOST_PROVIDER=system
           -DMIAOW_CAF_PROVIDER=system

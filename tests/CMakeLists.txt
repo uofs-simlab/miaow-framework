@@ -6,7 +6,7 @@ target_compile_features(miaow_core_tests PRIVATE cxx_std_20)
 target_compile_definitions(miaow_core_tests PRIVATE
     MIAOW_CORE_TEST_OUTPUT_ROOT="${CMAKE_CURRENT_BINARY_DIR}/output/core"
 )
-target_link_libraries(miaow_core_tests PRIVATE miaow Boost::unit_test_framework)
+target_link_libraries(miaow_core_tests PRIVATE miaow Boost::json Boost::unit_test_framework)
 
 add_executable(miaow_bmi_tests
     bmi/bmi.cpp

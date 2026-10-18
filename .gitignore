@@ -90,6 +90,7 @@ examples/04_summa/data/*/summa_output/
 __pycache__/
 *.pyc
 docs/.venv/
+examples/08_particle_swarm/.venv/
 examples/06_fuse_bmi/data/configs/
 *.log
 

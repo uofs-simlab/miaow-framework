@@ -13,16 +13,20 @@ MIAOW executes simulation workflows through an actor hierarchy inspired by `SUMM
 
 A typical workflow includes the following steps:
 
-1. Caller invokes ``Runtime::submit_job(task)``, ``Runtime::submit_job(tasks)``, or ``Runtime::submit_job(tasks, std::move(job_controller))``. In the third overload, ``job_controller`` has type ``std::unique_ptr<JobController>``, and ``Runtime`` takes ownership of the controller. The controller's role is to generate additional tasks according to its task generation policy, and it can inspect all completed task records to determine what new tasks to generate.
+1. Caller submits explicit tasks through ``Runtime::submit_job(task)`` or ``Runtime::submit_job(tasks)``, optionally supplying a controller through ``Runtime::submit_job(tasks, std::move(job_controller))``. Alternatively, ``Runtime::submit_job(std::move(job_controller))`` lets the controller generate its own initial tasks. Runtime takes ownership of the ``std::unique_ptr<JobController>``.
 2. Runtime assigns a ``job_id`` and sends the tasks and job controller to ``orchestrator_actor``.
-3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector and creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_workers_``.
+3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector. For controller-only submission, it calls ``generate_initial_tasks()`` once at job start. It creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_workers_``.
 4. The ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
 5. Each worker resolves ``Task::simulation_unit_id_``, constructs a new ``SimulationUnit``, executes the task, and returns a ``TaskResult`` to the job actor.
-6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``. When the controller's task generation policy permits, it passes all completed task records to its controller, appends tasks returned by the controller's ``generate_new_tasks()`` method to its task vector, and adds workers if needed. It then returns to step 4. This continues until no queued tasks remain to dispatch and no dispatched tasks are awaiting results, and the controller returns no new tasks.
-7. Completed ``TaskRecord`` values are sorted by ``TaskId`` and stored in one ``JobRecord``.
+6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``. When the controller's task generation policy permits, it passes a read-only span of new completions to its controller, appends tasks returned by the controller's ``generate_new_tasks()`` method to its task vector, and adds workers if needed. It then returns to step 4. This continues until no queued tasks remain to dispatch and no dispatched tasks are awaiting results, and the controller returns no new tasks.
+7. Runtime calls ``JobController::finalize()`` once to collect structured job output. Completed ``TaskRecord`` values are sorted by ``TaskId`` and stored with this output in one ``JobRecord``.
 8. Runtime fulfils the caller's ``JobHandle`` future.
 
-``JobController`` uses ``TaskGenerationPolicy::asynchronous`` by default, calling ``generate_new_tasks()`` after each task reports a result. Alternatively, a derived controller can select synchronized batches by passing ``TaskGenerationPolicy::batch_synchronous`` to the ``JobController`` constructor. This policy calls ``generate_new_tasks()`` only when no queued tasks remain to dispatch and no dispatched tasks are awaiting results. The initial task vector forms the first batch, and each returned vector forms the next batch. Successful and failed results, including task timeouts, count toward batch completion; the controller decides how to handle failures. Both policies receive the full completed-record history in completion order. Tasks from earlier batches remain in the job's task vector.
+``JobController`` uses ``TaskGenerationPolicy::asynchronous`` by default, calling ``generate_new_tasks()`` after each task reports a result. Alternatively, a derived controller can select synchronized batches by passing ``TaskGenerationPolicy::batch_synchronous`` to the ``JobController`` constructor. This policy calls ``generate_new_tasks()`` only when no queued tasks remain to dispatch and no dispatched tasks are awaiting results. The initial task vector forms the first batch, and each returned vector forms the next batch. Successful and failed results, including task timeouts, count toward batch completion; the controller decides how to handle failures. Both policies receive a ``std::span<const TaskRecord>`` containing completions since the previous callback, in completion order: one record for asynchronous callbacks, or the completed batch for batch-synchronous callbacks. The job actor tracks the boundary, so each completion is delivered exactly once. The span and references into it are valid only during the callback and must not be retained. Controllers keep their own iteration counts and accumulated state; the runtime retains the complete history for the final ``JobRecord``. Tasks from earlier batches remain in the job's task vector.
+
+Controller hooks run serially in the job actor. Controller-only submission calls ``generate_initial_tasks()`` before dispatch and finalizes normally if it returns no tasks. Explicit-task submission skips initialization, including when an empty vector is supplied. Initial tasks generated by a controller receive the same task IDs, names, output directories, validation, and worker setup as subsequent generated tasks. Initialization errors propagate through ``JobHandle::get()`` and produce no final job record.
+
+Controllers own convergence criteria and search limits. They can stop generating tasks while queued and active work finishes normally. Runtime timeouts remain independent failure safeguards.
 
 The following figure illustrates the task scheduling process managed by the ``job_actor`` in steps 4 through 6 of the above workflow, where the orange cat icons represent tasks:
 
@@ -31,18 +35,18 @@ The following figure illustrates the task scheduling process managed by the ``jo
    :align: center
    :width: 67%
 
-When the controller generates new tasks, the job actor counts entries in its task vector that do not yet have a corresponding completed task record and adds workers only if this count exceeds the existing worker count. Workers are not removed while the job is running, so the job retains the largest worker count that has been required at any point during the job, capped by ``RuntimeOptions::max_workers_``, until the job completes or shuts down. Idle ``simulation_unit_actor`` workers do not occupy CAF scheduler threads, so retaining them does not reduce scheduler capacity.
+The job actor adds workers as needed, up to ``RuntimeOptions::max_workers_``, and retains them until the job completes or shuts down. Idle workers do not occupy CAF scheduler threads.
 
 Task timing
 -----------
 
-``TaskRecord::dispatch_offset_from_job_start_`` stores the elapsed time from job start to task dispatch, measured using the same monotonic clock as ``run_time_``. It is an optional ``std::chrono::duration<double>`` in seconds. Dispatch precedes the worker beginning execution, so this offset describes the runtime scheduling event.
+``TaskRecord::dispatch_offset_from_job_start_`` stores the elapsed seconds from job start to task dispatch, measured using the same monotonic clock as ``run_time_``. Dispatch precedes the worker beginning execution.
 
-``TaskRecord::worker_id_`` records the zero-based worker index within the job assigned at dispatch. A worker can execute multiple tasks, and its index identifies the worker actor independently of the scheduler thread or subprocess process ID. Tasks never dispatched have ``std::nullopt`` (``null`` in JSON); the field can also be absent when reading older records or when no worker assignment was supplied during manual construction.
+``TaskRecord::worker_id_`` identifies the zero-based worker actor within the job, independently of its scheduler thread or subprocess process ID. A worker can execute multiple tasks. Unassigned worker IDs are ``std::nullopt`` (``null`` in JSON).
 
-``TaskRecord::run_time_`` measures the interval from dispatch until the job actor records the result or timeout. It includes scheduling and communication overhead and any subprocess startup or cleanup performed before the result is recorded. Adding it to the dispatch offset gives the time relative to job start when the terminal status was recorded. **Timeouts terminate only subprocess tasks.** An in-process task is marked as failed, but its ``SimulationUnit::execute()`` call is not interrupted and may continue running afterward.
+``TaskRecord::run_time_`` measures the interval from dispatch until the job actor records the result or timeout. It includes scheduling and communication overhead and any subprocess startup or cleanup. Adding it to the dispatch offset gives the time relative to job start when the terminal status was recorded.
 
-Tasks that reach the job timeout before dispatch have a dispatch offset of ``std::nullopt`` (``null`` in JSON) and a zero runtime. Dispatched tasks retain their dispatch offset and elapsed runtime up to the observed timeout. An absent offset can also indicate unavailable timing in a manually constructed record or an older saved record. When output is enabled, ``job_record.json`` includes the offset using CAF's duration representation, or ``null`` when it is absent.
+Tasks that reach the job timeout before dispatch have a null dispatch offset and zero runtime. Dispatched tasks retain their dispatch offset and elapsed runtime up to the timeout. Unavailable dispatch offsets are ``std::nullopt`` (``null`` in JSON).
 
 Structured task output
 ----------------------
@@ -50,6 +54,17 @@ Structured task output
 ``TaskResult::output_`` carries optional structured output as a ``caf::config_value``. It supports scalar values and recursively nested lists and dictionaries, and remains available through the completed ``TaskRecord`` values passed to ``JobController::generate_new_tasks()`` and retained by the final ``JobRecord``. Controllers are responsible for validating the structure and value types defined by their simulation units. Large time series, grids, and model state should be written to files and referenced by ``TaskResult::artifact_paths_``.
 
 When ``RuntimeOptions::output_root_`` is configured, each task's structured output (or a ``null`` value) is included in the ``job_record.json`` written when the job completes.
+
+Structured job output
+---------------------
+
+``JobController::finalize()`` returns optional structured output as a ``caf::config_value``, with null as the default. Runtime retains the result in ``JobRecord::output_`` and includes it in ``job_record.json`` when output is enabled.
+
+The job actor calls ``finalize()`` once when creating the final record, including for empty jobs and job timeouts. At a timeout, the controller can return its accumulated state; synthetic timeout records are not passed to ``generate_new_tasks()``. Finalization is serialized with task-generation calls and should return promptly. Controller errors and runtime shutdown produce no final record. Exceptions from controller hooks propagate through ``JobHandle::get()``.
+
+.. warning::
+
+   For both task output (``TaskResult::output_``) and job output (``JobRecord::output_``), do not put null values inside lists or dictionaries; CAF cannot deserialize them. Returning ``caf::config_value{}`` for the entire output is supported in both cases.
 
 .. _simulation-unit-execution:
 

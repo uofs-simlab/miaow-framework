@@ -16,6 +16,9 @@ namespace miaow::io {
 
 std::string trim(std::string value);
 
+// Preserve the CAF JSON schema and full double precision when writing output files.
+void write_json_file(const std::filesystem::path& path, const caf::json_value& value);
+
 /**
  * @brief Write a CAF-serializable value as formatted JSON.
  *
@@ -33,15 +36,7 @@ void write_json_file(const std::filesystem::path& path, const Value& value,
                                  "': " + caf::to_string(builder.get_error()));
     }
 
-    const caf::json_value json_value = builder.seal();
-    std::string json_text;
-    json_value.print_to(json_text, 2);
-
-    std::ofstream output(path);
-    if (!output.is_open()) {
-        throw std::runtime_error("unable to open JSON file '" + path.string() + "'");
-    }
-    output << json_text << "\n";
+    write_json_file(path, builder.seal());
 }
 
 // Throw validation errors with the caller's domain prefix

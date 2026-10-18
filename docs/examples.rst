@@ -31,6 +31,7 @@ Additional examples
 - `examples/04_summa <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_summa>`_: `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline execution and one MIAOW task per staged catchment feature described by a NextGen-style realization
 - `examples/05_libtrixi_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/05_libtrixi_bmi>`_: `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin in a single-task subprocess
 - `examples/06_fuse_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/06_fuse_bmi>`_: deterministic 256-member Saltelli ensemble using the `FUSE <https://github.com/uofs-simlab/fuse>`_ dynamic Fortran BMI plugin
+- `examples/08_particle_swarm <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/08_particle_swarm>`_: compares batch-synchronous and asynchronous particle swarm optimization on Rastrigin, with randomized evaluation delays and Matplotlib playback
 
 SUMMA
 ^^^^^
@@ -126,6 +127,35 @@ The following example-specific flags control the FUSE model and data paths:
 The opt-in download uses the `FUSE grid test case <https://dl.dropboxusercontent.com/s/g5193e0n01ao33d/fuse_grid.zip?dl=0>`_. CMake stores the extracted dataset and generated task configurations under ``build/fuse_grid_data``, which is ignored by Git. The provided parameter sets were generated using FUSE's `bmi/generate_param_sets.py <https://github.com/uofs-simlab/fuse/blob/d73d24bb8678908973ca6f82f9d6eb6405cbb85f/bmi/generate_param_sets.py>`_ script at revision ``d73d24bb8678908973ca6f82f9d6eb6405cbb85f`` with ``N_BASE_SAMPLES = 8`` and ``CONSTRAINTS_FILE`` set to the ``settings/fuse_zConstraints_snow.txt`` file from the downloaded ``fuse_grid`` dataset. The script creates 256 parameter sets in NetCDF format, which are tracked in this repository under ``examples/06_fuse_bmi/data/paramsets``.
 
 The FUSE repository is distributed under the `GNU General Public License version 3 <https://github.com/uofs-simlab/fuse/blob/master/COPYING>`_.
+
+Particle swarm optimization
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``08_particle_swarm`` example compares two methods for scheduling particle swarm optimization. Each task evaluates one particle's position on the Rastrigin function, with randomized delays to simulate varying evaluation costs.
+
+- ``batch_synchronous``: the controller waits for every particle in a generation to finish, then updates the whole swarm using that generation's best result and submits the next generation.
+- ``asynchronous``: the controller updates each particle as its result arrives, using the best result available at that time, and submits its next evaluation without waiting for the other particles.
+
+The synchronous job runs to completion first, then the asynchronous job starts. Both start from identical particle positions and velocities, using 32 particles and eight workers by default. Each stops submitting work after 30 seconds or 100,000 evaluations; queued and active evaluations finish normally.
+
+Select, build, and run this additional example from the repository root:
+
+.. code-block:: sh
+
+   cmake -S . -B build -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=08_particle_swarm
+   cmake --build build --target miaow_particle_swarm
+   cd examples/08_particle_swarm
+   ./miaow_particle_swarm
+
+Results are saved under ``output/run_<id>``. To compare particle histories, worker usage, and convergence, use the provided Python script:
+
+.. code-block:: sh
+
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -r requirements.txt
+   .venv/bin/python animate.py "output/run_<id>"
+
+Replace ``<id>`` with the run number in the path printed by the executable (``0`` for the first run). Figures are written to its ``figures`` subdirectory; MP4 export requires FFmpeg.
 
 Example command-line options
 ----------------------------

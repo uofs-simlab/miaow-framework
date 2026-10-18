@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -19,6 +20,10 @@ namespace miaow::core {
 // Forward declaration of the function that dispatches tasks to available workers
 static void dispatch_tasks(caf::event_based_actor* self,
                            const std::shared_ptr<JobState>& state);
+
+static void begin_job_error_shutdown(caf::event_based_actor* self,
+                                     const std::shared_ptr<JobState>& state,
+                                     std::string error_message);
 
 // Request shutdown from every worker and any subprocess it retains
 static void stop_workers(const std::shared_ptr<JobState>& state) {
@@ -48,11 +53,43 @@ static void spawn_workers_for_tasks(caf::event_based_actor* self,
     }
 }
 
+// Prepare controller-generated tasks for dispatch using the normal runtime fields
+static void append_controller_tasks(caf::event_based_actor* self,
+                                     const std::shared_ptr<JobState>& state,
+                                     std::vector<Task> tasks) {
+    if (tasks.empty()) {
+        return;
+    }
+    const std::size_t first_task_index = state->tasks_.size();
+    state->tasks_.reserve(first_task_index + tasks.size());
+    for (Task& task : tasks) {
+        state->tasks_.push_back(std::move(task));
+    }
+    assign_task_runtime_fields(state->tasks_, first_task_index, state->runtime_options_,
+                               state->run_id_, state->job_id_);
+    state->task_start_times_.resize(state->tasks_.size(), state->job_start_time_);
+    state->task_worker_ids_.resize(state->tasks_.size());
+    spawn_workers_for_tasks(self, state);
+}
+
 // Deliver the records currently held by the job actor and request worker shutdown
 static void complete_job(caf::event_based_actor* self,
                          const std::shared_ptr<JobState>& state) {
     // Ignore completion attempts after the job response has already been delivered
     if (!state->response_promise_.has_value()) {
+        return;
+    }
+
+    // Collect controller-owned output before handing the final record to the caller.
+    caf::config_value output;
+    try {
+        output = state->job_controller_->finalize();
+    } catch (const std::exception& exception) {
+        begin_job_error_shutdown(
+            self, state, "JobController error: " + std::string(exception.what()));
+        return;
+    } catch (...) {
+        begin_job_error_shutdown(self, state, "JobController error: unknown exception");
         return;
     }
 
@@ -67,7 +104,7 @@ static void complete_job(caf::event_based_actor* self,
     const std::chrono::duration<double> job_run_time =
         std::chrono::steady_clock::now() - state->job_start_time_;
     JobRecord job_record{state->run_id_, state->job_id_, std::move(task_records),
-                         job_run_time};
+                         job_run_time, std::move(output)};
 
     // Stop job-owned work before completing the deferred request from the orchestrator
     state->job_timeout_.dispose();
@@ -167,29 +204,13 @@ static void complete_task(caf::event_based_actor* self,
     }
 
     try {
-        // Call the controller to generate tasks from the complete record history
+        // Deliver each completion once through a view of the new records
+        const std::span<const TaskRecord> records{state->completed_task_records_};
         std::vector<Task> generated_tasks =
-            state->job_controller_->generate_new_tasks(state->completed_task_records_);
-
-        if (!generated_tasks.empty()) {
-            // Record the index of the first generated task for runtime-field assignment
-            // and reserve space for the new tasks
-            const std::size_t first_generated_task_index = state->tasks_.size();
-            state->tasks_.reserve(state->tasks_.size() + generated_tasks.size());
-
-            // Move generated tasks into the job before assigning their runtime fields
-            for (Task& generated_task : generated_tasks) {
-                state->tasks_.push_back(std::move(generated_task));
-            }
-
-            // Prepare generated tasks and add workers if the job now requires more
-            assign_task_runtime_fields(state->tasks_, first_generated_task_index,
-                                       state->runtime_options_, state->run_id_,
-                                       state->job_id_);
-            state->task_start_times_.resize(state->tasks_.size(), state->job_start_time_);
-            state->task_worker_ids_.resize(state->tasks_.size());
-            spawn_workers_for_tasks(self, state);
-        }
+            state->job_controller_->generate_new_tasks(
+                records.subspan(state->reported_task_count_));
+        state->reported_task_count_ = records.size();
+        append_controller_tasks(self, state, std::move(generated_tasks));
     } catch (const std::exception& exception) {
         begin_job_error_shutdown(
             self, state, "JobController error: " + std::string(exception.what()));
@@ -328,7 +349,7 @@ caf::behavior simulation_unit_actor(
 caf::behavior
 job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
           std::vector<Task> tasks, std::shared_ptr<JobController> job_controller,
-          RuntimeOptions runtime_options,
+          bool initialize_controller, RuntimeOptions runtime_options,
           std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
           caf::actor subprocess_registration_actor,
           std::uint16_t subprocess_registration_port) {
@@ -365,6 +386,8 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
 
                 // Create a deferred CAF response for the orchestrator's pending request
                 state->response_promise_ = self->make_response_promise<JobRecord>();
+                // Keep the response token even if initialization finishes an empty job
+                const auto response = *state->response_promise_;
 
                 // job_actor -> job_actor: enforce the configured job deadline; schedule
                 // the deadline within the actor that owns all task state
@@ -373,11 +396,27 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
                         .delay(state->runtime_options_.job_request_timeout_)
                         .send(self);
 
+                if (initialize_controller) {
+                    try {
+                        append_controller_tasks(
+                            self, state, state->job_controller_->generate_initial_tasks());
+                    } catch (const std::exception& exception) {
+                        begin_job_error_shutdown(
+                            self, state, "JobController error: "
+                                             + std::string(exception.what()));
+                        return response;
+                    } catch (...) {
+                        begin_job_error_shutdown(
+                            self, state, "JobController error: unknown exception");
+                        return response;
+                    }
+                }
+
                 dispatch_tasks(self, state);
 
                 // Return the response token that complete_job fulfils after all tasks
                 // finish
-                return *state->response_promise_;
+                return response;
             },
             // job_actor -> job_actor: fail every remaining task at the job deadline
             [=](job_timeout_atom) {
@@ -443,13 +482,14 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
 
     return {// Runtime -> orchestrator_actor: submit one job
             [=](caf::get_atom, JobId job_id, std::vector<Task> tasks,
-                std::shared_ptr<JobController> job_controller) {
+                std::shared_ptr<JobController> job_controller, bool initialize_controller) {
                 const caf::actor orchestrator = self;
 
                 // Spawn one job actor for this request
                 caf::actor job =
                     self->spawn(job_actor, run_id, job_id, std::move(tasks),
-                                std::move(job_controller), runtime_options,
+                                std::move(job_controller), initialize_controller,
+                                runtime_options,
                                 simulation_unit_registry, subprocess_registration_actor,
                                 subprocess_registration_port);
                 active_job_actors->emplace(job_id, job);

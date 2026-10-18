@@ -1,5 +1,6 @@
 #define BOOST_TEST_MODULE miaow_core
 #include <boost/test/unit_test.hpp>
+#include <boost/json.hpp>
 
 #include <caf/binary_deserializer.hpp>
 #include <caf/binary_serializer.hpp>
@@ -11,8 +12,12 @@
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -71,10 +76,11 @@ class IterationJobController final : public miaow::JobController {
           maximum_iterations_{maximum_iterations} {}
 
     std::vector<miaow::Task> generate_new_tasks(
-        const std::vector<miaow::TaskRecord>& completed_task_records) override {
+        std::span<const miaow::TaskRecord> new_records) override {
+        iterations_ += new_records.size();
         const caf::config_value::dictionary* output =
             caf::get_if<caf::config_value::dictionary>(
-                &completed_task_records.back().result_.output_);
+                &new_records.back().result_.output_);
         if (output == nullptr) {
             throw std::runtime_error("missing output dictionary");
         }
@@ -97,7 +103,7 @@ class IterationJobController final : public miaow::JobController {
         if (*residual <= residual_tolerance_) {
             return {};
         }
-        if (completed_task_records.size() >= maximum_iterations_) {
+        if (iterations_ >= maximum_iterations_) {
             throw std::runtime_error("maximum iteration count reached");
         }
         return {miaow::Task{simulation_unit_id_, caf::config_value{*estimate}}};
@@ -107,6 +113,7 @@ class IterationJobController final : public miaow::JobController {
     miaow::SimulationUnitId simulation_unit_id_;
     double residual_tolerance_;
     std::size_t maximum_iterations_;
+    std::size_t iterations_ = 0;
 };
 
 // Sleep for the duration supplied as the first task argument
@@ -130,7 +137,7 @@ class TimeoutJobController final : public miaow::JobController {
         : simulation_unit_id_{simulation_unit_id} {}
 
     std::vector<miaow::Task> generate_new_tasks(
-        const std::vector<miaow::TaskRecord>& /*completed_task_records*/) override {
+        std::span<const miaow::TaskRecord> /*new_records*/) override {
         if (generated_task_) {
             return {};
         }
@@ -147,7 +154,7 @@ class TimeoutJobController final : public miaow::JobController {
 class ThrowingJobController final : public miaow::JobController {
   public:
     std::vector<miaow::Task> generate_new_tasks(
-        const std::vector<miaow::TaskRecord>& /*completed_task_records*/) override {
+        std::span<const miaow::TaskRecord> /*new_records*/) override {
         throw std::runtime_error("deliberate controller failure");
     }
 };
@@ -157,19 +164,19 @@ class RecordingJobController final : public miaow::JobController {
   public:
     RecordingJobController(
         miaow::SimulationUnitId simulation_unit_id,
-        std::shared_ptr<std::vector<std::vector<miaow::TaskRecord>>> record_histories,
+        std::shared_ptr<std::vector<std::vector<miaow::TaskRecord>>> record_batches,
         miaow::TaskGenerationPolicy policy)
         : JobController(policy), simulation_unit_id_{simulation_unit_id},
-          record_histories_{std::move(record_histories)} {}
+          record_batches_{std::move(record_batches)} {}
 
     std::vector<miaow::Task> generate_new_tasks(
-        const std::vector<miaow::TaskRecord>& completed_task_records) override {
+        std::span<const miaow::TaskRecord> new_records) override {
         // Record the completed task records for later inspection
-        record_histories_->push_back(completed_task_records);
+        record_batches_->emplace_back(new_records.begin(), new_records.end());
 
         // If this is the first call to generate_new_tasks, produce an additional batch
         // with two tasks.
-        if (record_histories_->size() == 1) {
+        if (record_batches_->size() == 1) {
             return {miaow::Task{simulation_unit_id_, "1"},
                     miaow::Task{simulation_unit_id_, "1"}};
         }
@@ -178,10 +185,153 @@ class RecordingJobController final : public miaow::JobController {
 
   private:
     miaow::SimulationUnitId simulation_unit_id_;
-    std::shared_ptr<std::vector<std::vector<miaow::TaskRecord>>> record_histories_;
+    std::shared_ptr<std::vector<std::vector<miaow::TaskRecord>>> record_batches_;
+};
+
+// Summarize controller activity and exercise nested, full-precision job output.
+class OutputJobController final : public miaow::JobController {
+  public:
+    using JobController::JobController;
+
+    std::vector<miaow::Task> generate_new_tasks(
+        std::span<const miaow::TaskRecord> new_records) override {
+        completed_ += new_records.size();
+        ++callbacks_;
+        return {};
+    }
+
+    caf::config_value finalize() override {
+        caf::config_value::dictionary output;
+        output.emplace("completed", completed_);
+        output.emplace("callbacks", callbacks_);
+        output.emplace("finalizations", ++finalizations_);
+        output.emplace("values", std::vector<double>{1.2345678901234567, 1.0, -0.0,
+                                                      1.2345678901234567e-12, 1e-100,
+                                                      1e100});
+        output.emplace("label", "quoted \"text\"\nsecond line");
+        output.emplace("enabled", true);
+        output.emplace("empty", caf::config_value::dictionary{});
+        return caf::config_value{std::move(output)};
+    }
+
+  private:
+    std::size_t completed_ = 0;
+    std::size_t callbacks_ = 0;
+    std::size_t finalizations_ = 0;
+};
+
+class ThrowingFinalizer final : public miaow::JobController {
+  public:
+    caf::config_value finalize() override {
+        throw std::runtime_error("deliberate finalization failure");
+    }
+};
+
+// Observe initialization and finalization independently of task execution
+struct ControllerActivity {
+    std::size_t initializations = 0;
+    std::size_t completions = 0;
+    std::size_t finalizations = 0;
+};
+
+class InitializingJobController final : public miaow::JobController {
+  public:
+    InitializingJobController(std::vector<miaow::Task> tasks,
+                              std::shared_ptr<ControllerActivity> activity,
+                              bool throw_on_initialization = false)
+        : tasks_{std::move(tasks)}, activity_{std::move(activity)},
+          throw_on_initialization_{throw_on_initialization} {}
+
+    std::vector<miaow::Task> generate_initial_tasks() override {
+        ++activity_->initializations;
+        if (throw_on_initialization_) {
+            throw std::runtime_error("deliberate initialization failure");
+        }
+        return std::move(tasks_);
+    }
+
+    std::vector<miaow::Task> generate_new_tasks(
+        std::span<const miaow::TaskRecord> new_records) override {
+        activity_->completions += new_records.size();
+        return {};
+    }
+
+    caf::config_value finalize() override {
+        ++activity_->finalizations;
+        return {};
+    }
+
+  private:
+    std::vector<miaow::Task> tasks_;
+    std::shared_ptr<ControllerActivity> activity_;
+    bool throw_on_initialization_;
 };
 
 } // namespace
+
+// Initialize exactly once on controller-only submission, including an empty result
+BOOST_AUTO_TEST_CASE(controller_initialization_owns_initial_tasks) {
+    miaow::SimulationUnitRegistry registry;
+    const auto echo = registry.add<EchoSimulationUnit>();
+    miaow::Runtime runtime{registry, miaow::RuntimeOptions{2}};
+    for (const bool empty : {false, true}) {
+        auto activity = std::make_shared<ControllerActivity>();
+        std::vector<miaow::Task> tasks;
+        if (!empty) {
+            tasks.emplace_back(echo, caf::config_value{"first"},
+                               miaow::TaskMetadata{{"feature_id", "initial_first"}});
+            tasks.emplace_back(echo, "second");
+        }
+        const auto job = runtime.submit_job(std::make_unique<InitializingJobController>(
+            std::move(tasks), activity)).get();
+        BOOST_TEST(activity->initializations == 1u);
+        BOOST_TEST(activity->completions == (empty ? 0u : 2u));
+        BOOST_TEST(activity->finalizations == 1u);
+        BOOST_REQUIRE_EQUAL(job.tasks_.size(), empty ? 0u : 2u);
+        if (!empty) {
+            BOOST_TEST(job.tasks_[0].task_name_ == "initial_first");
+            BOOST_TEST(job.tasks_[1].task_name_ == "task_1");
+            BOOST_TEST(job.tasks_[0].result_.message_ == "first");
+            BOOST_TEST(job.tasks_[1].result_.message_ == "second");
+        }
+    }
+    // Explicitly submitted tasks bypass initialization, even for an empty vector
+    auto activity = std::make_shared<ControllerActivity>();
+    const auto job = runtime.submit_job(std::vector<miaow::Task>{},
+        std::make_unique<InitializingJobController>(
+            std::vector<miaow::Task>{miaow::Task{echo, "unused"}}, activity)).get();
+    BOOST_TEST(job.tasks_.empty());
+    BOOST_TEST(activity->initializations == 0u);
+    BOOST_TEST(activity->completions == 0u);
+    BOOST_TEST(activity->finalizations == 1u);
+    BOOST_CHECK_THROW(runtime.submit_job(std::unique_ptr<miaow::JobController>{}),
+                      std::invalid_argument);
+}
+
+// Initialization and task-preparation errors use the normal job-error path
+BOOST_AUTO_TEST_CASE(controller_initialization_errors_reach_the_job_handle) {
+    miaow::SimulationUnitRegistry registry;
+    const auto echo = registry.add<EchoSimulationUnit>();
+    miaow::Runtime runtime{registry};
+    auto activity = std::make_shared<ControllerActivity>();
+    auto handle = runtime.submit_job(std::make_unique<InitializingJobController>(
+        std::vector<miaow::Task>{}, activity, true));
+    BOOST_CHECK_EXCEPTION(handle.get(), std::runtime_error, [](const auto& error) {
+        return std::string{error.what()}.find("deliberate initialization failure")
+               != std::string::npos;
+    });
+    BOOST_TEST(activity->initializations == 1u);
+    BOOST_TEST(activity->finalizations == 0u);
+
+    activity = std::make_shared<ControllerActivity>();
+    miaow::Task duplicate{echo, caf::config_value{"value"},
+                          miaow::TaskMetadata{{"feature_id", "same"}}};
+    auto invalid = runtime.submit_job(std::make_unique<InitializingJobController>(
+        std::vector<miaow::Task>{duplicate, duplicate}, activity));
+    BOOST_CHECK_THROW(invalid.get(), std::runtime_error);
+    BOOST_TEST(activity->initializations == 1u);
+    BOOST_TEST(activity->finalizations == 0u);
+}
 
 // Preserve recursively nested output through the TaskResult CAF inspector
 BOOST_AUTO_TEST_CASE(task_result_output_round_trips_through_binary_serialization) {
@@ -311,6 +461,7 @@ BOOST_AUTO_TEST_CASE(runtime_executes_tasks_and_writes_a_job_record) {
 
     // Check the public result and the one durable runtime output contract
     BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 2);
+    BOOST_TEST(!job_record.output_);
     BOOST_CHECK(job_record.tasks_.at(0).result_.status_ == miaow::TaskStatus::succeeded);
     BOOST_CHECK(job_record.tasks_.at(1).result_.status_ == miaow::TaskStatus::succeeded);
     BOOST_TEST(job_record.tasks_.at(0).result_.message_ == "hello");
@@ -442,9 +593,9 @@ BOOST_AUTO_TEST_CASE(controller_task_generation_policies_control_callback_timing
           miaow::TaskGenerationPolicy::batch_synchronous}) {
         const bool batch_synchronous =
             policy == miaow::TaskGenerationPolicy::batch_synchronous;
-        const std::vector<std::size_t> expected_history_sizes =
-            batch_synchronous ? std::vector<std::size_t>{3, 5}
-                              : std::vector<std::size_t>{1, 2, 3, 4, 5};
+        const std::vector<std::size_t> expected_batch_sizes =
+            batch_synchronous ? std::vector<std::size_t>{3, 2}
+                              : std::vector<std::size_t>{1, 1, 1, 1, 1};
 
         for (const std::size_t worker_count : {1, 2}) {
             BOOST_TEST_CONTEXT("batch_synchronous = " << batch_synchronous
@@ -453,7 +604,7 @@ BOOST_AUTO_TEST_CASE(controller_task_generation_policies_control_callback_timing
                 miaow::SimulationUnitRegistry registry;
                 const miaow::SimulationUnitId sleeper = registry.add<SleepSimulationUnit>();
                 miaow::Runtime runtime(registry, miaow::RuntimeOptions{worker_count});
-                const auto record_histories =
+                const auto record_batches =
                     std::make_shared<std::vector<std::vector<miaow::TaskRecord>>>();
 
                 // Unequal durations exercise results arriving out of order with two
@@ -465,40 +616,52 @@ BOOST_AUTO_TEST_CASE(controller_task_generation_policies_control_callback_timing
                                      miaow::Task{sleeper,
                                                  std::vector<caf::config_value>{}}},
                                     std::make_unique<RecordingJobController>(
-                                        sleeper, record_histories, policy))
+                                        sleeper, record_batches, policy))
                         .get();
 
                 BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 5);
-                BOOST_REQUIRE_EQUAL(record_histories->size(),
-                                    expected_history_sizes.size());
-                const std::vector<miaow::TaskRecord>& full_history =
-                    record_histories->back();
-                BOOST_REQUIRE_EQUAL(full_history.size(), 5);
-                for (const miaow::TaskRecord& record : full_history) {
-                    const miaow::TaskRecord& final_record =
-                        job_record.tasks_.at(record.task_id_);
-                    BOOST_REQUIRE(record.worker_id_.has_value());
-                    BOOST_TEST(*record.worker_id_ < worker_count);
-                    BOOST_CHECK(record.worker_id_ == final_record.worker_id_);
-                    BOOST_REQUIRE(record.dispatch_offset_from_job_start_.has_value());
-                    BOOST_TEST(record.dispatch_offset_from_job_start_->count() >= 0.0);
-                    BOOST_TEST(
-                        (*record.dispatch_offset_from_job_start_ + record.run_time_)
-                            .count() <= job_record.run_time_.count());
-                    BOOST_CHECK(record.dispatch_offset_from_job_start_ ==
-                                final_record.dispatch_offset_from_job_start_);
-                }
-                for (std::size_t call = 0; call < record_histories->size(); ++call) {
-                    const std::vector<miaow::TaskRecord>& history =
-                        record_histories->at(call);
-                    BOOST_REQUIRE_EQUAL(history.size(), expected_history_sizes.at(call));
-                    for (std::size_t index = 0; index < history.size(); ++index) {
-                        const miaow::TaskRecord& record = history.at(index);
+                BOOST_REQUIRE_EQUAL(record_batches->size(), expected_batch_sizes.size());
+                std::vector<bool> seen(job_record.tasks_.size(), false);
+                std::size_t delivered = 0;
+                double previous_completion = 0.0;
+                for (std::size_t call = 0; call < record_batches->size(); ++call) {
+                    const auto& records = record_batches->at(call);
+                    BOOST_REQUIRE_EQUAL(records.size(), expected_batch_sizes.at(call));
+                    for (const miaow::TaskRecord& record : records) {
+                        BOOST_REQUIRE(record.task_id_ < seen.size());
+                        BOOST_TEST(!seen.at(record.task_id_));
+                        seen.at(record.task_id_) = true;
+                        if (worker_count == 1) {
+                            BOOST_TEST(record.task_id_ == delivered);
+                        }
+                        if (batch_synchronous) {
+                            BOOST_TEST((record.task_id_ < 3) == (call == 0));
+                        }
+                        ++delivered;
+
                         BOOST_CHECK(record.result_.status_ ==
                                     (record.task_id_ == 2 ? miaow::TaskStatus::failed
                                                           : miaow::TaskStatus::succeeded));
-                        BOOST_TEST(full_history.at(index).task_id_ == record.task_id_);
+                        const miaow::TaskRecord& final_record =
+                            job_record.tasks_.at(record.task_id_);
+                        BOOST_REQUIRE(record.worker_id_.has_value());
+                        BOOST_TEST(*record.worker_id_ < worker_count);
+                        BOOST_CHECK(record.worker_id_ == final_record.worker_id_);
+                        BOOST_REQUIRE(record.dispatch_offset_from_job_start_.has_value());
+                        BOOST_TEST(record.dispatch_offset_from_job_start_->count() >= 0.0);
+                        const double completion =
+                            (*record.dispatch_offset_from_job_start_ + record.run_time_)
+                                .count();
+                        BOOST_TEST(completion >= previous_completion);
+                        BOOST_TEST(completion <= job_record.run_time_.count());
+                        previous_completion = completion;
+                        BOOST_CHECK(record.dispatch_offset_from_job_start_ ==
+                                    final_record.dispatch_offset_from_job_start_);
                     }
+                }
+                BOOST_TEST(delivered == job_record.tasks_.size());
+                for (const bool record_seen : seen) {
+                    BOOST_TEST(record_seen);
                 }
             }
         }
@@ -658,4 +821,131 @@ BOOST_AUTO_TEST_CASE(controller_exception_reaches_the_job_handle) {
             return std::string(exception.what()).find("deliberate controller failure") !=
                    std::string::npos;
         });
+}
+
+// Finalize both controller policies and empty jobs, preserving output in CAF and JSON.
+BOOST_AUTO_TEST_CASE(controller_output_is_returned_and_persisted) {
+    const auto output_root =
+        std::filesystem::path{MIAOW_CORE_TEST_OUTPUT_ROOT} / "job_output";
+    std::filesystem::remove_all(output_root);
+    miaow::SimulationUnitRegistry registry;
+    const auto echo = registry.add<EchoSimulationUnit>();
+    miaow::RuntimeOptions options{2};
+    options.output_root_ = output_root.string();
+    miaow::Runtime runtime{registry, options};
+
+    for (const auto policy : {miaow::TaskGenerationPolicy::asynchronous,
+                              miaow::TaskGenerationPolicy::batch_synchronous}) {
+        for (const auto& tasks : {std::vector<miaow::Task>{miaow::Task{echo, "first"},
+                                                         miaow::Task{echo, "second"}},
+                                  std::vector<miaow::Task>{}}) {
+            const auto job =
+                runtime.submit_job(tasks, std::make_unique<OutputJobController>(policy))
+                    .get();
+            const auto& output = caf::get<caf::config_value::dictionary>(job.output_);
+            BOOST_TEST(caf::get<caf::config_value::integer>(output, "completed")
+                       == tasks.size());
+            BOOST_TEST(caf::get<caf::config_value::integer>(output, "finalizations") == 1);
+            const auto callbacks = policy == miaow::TaskGenerationPolicy::asynchronous
+                                       ? tasks.size() : (tasks.empty() ? 0u : 1u);
+            BOOST_TEST(caf::get<caf::config_value::integer>(output, "callbacks")
+                       == callbacks);
+
+            caf::byte_buffer buffer;
+            caf::binary_serializer serializer{buffer};
+            BOOST_REQUIRE(serializer.apply(job));
+            miaow::JobRecord restored;
+            caf::binary_deserializer deserializer{buffer};
+            BOOST_REQUIRE_MESSAGE(deserializer.apply(restored),
+                                  caf::to_string(deserializer.get_error()));
+            BOOST_CHECK(restored.output_ == job.output_);
+
+            const auto path = output_root / ("run_" + std::to_string(job.run_id_))
+                              / ("job_" + std::to_string(job.job_id_)) / "job_record.json";
+            caf::json_reader reader;
+            BOOST_REQUIRE_MESSAGE(reader.load_file(path.string()),
+                                  caf::to_string(reader.get_error()));
+            BOOST_REQUIRE(reader.apply(restored));
+            BOOST_TEST(restored.tasks_.size() == tasks.size());
+
+            // Check the saved doubles exactly with an independent JSON parser. CAF 1.1's
+            // decimal reader scales a parsed mantissa and can introduce rounding itself.
+            std::ifstream input{path};
+            const std::string text{std::istreambuf_iterator<char>{input},
+                                   std::istreambuf_iterator<char>{}};
+            const auto json = boost::json::parse(text);
+            const auto& stored = json.at("output");
+            const auto& values = caf::get<caf::config_value::list>(output, "values");
+            const auto& readback =
+                caf::get<caf::config_value::dictionary>(restored.output_);
+            const auto& readback_values =
+                caf::get<caf::config_value::list>(readback, "values");
+            BOOST_REQUIRE_EQUAL(stored.at("values").at("value").as_array().size(),
+                                values.size());
+            BOOST_REQUIRE_EQUAL(readback_values.size(), values.size());
+            for (std::size_t index = 0; index < values.size(); ++index) {
+                const double expected = caf::get<caf::config_value::real>(values[index]);
+                const double saved =
+                    stored.at("values").at("value").at(index).at("value").as_double();
+                BOOST_TEST(saved == expected);
+                BOOST_TEST(std::signbit(saved) == std::signbit(expected));
+                BOOST_TEST(caf::get<caf::config_value::real>(readback_values[index])
+                               == expected,
+                           boost::test_tools::tolerance(
+                               4 * std::numeric_limits<double>::epsilon()));
+            }
+            for (const auto& [key, value] : output) {
+                if (key != "values") {
+                    const auto entry = readback.find(key);
+                    BOOST_REQUIRE(entry != readback.end());
+                    BOOST_CHECK(entry->second == value);
+                }
+            }
+        }
+    }
+    std::filesystem::remove_all(output_root);
+}
+
+// Older records have null controller output when the field is absent.
+BOOST_AUTO_TEST_CASE(job_record_reads_json_without_controller_output) {
+    caf::json_reader reader;
+    BOOST_REQUIRE(reader.load(R"({"run_id": 0, "job_id": 0, "tasks": [],
+                                  "run_time": "0s"})"));
+    miaow::JobRecord job;
+    job.output_ = "previous output";
+    BOOST_REQUIRE(reader.apply(job));
+    BOOST_TEST(!job.output_);
+}
+
+// Timeout records retain the controller's partial state even without a task result.
+BOOST_AUTO_TEST_CASE(job_timeout_finalizes_controller_output) {
+    miaow::SimulationUnitRegistry registry;
+    const auto sleeper = registry.add<SleepSimulationUnit>();
+    miaow::Runtime runtime{registry, miaow::RuntimeOptions{1, std::chrono::seconds(1),
+                                                          std::chrono::milliseconds(20)}};
+    const auto job =
+        runtime.submit_job({miaow::Task{sleeper, "250"}},
+                           std::make_unique<OutputJobController>()).get();
+    BOOST_REQUIRE_EQUAL(job.tasks_.size(), 1);
+    BOOST_CHECK(job.tasks_.front().result_.status_ == miaow::TaskStatus::failed);
+    const auto& output = caf::get<caf::config_value::dictionary>(job.output_);
+    BOOST_TEST(caf::get<caf::config_value::integer>(output, "completed") == 0);
+    BOOST_TEST(caf::get<caf::config_value::integer>(output, "finalizations") == 1);
+}
+
+// Finalization errors follow the same JobHandle contract as task-generation errors.
+BOOST_AUTO_TEST_CASE(controller_finalization_exception_reaches_the_job_handle) {
+    miaow::SimulationUnitRegistry registry;
+    const auto echo = registry.add<EchoSimulationUnit>();
+    miaow::Runtime runtime{registry};
+    for (const auto& tasks : {std::vector<miaow::Task>{miaow::Task{echo, "hello"}},
+                              std::vector<miaow::Task>{}}) {
+        auto job = runtime.submit_job(tasks, std::make_unique<ThrowingFinalizer>());
+        BOOST_CHECK_EXCEPTION(job.get(), std::runtime_error,
+                              [](const std::runtime_error& exception) {
+                                  return std::string(exception.what()).find(
+                                             "deliberate finalization failure")
+                                         != std::string::npos;
+                              });
+    }
 }
