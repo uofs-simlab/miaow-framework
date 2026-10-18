@@ -4,12 +4,14 @@
 #include <caf/binary_deserializer.hpp>
 #include <caf/binary_serializer.hpp>
 #include <caf/byte_buffer.hpp>
-#include <caf/json_reader.hpp>
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -230,17 +232,16 @@ BOOST_AUTO_TEST_CASE(runtime_executes_tasks_and_writes_a_job_record) {
     const std::filesystem::path job_record_path =
         output_root / "run_0" / "job_0" / "job_record.json";
     BOOST_REQUIRE(std::filesystem::is_regular_file(job_record_path));
-    BOOST_TEST(std::filesystem::file_size(job_record_path) > 0);
 
-    caf::json_reader reader;
-    BOOST_REQUIRE(reader.load_file(job_record_path.string()));
-    miaow::JobRecord stored_job_record;
-    BOOST_REQUIRE(reader.apply(stored_job_record));
-    BOOST_REQUIRE_EQUAL(stored_job_record.tasks_.size(), 2);
-    BOOST_CHECK(stored_job_record.tasks_.at(0).result_.output_ ==
-                job_record.tasks_.at(0).result_.output_);
-    BOOST_CHECK(stored_job_record.tasks_.at(1).result_.output_ ==
-                job_record.tasks_.at(1).result_.output_);
+    std::ifstream input(job_record_path);
+    const auto stored = nlohmann::json::parse(input);
+    BOOST_TEST(stored.at("run_id").get<std::uint64_t>() == job_record.run_id_);
+    BOOST_TEST(stored.at("job_id").get<miaow::JobId>() == job_record.job_id_);
+    BOOST_REQUIRE_EQUAL(stored.at("tasks").size(), 2);
+    BOOST_TEST(stored.at("tasks").at(0).at("result").at("output")
+                   .at("echo").at("value").get<std::string>() == "hello");
+    BOOST_TEST(stored.at("tasks").at(1).at("result").at("output")
+                   .at("echo").at("value").get<std::string>() == "world");
 
     std::filesystem::remove_all(output_root);
 }

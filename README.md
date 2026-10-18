@@ -20,11 +20,11 @@
 
 Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. **MIAOW** embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
 
-MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its actor backend, relies on [Boost](https://www.boost.org/) for JSON support and testing, and includes C++/Fortran [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) integration paths.
+MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), uses the [C++ Actor Framework (CAF)](https://www.actor-framework.org/) as its actor backend, uses [nlohmann/json](https://json.nlohmann.me/) for JSON files and [Boost.Test](https://www.boost.org/) for framework tests, and includes C++/Fortran [Basic Model Interface (BMI)](https://bmi.csdms.io/en/stable/) integration paths.
 
 ## Requirements
 
-MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. The Boost and CAF provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. See the [building and installation documentation](https://tjbmontoya.com/miaow-framework/building.html) for a description of the available provider settings.
+MIAOW requires [CMake](https://cmake.org/) 3.21+, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See the [building and installation documentation](https://tjbmontoya.com/miaow-framework/building.html) for a description of the available provider settings.
 
 On Ubuntu:
 

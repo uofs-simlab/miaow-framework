@@ -1,17 +1,5 @@
 @PACKAGE_INIT@
 
-# Locate the Boost component used by the static MIAOW library
-find_package(Boost CONFIG QUIET COMPONENTS json)
-if(NOT TARGET Boost::json)
-    find_package(Boost QUIET COMPONENTS json)
-endif()
-if(NOT TARGET Boost::json)
-    set(miaow_FOUND FALSE)
-    set(miaow_NOT_FOUND_MESSAGE
-        "MIAOW requires the Boost.JSON target")
-    return()
-endif()
-
 # Normalize the CAF target variants supported by MIAOW
 set(MIAOW_CAF_CORE_TARGET "")
 set(MIAOW_CAF_IO_TARGET "")
@@ -57,7 +45,6 @@ include("${CMAKE_CURRENT_LIST_DIR}/miaowTargets.cmake")
 set_property(TARGET miaow::miaow APPEND PROPERTY INTERFACE_LINK_LIBRARIES
     "${MIAOW_CAF_CORE_TARGET}"
     "${MIAOW_CAF_IO_TARGET}"
-    "$<LINK_ONLY:Boost::json>"
     "$<LINK_ONLY:${MIAOW_ISO_C_BMI_LIBRARY}>"
 )
 

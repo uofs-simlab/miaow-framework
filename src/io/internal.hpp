@@ -2,13 +2,13 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include <caf/json.hpp>
+#include <caf/json_builder.hpp>
+#include <caf/json_value.hpp>
 
 #include "miaow.hpp"
 
@@ -16,8 +16,11 @@ namespace miaow::io {
 
 std::string trim(std::string value);
 
+// Write the CAF-built schema with nlohmann/json's full-precision text formatting.
+void write_json_file(const std::filesystem::path& path, const caf::json_value& value);
+
 /**
- * @brief Write a CAF-serializable value as formatted JSON.
+ * @brief Build a CAF-serializable value in memory and write it with nlohmann/json.
  *
  * `value` must be serializable by `caf::json_builder`: either a CAF-supported
  * type or a type with a valid `inspect(Inspector&, T&)` overload.
@@ -33,15 +36,7 @@ void write_json_file(const std::filesystem::path& path, const Value& value,
                                  "': " + caf::to_string(builder.get_error()));
     }
 
-    const caf::json_value json_value = builder.seal();
-    std::string json_text;
-    json_value.print_to(json_text, 2);
-
-    std::ofstream output(path);
-    if (!output.is_open()) {
-        throw std::runtime_error("unable to open JSON file '" + path.string() + "'");
-    }
-    output << json_text << "\n";
+    write_json_file(path, builder.seal());
 }
 
 // Throw validation errors with the caller's domain prefix
