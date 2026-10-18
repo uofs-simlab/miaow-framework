@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.30)
 
 project(miaow VERSION 0.2.0 LANGUAGES CXX Fortran)
 

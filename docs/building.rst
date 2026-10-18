@@ -4,7 +4,7 @@ Building and installation
 Prerequisites
 -------------
 
-MIAOW requires `CMake <https://cmake.org/>`_ 3.21 or newer, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See :ref:`build-options` for a description of the available provider settings.
+MIAOW requires `CMake <https://cmake.org/>`_ 3.30 or newer, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See :ref:`build-options` for a description of the available provider settings.
 
 On Ubuntu, the required compiler and build tools can be installed with the following command:
 
@@ -82,7 +82,7 @@ In another project, define the executable or library that uses MIAOW and link it
 
 .. code-block:: cmake
 
-   cmake_minimum_required(VERSION 3.21)
+   cmake_minimum_required(VERSION 3.30)
 
    project(my_program LANGUAGES CXX)
 
