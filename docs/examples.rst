@@ -43,6 +43,45 @@ The ``examples/04_summa`` example builds a SUMMA BMI library from a SUMMA source
    cd examples/04_summa
    ./miaow_summa --output_root ./output
 
+An example-local factory exports the C-callable BMI registration entry point, including on toolchains that hide SUMMA's module-private factory.
+
+CSV and NetCDF forcing comparison
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Without additional flags, the example uses the packaged ``CsvPerFeature`` realization. Add ``--compare_forcing`` to run that CSV case followed by a NetCDF case with the same model configurations, variable mappings, output interval, and runtime options:
+
+.. code-block:: sh
+
+   ./miaow_summa --compare_forcing --max_workers 1 \
+       --output_root ./output/forcing_comparison_1_worker
+   ./miaow_summa --compare_forcing --max_workers 5 \
+       --output_root ./output/forcing_comparison_5_workers
+
+Both cases use persistent subprocess workers. Each CSV runtime shuts down before the NetCDF runtime starts. Runtime-managed artifacts are retained under separate ``csv`` and ``netcdf`` subdirectories of the selected output root, which must be non-empty. Original catchment labels identify the results; their numeric suffixes select features in the shared NetCDF file.
+
+Comparison requires all five catchments to succeed, matching CSV headers and row counts, identical timestamps, and exact equality of finite runoff, snowpack, and baseflow values. The first mismatch reports its catchment, timestamp, variable, and values, and the program returns a nonzero exit status. Numerical differences should be investigated before introducing comparison tolerances. Existing job summaries report execution timing; these small cases establish equivalence rather than distributed I/O performance.
+
+The five packaged CSV files contain identical forcing series. This example therefore checks SUMMA integration and format equivalence; feature-selection tests with distinct forcing values remain part of the framework test suite.
+
+The checked-in ``data/gauge_01073000/forcings/forcing.nc`` contains the same eight variables and 744 hourly records as the five source CSV files, through December 31, 2015. The model configurations end on December 30, so both forcing cases retain the same extra source coverage. Builds and runs do not generate the fixture. To regenerate it offline, use Python 3 and the ``ncgen`` utility distributed with NetCDF:
+
+.. code-block:: sh
+
+   python3 generate_netcdf_forcing.py
+
+The script requires only Python's standard library and ``ncgen`` on ``PATH``. Use ``--output /path/to/forcing.nc`` to generate a separate copy. It preserves source values as doubles without unit conversion and writes uncompressed NetCDF-4 classic-model data. Library versions can change the binary representation, so compare regenerated IDs, timestamps, and data values rather than file hashes.
+
+When SUMMA and testing are enabled, CTest registers the normal smoke test and two forcing-comparison tests with one and five workers. Run them from the repository root:
+
+.. code-block:: sh
+
+   ctest --test-dir build -R '^miaow_example_04_summa' --output-on-failure
+
+These tests share a resource lock because SUMMA's native output files use common locations in the example directory. Standalone example invocations should likewise run sequentially in that directory.
+
+SUMMA build options
+~~~~~~~~~~~~~~~~~~~
+
 The following example-specific flags control the SUMMA build:
 
 .. list-table::

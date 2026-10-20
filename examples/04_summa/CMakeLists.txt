@@ -138,7 +138,19 @@ ExternalProject_Add(miaow_summa_external
     BUILD_BYPRODUCTS "${summa_bmi_library}"
 )
 
-# Link the built library where realization_config.json expects to load it
+# Export a factory even when SUMMA's module-private entry point is hidden
+include("${PROJECT_SOURCE_DIR}/cmake/miaow_dynamic_bmi_plugin.cmake")
+miaow_add_dynamic_bmi_plugin(
+    PLUGIN_TARGET miaow_summa_bmi
+    SOURCES register_bmi_summa.f90
+    INCLUDE_DIRS "${summa_build_dir}/fortran"
+    LINK_ISO_C_BMI
+    FORTRAN_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/plugin-mod"
+)
+target_link_libraries(miaow_summa_bmi PRIVATE "${summa_bmi_library}")
+add_dependencies(miaow_summa_bmi miaow_summa_external)
+
+# Link the plugin where realization_config.json expects to load it
 set(summa_realization_plugin_dir "${CMAKE_CURRENT_LIST_DIR}/data/plugins")
 set(summa_realization_plugin_link
     "${summa_realization_plugin_dir}/libsummabmi")
@@ -149,9 +161,9 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E remove -f
             "${summa_realization_plugin_link}"
     COMMAND ${CMAKE_COMMAND} -E create_symlink
-            "${summa_bmi_library}"
+            "$<TARGET_FILE:miaow_summa_bmi>"
             "${summa_realization_plugin_link}"
-    DEPENDS miaow_summa_external "${summa_bmi_library}"
+    DEPENDS miaow_summa_bmi
     VERBATIM
 )
 add_custom_target(miaow_summa_plugin_link
@@ -161,10 +173,11 @@ add_custom_target(miaow_summa_plugin_link
 # Build the driver after the realization plugin link is ready
 add_executable(miaow_summa
     main.cpp
+    forcing_comparison.cpp
 )
 
 target_compile_features(miaow_summa PRIVATE cxx_std_20)
-target_link_libraries(miaow_summa PRIVATE miaow)
+target_link_libraries(miaow_summa PRIVATE miaow nlohmann_json::nlohmann_json)
 target_compile_definitions(miaow_summa PRIVATE
     MIAOW_SUMMA_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
 )
@@ -181,4 +194,19 @@ if(BUILD_TESTING)
         EXECUTABLE_TARGET miaow_summa
         EXTERNAL_MODEL
     )
+    # SUMMA's native output files are shared by all executions in this directory
+    set_tests_properties(miaow_example_04_summa PROPERTIES
+        RESOURCE_LOCK miaow_summa_output)
+    foreach(workers IN ITEMS 1 5)
+        set(comparison_test "miaow_example_04_summa_forcing_${workers}_workers")
+        add_test(NAME ${comparison_test}
+            COMMAND $<TARGET_FILE:miaow_summa> --compare_forcing
+                --max_workers ${workers}
+                --output_root "output/forcing_comparison_${workers}_workers")
+        set_tests_properties(${comparison_test} PROPERTIES
+            LABELS "example;external_model"
+            TIMEOUT 720
+            RESOURCE_LOCK miaow_summa_output
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    endforeach()
 endif()

@@ -10,6 +10,7 @@
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
+#include "forcing_comparison.hpp"
 
 int main(int argc, char* argv[]) {
     // Check that we're running from the expected directory for proper relative paths
@@ -21,10 +22,24 @@ int main(int argc, char* argv[]) {
     miaow::PartitionedBmiRealization realization;
     miaow::RuntimeOptions runtime_options;
     runtime_options.output_root_ = "output/gauge_01073000";
+    bool compare = false;
     try {
+        // Example-specific flags are consumed before the common runtime CLI parser
+        std::vector<char*> runtime_arguments{argv[0]};
+        for (int index = 1; index < argc; ++index) {
+            if (std::string(argv[index]) == "--compare_forcing") {
+                compare = true;
+            } else {
+                runtime_arguments.push_back(argv[index]);
+            }
+        }
+        miaow::parse_runtime_cli_options(static_cast<int>(runtime_arguments.size()),
+                                         runtime_arguments.data(), runtime_options);
+        if (compare) {
+            return compare_forcing(runtime_options);
+        }
         realization = miaow::PartitionedBmiRealization(
             "data/gauge_01073000/realization_config.json");
-        miaow::parse_runtime_cli_options(argc, argv, runtime_options);
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";
         return 1;
