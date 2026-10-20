@@ -2,6 +2,10 @@
 caf/1.1.0
 boost/1.86.0
 netcdf/4.8.1
+nlohmann_json/3.12.0
+
+[options]
+boost/*:without_json=True
 
 [generators]
 CMakeDeps

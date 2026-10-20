@@ -1,9 +1,9 @@
-MIAOW: Model-Independent Actor Orchestration Workflows for Scientific Computing
+MIAOW: Model-Independent Actor-Orchestrated Workflows for Scientific Computing
 ===============================================================================
 
-Managing concurrent numerical simulation tasks with dynamic workloads and heterogeneous hardware can feel like herding cats. `MIAOW <https://github.com/uofs-simlab/miaow-framework>`_ embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
+Managing concurrent numerical simulation tasks with dynamic workloads can feel like herding cats. `MIAOW <https://github.com/uofs-simlab/miaow-framework>`_ embraces that reality by using actor-based asynchronous orchestration so tasks run when they are ready, maximizing utilization across available resources.
 
-MIAOW targets the `C++20 standard <https://en.cppreference.com/w/cpp/20.html>`_, uses the `C++ Actor Framework (CAF) <https://www.actor-framework.org/>`_ as its actor backend, relies on `Boost <https://www.boost.org/>`_ for JSON support and testing, and includes C++/Fortran `Basic Model Interface (BMI) <https://bmi.csdms.io/en/stable/>`_ integration paths.
+MIAOW targets the `C++20 standard <https://en.cppreference.com/w/cpp/20.html>`_, uses the `C++ Actor Framework (CAF) <https://www.actor-framework.org/>`_ as its actor backend, uses `nlohmann/json <https://json.nlohmann.me/>`_ for JSON files and `Boost.Test <https://www.boost.org/>`_ for framework tests, and includes C++/Fortran `Basic Model Interface (BMI) <https://bmi.csdms.io/en/stable/>`_ integration paths.
 
 Documentation
 -------------
@@ -25,7 +25,7 @@ Contributions from the community are welcome. To report a bug, suggest an improv
 Contributors and funding
 ------------------------
 
-MIAOW was developed with funding support from the `Cooperative Institute for Research to Operations in Hydrology (CIROH) <https://ciroh.ua.edu/>`_ and is maintained by the `Numerical Simulation Laboratory <https://github.com/uofs-simlab>`_ at the `University of Saskatchewan <https://www.usask.ca/>`_. See the `CONTRIBUTORS <https://github.com/uofs-simlab/miaow-framework/blob/main/CONTRIBUTORS.md>`_ file for a full list of individual contributors to the project.
+MIAOW was developed with funding support from the `Cooperative Institute for Research to Operations in Hydrology (CIROH) <https://ciroh.ua.edu/>`_ and the `Natural Sciences and Engineering Research Council of Canada (NSERC) <https://nserc-crsng.canada.ca/en>`_. It is maintained by the `Numerical Simulation Laboratory <https://github.com/uofs-simlab>`_ at the `University of Saskatchewan <https://www.usask.ca/>`_. See the `CONTRIBUTORS <https://github.com/uofs-simlab/miaow-framework/blob/main/CONTRIBUTORS.md>`_ file for a full list of individual contributors to the project.
 
 License
 -------

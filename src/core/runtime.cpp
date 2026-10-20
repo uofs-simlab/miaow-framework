@@ -20,9 +20,6 @@
 #include <caf/ipv6_endpoint.hpp>
 #include <caf/ipv6_subnet.hpp>
 #include <caf/io/middleman.hpp>
-#include <caf/json_array.hpp>
-#include <caf/json_object.hpp>
-#include <caf/json_value.hpp>
 #include <caf/type_id.hpp>
 
 #include "internal.hpp"
@@ -158,17 +155,10 @@ void core::assign_task_runtime_fields(std::vector<Task>& tasks,
     }
 }
 
-// Return a ready JobHandle for submissions that do not enter the actor runtime
-static JobHandle make_ready_job_handle(JobRecord record) {
-    std::promise<JobRecord> promise;
-    promise.set_value(std::move(record));
-    return promise.get_future();
-}
-
 // Initialize CAF global meta objects exactly once in a thread-safe way
 static void initialize_caf_once() {
     std::call_once(caf_init_flag, [] {
-        caf::init_global_meta_objects<caf::id_block::core_module>();
+        caf::core::init_global_meta_objects();
         caf::init_global_meta_objects<caf::id_block::miaow_module>();
         caf::init_global_meta_objects<caf::id_block::miaow_internal_module>();
         caf::io::middleman::init_global_meta_objects();
@@ -242,16 +232,21 @@ JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
 // Submit initial tasks and transfer controller ownership to the job actor
 JobHandle Runtime::submit_job(std::vector<Task> tasks,
                               std::unique_ptr<JobController> job_controller) const {
+    return submit_job_impl(std::move(tasks), std::move(job_controller), false);
+}
+
+JobHandle Runtime::submit_job(std::unique_ptr<JobController> job_controller) const {
+    return submit_job_impl({}, std::move(job_controller), true);
+}
+
+JobHandle Runtime::submit_job_impl(std::vector<Task> tasks,
+                                   std::unique_ptr<JobController> job_controller,
+                                   bool initialize_controller) const {
     if (!job_controller) {
         throw std::invalid_argument("Runtime requires a non-null JobController");
     }
 
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
-
-    // If there are no tasks, return a ready future with an empty result immediately
-    if (tasks.empty()) {
-        return make_ready_job_handle(JobRecord{run_id_, job_id});
-    }
 
     // Assign names and output directories from index 0 because every submitted task is new
     core::assign_task_runtime_fields(tasks, 0, runtime_options_, run_id_, job_id);
@@ -273,7 +268,7 @@ JobHandle Runtime::submit_job(std::vector<Task> tasks,
 
     // Runtime -> orchestrator_actor: submit one job
     caf::anon_mail(caf::get_atom_v, job_id, std::move(tasks),
-                   std::move(shared_job_controller))
+                   std::move(shared_job_controller), initialize_controller)
         .send(orchestrator_);
     return job;
 }

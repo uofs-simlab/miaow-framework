@@ -168,6 +168,36 @@ BOOST_AUTO_TEST_CASE(static_config_creates_a_task) {
                miaow::default_bmi_time_step_tolerance_seconds);
 }
 
+// JSON module indices must be valid before conversion to the internal integer index.
+BOOST_AUTO_TEST_CASE(pipeline_json_preserves_numbers_and_checks_module_indices) {
+    auto pipeline_json = nlohmann::json::parse(R"({
+        "global": {
+            "formulations": [{
+                "name": "bmi_multi",
+                "params": {
+                    "modules": [{
+                        "name": "supplied_model",
+                        "params": {"init_config": "model.ini"}
+                    }],
+                    "output_module": 0.0,
+                    "time_step_tolerance_seconds": 1e-100
+                }
+            }]
+        }
+    })");
+    const auto& pipeline_object = pipeline_json.get_ref<const nlohmann::json::object_t&>();
+    const miaow::BmiPipelineConfig pipeline_config(pipeline_object, "BMI test error: ");
+    BOOST_TEST(pipeline_config.output_module_ == 0);
+    BOOST_TEST(pipeline_config.time_step_tolerance_seconds_ == 1e-100);
+
+    auto& params = pipeline_json.at("global").at("formulations").at(0).at("params");
+    for (const auto& invalid_index : std::vector<nlohmann::json>{-1, 0.5, 1e100}) {
+        params.at("output_module") = invalid_index;
+        BOOST_CHECK_THROW(miaow::BmiPipelineConfig(pipeline_object, "BMI test error: "),
+                          std::runtime_error);
+    }
+}
+
 // Convert supported fixed-duration BMI time units to seconds
 BOOST_AUTO_TEST_CASE(bmi_time_units_convert_to_seconds) {
     constexpr std::string_view error_prefix = "BMI test error: ";
@@ -184,19 +214,6 @@ BOOST_AUTO_TEST_CASE(forcing_alignment_uses_seconds_tolerance) {
     BOOST_CHECK_THROW(miaow::bmi::validate_forcing_time_step_delta(
                           3600.0002, 3600.0, 1e-4, 2),
                       std::runtime_error);
-}
-
-// Build a dynamic BMI task without embedding execution policy
-BOOST_AUTO_TEST_CASE(dynamic_config_creates_a_task) {
-    const miaow::DynamicBmiConfig config{
-        .backend_ = miaow::DynamicBmiBackend::fortran,
-        .plugin_path_ = "model.so",
-    };
-
-    const miaow::Task task = miaow::make_bmi_task(9, config);
-
-    BOOST_TEST(task.simulation_unit_id_ == 9);
-    BOOST_REQUIRE_EQUAL(task.args_.size(), 1);
 }
 
 // Enforce fields that distinguish CSV forcing from feature-indexed NetCDF forcing
@@ -225,12 +242,19 @@ BOOST_AUTO_TEST_CASE(forcing_config_enforces_format_specific_fields) {
     BOOST_CHECK_THROW(miaow::make_bmi_task(0, static_config), std::runtime_error);
 }
 
-// Exercise dynamic Fortran BMI loading and lifecycle execution in the parent process
-BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_process) {
+// Run the Fortran BMI lifecycle and write its resolved configuration
+BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_process_and_writes_config_artifact) {
+    const std::filesystem::path output_root = MIAOW_BMI_TEST_OUTPUT_ROOT;
+    std::filesystem::remove_all(output_root);
+
     miaow::SimulationUnitRegistry registry;
+    // A nonzero registration ID verifies that task creation preserves the chosen unit.
+    registry.add<miaow::DynamicBmiSimulationUnit>();
     const miaow::SimulationUnitId dynamic_bmi =
         registry.add<miaow::DynamicBmiSimulationUnit>();
-    miaow::Runtime runtime(registry);
+    miaow::Runtime runtime(registry, miaow::RuntimeOptions{1, std::chrono::minutes(1),
+                                                           std::chrono::minutes(5),
+                                                           output_root.string()});
 
     // Load the test-owned Fortran plugin through the public dynamic BMI path
     const miaow::DynamicBmiConfig config{
@@ -238,38 +262,15 @@ BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_process) {
         .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
     };
     const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, config);
+    BOOST_TEST(task.simulation_unit_id_ == dynamic_bmi);
+    BOOST_REQUIRE_EQUAL(task.args_.size(), 1);
 
     const miaow::JobRecord job_record = runtime.submit_job(task).get();
 
     BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);
-    BOOST_CHECK(job_record.tasks_.front().result_.status_ == miaow::TaskStatus::succeeded);
-    BOOST_TEST(job_record.tasks_.front().result_.message_ ==
-               "BMI workflow complete (updates: 2)");
-}
-
-// Write the resolved pipeline configuration beside task results
-BOOST_AUTO_TEST_CASE(pipeline_writes_resolved_config_artifact) {
-    const std::filesystem::path output_root = MIAOW_BMI_TEST_OUTPUT_ROOT;
-    std::filesystem::remove_all(output_root);
-
-    miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId dynamic_bmi =
-        registry.add<miaow::DynamicBmiSimulationUnit>();
-    miaow::Runtime runtime(registry, miaow::RuntimeOptions{1, std::chrono::minutes(1),
-                                                           std::chrono::minutes(5),
-                                                           output_root.string()});
-
-    // Run one task so lifecycle execution writes the resolved config artifact
-    const miaow::DynamicBmiConfig config{
-        .backend_ = miaow::DynamicBmiBackend::fortran,
-        .plugin_path_ = MIAOW_TEST_FORTRAN_BMI_PLUGIN_PATH,
-    };
-    const miaow::JobRecord job_record =
-        runtime.submit_job(miaow::make_bmi_task(dynamic_bmi, config)).get();
-
-    BOOST_REQUIRE_EQUAL(job_record.tasks_.size(), 1);
     const miaow::TaskResult& task_result = job_record.tasks_.front().result_;
     BOOST_REQUIRE(task_result.status_ == miaow::TaskStatus::succeeded);
+    BOOST_TEST(task_result.message_ == "BMI workflow complete (updates: 2)");
     BOOST_REQUIRE_EQUAL(task_result.artifact_paths_.size(), 1);
     BOOST_TEST(task_result.artifact_paths_.front() == "task_0.json");
 
@@ -325,17 +326,15 @@ BOOST_AUTO_TEST_CASE(forcing_values_reach_model) {
     std::ifstream output(output_path);
     BOOST_REQUIRE(output.is_open());
 
-    std::string line;
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "time,temperature");
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "0,0");
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "1,10");
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "2,20");
-    BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
+    std::ostringstream output_contents;
+    output_contents << output.rdbuf();
+    BOOST_TEST(output_contents.str() ==
+               "time,temperature\n"
+               "0,0\n"
+               "1,10\n"
+               "2,20\n");
 
+    output.close();
     std::filesystem::remove_all(output_root);
 }
 
@@ -530,6 +529,8 @@ BOOST_AUTO_TEST_CASE(empty_output_variables_write_all_task_outputs) {
     BOOST_TEST(config_contents.str().find("\"output_variables\":[]") !=
                std::string::npos);
 
+    output.close();
+    config_artifact.close();
     std::filesystem::remove_all(output_root);
 }
 
@@ -629,6 +630,7 @@ BOOST_AUTO_TEST_CASE(realization_without_output_variables_writes_all_outputs) {
     BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
     BOOST_TEST(line == "time,temperature");
 
+    output.close();
     std::filesystem::remove_all(test_root);
 }
 
@@ -688,15 +690,14 @@ BOOST_AUTO_TEST_CASE(output_interval_writes_final_state) {
     std::ifstream output(output_path);
     BOOST_REQUIRE(output.is_open());
 
-    std::string line;
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "time,temperature");
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "0,0");
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "2,20");
-    BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
+    std::ostringstream output_contents;
+    output_contents << output.rdbuf();
+    BOOST_TEST(output_contents.str() ==
+               "time,temperature\n"
+               "0,0\n"
+               "2,20\n");
 
+    output.close();
     std::filesystem::remove_all(output_root);
 }
 
@@ -736,17 +737,15 @@ BOOST_AUTO_TEST_CASE(output_interval_uses_configured_tolerance) {
     std::ifstream output(output_path);
     BOOST_REQUIRE(output.is_open());
 
-    std::string line;
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "time,temperature");
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "0,0");
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "1,0");
-    BOOST_REQUIRE(static_cast<bool>(std::getline(output, line)));
-    BOOST_TEST(line == "2,0");
-    BOOST_TEST(!static_cast<bool>(std::getline(output, line)));
+    std::ostringstream output_contents;
+    output_contents << output.rdbuf();
+    BOOST_TEST(output_contents.str() ==
+               "time,temperature\n"
+               "0,0\n"
+               "1,0\n"
+               "2,0\n");
 
+    output.close();
     std::filesystem::remove_all(output_root);
 }
 
@@ -794,4 +793,6 @@ BOOST_AUTO_TEST_CASE(fortran_plugin_runs_in_fresh_subprocess) {
     BOOST_CHECK(job_record.tasks_.front().result_.status_ == miaow::TaskStatus::succeeded);
     BOOST_TEST(job_record.tasks_.front().result_.message_ ==
                "BMI workflow complete (updates: 2)");
+    BOOST_REQUIRE(job_record.tasks_.front().worker_id_.has_value());
+    BOOST_TEST(*job_record.tasks_.front().worker_id_ == 0);
 }

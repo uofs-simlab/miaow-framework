@@ -1,5 +1,5 @@
 PROJECT_NAME = "MIAOW"
-PROJECT_BRIEF = "Model-independent actor orchestration workflows"
+PROJECT_BRIEF = "Model-independent Actor-Orchestrated workflows"
 
 OUTPUT_DIRECTORY = docs/_build/doxygen
 GENERATE_HTML = NO

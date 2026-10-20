@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-#include <boost/json.hpp>
+#include <nlohmann/json.hpp>
 #include <caf/config_value.hpp>
 
 #include "miaow_bmi.hpp"
@@ -28,7 +28,7 @@ struct BmiModuleConfig {
                     std::string plugin_path, std::string config_file = "",
                     std::map<std::string, std::string> variables_names_map = {});
 
-    BmiModuleConfig(const boost::json::object& module_object,
+    BmiModuleConfig(const nlohmann::json::object_t& module_object,
                     std::string_view error_prefix);
 
     std::string name_;
@@ -51,7 +51,7 @@ struct BmiPipelineConfig {
         BmiDataFormat forcing_format = BmiDataFormat::csv,
         std::optional<std::string> forcing_feature_id_variable = std::nullopt);
 
-    BmiPipelineConfig(const boost::json::object& pipeline_config,
+    BmiPipelineConfig(const nlohmann::json::object_t& pipeline_config,
                       std::string_view error_prefix);
 
     explicit BmiPipelineConfig(const Task& task);

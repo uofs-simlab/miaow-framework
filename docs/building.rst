@@ -4,7 +4,7 @@ Building and installation
 Prerequisites
 -------------
 
-MIAOW requires `CMake <https://cmake.org/>`_ 3.21 or newer, a C++20 compiler, and a Fortran compiler. The Boost and CAF provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. See :ref:`build-options` for a description of the available provider settings.
+MIAOW requires `CMake <https://cmake.org/>`_ 3.30 or newer, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See :ref:`build-options` for a description of the available provider settings.
 
 On Ubuntu, the required compiler and build tools can be installed with the following command:
 
@@ -82,7 +82,7 @@ In another project, define the executable or library that uses MIAOW and link it
 
 .. code-block:: cmake
 
-   cmake_minimum_required(VERSION 3.21)
+   cmake_minimum_required(VERSION 3.30)
 
    project(my_program LANGUAGES CXX)
 
@@ -91,7 +91,7 @@ In another project, define the executable or library that uses MIAOW and link it
    add_executable(my_program main.cpp)
    target_link_libraries(my_program PRIVATE miaow::miaow)
 
-The imported target supplies the installed MIAOW include directory, requests C++20, and links the required CAF, Boost, and procedural BMI bridge libraries. Source files can include ``miaow.hpp``, ``miaow_bmi.hpp``, and ``miaow_io.hpp`` as needed.
+The imported target supplies the installed MIAOW include directory, requests C++20, and links the required CAF and procedural BMI bridge libraries. Source files can include ``miaow.hpp``, ``miaow_bmi.hpp``, and ``miaow_io.hpp`` as needed.
 
 A custom subprocess worker is another executable linked against ``miaow::miaow``:
 
@@ -107,11 +107,11 @@ When the selected installation prefix is outside CMake's normal search locations
    cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.local"
    cmake --build build
 
-The MIAOW package locates the required CAF and Boost components when ``find_package(miaow)`` runs. These dependencies must be discoverable through the system installation, ``CMAKE_PREFIX_PATH``, or the downstream project's CMake toolchain. The installed procedural BMI bridge depends on a compatible Fortran runtime library, such as ``libgfortran`` when the bridge is built with GNU Fortran. This runtime library must remain available when an application that links to MIAOW runs, but compiling the downstream project does not require a Fortran compiler.
+The MIAOW package locates the required CAF components when ``find_package(miaow)`` runs. CAF must be discoverable through the system installation, ``CMAKE_PREFIX_PATH``, or the downstream project's CMake toolchain. nlohmann/json is a private header-only build dependency and is not required by installed consumers. The installed procedural BMI bridge depends on a compatible Fortran runtime library, such as ``libgfortran`` when the bridge is built with GNU Fortran. This runtime library must remain available when an application that links to MIAOW runs, but compiling the downstream project does not require a Fortran compiler.
 
 .. note::
 
-   When MIAOW is configured, CMake supplies ``MIAOW_SUBPROCESS_PATH`` (the absolute build-tree path to ``miaow_subprocess``) and ``MIAOW_INSTALLED_SUBPROCESS_PATH`` (the absolute expected installed path derived from ``CMAKE_INSTALL_PREFIX``) as preprocessor definitions while compiling ``src/bmi/execute.cpp``. MIAOW's ``bmi_subprocess_executable_path()`` function returns ``MIAOW_SUBPROCESS_PATH`` when that executable exists, otherwise returns ``MIAOW_INSTALLED_SUBPROCESS_PATH`` when that executable exists, and throws if neither executable exists. Because ``cmake --install build --prefix <path>`` changes the installation destination without updating ``MIAOW_INSTALLED_SUBPROCESS_PATH``, downstream users should configure MIAOW with the correct ``-DCMAKE_INSTALL_PREFIX=<path>`` before building. To switch the install directory, users should reconfigure and rebuild MIAOW or pass the installed executable path directly to ``SimulationUnitRegistry::add_subprocess()`` when registering the subprocess executable, rather than using the default path returned by ``bmi_subprocess_executable_path()``.
+   Configure ``CMAKE_INSTALL_PREFIX`` before building so ``bmi_subprocess_executable_path()`` can locate the installed worker. Changing only ``cmake --install build --prefix <path>`` does not update this lookup. If you relocate the installation, reconfigure and rebuild MIAOW or pass the installed worker path directly to ``SimulationUnitRegistry::add_subprocess()``.
 
 .. _build-options:
 
@@ -141,10 +141,16 @@ The following top-level CMake options are available:
      - Semicolon-separated list of examples to build when ``BUILD_EXAMPLES`` is enabled
    * - ``-DMIAOW_BOOST_PROVIDER``
      - ``auto``
-     - Boost provider: ``system``, ``fetch``, or ``auto``
+     - Boost.Test provider: ``system``, ``fetch``, or ``auto``; used only for framework tests
    * - ``-DMIAOW_BOOST_VERSION``
      - ``1.86.0``
      - Boost version used by the ``FetchContent`` fallback
+   * - ``-DMIAOW_JSON_PROVIDER``
+     - ``auto``
+     - nlohmann/json provider: ``system``, ``fetch``, or ``auto``
+   * - ``-DMIAOW_JSON_VERSION``
+     - ``3.12.0``
+     - nlohmann/json version used by ``find_package`` and ``FetchContent``
    * - ``-DMIAOW_CAF_PROVIDER``
      - ``auto``
      - CAF provider: ``system``, ``fetch``, or ``auto``
