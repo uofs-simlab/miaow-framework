@@ -15,7 +15,7 @@ authors:
     given-names: "Raymond J."
     affiliation: "University of Saskatchewan"
     orcid: "https://orcid.org/0000-0002-3513-6237"
-version: "0.2.0"
+version: "0.2.1"
 license: "MIT"
 repository-code: "https://github.com/uofs-simlab/miaow-framework"
 url: "https://tjbmontoya.com/miaow-framework/"

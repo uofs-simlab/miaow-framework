@@ -330,6 +330,7 @@ class NetCdfForcingReader final : public ForcingReader {
     double current_time_seconds_{0.0};
     std::vector<int> variable_ids_;
     std::vector<bool> time_dimension_first_;
+    std::vector<double> time_missing_values_;
     std::vector<std::vector<double>> missing_values_;
     std::vector<double> current_values_;
 };

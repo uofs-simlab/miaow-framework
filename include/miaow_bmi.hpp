@@ -46,6 +46,11 @@ enum class BmiDataFormat {
     csv,
 
     /// Network Common Data Form
+    ///
+    /// @warning For concurrent NetCDF tasks, register bmi_subprocess_executable_path()
+    /// with SimulationUnitRegistry::add_subprocess(...).
+    /// Concurrent NetCDF calls within one process are unsupported, even for different
+    /// files, including calls by model plugins.
     netcdf,
 };
 

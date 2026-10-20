@@ -5,6 +5,8 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -24,6 +26,16 @@ struct NetCdfForcingFixture {
     std::vector<double> times_;
     std::vector<double> air_temperatures_;
     bool feature_indexed_temperature_{true};
+    std::optional<double> temperature_fill_value_{-9999.0};
+    bool write_temperatures_{true};
+    nc_type temperature_type_{NC_DOUBLE};
+    std::string packed_variable_;
+    std::string packing_attribute_;
+    std::vector<long long> signed_feature_ids_;
+    std::vector<unsigned long long> unsigned_feature_ids_;
+    std::optional<long long> feature_missing_value_;
+    bool disable_temperature_fill_{false};
+    std::optional<double> floating_feature_missing_value_;
 };
 
 void check_test_net_cdf(int status, const std::string& operation) {
@@ -34,17 +46,31 @@ void check_test_net_cdf(int status, const std::string& operation) {
 
 void write_net_cdf_forcing_fixture(const std::filesystem::path& path,
                                    const NetCdfForcingFixture& fixture) {
+    std::size_t feature_count = fixture.feature_ids_.size();
+    nc_type feature_type = NC_DOUBLE;
+    if (!fixture.signed_feature_ids_.empty()) {
+        feature_count = fixture.signed_feature_ids_.size();
+        feature_type = NC_INT64;
+    } else if (!fixture.unsigned_feature_ids_.empty()) {
+        feature_count = fixture.unsigned_feature_ids_.size();
+        feature_type = NC_UINT64;
+    }
     const std::size_t expected_temperature_count =
         fixture.feature_indexed_temperature_
-            ? fixture.feature_ids_.size() * fixture.times_.size()
+            ? feature_count * fixture.times_.size()
             : fixture.times_.size();
-    if (fixture.feature_ids_.empty() || fixture.times_.empty() ||
+    if (feature_count == 0 || fixture.times_.empty() ||
         fixture.air_temperatures_.size() != expected_temperature_count) {
         throw std::runtime_error("invalid NetCDF forcing test fixture");
     }
 
     int file_id = -1;
-    check_test_net_cdf(nc_create(path.string().c_str(), NC_CLOBBER, &file_id),
+    const bool net_cdf4 = !fixture.signed_feature_ids_.empty() ||
+                         !fixture.unsigned_feature_ids_.empty() ||
+                         fixture.temperature_type_ >= NC_UBYTE ||
+                         fixture.disable_temperature_fill_;
+    check_test_net_cdf(nc_create(path.string().c_str(),
+                                  NC_CLOBBER | (net_cdf4 ? NC_NETCDF4 : 0), &file_id),
                        "unable to create NetCDF test fixture");
 
     int time_dimension_id = -1;
@@ -52,7 +78,7 @@ void write_net_cdf_forcing_fixture(const std::filesystem::path& path,
     check_test_net_cdf(nc_def_dim(file_id, "time", fixture.times_.size(),
                                   &time_dimension_id),
                        "unable to define test time dimension");
-    check_test_net_cdf(nc_def_dim(file_id, "hru", fixture.feature_ids_.size(),
+    check_test_net_cdf(nc_def_dim(file_id, "hru", feature_count,
                                   &feature_dimension_id),
                        "unable to define test feature dimension");
 
@@ -62,19 +88,19 @@ void write_net_cdf_forcing_fixture(const std::filesystem::path& path,
     check_test_net_cdf(nc_def_var(file_id, "time", NC_DOUBLE, 1, &time_dimension_id,
                                   &time_variable_id),
                        "unable to define test time variable");
-    check_test_net_cdf(nc_def_var(file_id, "hruId", NC_DOUBLE, 1, &feature_dimension_id,
+    check_test_net_cdf(nc_def_var(file_id, "hruId", feature_type, 1, &feature_dimension_id,
                                   &feature_variable_id),
                        "unable to define test feature variable");
     if (fixture.feature_indexed_temperature_) {
         const std::array<int, 2> forcing_dimensions{time_dimension_id,
                                                     feature_dimension_id};
-        check_test_net_cdf(nc_def_var(file_id, "air_temperature", NC_DOUBLE,
+        check_test_net_cdf(nc_def_var(file_id, "air_temperature", fixture.temperature_type_,
                                       forcing_dimensions.size(), forcing_dimensions.data(),
                                       &temperature_variable_id),
                            "unable to define test forcing variable");
     } else {
-        check_test_net_cdf(nc_def_var(file_id, "air_temperature", NC_DOUBLE, 1,
-                                      &time_dimension_id, &temperature_variable_id),
+        check_test_net_cdf(nc_def_var(file_id, "air_temperature", fixture.temperature_type_,
+                                      1, &time_dimension_id, &temperature_variable_id),
                            "unable to define test forcing variable");
     }
 
@@ -90,20 +116,61 @@ void write_net_cdf_forcing_fixture(const std::filesystem::path& path,
     check_test_net_cdf(nc_put_att_text(file_id, temperature_variable_id, "units",
                                        temperature_units.size(), temperature_units.data()),
                        "unable to write test forcing units");
-    const double missing_value = -9999.0;
-    check_test_net_cdf(nc_put_att_double(file_id, temperature_variable_id, "_FillValue",
-                                         NC_DOUBLE, 1, &missing_value),
-                       "unable to write test forcing fill value");
+    if (fixture.temperature_fill_value_) {
+        check_test_net_cdf(nc_put_att_double(file_id, temperature_variable_id, "_FillValue",
+                                             fixture.temperature_type_, 1,
+                                             &*fixture.temperature_fill_value_),
+                           "unable to write test forcing fill value");
+    }
+    if (fixture.disable_temperature_fill_) {
+        check_test_net_cdf(nc_def_var_fill(file_id, temperature_variable_id, 1, nullptr),
+                           "unable to disable test forcing fill");
+    }
+    if (!fixture.packed_variable_.empty()) {
+        int variable_id = -1;
+        check_test_net_cdf(nc_inq_varid(file_id, fixture.packed_variable_.c_str(),
+                                         &variable_id),
+                           "unable to find packed test variable");
+        const double packing_value = 0.01;
+        check_test_net_cdf(nc_put_att_double(file_id, variable_id,
+                                             fixture.packing_attribute_.c_str(), NC_DOUBLE,
+                                             1, &packing_value),
+                           "unable to write test packing attribute");
+    }
+    if (fixture.feature_missing_value_) {
+        check_test_net_cdf(nc_put_att_longlong(
+                              file_id, feature_variable_id, "missing_value", NC_INT64, 1,
+                              &*fixture.feature_missing_value_),
+                           "unable to write test feature missing value");
+    }
+    if (fixture.floating_feature_missing_value_) {
+        check_test_net_cdf(nc_put_att_double(file_id, feature_variable_id, "missing_value",
+                                             NC_DOUBLE, 1,
+                                             &*fixture.floating_feature_missing_value_),
+                           "unable to write floating test feature missing value");
+    }
 
     check_test_net_cdf(nc_enddef(file_id), "unable to finish defining NetCDF test fixture");
     check_test_net_cdf(nc_put_var_double(file_id, time_variable_id, fixture.times_.data()),
                        "unable to write test times");
-    check_test_net_cdf(nc_put_var_double(file_id, feature_variable_id,
-                                         fixture.feature_ids_.data()),
-                       "unable to write test feature identifiers");
-    check_test_net_cdf(nc_put_var_double(file_id, temperature_variable_id,
-                                         fixture.air_temperatures_.data()),
-                       "unable to write test forcing values");
+    if (!fixture.signed_feature_ids_.empty()) {
+        check_test_net_cdf(nc_put_var_longlong(file_id, feature_variable_id,
+                                               fixture.signed_feature_ids_.data()),
+                           "unable to write signed test feature identifiers");
+    } else if (!fixture.unsigned_feature_ids_.empty()) {
+        check_test_net_cdf(nc_put_var_ulonglong(file_id, feature_variable_id,
+                                                fixture.unsigned_feature_ids_.data()),
+                           "unable to write unsigned test feature identifiers");
+    } else {
+        check_test_net_cdf(nc_put_var_double(file_id, feature_variable_id,
+                                             fixture.feature_ids_.data()),
+                           "unable to write test feature identifiers");
+    }
+    if (fixture.write_temperatures_) {
+        check_test_net_cdf(nc_put_var_double(file_id, temperature_variable_id,
+                                             fixture.air_temperatures_.data()),
+                           "unable to write test forcing values");
+    }
     check_test_net_cdf(nc_close(file_id), "unable to close NetCDF test fixture");
 }
 
@@ -481,6 +548,240 @@ BOOST_AUTO_TEST_CASE(net_cdf_rejects_missing_forcing_value) {
     BOOST_REQUIRE(result.status_ == miaow::TaskStatus::failed);
     BOOST_TEST(result.message_.find("contains a missing value for feature '202' at time "
                                     "index 0") != std::string::npos);
+}
+
+// Reject unwritten cells without requiring an explicit _FillValue attribute
+BOOST_AUTO_TEST_CASE(net_cdf_rejects_default_fill_values) {
+    for (const nc_type type : {NC_BYTE, NC_SHORT, NC_INT, NC_FLOAT, NC_DOUBLE,
+                               NC_UBYTE, NC_USHORT, NC_UINT, NC_INT64, NC_UINT64}) {
+        BOOST_TEST_CONTEXT("NetCDF variable type " << type) {
+            const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+                "default_fill_" + std::to_string(type),
+                NetCdfForcingFixture{
+                    .feature_ids_ = {101.0, 202.0},
+                    .times_ = {0.0, 1.0, 2.0},
+                    .air_temperatures_ = {10.0, 100.0, 20.0, 200.0, 30.0, 300.0},
+                    .temperature_fill_value_ = std::nullopt,
+                    .write_temperatures_ = false,
+                    .temperature_type_ = type,
+                },
+                "202");
+            BOOST_REQUIRE(result.status_ == miaow::TaskStatus::failed);
+            BOOST_TEST(result.message_.find("contains a missing value for feature '202' "
+                                            "at time index 0") != std::string::npos);
+        }
+    }
+}
+
+// An explicit fill value replaces the type default as the missing-data marker
+BOOST_AUTO_TEST_CASE(net_cdf_explicit_fill_overrides_default) {
+    const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+        "explicit_fill_override",
+        NetCdfForcingFixture{
+            .feature_ids_ = {202.0},
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {NC_FILL_SHORT, 20.0, 30.0},
+            .temperature_type_ = NC_SHORT,
+        },
+        "202");
+    BOOST_REQUIRE(result.status_ == miaow::TaskStatus::succeeded);
+}
+
+// Disabling fill must not introduce a zero-valued missing-data marker
+BOOST_AUTO_TEST_CASE(net_cdf_no_fill_accepts_zero) {
+    const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+        "no_fill_zero",
+        NetCdfForcingFixture{
+            .feature_ids_ = {202.0},
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {0.0, 20.0, 30.0},
+            .temperature_fill_value_ = std::nullopt,
+            .disable_temperature_fill_ = true,
+        },
+        "202");
+    BOOST_REQUIRE(result.status_ == miaow::TaskStatus::succeeded);
+}
+
+// Disabling prefill does not remove an explicitly declared missing-data marker
+BOOST_AUTO_TEST_CASE(net_cdf_no_fill_honours_explicit_fill) {
+    const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+        "no_fill_explicit_marker",
+        NetCdfForcingFixture{
+            .feature_ids_ = {202.0},
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {-9999.0, 20.0, 30.0},
+            .disable_temperature_fill_ = true,
+        },
+        "202");
+    BOOST_REQUIRE(result.status_ == miaow::TaskStatus::failed);
+    BOOST_TEST(result.message_.find("contains a missing value for feature '202'") !=
+               std::string::npos);
+}
+
+// Missing coordinates and identifiers must not be interpreted as valid numbers
+BOOST_AUTO_TEST_CASE(net_cdf_rejects_default_fill_in_coordinates) {
+    const miaow::TaskResult feature_result = run_net_cdf_forcing_fixture(
+        "feature_default_fill",
+        NetCdfForcingFixture{
+            .feature_ids_ = {NC_FILL_DOUBLE, 202.0},
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {10.0, 100.0, 20.0, 200.0, 30.0, 300.0},
+        },
+        "202");
+    BOOST_REQUIRE(feature_result.status_ == miaow::TaskStatus::failed);
+    BOOST_TEST(feature_result.message_.find("identifier variable 'hruId' contains a "
+                                            "missing value") != std::string::npos);
+
+    for (const std::size_t missing_index : {0u, 1u}) {
+        NetCdfForcingFixture fixture{
+            .feature_ids_ = {202.0},
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {10.0, 20.0, 30.0},
+        };
+        fixture.times_.at(missing_index) = NC_FILL_DOUBLE;
+        const miaow::TaskResult time_result = run_net_cdf_forcing_fixture(
+            "time_default_fill_" + std::to_string(missing_index), fixture, "202");
+        BOOST_REQUIRE(time_result.status_ == miaow::TaskStatus::failed);
+        BOOST_TEST(time_result.message_.find("time coordinate contains a missing value") !=
+                   std::string::npos);
+    }
+}
+
+// Reject either packing attribute on any variable consumed by the reader
+BOOST_AUTO_TEST_CASE(net_cdf_rejects_packed_variables) {
+    for (const std::string variable : {"air_temperature", "time", "hruId"}) {
+        for (const std::string attribute : {"scale_factor", "add_offset"}) {
+            const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+                "packed_" + variable + "_" + attribute,
+                NetCdfForcingFixture{
+                    .feature_ids_ = {202.0},
+                    .times_ = {0.0, 1.0, 2.0},
+                    .air_temperatures_ = {10.0, 20.0, 30.0},
+                    .packed_variable_ = variable,
+                    .packing_attribute_ = attribute,
+                },
+                "202");
+            BOOST_REQUIRE(result.status_ == miaow::TaskStatus::failed);
+            BOOST_TEST(result.message_.find("packed NetCDF variable '" + variable +
+                                            "' uses '" + attribute + "'") !=
+                       std::string::npos);
+        }
+    }
+}
+
+// Adjacent 64-bit identifiers and markers must remain distinct above 2^53
+BOOST_AUTO_TEST_CASE(net_cdf_integer_feature_ids_remain_exact) {
+    const std::filesystem::path test_root =
+        std::filesystem::path(MIAOW_BMI_TEST_OUTPUT_ROOT) / "net_cdf_integer_ids";
+    std::filesystem::remove_all(test_root);
+    std::filesystem::create_directories(test_root);
+    const std::filesystem::path forcing_path = test_root / "forcing.nc";
+    for (const bool unsigned_ids : {false, true}) {
+        NetCdfForcingFixture fixture{
+            .times_ = {0.0},
+            .air_temperatures_ = {10.0, 20.0, 30.0},
+            .feature_missing_value_ = 9007199254740994LL,
+        };
+        if (unsigned_ids) {
+            fixture.unsigned_feature_ids_ = {9007199254740992ULL, 9007199254740993ULL,
+                                             9223372036854775807ULL};
+        } else {
+            fixture.signed_feature_ids_ = {9007199254740992LL, 9007199254740993LL,
+                                           9223372036854775807LL};
+        }
+        write_net_cdf_forcing_fixture(forcing_path, fixture);
+        const std::array<std::string, 3> feature_ids{
+            "9007199254740992", "9007199254740993", "9223372036854775807"};
+        for (std::size_t index = 0; index < feature_ids.size(); ++index) {
+            miaow::bmi::NetCdfForcingReader reader(forcing_path, "hruId",
+                                                  feature_ids.at(index));
+            BOOST_REQUIRE(reader.advance());
+            double value = 0.0;
+            reader.copy_value(0, &value);
+            BOOST_TEST(value == fixture.air_temperatures_.at(index));
+        }
+    }
+    std::filesystem::remove_all(test_root);
+}
+
+// Keep the signed lower bound and reject unsigned values outside the supported range
+BOOST_AUTO_TEST_CASE(net_cdf_integer_feature_id_bounds) {
+    const miaow::TaskResult signed_result = run_net_cdf_forcing_fixture(
+        "signed_id_minimum",
+        NetCdfForcingFixture{
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {10.0, 20.0, 30.0},
+            .signed_feature_ids_ = {std::numeric_limits<long long>::min()},
+        },
+        "-9223372036854775808");
+    BOOST_REQUIRE(signed_result.status_ == miaow::TaskStatus::succeeded);
+
+    const miaow::TaskResult unsigned_result = run_net_cdf_forcing_fixture(
+        "unsigned_id_out_of_range",
+        NetCdfForcingFixture{
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {10.0, 20.0, 30.0},
+            .unsigned_feature_ids_ = {9223372036854775808ULL},
+        },
+        "9223372036854775808");
+    BOOST_REQUIRE(unsigned_result.status_ == miaow::TaskStatus::failed);
+    BOOST_TEST(unsigned_result.message_.find("signed 64-bit integers") !=
+               std::string::npos);
+}
+
+// Compare 64-bit missing markers exactly, including defaults outside the signed range
+BOOST_AUTO_TEST_CASE(net_cdf_integer_feature_missing_values_remain_exact) {
+    NetCdfForcingFixture fixture{
+        .times_ = {0.0, 1.0, 2.0},
+        .air_temperatures_ = {10.0, 20.0, 30.0},
+        .signed_feature_ids_ = {9007199254740992LL},
+        .feature_missing_value_ = 9007199254740993LL,
+    };
+    const miaow::TaskResult valid_result =
+        run_net_cdf_forcing_fixture("integer_id_near_missing", fixture, "9007199254740992");
+    BOOST_REQUIRE(valid_result.status_ == miaow::TaskStatus::succeeded);
+
+    fixture.signed_feature_ids_ = {9007199254740993LL};
+    const miaow::TaskResult missing_result =
+        run_net_cdf_forcing_fixture("integer_id_missing", fixture, "9007199254740993");
+    BOOST_REQUIRE(missing_result.status_ == miaow::TaskStatus::failed);
+    BOOST_TEST(missing_result.message_.find(
+                   "identifier variable 'hruId' contains a missing value") !=
+               std::string::npos);
+
+    fixture.feature_missing_value_.reset();
+    for (const bool unsigned_ids : {false, true}) {
+        fixture.signed_feature_ids_.clear();
+        if (unsigned_ids) {
+            fixture.unsigned_feature_ids_ = {NC_FILL_UINT64};
+        } else {
+            fixture.signed_feature_ids_ = {NC_FILL_INT64};
+        }
+        const miaow::TaskResult default_result = run_net_cdf_forcing_fixture(
+            "integer_id_default_fill_" + std::to_string(unsigned_ids), fixture, "202");
+        BOOST_REQUIRE(default_result.status_ == miaow::TaskStatus::failed);
+        BOOST_TEST(default_result.message_.find("identifier variable 'hruId' contains a "
+                                                "missing value") != std::string::npos);
+    }
+}
+
+// A fractional missing marker must not be truncated to a valid integer identifier
+BOOST_AUTO_TEST_CASE(net_cdf_integer_ids_do_not_truncate_floating_markers) {
+    for (const bool unsigned_ids : {false, true}) {
+        NetCdfForcingFixture fixture{
+            .times_ = {0.0, 1.0, 2.0},
+            .air_temperatures_ = {10.0, 20.0, 30.0},
+            .floating_feature_missing_value_ = 0.5,
+        };
+        if (unsigned_ids) {
+            fixture.unsigned_feature_ids_ = {0};
+        } else {
+            fixture.signed_feature_ids_ = {0};
+        }
+        const miaow::TaskResult result = run_net_cdf_forcing_fixture(
+            "integer_id_fractional_marker_" + std::to_string(unsigned_ids), fixture, "0");
+        BOOST_REQUIRE(result.status_ == miaow::TaskStatus::succeeded);
+    }
 }
 
 // Resolve an enabled empty selection to every BMI output variable

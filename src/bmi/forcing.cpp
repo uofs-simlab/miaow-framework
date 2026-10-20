@@ -13,6 +13,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -117,9 +118,11 @@ std::optional<std::string> read_net_cdf_text_attribute(int file_id, int variable
     return io::trim(value);
 }
 
-// Read an optional numeric attribute as normalized double values
-std::vector<double> read_net_cdf_numeric_attribute(int file_id, int variable_id,
-                                                   const std::string& name) {
+// Read numeric markers in the same representation used for the variable values
+template <typename Value>
+std::vector<Value> read_net_cdf_numeric_attribute(
+    int file_id, int variable_id, const std::string& name,
+    int (*read_attribute)(int, int, const char*, Value*)) {
     nc_type type = NC_NAT;
     std::size_t size = 0;
     const int inquiry_status = nc_inq_att(file_id, variable_id, name.c_str(), &type, &size);
@@ -132,26 +135,125 @@ std::vector<double> read_net_cdf_numeric_attribute(int file_id, int variable_id,
                                  "' must be numeric");
     }
 
-    std::vector<double> values(size);
-    check_net_cdf(nc_get_att_double(file_id, variable_id, name.c_str(), values.data()),
+    // Fractional or out-of-range floating markers cannot equal an integer ID.
+    // Filter them before conversion, since the integer API would truncate them.
+    if constexpr (std::is_integral_v<Value>) {
+        if (type == NC_FLOAT || type == NC_DOUBLE) {
+            const std::vector<double> markers = read_net_cdf_numeric_attribute(
+                file_id, variable_id, name, nc_get_att_double);
+            const double upper_limit = std::ldexp(1.0, std::numeric_limits<Value>::digits);
+            const double lower_limit = std::is_signed_v<Value> ? -upper_limit : 0.0;
+            std::vector<Value> values;
+            for (const double marker : markers) {
+                if (std::isfinite(marker) && std::trunc(marker) == marker &&
+                    marker >= lower_limit && marker < upper_limit) {
+                    values.push_back(static_cast<Value>(marker));
+                }
+            }
+            return values;
+        }
+    }
+
+    std::vector<Value> values(size);
+    check_net_cdf(read_attribute(file_id, variable_id, name.c_str(), values.data()),
                   "unable to read attribute '" + name + "'");
     return values;
 }
 
-// Collect the conventional fill and missing-value markers for one variable
-std::vector<double> read_net_cdf_missing_values(int file_id, int variable_id) {
-    std::vector<double> values =
-        read_net_cdf_numeric_attribute(file_id, variable_id, "_FillValue");
-    std::vector<double> missing =
-        read_net_cdf_numeric_attribute(file_id, variable_id, "missing_value");
+// The fill inquiry writes the native variable type, without numeric conversion
+template <typename Value>
+std::optional<Value> read_net_cdf_fill_value(int file_id, int variable_id) {
+    Value value{};
+    int no_fill = 0;
+    check_net_cdf(nc_inq_var_fill(file_id, variable_id, &no_fill, &value),
+                  "unable to inspect the NetCDF fill value");
+    // NetCDF-4 leaves the output untouched when filling is disabled. An explicit
+    // _FillValue remains a missing-data marker even when allocation is not prefilled.
+    if (no_fill) {
+        const int status = nc_get_att(file_id, variable_id, "_FillValue", &value);
+        if (status == NC_ENOTATT) {
+            return std::nullopt;
+        }
+        check_net_cdf(status, "unable to read attribute '_FillValue'");
+    }
+    return value;
+}
+
+// Normalize native fill values only for variables read through the double API
+std::optional<double> read_net_cdf_fill_value_as_double(int file_id, int variable_id) {
+    nc_type type = NC_NAT;
+    check_net_cdf(nc_inq_vartype(file_id, variable_id, &type),
+                  "unable to inspect the NetCDF variable type");
+    switch (type) {
+    case NC_BYTE:
+        return read_net_cdf_fill_value<signed char>(file_id, variable_id);
+    case NC_SHORT:
+        return read_net_cdf_fill_value<short>(file_id, variable_id);
+    case NC_INT:
+        return read_net_cdf_fill_value<int>(file_id, variable_id);
+    case NC_FLOAT:
+        return read_net_cdf_fill_value<float>(file_id, variable_id);
+    case NC_DOUBLE:
+        return read_net_cdf_fill_value<double>(file_id, variable_id);
+    case NC_UBYTE:
+        return read_net_cdf_fill_value<unsigned char>(file_id, variable_id);
+    case NC_USHORT:
+        return read_net_cdf_fill_value<unsigned short>(file_id, variable_id);
+    case NC_UINT:
+        return read_net_cdf_fill_value<unsigned int>(file_id, variable_id);
+    case NC_INT64:
+        return read_net_cdf_fill_value<long long>(file_id, variable_id);
+    case NC_UINT64:
+        return read_net_cdf_fill_value<unsigned long long>(file_id, variable_id);
+    default:
+        throw std::runtime_error("Forcing data error: NetCDF variable must be numeric");
+    }
+}
+
+// Include the effective fill value, even when no _FillValue attribute was written
+template <typename Value>
+std::vector<Value> read_net_cdf_missing_values(
+    int file_id, int variable_id, std::optional<Value> fill_value,
+    int (*read_attribute)(int, int, const char*, Value*)) {
+    std::vector<Value> values;
+    if (fill_value) {
+        values.push_back(*fill_value);
+    }
+    const std::vector<Value> missing = read_net_cdf_numeric_attribute(
+        file_id, variable_id, "missing_value", read_attribute);
     values.insert(values.end(), missing.begin(), missing.end());
     return values;
 }
 
-// Test one normalized value against every declared missing-value marker
-bool is_missing_net_cdf_value(double value, const std::vector<double>& missing_values) {
+std::vector<double> read_net_cdf_missing_values(int file_id, int variable_id) {
+    return read_net_cdf_missing_values(
+        file_id, variable_id, read_net_cdf_fill_value_as_double(file_id, variable_id),
+        nc_get_att_double);
+}
+
+// Compare markers before integer identifiers can lose precision through conversion
+template <typename Value>
+bool is_missing_net_cdf_value(Value value, const std::vector<Value>& missing_values) {
     return std::any_of(missing_values.begin(), missing_values.end(),
-                       [value](double missing) { return value == missing; });
+                       [value](Value missing) { return value == missing; });
+}
+
+// Raw NetCDF reads do not apply the packing convention to stored values
+void reject_net_cdf_packing(int file_id, int variable_id) {
+    for (const char* attribute : {"scale_factor", "add_offset"}) {
+        const int status = nc_inq_att(file_id, variable_id, attribute, nullptr, nullptr);
+        if (status == NC_ENOTATT) {
+            continue;
+        }
+        check_net_cdf(status,
+                      "unable to inspect attribute '" + std::string(attribute) + "'");
+        std::array<char, NC_MAX_NAME + 1> name{};
+        check_net_cdf(nc_inq_varname(file_id, variable_id, name.data()),
+                      "unable to inspect NetCDF variable name");
+        throw std::runtime_error("Forcing data error: packed NetCDF variable '" +
+                                 std::string(name.data()) + "' uses '" + attribute +
+                                 "'; scale_factor and add_offset are not supported");
+    }
 }
 
 // Find one time coordinate using axis, standard name, and variable name precedence
@@ -239,6 +341,19 @@ std::string net_cdf_feature_id(double value) {
             "signed 64-bit integers");
     }
     return std::to_string(static_cast<std::int64_t>(value));
+}
+
+std::string net_cdf_feature_id(long long value) {
+    return std::to_string(value);
+}
+
+std::string net_cdf_feature_id(unsigned long long value) {
+    if (value > static_cast<unsigned long long>(std::numeric_limits<std::int64_t>::max())) {
+        throw std::runtime_error(
+            "Forcing data error: NetCDF feature identifiers must be finite "
+            "signed 64-bit integers");
+    }
+    return std::to_string(value);
 }
 
 // CSV parsing and loading helpers
@@ -468,6 +583,7 @@ NetCdfForcingReader::NetCdfForcingReader(const std::filesystem::path& forcing_pa
                                  feature_id_variable +
                                  "' must be numeric and one-dimensional");
     }
+    reject_net_cdf_packing(file_.id(), feature_variable_id);
     const int feature_dimension_id = feature_dimension_ids.front();
 
     std::size_t feature_count = 0;
@@ -478,23 +594,42 @@ NetCdfForcingReader::NetCdfForcingReader(const std::filesystem::path& forcing_pa
             "Forcing data error: NetCDF feature dimension must not be empty");
     }
 
-    // Read every source identifier and locate the task feature exactly once
-    std::vector<double> feature_values(feature_count);
-    check_net_cdf(nc_get_var_double(file_.id(), feature_variable_id, feature_values.data()),
-                  "unable to read feature identifiers");
-    const std::vector<double> feature_missing_values =
-        read_net_cdf_missing_values(file_.id(), feature_variable_id);
+    // Preserve integer identifiers and their missing markers without passing through double
     std::size_t match_count = 0;
-    for (std::size_t index = 0; index < feature_values.size(); ++index) {
-        const double value = feature_values.at(index);
-        if (is_missing_net_cdf_value(value, feature_missing_values)) {
-            throw std::runtime_error("Forcing data error: feature identifier variable '" +
-                                     feature_id_variable + "' contains a missing value");
+    const auto find_feature = [&](auto read_values, auto read_attribute, auto fill_value) {
+        using Value = typename decltype(fill_value)::value_type;
+        std::vector<Value> feature_values(feature_count);
+        check_net_cdf(read_values(file_.id(), feature_variable_id, feature_values.data()),
+                      "unable to read feature identifiers");
+        const std::vector<Value> missing_values = read_net_cdf_missing_values(
+            file_.id(), feature_variable_id, fill_value, read_attribute);
+        for (std::size_t index = 0; index < feature_values.size(); ++index) {
+            const Value value = feature_values.at(index);
+            if (is_missing_net_cdf_value(value, missing_values)) {
+                throw std::runtime_error(
+                    "Forcing data error: feature identifier variable '" +
+                    feature_id_variable + "' contains a missing value");
+            }
+            if (net_cdf_feature_id(value) == feature_id_) {
+                feature_index_ = index;
+                ++match_count;
+            }
         }
-        if (net_cdf_feature_id(value) == feature_id_) {
-            feature_index_ = index;
-            ++match_count;
-        }
+    };
+    if (feature_type == NC_FLOAT || feature_type == NC_DOUBLE) {
+        find_feature(nc_get_var_double, nc_get_att_double,
+                     read_net_cdf_fill_value_as_double(file_.id(), feature_variable_id));
+    } else if (feature_type == NC_UINT64) {
+        find_feature(nc_get_var_ulonglong, nc_get_att_ulonglong,
+                     read_net_cdf_fill_value<unsigned long long>(file_.id(),
+                                                                feature_variable_id));
+    } else {
+        const std::optional<long long> fill_value =
+            feature_type == NC_INT64
+                ? read_net_cdf_fill_value<long long>(file_.id(), feature_variable_id)
+                : std::optional<long long>(
+                      read_net_cdf_fill_value_as_double(file_.id(), feature_variable_id));
+        find_feature(nc_get_var_longlong, nc_get_att_longlong, fill_value);
     }
     if (match_count == 0) {
         throw std::runtime_error("Forcing data error: feature identifier variable '" +
@@ -509,6 +644,8 @@ NetCdfForcingReader::NetCdfForcingReader(const std::filesystem::path& forcing_pa
 
     // Detect the time coordinate and retain the dimension used for scalar reads
     time_variable_id_ = find_net_cdf_time_variable(file_.id());
+    reject_net_cdf_packing(file_.id(), time_variable_id_);
+    time_missing_values_ = read_net_cdf_missing_values(file_.id(), time_variable_id_);
     int time_dimension_id = -1;
     check_net_cdf(nc_inq_vardimid(file_.id(), time_variable_id_, &time_dimension_id),
                   "unable to inspect the NetCDF time coordinate");
@@ -534,6 +671,10 @@ NetCdfForcingReader::NetCdfForcingReader(const std::filesystem::path& forcing_pa
     if (!std::isfinite(first_time_)) {
         throw std::runtime_error(
             "Forcing data error: NetCDF time coordinate must be finite");
+    }
+    if (is_missing_net_cdf_value(first_time_, time_missing_values_)) {
+        throw std::runtime_error(
+            "Forcing data error: NetCDF time coordinate contains a missing value");
     }
 
     // Select numeric variables with exactly the time and feature dimensions; retain their
@@ -561,6 +702,7 @@ NetCdfForcingReader::NetCdfForcingReader(const std::filesystem::path& forcing_pa
             continue;
         }
 
+        reject_net_cdf_packing(file_.id(), variable_id);
         const std::optional<std::string> units =
             read_net_cdf_text_attribute(file_.id(), variable_id, "units");
         variables.emplace_back(variable_name.data(), BmiValueType::bmi_double,
@@ -596,6 +738,10 @@ bool NetCdfForcingReader::advance() {
     if (!std::isfinite(source_time)) {
         throw std::runtime_error(
             "Forcing data error: NetCDF time coordinate must be finite");
+    }
+    if (is_missing_net_cdf_value(source_time, time_missing_values_)) {
+        throw std::runtime_error(
+            "Forcing data error: NetCDF time coordinate contains a missing value");
     }
 
     // Read one scalar per variable at the selected feature and current time index
