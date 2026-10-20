@@ -36,7 +36,7 @@ Additional examples
 SUMMA
 ^^^^^
 
-The ``examples/04_summa`` example builds a SUMMA BMI library from a SUMMA source tree and runs the packaged gauge realization by default. It is not part of the default example set. SUMMA requires `NetCDF <https://www.unidata.ucar.edu/software/netcdf/>`_ C/Fortran and BLAS/LAPACK support. Select it with ``MIAOW_EXAMPLES=04_summa``, then run it from the example directory:
+The ``examples/04_summa`` example builds a SUMMA BMI library from `CH-Earth/summa v4.5.0-exp <https://github.com/CH-Earth/summa/releases/tag/v4.5.0-exp>`_, pinned to commit ``5a5f12ed8331deeda3729598ffe390dd068e3685``, and runs the packaged gauge realization by default. It is not part of the default example set. SUMMA requires `NetCDF <https://www.unidata.ucar.edu/software/netcdf/>`_ C/Fortran and BLAS/LAPACK support. Select it with ``MIAOW_EXAMPLES=04_summa``, then run it from the example directory:
 
 .. code-block:: sh
 
@@ -92,7 +92,7 @@ The following example-specific flags control the SUMMA build:
      - Default
      - Description
    * - ``-DMIAOW_SUMMA_MODEL_ROOT``
-     - ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/summa``
+     - ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/summa-v4.5.0-exp``
      - Local or fetched SUMMA source tree
    * - ``-DMIAOW_SUMMA_LIBRARY_LINKS``
      - ``-framework Accelerate`` on macOS, empty otherwise

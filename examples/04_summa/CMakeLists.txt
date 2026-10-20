@@ -4,9 +4,10 @@ include(ExternalProject)
 # Allow a local checkout to override the pinned SUMMA source
 set(MIAOW_SUMMA_MODEL_ROOT "" CACHE PATH
     "Path to a local SUMMA source tree")
-set(summa_git_repository "https://github.com/tristanmontoya/summa.git")
-# Pin the external build to the validated SUMMA revision
-set(summa_git_tag "f719ded11a4fb7be3abf05b85332f20744ae4f2c")
+set(summa_git_repository "https://github.com/CH-Earth/summa.git")
+# Resolve the release to an immutable revision for reproducible model builds
+set(summa_release "v4.5.0-exp")
+set(summa_git_tag "5a5f12ed8331deeda3729598ffe390dd068e3685")
 
 # Supply the platform BLAS and LAPACK link flags expected by SUMMA
 if(APPLE)
@@ -20,7 +21,7 @@ set(MIAOW_SUMMA_LIBRARY_LINKS "${miaow_summa_library_links_default}" CACHE STRIN
 # Choose the SUMMA path, fetching the pinned source when it is absent
 miaow_resolve_model_root(summa_source_dir
     MODEL_ROOT "${MIAOW_SUMMA_MODEL_ROOT}"
-    MODEL_LOCAL_SUBDIR "summa"
+    MODEL_LOCAL_SUBDIR "summa-${summa_release}"
     MODEL_LABEL "summa"
 )
 
@@ -33,6 +34,7 @@ if(NOT EXISTS "${summa_source_dir}")
         summa_source
         GIT_REPOSITORY "${summa_git_repository}"
         GIT_TAG "${summa_git_tag}"
+        GIT_SUBMODULES ""
         SOURCE_DIR "${summa_source_dir}"
         BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/summa-source-build"
     )
@@ -42,10 +44,10 @@ endif()
 if(NOT EXISTS "${summa_source_dir}/build/source/driver/summa_bmi.f90")
     if(MIAOW_SUMMA_MODEL_ROOT)
         message(FATAL_ERROR
-            "MIAOW_SUMMA_MODEL_ROOT must point to a tristanmontoya/summa source tree")
+            "MIAOW_SUMMA_MODEL_ROOT must point to a SUMMA source tree with BMI support")
     else()
         message(FATAL_ERROR
-            "Fetched tristanmontoya/summa source tree is missing "
+            "Fetched CH-Earth/summa source tree is missing "
             "build/source/driver/summa_bmi.f90")
     endif()
 endif()
@@ -66,6 +68,28 @@ if(NOT EXISTS "${summa_iso_c_fortran_bmi_source_dir}/CMakeLists.txt")
         "SUMMA requires iso_c_fortran_bmi source at "
         "${summa_iso_c_fortran_bmi_source_dir}")
 endif()
+
+# Upstream's BMI build uses the NextGen layout: a driver CMakeLists.txt with a
+# summa checkout below it and the procedural BMI bridge in a sibling directory.
+# Stage that layout without modifying either dependency's build files.
+set(summa_project_dir "${CMAKE_CURRENT_BINARY_DIR}/summa-project")
+set(summa_driver_dir "${summa_project_dir}/driver")
+file(MAKE_DIRECTORY "${summa_driver_dir}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${summa_source_dir}/build/CMakeLists.txt")
+file(READ "${summa_source_dir}/build/CMakeLists.txt" summa_driver_cmake)
+# SUMMA resolves the checkout symlink, so its source directory needs an explicit
+# binary directory when used from the staged driver.
+string(REPLACE "add_subdirectory(\${F_MASTER}/build/source/)"
+    "add_subdirectory(\${F_MASTER}/build/source/ \${CMAKE_BINARY_DIR}/source)"
+    summa_driver_cmake "${summa_driver_cmake}")
+file(CONFIGURE OUTPUT "${summa_driver_dir}/CMakeLists.txt"
+    CONTENT "${summa_driver_cmake}" @ONLY)
+configure_file("${summa_source_dir}/build/cmake/summabmi.pc.in"
+    "${summa_driver_dir}/summabmi.pc.in" COPYONLY)
+file(CREATE_LINK "${summa_source_dir}" "${summa_driver_dir}/summa" SYMBOLIC)
+file(CREATE_LINK "${summa_iso_c_fortran_bmi_source_dir}"
+    "${summa_project_dir}/iso_c_fortran_bmi" SYMBOLIC)
 
 # Translate the selected library flags into SUMMA configure arguments
 set(summa_configure_environment)
@@ -107,23 +131,23 @@ if(CMAKE_CXX_COMPILER)
 endif()
 
 # Predict the shared library path produced by the external build
-set(summa_build_dir "${CMAKE_CURRENT_BINARY_DIR}/summa-build")
+set(summa_build_dir "${CMAKE_CURRENT_BINARY_DIR}/summa-build-${summa_release}")
 string(CONCAT summa_bmi_library
     "${summa_build_dir}/"
     "${CMAKE_SHARED_LIBRARY_PREFIX}summabmi${CMAKE_SHARED_LIBRARY_SUFFIX}")
 
 # Configure and build only the SUMMA BMI shared library
 ExternalProject_Add(miaow_summa_external
-    SOURCE_DIR "${summa_source_dir}/build"
+    SOURCE_DIR "${summa_driver_dir}"
     BINARY_DIR "${summa_build_dir}"
+    # Upstream records its Git version from the configure process's working directory
     CONFIGURE_COMMAND
+        ${CMAKE_COMMAND} -E chdir "${summa_source_dir}"
         ${CMAKE_COMMAND} -E env ${summa_configure_environment}
         ${CMAKE_COMMAND}
-        -S "${summa_source_dir}/build"
+        -S "${summa_driver_dir}"
         -B "${summa_build_dir}"
         -DUSE_NEXTGEN=ON
-        "-DSUMMA_ROOT=${summa_source_dir}"
-        "-DISO_C_FORTRAN_BMI_ROOT=${summa_iso_c_fortran_bmi_source_dir}"
         -DCMAKE_BUILD_TYPE=$<CONFIG>
         ${summa_compiler_args}
         ${summa_lapack_args}
@@ -143,7 +167,12 @@ include("${PROJECT_SOURCE_DIR}/cmake/miaow_dynamic_bmi_plugin.cmake")
 miaow_add_dynamic_bmi_plugin(
     PLUGIN_TARGET miaow_summa_bmi
     SOURCES register_bmi_summa.f90
-    INCLUDE_DIRS "${summa_build_dir}/fortran"
+    INCLUDE_DIRS
+        "${summa_build_dir}/fortran"
+        "${summa_build_dir}/summa_nrtype_mod"
+        "${summa_build_dir}/summa_data_types_mod"
+        "${summa_build_dir}/summa_types_mod"
+        "${summa_build_dir}/summa_comm_mod"
     LINK_ISO_C_BMI
     FORTRAN_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/plugin-mod"
 )
