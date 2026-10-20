@@ -116,15 +116,16 @@ void write_net_cdf_forcing_fixture(const std::filesystem::path& path,
     check_test_net_cdf(nc_put_att_text(file_id, temperature_variable_id, "units",
                                        temperature_units.size(), temperature_units.data()),
                        "unable to write test forcing units");
+    // Disabling prefill clears _FillValue, so declare the missing-data marker afterward
+    if (fixture.disable_temperature_fill_) {
+        check_test_net_cdf(nc_def_var_fill(file_id, temperature_variable_id, 1, nullptr),
+                           "unable to disable test forcing fill");
+    }
     if (fixture.temperature_fill_value_) {
         check_test_net_cdf(nc_put_att_double(file_id, temperature_variable_id, "_FillValue",
                                              fixture.temperature_type_, 1,
                                              &*fixture.temperature_fill_value_),
                            "unable to write test forcing fill value");
-    }
-    if (fixture.disable_temperature_fill_) {
-        check_test_net_cdf(nc_def_var_fill(file_id, temperature_variable_id, 1, nullptr),
-                           "unable to disable test forcing fill");
     }
     if (!fixture.packed_variable_.empty()) {
         int variable_id = -1;
@@ -172,6 +173,31 @@ void write_net_cdf_forcing_fixture(const std::filesystem::path& path,
                            "unable to write test forcing values");
     }
     check_test_net_cdf(nc_close(file_id), "unable to close NetCDF test fixture");
+
+    // Verify no-fill fixtures retain the intended metadata after reopening
+    if (fixture.disable_temperature_fill_) {
+        check_test_net_cdf(nc_open(path.string().c_str(), NC_NOWRITE, &file_id),
+                           "unable to reopen NetCDF test fixture");
+        check_test_net_cdf(nc_inq_varid(file_id, "air_temperature",
+                                         &temperature_variable_id),
+                           "unable to find test forcing variable");
+        int no_fill = 0;
+        check_test_net_cdf(nc_inq_var_fill(file_id, temperature_variable_id, &no_fill,
+                                            nullptr),
+                           "unable to inspect test forcing fill mode");
+        double fill_value = 0.0;
+        const int fill_status = nc_get_att_double(file_id, temperature_variable_id,
+                                                   "_FillValue", &fill_value);
+        check_test_net_cdf(nc_close(file_id), "unable to close NetCDF test fixture");
+
+        BOOST_REQUIRE(no_fill != 0);
+        if (fixture.temperature_fill_value_) {
+            BOOST_REQUIRE_EQUAL(fill_status, NC_NOERR);
+            BOOST_TEST(fill_value == *fixture.temperature_fill_value_);
+        } else {
+            BOOST_TEST(fill_status == NC_ENOTATT);
+        }
+    }
 }
 
 // Execute one direct dynamic task against a test-owned NetCDF forcing file
@@ -602,7 +628,7 @@ BOOST_AUTO_TEST_CASE(net_cdf_no_fill_accepts_zero) {
     BOOST_REQUIRE(result.status_ == miaow::TaskStatus::succeeded);
 }
 
-// Disabling prefill does not remove an explicitly declared missing-data marker
+// An explicit missing-data marker must be honoured even when prefill is disabled
 BOOST_AUTO_TEST_CASE(net_cdf_no_fill_honours_explicit_fill) {
     const miaow::TaskResult result = run_net_cdf_forcing_fixture(
         "no_fill_explicit_marker",
