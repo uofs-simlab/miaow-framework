@@ -1,0 +1,212 @@
+{
+  "grus": [
+    {
+      "id": "710285850",
+      "init_config": "configs/gru-710285850.input"
+    },
+    {
+      "id": "710285970",
+      "init_config": "configs/gru-710285970.input"
+    },
+    {
+      "id": "710286090",
+      "init_config": "configs/gru-710286090.input"
+    },
+    {
+      "id": "710286760",
+      "init_config": "configs/gru-710286760.input"
+    },
+    {
+      "id": "710287000",
+      "init_config": "configs/gru-710287000.input"
+    },
+    {
+      "id": "710287400",
+      "init_config": "configs/gru-710287400.input"
+    },
+    {
+      "id": "710288520",
+      "init_config": "configs/gru-710288520.input"
+    },
+    {
+      "id": "710289040",
+      "init_config": "configs/gru-710289040.input"
+    },
+    {
+      "id": "710289570",
+      "init_config": "configs/gru-710289570.input"
+    },
+    {
+      "id": "710289740",
+      "init_config": "configs/gru-710289740.input"
+    },
+    {
+      "id": "710290160",
+      "init_config": "configs/gru-710290160.input"
+    },
+    {
+      "id": "710290220",
+      "init_config": "configs/gru-710290220.input"
+    },
+    {
+      "id": "710295280",
+      "init_config": "configs/gru-710295280.input"
+    },
+    {
+      "id": "710297780",
+      "init_config": "configs/gru-710297780.input"
+    },
+    {
+      "id": "710297980",
+      "init_config": "configs/gru-710297980.input"
+    },
+    {
+      "id": "710298570",
+      "init_config": "configs/gru-710298570.input"
+    },
+    {
+      "id": "710299630",
+      "init_config": "configs/gru-710299630.input"
+    },
+    {
+      "id": "710299920",
+      "init_config": "configs/gru-710299920.input"
+    },
+    {
+      "id": "710300260",
+      "init_config": "configs/gru-710300260.input"
+    },
+    {
+      "id": "710300710",
+      "init_config": "configs/gru-710300710.input"
+    },
+    {
+      "id": "710301000",
+      "init_config": "configs/gru-710301000.input"
+    },
+    {
+      "id": "710302700",
+      "init_config": "configs/gru-710302700.input"
+    },
+    {
+      "id": "710302870",
+      "init_config": "configs/gru-710302870.input"
+    },
+    {
+      "id": "710303020",
+      "init_config": "configs/gru-710303020.input"
+    },
+    {
+      "id": "710304180",
+      "init_config": "configs/gru-710304180.input"
+    },
+    {
+      "id": "710305270",
+      "init_config": "configs/gru-710305270.input"
+    },
+    {
+      "id": "710305630",
+      "init_config": "configs/gru-710305630.input"
+    },
+    {
+      "id": "710306900",
+      "init_config": "configs/gru-710306900.input"
+    },
+    {
+      "id": "710307740",
+      "init_config": "configs/gru-710307740.input"
+    },
+    {
+      "id": "710307840",
+      "init_config": "configs/gru-710307840.input"
+    },
+    {
+      "id": "710308380",
+      "init_config": "configs/gru-710308380.input"
+    },
+    {
+      "id": "710308960",
+      "init_config": "configs/gru-710308960.input"
+    },
+    {
+      "id": "710310940",
+      "init_config": "configs/gru-710310940.input"
+    },
+    {
+      "id": "710311200",
+      "init_config": "configs/gru-710311200.input"
+    },
+    {
+      "id": "710312960",
+      "init_config": "configs/gru-710312960.input"
+    },
+    {
+      "id": "710313590",
+      "init_config": "configs/gru-710313590.input"
+    },
+    {
+      "id": "710315030",
+      "init_config": "configs/gru-710315030.input"
+    },
+    {
+      "id": "710315060",
+      "init_config": "configs/gru-710315060.input"
+    },
+    {
+      "id": "710316430",
+      "init_config": "configs/gru-710316430.input"
+    },
+    {
+      "id": "710316540",
+      "init_config": "configs/gru-710316540.input"
+    },
+    {
+      "id": "710316870",
+      "init_config": "configs/gru-710316870.input"
+    },
+    {
+      "id": "710318380",
+      "init_config": "configs/gru-710318380.input"
+    },
+    {
+      "id": "710318930",
+      "init_config": "configs/gru-710318930.input"
+    },
+    {
+      "id": "710321020",
+      "init_config": "configs/gru-710321020.input"
+    },
+    {
+      "id": "710321850",
+      "init_config": "configs/gru-710321850.input"
+    },
+    {
+      "id": "710322170",
+      "init_config": "configs/gru-710322170.input"
+    },
+    {
+      "id": "710322920",
+      "init_config": "configs/gru-710322920.input"
+    },
+    {
+      "id": "710324090",
+      "init_config": "configs/gru-710324090.input"
+    },
+    {
+      "id": "710324220",
+      "init_config": "configs/gru-710324220.input"
+    },
+    {
+      "id": "710324400",
+      "init_config": "configs/gru-710324400.input"
+    },
+    {
+      "id": "710290711",
+      "init_config": "configs/gru-710290711.input"
+    },
+    {
+      "id": "710290712",
+      "init_config": "configs/gru-710290712.input"
+    }
+  ]
+}

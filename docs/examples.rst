@@ -28,7 +28,7 @@ Default examples
 Additional examples
 -------------------
 
-- `examples/04_summa <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_summa>`_: `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline execution and one MIAOW task per staged catchment feature described by a NextGen-style realization
+- `examples/04_summa <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_summa>`_: MIAOW `SUMMA <https://github.com/CH-Earth/summa>`_ execution for the 52-GRU Bow River fixture, with offline mizuRoute routing
 - `examples/05_libtrixi_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/05_libtrixi_bmi>`_: `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin in a single-task subprocess
 - `examples/06_fuse_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/06_fuse_bmi>`_: deterministic 256-member Saltelli ensemble using the `FUSE <https://github.com/uofs-simlab/fuse>`_ dynamic Fortran BMI plugin
 - `examples/08_particle_swarm <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/08_particle_swarm>`_: compares batch-synchronous and asynchronous particle swarm optimization on Rastrigin, with randomized evaluation delays and Matplotlib playback
@@ -36,69 +36,40 @@ Additional examples
 SUMMA
 ^^^^^
 
-The ``examples/04_summa`` example builds a SUMMA BMI library from `CH-Earth/summa v4.5.0-exp <https://github.com/CH-Earth/summa/releases/tag/v4.5.0-exp>`_, pinned to commit ``5a5f12ed8331deeda3729598ffe390dd068e3685``, and runs the packaged gauge realization by default. It is not part of the default example set. SUMMA requires `NetCDF <https://www.unidata.ucar.edu/software/netcdf/>`_ C/Fortran and BLAS/LAPACK support. Select it with ``MIAOW_EXAMPLES=04_summa``, then run it from the example directory:
+The optional ``examples/04_summa`` example runs `SUMMA <https://github.com/CH-Earth/summa>`_ through Fortran BMI in MIAOW, with offline routing through `mizuRoute <https://github.com/ESCOMP/mizuRoute>`_, to simulate the streamflow for the ``CAN_05BB001`` gauge on the Bow River at Banff, Alberta, Canada using a spatially distributed hydrologic model consisting of 52 grouped response units (GRUs). In addition to the :doc:`MIAOW build requirements <building>`, this example requires GNU Fortran, NetCDF C/Fortran, BLAS/LAPACK, and ``uv``. On Ubuntu, these can be installed using the following commands:
 
 .. code-block:: sh
 
-   cd examples/04_summa
-   ./miaow_summa --output_root ./output
+   sudo apt-get install libnetcdf-dev libnetcdff-dev libopenblas-dev curl
+   curl -LsSf https://astral.sh/uv/install.sh | sh
 
-An example-local factory exports the C-callable BMI registration entry point, including on toolchains that hide SUMMA's module-private factory.
-
-CSV and NetCDF forcing comparison
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Without additional flags, the example uses the packaged ``CsvPerFeature`` realization. Add ``--compare_forcing`` to run that CSV case followed by a NetCDF case with the same model configurations, variable mappings, output interval, and runtime options:
+On macOS, we can use `Homebrew <https://brew.sh/>`_ to install the required dependencies:
 
 .. code-block:: sh
 
-   ./miaow_summa --compare_forcing --max_workers 1 \
-       --output_root ./output/forcing_comparison_1_worker
-   ./miaow_summa --compare_forcing --max_workers 5 \
-       --output_root ./output/forcing_comparison_5_workers
+   brew install netcdf-fortran uv
 
-Both cases use persistent subprocess workers. Each CSV runtime shuts down before the NetCDF runtime starts. Runtime-managed artifacts are retained under separate ``csv`` and ``netcdf`` subdirectories of the selected output root, which must be non-empty. Original catchment labels identify the results; their numeric suffixes select features in the shared NetCDF file.
-
-Comparison requires all five catchments to succeed, matching CSV headers and row counts, identical timestamps, and exact equality of finite runoff, snowpack, and baseflow values. The first mismatch reports its catchment, timestamp, variable, and values, and the program returns a nonzero exit status. Numerical differences should be investigated before introducing comparison tolerances. Existing job summaries report execution timing; these small cases establish equivalence rather than distributed I/O performance.
-
-The five packaged CSV files contain identical forcing series. This example therefore checks SUMMA integration and format equivalence; feature-selection tests with distinct forcing values remain part of the framework test suite.
-
-The checked-in ``data/gauge_01073000/forcings/forcing.nc`` contains the same eight variables and 744 hourly records as the five source CSV files, through December 31, 2015. The model configurations end on December 30, so both forcing cases retain the same extra source coverage. Builds and runs do not generate the fixture. To regenerate it offline, use Python 3 and the ``ncgen`` utility distributed with NetCDF:
+``run_summa_mizuroute.py`` accepts ``--max-workers N`` to set the maximum number of concurrent SUMMA tasks that MIAOW will run (default: 4). To set up and run the workflow, execute the following commands from the repository root:
 
 .. code-block:: sh
 
-   python3 generate_netcdf_forcing.py
+   # 1. Set up the Python environment
+   uv sync --frozen --project examples/04_summa --python 3.12
 
-The script requires only Python's standard library and ``ncgen`` on ``PATH``. Use ``--output /path/to/forcing.nc`` to generate a separate copy. It preserves source values as doubles without unit conversion and writes uncompressed NetCDF-4 classic-model data. Library versions can change the binary representation, so compare regenerated IDs, timestamps, and data values rather than file hashes.
+   # 2. Configure the model and routing build
+   cmake -S . -B build-summa -DCMAKE_BUILD_TYPE=Release \
+       -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=04_summa
 
-When SUMMA and testing are enabled, CTest registers the normal smoke test and two forcing-comparison tests with one and five workers. Run them from the repository root:
+   # 3. Build the MIAOW driver, SUMMA, and mizuRoute
+   cmake --build build-summa --target miaow_summa -j 6
 
-.. code-block:: sh
+   # 4. Run SUMMA, prepare runoff, and run mizuRoute
+   uv run --frozen --project examples/04_summa \
+       python examples/04_summa/run_summa_mizuroute.py
 
-   ctest --test-dir build -R '^miaow_example_04_summa' --output-on-failure
-
-These tests share a resource lock because SUMMA's native output files use common locations in the example directory. Standalone example invocations should likewise run sequentially in that directory.
-
-SUMMA build options
-~~~~~~~~~~~~~~~~~~~
-
-The following example-specific flags control the SUMMA build:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 35 30 45
-
-   * - Flag
-     - Default
-     - Description
-   * - ``-DMIAOW_SUMMA_MODEL_ROOT``
-     - ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/summa-v4.5.0-exp``
-     - Local or fetched SUMMA source tree
-   * - ``-DMIAOW_SUMMA_LIBRARY_LINKS``
-     - ``-framework Accelerate`` on macOS, empty otherwise
-     - LAPACK/BLAS link flags passed to SUMMA
-
-SUMMA is distributed under the `GNU General Public License version 3 <https://github.com/CH-Earth/summa/blob/master/COPYING>`_.
+   # 5. Calculate the modified Kling-Gupta efficiency (KGE') and plot streamflow
+   uv run --frozen --project examples/04_summa \
+       python examples/04_summa/postprocess_streamflow.py
 
 Trixi.jl
 ^^^^^^^^

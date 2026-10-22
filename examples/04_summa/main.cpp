@@ -1,69 +1,80 @@
-/**
- * This example demonstrates how to run SUMMA through MIAOW using a small NextGen-style
- * realization file.
- */
+/** Run one SUMMA BMI task per GRU */
+#include <chrono>
 #include <exception>
+#include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
-#include "forcing_comparison.hpp"
 
 int main(int argc, char* argv[]) {
-    // Check that we're running from the expected directory for proper relative paths
-    if (!miaow::ensure_expected_run_dir(MIAOW_SUMMA_RUN_DIR)) {
-        return 1;
-    }
-
-    // Use the gauge-specific output root as the default before parsing CLI overrides
-    miaow::PartitionedBmiRealization realization;
-    miaow::RuntimeOptions runtime_options;
-    runtime_options.output_root_ = "output/gauge_01073000";
-    bool compare = false;
     try {
-        // Example-specific flags are consumed before the common runtime CLI parser
+        std::string config_path;
+        miaow::RuntimeOptions options;
+        options.job_request_timeout_ = std::chrono::minutes(20);
+
+        // Consume the fixture path before passing common options to the runtime
         std::vector<char*> runtime_arguments{argv[0]};
         for (int index = 1; index < argc; ++index) {
-            if (std::string(argv[index]) == "--compare_forcing") {
-                compare = true;
+            if (std::string(argv[index]) == "--config") {
+                if (++index == argc) {
+                    throw std::runtime_error("--config requires a manifest path");
+                }
+                config_path = argv[index];
             } else {
                 runtime_arguments.push_back(argv[index]);
             }
         }
         miaow::parse_runtime_cli_options(static_cast<int>(runtime_arguments.size()),
-                                         runtime_arguments.data(), runtime_options);
-        if (compare) {
-            return compare_forcing(runtime_options);
+                                         runtime_arguments.data(), options);
+        if (config_path.empty()) {
+            throw std::runtime_error("--config requires a fixture manifest");
         }
-        realization = miaow::PartitionedBmiRealization(
-            "data/gauge_01073000/realization_config.json");
+
+        // The fixture manifest preserves attribute-file order
+        std::ifstream input(config_path);
+        if (!input) {
+            throw std::runtime_error("Cannot open " + config_path);
+        }
+
+        // Parse the manifest JSON
+        const auto manifest = nlohmann::json::parse(input);
+
+        // Create the simulation unit registry and add the worker subprocess
+        miaow::SimulationUnitRegistry registry;
+        const auto worker = registry.add_subprocess(
+            miaow::bmi_subprocess_executable_path(), miaow::SubprocessLifetime::single_task);
+
+        // Create a task for each GRU in the manifest
+        std::vector<miaow::Task> tasks;
+        for (const auto& feature : manifest.at("grus")) {
+            const auto identifier = feature.at("id").get<std::string>();
+            miaow::DynamicBmiConfig config;
+            config.backend_ = miaow::DynamicBmiBackend::fortran;
+            config.plugin_path_ = MIAOW_SUMMA_PLUGIN_PATH;
+            config.init_config_ = feature.at("init_config").get<std::string>();
+
+            // SUMMA owns forcing, daily accumulation, and native NetCDF output
+            tasks.push_back(miaow::make_bmi_task(
+                worker, config, identifier,
+                {{"feature_id", identifier}, {"feature_type", "gru"}}));
+        }
+
+        // Create the runtime, submit the tasks, and get the job record
+        miaow::Runtime runtime(registry, options);
+        const auto record = runtime.submit_job(tasks).get();
+
+        // Print the job summary and return the overall success status
+        miaow::print_job_summary(record);
+        return miaow::all_tasks_succeeded(record) ? 0 : 1;
     } catch (const std::exception& exception) {
-        std::cerr << exception.what() << "\n";
+        std::cerr << exception.what() << '\n';
         return 1;
     }
-
-    // Register the bundled BMI worker as a persistent subprocess simulation unit
-    miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId bmi_subprocess =
-        registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
-                                miaow::SubprocessLifetime::persistent);
-
-    // SUMMA tasks run in subprocesses because the model has global state
-    const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(
-        bmi_subprocess, realization);
-    std::cout << "Parsed realization with " << tasks.size() << " feature task(s)\n";
-    miaow::Runtime runtime(registry, runtime_options);
-
-    // Submit a job containing the tasks and wait for results
-    miaow::JobHandle job = runtime.submit_job(tasks);
-    const miaow::JobRecord job_record = job.get();
-
-    // Print task results and aggregate timing information
-    miaow::print_job_summary(job_record);
-
-    // Return 0 if all tasks succeeded, or 1 if any task failed
-    return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
 }

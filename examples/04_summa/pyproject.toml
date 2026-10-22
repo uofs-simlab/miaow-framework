@@ -1,0 +1,8 @@
+[project]
+name = "miaow-summa-example"
+version = "0.1.0"
+requires-python = "==3.12.*"
+dependencies = ["numpy>=2", "netCDF4>=1.7", "matplotlib>=3.9"]
+
+[tool.uv]
+package = false

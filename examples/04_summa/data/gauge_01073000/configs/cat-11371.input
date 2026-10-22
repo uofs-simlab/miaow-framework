@@ -1,5 +1,0 @@
-&parameters
-  file_manager          = "./data/gauge_01073000/configs/fileManager-cat-11371.txt"
-  attrib_file_HRU_order = 2
-  restart_print_freq    = "e"
-/

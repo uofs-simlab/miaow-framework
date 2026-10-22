@@ -1,0 +1,58 @@
+tempCritRain
+windReductionParam
+vGn_n
+k_macropore
+k_soil
+theta_sat
+aquiferBaseflowExp
+aquiferBaseflowRate
+qSurfScale
+summerLAI
+frozenPrecipMultip
+heightCanopyTop
+routingGammaScale
+routingGammaShape
+Fcapil
+theta_res
+critSoilWilting
+critSoilTranspire
+fieldCapacity
+heightCanopyBottom
+! -------------
+!  attributes
+! -------------
+hruId
+latitude
+longitude     
+
+! varName          | outFreq | sum | inst | mean | var | min | max | mode
+! -----------
+! -------------------
+!  model variables
+! -------------------
+averageRoutedRunoff   | 24  |  mean
+!scalarTotalET         | 24  |  mean
+!scalarSWE             | 24  |  mean
+!scalarRainPlusMelt    | 24  |  mean
+!scalarCanopyWat       | 24  |  mean
+!scalarTotalSoilWat    | 24  |  mean
+!scalarAquiferStorage  | 24  |  mean
+!scalarSurfaceRunoff   | 24  |  mean
+!scalarInfiltration    | 24  |  mean
+!scalarSoilDrainage    | 24  |  mean
+!scalarAquiferBaseflow | 24  |  mean
+!scalarTotalRunoff     | 24  |  mean
+!scalarNetRadiation    | 24  |  mean
+!scalarLatHeatTotal    | 24  |  mean
+!scalarSenHeatTotal    | 24  |  mean
+!scalarCanairTemp      | 24  |  mean
+!scalarCanopyTemp      | 24  |  mean
+!scalarSurfaceTemp     | 24  |  mean
+!scalarSnowDepth       | 24  |  mean
+
+!! snow analysis
+!scalarSnowfall        | 24  |  mean
+!scalarGroundSnowFraction    |  24  | mean
+!scalarSnowDrainage    | 24  |  mean
+
+

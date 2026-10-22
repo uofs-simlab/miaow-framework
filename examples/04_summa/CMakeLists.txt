@@ -4,10 +4,10 @@ include(ExternalProject)
 # Allow a local checkout to override the pinned SUMMA source
 set(MIAOW_SUMMA_MODEL_ROOT "" CACHE PATH
     "Path to a local SUMMA source tree")
-set(summa_git_repository "https://github.com/CH-Earth/summa.git")
-# Resolve the release to an immutable revision for reproducible model builds
-set(summa_release "v4.5.0-exp")
-set(summa_git_tag "5a5f12ed8331deeda3729598ffe390dd068e3685")
+set(summa_git_repository "https://github.com/tristanmontoya/summa.git")
+# Direct BMI builds with native forcing/output and a complete BMI clock
+set(summa_git_tag "6932a264b23ea3b7783f5891b4245a3c6b4ecb93")
+string(SUBSTRING "${summa_git_tag}" 0 7 summa_git_short_tag)
 
 # Supply the platform BLAS and LAPACK link flags expected by SUMMA
 if(APPLE)
@@ -21,7 +21,7 @@ set(MIAOW_SUMMA_LIBRARY_LINKS "${miaow_summa_library_links_default}" CACHE STRIN
 # Choose the SUMMA path, fetching the pinned source when it is absent
 miaow_resolve_model_root(summa_source_dir
     MODEL_ROOT "${MIAOW_SUMMA_MODEL_ROOT}"
-    MODEL_LOCAL_SUBDIR "summa-${summa_release}"
+    MODEL_LOCAL_SUBDIR "summa-${summa_git_short_tag}"
     MODEL_LABEL "summa"
 )
 
@@ -40,6 +40,20 @@ if(NOT EXISTS "${summa_source_dir}")
     )
 endif()
 
+# Verify the pinned model revision before configuring the BMI build
+find_package(Git REQUIRED)
+execute_process(
+    COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
+    WORKING_DIRECTORY "${summa_source_dir}"
+    OUTPUT_VARIABLE summa_actual_revision
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY
+)
+if(NOT summa_actual_revision STREQUAL summa_git_tag)
+    message(FATAL_ERROR
+        "SUMMA source must be at ${summa_git_tag}, found ${summa_actual_revision}")
+endif()
+
 # Validate the files required to configure SUMMA and build its BMI library
 if(NOT EXISTS "${summa_source_dir}/build/source/driver/summa_bmi.f90")
     if(MIAOW_SUMMA_MODEL_ROOT)
@@ -47,7 +61,7 @@ if(NOT EXISTS "${summa_source_dir}/build/source/driver/summa_bmi.f90")
             "MIAOW_SUMMA_MODEL_ROOT must point to a SUMMA source tree with BMI support")
     else()
         message(FATAL_ERROR
-            "Fetched CH-Earth/summa source tree is missing "
+            "Fetched SUMMA source tree is missing "
             "build/source/driver/summa_bmi.f90")
     endif()
 endif()
@@ -68,28 +82,6 @@ if(NOT EXISTS "${summa_iso_c_fortran_bmi_source_dir}/CMakeLists.txt")
         "SUMMA requires iso_c_fortran_bmi source at "
         "${summa_iso_c_fortran_bmi_source_dir}")
 endif()
-
-# Upstream's BMI build uses the NextGen layout: a driver CMakeLists.txt with a
-# summa checkout below it and the procedural BMI bridge in a sibling directory.
-# Stage that layout without modifying either dependency's build files.
-set(summa_project_dir "${CMAKE_CURRENT_BINARY_DIR}/summa-project")
-set(summa_driver_dir "${summa_project_dir}/driver")
-file(MAKE_DIRECTORY "${summa_driver_dir}")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${summa_source_dir}/build/CMakeLists.txt")
-file(READ "${summa_source_dir}/build/CMakeLists.txt" summa_driver_cmake)
-# SUMMA resolves the checkout symlink, so its source directory needs an explicit
-# binary directory when used from the staged driver.
-string(REPLACE "add_subdirectory(\${F_MASTER}/build/source/)"
-    "add_subdirectory(\${F_MASTER}/build/source/ \${CMAKE_BINARY_DIR}/source)"
-    summa_driver_cmake "${summa_driver_cmake}")
-file(CONFIGURE OUTPUT "${summa_driver_dir}/CMakeLists.txt"
-    CONTENT "${summa_driver_cmake}" @ONLY)
-configure_file("${summa_source_dir}/build/cmake/summabmi.pc.in"
-    "${summa_driver_dir}/summabmi.pc.in" COPYONLY)
-file(CREATE_LINK "${summa_source_dir}" "${summa_driver_dir}/summa" SYMBOLIC)
-file(CREATE_LINK "${summa_iso_c_fortran_bmi_source_dir}"
-    "${summa_project_dir}/iso_c_fortran_bmi" SYMBOLIC)
 
 # Translate the selected library flags into SUMMA configure arguments
 set(summa_configure_environment)
@@ -131,23 +123,24 @@ if(CMAKE_CXX_COMPILER)
 endif()
 
 # Predict the shared library path produced by the external build
-set(summa_build_dir "${CMAKE_CURRENT_BINARY_DIR}/summa-build-${summa_release}")
+set(summa_build_dir "${CMAKE_CURRENT_BINARY_DIR}/summa-build-${summa_git_short_tag}")
 string(CONCAT summa_bmi_library
     "${summa_build_dir}/"
     "${CMAKE_SHARED_LIBRARY_PREFIX}summabmi${CMAKE_SHARED_LIBRARY_SUFFIX}")
 
 # Configure and build only the SUMMA BMI shared library
 ExternalProject_Add(miaow_summa_external
-    SOURCE_DIR "${summa_driver_dir}"
+    SOURCE_DIR "${summa_source_dir}/build"
     BINARY_DIR "${summa_build_dir}"
-    # Upstream records its Git version from the configure process's working directory
     CONFIGURE_COMMAND
-        ${CMAKE_COMMAND} -E chdir "${summa_source_dir}"
         ${CMAKE_COMMAND} -E env ${summa_configure_environment}
         ${CMAKE_COMMAND}
-        -S "${summa_driver_dir}"
+        -S "${summa_source_dir}/build"
         -B "${summa_build_dir}"
         -DUSE_NEXTGEN=ON
+        -DUSE_NGEN_FORCING=OFF
+        -DUSE_NGEN_OUTPUT=OFF
+        -DSUMMA_ISO_C_FORTRAN_BMI_ROOT=${summa_iso_c_fortran_bmi_source_dir}
         -DCMAKE_BUILD_TYPE=$<CONFIG>
         ${summa_compiler_args}
         ${summa_lapack_args}
@@ -160,82 +153,79 @@ ExternalProject_Add(miaow_summa_external
     INSTALL_COMMAND ""
     BUILD_ALWAYS TRUE
     BUILD_BYPRODUCTS "${summa_bmi_library}"
+    LOG_DIR "${CMAKE_CURRENT_BINARY_DIR}/logs"
+    LOG_CONFIGURE TRUE
+    LOG_BUILD TRUE
+    LOG_OUTPUT_ON_FAILURE TRUE
 )
 
-# Export a factory even when SUMMA's module-private entry point is hidden
-include("${PROJECT_SOURCE_DIR}/cmake/miaow_dynamic_bmi_plugin.cmake")
-miaow_add_dynamic_bmi_plugin(
-    PLUGIN_TARGET miaow_summa_bmi
-    SOURCES register_bmi_summa.f90
-    INCLUDE_DIRS
-        "${summa_build_dir}/fortran"
-        "${summa_build_dir}/summa_nrtype_mod"
-        "${summa_build_dir}/summa_data_types_mod"
-        "${summa_build_dir}/summa_types_mod"
-        "${summa_build_dir}/summa_comm_mod"
-    LINK_ISO_C_BMI
-    FORTRAN_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/plugin-mod"
+# Build serial routing with the upstream GNU Fortran Makefile
+find_program(mizuroute_make NAMES gmake make REQUIRED)
+find_program(mizuroute_fortran_compiler NAMES gfortran REQUIRED)
+find_program(mizuroute_nf_config NAMES nf-config REQUIRED)
+find_program(mizuroute_nc_config NAMES nc-config REQUIRED)
+execute_process(
+    COMMAND "${mizuroute_nf_config}" --prefix
+    OUTPUT_VARIABLE mizuroute_netcdf_prefix
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY
 )
-target_link_libraries(miaow_summa_bmi PRIVATE "${summa_bmi_library}")
-add_dependencies(miaow_summa_bmi miaow_summa_external)
+execute_process(
+    COMMAND "${mizuroute_nf_config}" --flibs
+    OUTPUT_VARIABLE mizuroute_netcdf_fortran_libraries
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY
+)
+execute_process(
+    COMMAND "${mizuroute_nc_config}" --libs
+    OUTPUT_VARIABLE mizuroute_netcdf_c_libraries
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY
+)
+set(mizuroute_revision "104ef346f14bb387f4c29dbb742dbfefbe2a78e6")
+set(mizuroute_source_dir "${CMAKE_CURRENT_BINARY_DIR}/mizuRoute-${mizuroute_revision}")
+ExternalProject_Add(mizuroute
+    URL "https://codeload.github.com/ESCOMP/mizuRoute/tar.gz/${mizuroute_revision}"
+    URL_HASH SHA256=bb5e94e397ae06e03b6d28462c9efdff00b734e7b4a1c1ea1db8fb95c31b8a37
+    DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/downloads"
+    DOWNLOAD_NAME mizuroute.tar.gz
+    SOURCE_DIR "${mizuroute_source_dir}"
+    BUILD_IN_SOURCE TRUE
+    CONFIGURE_COMMAND ""
+    # The upstream compile, install, and clean targets must run in sequence
+    BUILD_COMMAND
+        "${mizuroute_make}" -j1 -C <SOURCE_DIR>/route/build
+        FC=gnu
+        "FC_EXE=${mizuroute_fortran_compiler}"
+        EXE=route_runoff
+        "EXE_PATH=${CMAKE_CURRENT_BINARY_DIR}"
+        MODE=fast
+        "F_MASTER=<SOURCE_DIR>/route/"
+        "NCDF_PATH=${mizuroute_netcdf_prefix}"
+        isOpenMP=no
+        "LIBNETCDF=${mizuroute_netcdf_fortran_libraries} ${mizuroute_netcdf_c_libraries}"
+        VERSION=v1.2.3
+        "GITHASH=${mizuroute_revision}"
+        "GITBRCH=${mizuroute_revision}"
+    INSTALL_COMMAND ""
+    BUILD_BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/route_runoff"
+    EXCLUDE_FROM_ALL TRUE
+    LOG_DIR "${CMAKE_CURRENT_BINARY_DIR}/logs"
+    LOG_BUILD TRUE
+    LOG_OUTPUT_ON_FAILURE TRUE
+)
 
-# Link the plugin where realization_config.json expects to load it
-set(summa_realization_plugin_dir "${CMAKE_CURRENT_LIST_DIR}/data/plugins")
-set(summa_realization_plugin_link
-    "${summa_realization_plugin_dir}/libsummabmi")
-add_custom_command(
-    OUTPUT "${summa_realization_plugin_link}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-            "${summa_realization_plugin_dir}"
-    COMMAND ${CMAKE_COMMAND} -E remove -f
-            "${summa_realization_plugin_link}"
-    COMMAND ${CMAKE_COMMAND} -E create_symlink
-            "$<TARGET_FILE:miaow_summa_bmi>"
-            "${summa_realization_plugin_link}"
-    DEPENDS miaow_summa_bmi
-    VERBATIM
-)
-add_custom_target(miaow_summa_plugin_link
-    DEPENDS "${summa_realization_plugin_link}"
-)
+# SUMMA exports the C registration factory for direct BMI loading
+add_library(summabmi SHARED IMPORTED)
+set_target_properties(summabmi PROPERTIES IMPORTED_LOCATION "${summa_bmi_library}")
+add_dependencies(summabmi miaow_summa_external)
 
-# Build the driver after the realization plugin link is ready
-add_executable(miaow_summa
-    main.cpp
-    forcing_comparison.cpp
-)
+# Build the driver after the external model library is ready
+add_executable(miaow_summa main.cpp)
 
 target_compile_features(miaow_summa PRIVATE cxx_std_20)
 target_link_libraries(miaow_summa PRIVATE miaow nlohmann_json::nlohmann_json)
-target_compile_definitions(miaow_summa PRIVATE
-    MIAOW_SUMMA_RUN_DIR="${CMAKE_CURRENT_LIST_DIR}"
-)
-add_dependencies(miaow_summa miaow_summa_plugin_link miaow_subprocess)
-
-# Place the binary in the example directory for source-relative execution
-set_target_properties(miaow_summa PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-)
-
-if(BUILD_TESTING)
-    miaow_add_example_smoke_test(
-        TEST_NAME miaow_example_04_summa
-        EXECUTABLE_TARGET miaow_summa
-        EXTERNAL_MODEL
-    )
-    # SUMMA's native output files are shared by all executions in this directory
-    set_tests_properties(miaow_example_04_summa PROPERTIES
-        RESOURCE_LOCK miaow_summa_output)
-    foreach(workers IN ITEMS 1 5)
-        set(comparison_test "miaow_example_04_summa_forcing_${workers}_workers")
-        add_test(NAME ${comparison_test}
-            COMMAND $<TARGET_FILE:miaow_summa> --compare_forcing
-                --max_workers ${workers}
-                --output_root "output/forcing_comparison_${workers}_workers")
-        set_tests_properties(${comparison_test} PROPERTIES
-            LABELS "example;external_model"
-            TIMEOUT 720
-            RESOURCE_LOCK miaow_summa_output
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
-    endforeach()
-endif()
+include("${PROJECT_SOURCE_DIR}/cmake/miaow_dynamic_bmi_plugin.cmake")
+miaow_attach_plugin_paths(miaow_summa
+    MIAOW_SUMMA_PLUGIN_PATH summabmi)
+add_dependencies(miaow_summa miaow_subprocess mizuroute)
