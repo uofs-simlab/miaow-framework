@@ -1,0 +1,10 @@
+{
+  "exit_code": 1,
+  "input": {"time_step_tolerance_seconds": 1.0},
+  "tasks": [
+    {"status": "failed", "message": "time_step_tolerance_seconds must be less than half the time step (updates: 0)"},
+    {"status": "failed", "message": "time_step_tolerance_seconds must be less than half the time step (updates: 0)"},
+    {"status": "failed", "message": "time_step_tolerance_seconds must be less than half the time step (updates: 0)"},
+    {"status": "failed", "message": "time_step_tolerance_seconds must be less than half the time step (updates: 0)"}
+  ]
+}

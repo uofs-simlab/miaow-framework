@@ -75,7 +75,7 @@ set_target_properties(miaow_libtrixi_bmi PROPERTIES
 )
 
 if(BUILD_TESTING)
-    miaow_add_example_smoke_test(
+    miaow_add_example_test(
         TEST_NAME miaow_example_05_libtrixi_bmi
         EXECUTABLE_TARGET miaow_libtrixi_bmi
         EXTERNAL_MODEL

@@ -13,7 +13,7 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-# Add framework tests to top-level development builds
+# Build the example regression checker in top-level development builds
 set(miaow_build_tests OFF)
 if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
     set(miaow_build_tests ON)
@@ -46,7 +46,7 @@ miaow_validate_provider(MIAOW_BOOST_PROVIDER)
 miaow_validate_provider(MIAOW_JSON_PROVIDER)
 miaow_validate_provider(MIAOW_CAF_PROVIDER)
 
-# Boost is required only for the framework tests
+# Boost is required only for the example regression checker
 if(miaow_build_tests)
     if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
         find_package(Boost CONFIG QUIET COMPONENTS unit_test_framework)
@@ -193,20 +193,14 @@ set_property(DIRECTORY "${miaow_iso_c_bmi_source_dir}"
     PROPERTY EXCLUDE_FROM_ALL TRUE)
 
 add_library(miaow STATIC
-    src/bmi/execute.cpp
+    src/bmi/task.cpp
     src/bmi/dynamic.cpp
-    src/bmi/forcing.cpp
-    src/bmi/io.cpp
-    src/bmi/pipeline.cpp
-    src/bmi/realization.cpp
-    src/bmi/variable.cpp
     src/core/actors.cpp
     src/core/process.cpp
+    src/core/record.cpp
     src/core/runtime.cpp
     src/io/cli.cpp
-    src/io/csv.cpp
     src/io/diagnostics.cpp
-    src/io/json.cpp
 )
 
 target_include_directories(miaow
@@ -252,18 +246,18 @@ string(CONCAT MIAOW_INSTALLED_SUBPROCESS_PATH
 string(CONCAT MIAOW_SUBPROCESS_COMPILE_DEFINITIONS
     "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\";"
     "MIAOW_INSTALLED_SUBPROCESS_PATH=\"${MIAOW_INSTALLED_SUBPROCESS_PATH}\"")
-set_source_files_properties(src/bmi/execute.cpp PROPERTIES
+set_source_files_properties(src/bmi/task.cpp PROPERTIES
     COMPILE_DEFINITIONS "${MIAOW_SUBPROCESS_COMPILE_DEFINITIONS}"
 )
 
 add_executable(miaow_subprocess
-    src/bmi/subprocess.cpp
+    src/bmi/worker_main.cpp
 )
 target_compile_features(miaow_subprocess PRIVATE cxx_std_20)
 target_include_directories(miaow_subprocess PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
-target_link_libraries(miaow_subprocess PRIVATE miaow nlohmann_json::nlohmann_json)
+target_link_libraries(miaow_subprocess PRIVATE miaow)
 set_target_properties(miaow_subprocess PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
 )
@@ -347,7 +341,7 @@ endif()
 if(PROJECT_IS_TOP_LEVEL)
     option(BUILD_EXAMPLES "Build example programs" OFF)
     set(MIAOW_EXAMPLES
-        "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;07_job_controller"
+        "00_hello;01_heat;03_dynamic_bmi;07_job_controller"
         CACHE STRING "Semicolon-separated list of examples to build"
     )
 

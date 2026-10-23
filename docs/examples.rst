@@ -9,8 +9,6 @@ Examples are opt-in workflows that demonstrate MIAOW features and model integrat
    ./miaow_hello
    cd ../01_heat
    ./miaow_heat
-   cd ../02_soil_freeze_thaw
-   ./miaow_soil_freeze_thaw --output_root ./output --max_workers 2
    cd ../03_dynamic_bmi
    ./miaow_dynamic_bmi --output_root ./output --max_workers 2
    cd ../07_job_controller
@@ -21,9 +19,25 @@ Default examples
 
 - `examples/00_hello <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/00_hello>`_: minimal orchestration and diagnostics output
 - `examples/01_heat <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/01_heat>`_: BMI integration using the `CSDMS heat example <https://github.com/csdms/bmi-example-cxx>`_
-- `examples/02_soil_freeze_thaw <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/02_soil_freeze_thaw>`_: static `SoilFreezeThaw <https://github.com/NOAA-OWP/SoilFreezeThaw>`_ BMI integration with aligned per-task forcing
-- `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: in-process dynamic C++ and Fortran BMI plugin integration using the CSDMS heat examples
+- `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: dynamic C++ and Fortran BMI plugin integration, in-process and in fresh subprocesses, using the CSDMS heat examples
 - `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: computes a square root using Heron's method, where tasks output the next estimate and residual for the job controller to check for convergence and generate the next task
+
+The hello, dynamic BMI, and job-controller examples accept an optional ``--config <file.json>`` alongside the common runtime options. Omitted fields retain the default inputs. This allows successful and failing workflows to use the same programs.
+
+.. list-table:: Optional JSON inputs
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Example
+     - Fields
+   * - Hello
+     - ``delay_ms`` sets the delay before each task executes. ``tasks`` replaces the default messages with a list of objects containing optional ``message``, ``feature_id``, and ``simulation_unit_id`` fields. An omitted message produces a failed task.
+   * - Dynamic BMI
+     - ``cpp_plugin``, ``fortran_plugin``, ``init_config``, and ``time_step_tolerance_seconds`` override the plugin paths and shared model configuration.
+   * - Job controller
+     - ``radicand``, ``initial_estimate``, ``residual_tolerance``, and ``maximum_iterations`` set the iteration inputs and stopping conditions.
+
+For example, a job-controller config containing ``{"maximum_iterations": 1}`` reports non-convergence after the first iteration. Run it with ``./miaow_job_controller --config <file.json>`` from the example directory. Plugin and model configuration paths are also resolved from the example's working directory.
 
 Additional examples
 -------------------

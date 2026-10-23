@@ -377,8 +377,7 @@ class JobController {
      * Synthetic job-timeout records are retained only in the final JobRecord.
      * @return Tasks to append to the current job in the order returned.
      */
-    virtual std::vector<Task> generate_new_tasks(
-        std::span<const TaskRecord> new_records) {
+    virtual std::vector<Task> generate_new_tasks(std::span<const TaskRecord> new_records) {
         static_cast<void>(new_records);
         return {};
     }
@@ -418,8 +417,8 @@ struct JobRecord {
      */
     JobRecord(std::uint64_t run_id, JobId job_id, std::vector<TaskRecord> tasks = {},
               std::chrono::duration<double> run_time = {}, caf::config_value output = {})
-        : run_id_{run_id}, job_id_{job_id}, tasks_{std::move(tasks)},
-          run_time_{run_time}, output_{std::move(output)} {}
+        : run_id_{run_id}, job_id_{job_id}, tasks_{std::move(tasks)}, run_time_{run_time},
+          output_{std::move(output)} {}
 
     /// Runtime identifier for this `Runtime` instance
     std::uint64_t run_id_{0};
@@ -479,12 +478,12 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
 }
 
 /**
- * @brief Base class for model-specific simulation units 
- * 
- * The only requirement of a `SimulationUnit` is that it must implement an `execute` method 
- * that takes a `Task` and returns a `caf::result<TaskResult>`, which can be an immediate 
- * result, a CAF error, or a delegated response. The `SimulationUnit` class is intended to 
- * be subclassed by concrete implementations that define the specific behavior of the 
+ * @brief Base class for model-specific simulation units
+ *
+ * The only requirement of a `SimulationUnit` is that it must implement an `execute` method
+ * that takes a `Task` and returns a `caf::result<TaskResult>`, which can be an immediate
+ * result, a CAF error, or a delegated response. The `SimulationUnit` class is intended to
+ * be subclassed by concrete implementations that define the specific behavior of the
  * simulation unit.
  */
 class SimulationUnit {
@@ -638,12 +637,13 @@ using JobHandle = std::future<JobRecord>;
  */
 template <class Inspector> bool inspect(Inspector& inspector, Task& task) {
     // Defines how CAF serializes/deserializes `Task` for actor messaging
-    return inspector.object(task).fields(
-        inspector.field("simulation_unit_id", task.simulation_unit_id_),
-        inspector.field("args", task.args_),
-        inspector.field("task_output_dir", task.task_output_dir_),
-        inspector.field("task_name", task.task_name_),
-        inspector.field("metadata", task.metadata_));
+    return inspector.object(task).fields(inspector.field("simulation_unit_id",
+                                                         task.simulation_unit_id_),
+                                         inspector.field("args", task.args_),
+                                         inspector.field("task_output_dir",
+                                                         task.task_output_dir_),
+                                         inspector.field("task_name", task.task_name_),
+                                         inspector.field("metadata", task.metadata_));
 }
 
 /**
@@ -712,12 +712,12 @@ template <class Inspector> bool inspect(Inspector& inspector, TaskRecord& task_r
 template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_record) {
     // Defines how CAF serializes/deserializes `JobRecord` for actor messaging
     return inspector.object(job_record)
-        .fields(inspector.field("run_id", job_record.run_id_),
-                inspector.field("job_id", job_record.job_id_),
-                inspector.field("tasks", job_record.tasks_),
-                inspector.field("run_time", job_record.run_time_),
-                inspector.field("output", job_record.output_)
-                    .fallback(caf::config_value{}));
+        .fields(
+            inspector.field("run_id", job_record.run_id_),
+            inspector.field("job_id", job_record.job_id_),
+            inspector.field("tasks", job_record.tasks_),
+            inspector.field("run_time", job_record.run_time_),
+            inspector.field("output", job_record.output_).fallback(caf::config_value{}));
 }
 
 /**

@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "internal.hpp"
-#include "io/internal.hpp"
 
 namespace miaow::core {
 
@@ -55,8 +54,8 @@ static void spawn_workers_for_tasks(caf::event_based_actor* self,
 
 // Prepare controller-generated tasks for dispatch using the normal runtime fields
 static void append_controller_tasks(caf::event_based_actor* self,
-                                     const std::shared_ptr<JobState>& state,
-                                     std::vector<Task> tasks) {
+                                    const std::shared_ptr<JobState>& state,
+                                    std::vector<Task> tasks) {
     if (tasks.empty()) {
         return;
     }
@@ -85,8 +84,8 @@ static void complete_job(caf::event_based_actor* self,
     try {
         output = state->job_controller_->finalize();
     } catch (const std::exception& exception) {
-        begin_job_error_shutdown(
-            self, state, "JobController error: " + std::string(exception.what()));
+        begin_job_error_shutdown(self, state,
+                                 "JobController error: " + std::string(exception.what()));
         return;
     } catch (...) {
         begin_job_error_shutdown(self, state, "JobController error: unknown exception");
@@ -208,9 +207,8 @@ static void complete_task(caf::event_based_actor* self,
         const std::span<const TaskRecord> records{state->completed_task_records_};
 
         // Call the job controller to generate new tasks based on the completed task records
-        std::vector<Task> generated_tasks =
-            state->job_controller_->generate_new_tasks(
-                records.subspan(state->reported_task_count_));
+        std::vector<Task> generated_tasks = state->job_controller_->generate_new_tasks(
+            records.subspan(state->reported_task_count_));
 
         // Update the count of reported tasks to include the newly completed ones
         state->reported_task_count_ = records.size();
@@ -218,12 +216,11 @@ static void complete_task(caf::event_based_actor* self,
         // Add the generated tasks to the queue for dispatching
         append_controller_tasks(self, state, std::move(generated_tasks));
     } catch (const std::exception& exception) {
-        begin_job_error_shutdown(
-            self, state, "JobController error: " + std::string(exception.what()));
+        begin_job_error_shutdown(self, state,
+                                 "JobController error: " + std::string(exception.what()));
         return;
     } catch (...) {
-        begin_job_error_shutdown(self, state,
-                                 "JobController error: unknown exception");
+        begin_job_error_shutdown(self, state, "JobController error: unknown exception");
         return;
     }
 
@@ -296,8 +293,7 @@ caf::behavior simulation_unit_actor(
     // CAF callbacks outlive this function, so they share the subprocess lifecycle state
     // Only this actor's serialized handlers and callbacks mutate the shared object
     const std::shared_ptr<SubprocessState> subprocess_state =
-        std::make_shared<SubprocessState>(self,
-                                          std::move(subprocess_registration_actor),
+        std::make_shared<SubprocessState>(self, std::move(subprocess_registration_actor),
                                           subprocess_registration_port,
                                           task_request_timeout);
 
@@ -383,105 +379,102 @@ job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
     // Spawn simulation unit actors and queue their worker indices
     spawn_workers_for_tasks(self, state);
 
-    return {// orchestrator_actor -> job_actor: start dispatching tasks for this job
-            [=](caf::get_atom) -> caf::result<JobRecord> {
-                if (state->response_promise_.has_value()) {
-                    return caf::make_error(caf::sec::runtime_error,
-                                           "job_actor only accepts one get_atom request");
+    return {
+        // orchestrator_actor -> job_actor: start dispatching tasks for this job
+        [=](caf::get_atom) -> caf::result<JobRecord> {
+            if (state->response_promise_.has_value()) {
+                return caf::make_error(caf::sec::runtime_error,
+                                       "job_actor only accepts one get_atom request");
+            }
+
+            // Create a deferred CAF response for the orchestrator's pending request
+            state->response_promise_ = self->make_response_promise<JobRecord>();
+            // Keep the response token even if initialization finishes an empty job
+            const auto response = *state->response_promise_;
+
+            // job_actor -> job_actor: enforce the configured job deadline; schedule
+            // the deadline within the actor that owns all task state
+            state->job_timeout_ = self->mail(job_timeout_atom_v)
+                                      .delay(state->runtime_options_.job_request_timeout_)
+                                      .send(self);
+
+            if (initialize_controller) {
+                try {
+                    append_controller_tasks(
+                        self, state, state->job_controller_->generate_initial_tasks());
+                } catch (const std::exception& exception) {
+                    begin_job_error_shutdown(self, state,
+                                             "JobController error: " +
+                                                 std::string(exception.what()));
+                    return response;
+                } catch (...) {
+                    begin_job_error_shutdown(self, state,
+                                             "JobController error: unknown exception");
+                    return response;
                 }
+            }
 
-                // Create a deferred CAF response for the orchestrator's pending request
-                state->response_promise_ = self->make_response_promise<JobRecord>();
-                // Keep the response token even if initialization finishes an empty job
-                const auto response = *state->response_promise_;
+            dispatch_tasks(self, state);
 
-                // job_actor -> job_actor: enforce the configured job deadline; schedule
-                // the deadline within the actor that owns all task state
-                state->job_timeout_ =
-                    self->mail(job_timeout_atom_v)
-                        .delay(state->runtime_options_.job_request_timeout_)
-                        .send(self);
+            // Return the response token that complete_job fulfils after all tasks
+            // finish
+            return response;
+        },
+        // job_actor -> job_actor: fail every remaining task at the job deadline
+        [=](job_timeout_atom) {
+            // A controller error takes precedence over an already queued timeout
+            if (state->pending_error_message_.has_value()) {
+                return;
+            }
 
-                if (initialize_controller) {
-                    try {
-                        append_controller_tasks(
-                            self, state, state->job_controller_->generate_initial_tasks());
-                    } catch (const std::exception& exception) {
-                        begin_job_error_shutdown(
-                            self, state, "JobController error: "
-                                             + std::string(exception.what()));
-                        return response;
-                    } catch (...) {
-                        begin_job_error_shutdown(
-                            self, state, "JobController error: unknown exception");
-                        return response;
-                    }
+            // Use one observed timeout time for every unfinished task
+            const auto timeout_time = std::chrono::steady_clock::now();
+            std::vector<bool> task_has_record(state->tasks_.size(), false);
+            for (const TaskRecord& task_record : state->completed_task_records_) {
+                const std::size_t task_id = static_cast<std::size_t>(task_record.task_id_);
+                task_has_record.at(task_id) = true;
+            }
+
+            for (std::size_t task_id = 0; task_id < state->tasks_.size(); ++task_id) {
+                if (task_has_record.at(task_id)) {
+                    continue;
                 }
+                TaskResult task_result =
+                    make_failed_task_result("configured job timeout expired",
+                                            "Job timeout");
 
-                dispatch_tasks(self, state);
-
-                // Return the response token that complete_job fulfils after all tasks
-                // finish
-                return response;
-            },
-            // job_actor -> job_actor: fail every remaining task at the job deadline
-            [=](job_timeout_atom) {
-                // A controller error takes precedence over an already queued timeout
-                if (state->pending_error_message_.has_value()) {
-                    return;
+                // Queued tasks have no dispatch offset or elapsed execution interval
+                std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start;
+                std::chrono::duration<double> task_run_time{};
+                if (task_id < state->next_task_to_dispatch_) {
+                    const auto task_start_time = state->task_start_times_.at(task_id);
+                    dispatch_offset_from_job_start =
+                        task_start_time - state->job_start_time_;
+                    task_run_time = timeout_time - task_start_time;
                 }
+                state->completed_task_records_.push_back(
+                    TaskRecord{state->tasks_.at(task_id), static_cast<TaskId>(task_id),
+                               std::move(task_result), task_run_time,
+                               dispatch_offset_from_job_start,
+                               state->task_worker_ids_.at(task_id)});
+            }
 
-                // Use one observed timeout time for every unfinished task
-                const auto timeout_time = std::chrono::steady_clock::now();
-                std::vector<bool> task_has_record(state->tasks_.size(), false);
-                for (const TaskRecord& task_record : state->completed_task_records_) {
-                    const std::size_t task_id =
-                        static_cast<std::size_t>(task_record.task_id_);
-                    task_has_record.at(task_id) = true;
-                }
-
-                for (std::size_t task_id = 0; task_id < state->tasks_.size(); ++task_id) {
-                    if (task_has_record.at(task_id)) {
-                        continue;
-                    }
-                    TaskResult task_result = make_failed_task_result(
-                        "configured job timeout expired", "Job timeout");
-
-                    // Queued tasks have no dispatch offset or elapsed execution interval
-                    std::optional<std::chrono::duration<double>>
-                        dispatch_offset_from_job_start;
-                    std::chrono::duration<double> task_run_time{};
-                    if (task_id < state->next_task_to_dispatch_) {
-                        const auto task_start_time = state->task_start_times_.at(task_id);
-                        dispatch_offset_from_job_start =
-                            task_start_time - state->job_start_time_;
-                        task_run_time = timeout_time - task_start_time;
-                    }
-                    state->completed_task_records_.push_back(
-                        TaskRecord{state->tasks_.at(task_id), static_cast<TaskId>(task_id),
-                                   std::move(task_result), task_run_time,
-                                   dispatch_offset_from_job_start,
-                                   state->task_worker_ids_.at(task_id)});
-                }
-
-                complete_job(self, state);
-            },
-            // orchestrator_actor -> job_actor: request worker shutdown
-            [=](shutdown_atom) {
-                state->job_timeout_.dispose();
-                stop_workers(state);
-                self->quit();
-            }};
+            complete_job(self, state);
+        },
+        // orchestrator_actor -> job_actor: request worker shutdown
+        [=](shutdown_atom) {
+            state->job_timeout_.dispose();
+            stop_workers(state);
+            self->quit();
+        }};
 }
 
 // Shared orchestrator actor that handles job submission and completion delivery
-caf::behavior
-orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
-                   std::uint64_t run_id,
-                   std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
-                   caf::actor subprocess_registration_actor,
-                   std::uint16_t subprocess_registration_port,
-                   std::mutex* pending_jobs_mutex, PendingJobs* pending_jobs) {
+caf::behavior orchestrator_actor(
+    caf::event_based_actor* self, RuntimeOptions runtime_options, std::uint64_t run_id,
+    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
+    caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
+    std::mutex* pending_jobs_mutex, PendingJobs* pending_jobs) {
     // The orchestrator retains active jobs so Runtime teardown can stop their workers
     const std::shared_ptr<std::unordered_map<JobId, caf::actor>> active_job_actors =
         std::make_shared<std::unordered_map<JobId, caf::actor>>();
@@ -495,8 +488,8 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                 caf::actor job =
                     self->spawn(job_actor, run_id, job_id, std::move(tasks),
                                 std::move(job_controller), initialize_controller,
-                                runtime_options,
-                                simulation_unit_registry, subprocess_registration_actor,
+                                runtime_options, simulation_unit_registry,
+                                subprocess_registration_actor,
                                 subprocess_registration_port);
                 active_job_actors->emplace(job_id, job);
 
@@ -531,9 +524,9 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                             }
 
                             // Actor errors are job-level failures and have no JobRecord
-                            promise.set_exception(std::make_exception_ptr(
-                                std::runtime_error("Job actor error: " +
-                                                   caf::to_string(err))));
+                            promise.set_exception(
+                                std::make_exception_ptr(std::runtime_error(
+                                    "Job actor error: " + caf::to_string(err))));
                         });
             },
             // orchestrator_actor -> orchestrator_actor: resolve the completed job promise
@@ -560,8 +553,7 @@ orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
                             ("run_" + std::to_string(job_record.run_id_)) /
                             ("job_" + std::to_string(job_record.job_id_));
                         std::filesystem::create_directories(job_directory);
-                        io::write_json_file(job_directory / "job_record.json", job_record,
-                                            false);
+                        write_job_record(job_directory / "job_record.json", job_record);
                     }
                 } catch (...) {
                     // Output record failures are reported without changing task status

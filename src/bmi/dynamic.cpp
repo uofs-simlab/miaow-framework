@@ -168,24 +168,16 @@ void* resolve_required_dynamic_symbol(void* library_handle, const std::string& s
     return symbol;
 }
 
-DynamicBmiBackend require_dynamic_backend(const BmiModuleConfig& module_config) {
-    if (!module_config.backend_) {
-        throw std::runtime_error("BMI dynamic plugin error: module config is missing "
-                                 "dynamic backend");
-    }
-    return *module_config.backend_;
-}
-
 } // namespace
 
-DynamicBmiModel::DynamicBmiModel(const BmiModuleConfig& module_config)
-    : backend_(require_dynamic_backend(module_config)) {
+DynamicBmiModel::DynamicBmiModel(const DynamicBmiConfig& config)
+    : backend_(config.backend_) {
     switch (backend_) {
     case DynamicBmiBackend::cpp:
-        open_cpp_plugin(module_config);
+        open_cpp_plugin(config);
         break;
     case DynamicBmiBackend::fortran:
-        open_fortran_plugin(module_config);
+        open_fortran_plugin(config);
         break;
     }
 }
@@ -196,28 +188,18 @@ DynamicBmiModel::~DynamicBmiModel() {
 }
 
 // Open a C++ plugin and construct its BMI model instance
-void DynamicBmiModel::open_cpp_plugin(const BmiModuleConfig& module_config) {
-    const std::string create_function =
-        module_config.cpp_create_function_.value_or("bmi_model_create");
-    const std::string destroy_function =
-        module_config.cpp_destroy_function_.value_or("bmi_model_destroy");
-    if (create_function.empty() || destroy_function.empty()) {
-        throw std::runtime_error(
-            "BMI dynamic C++ plugin error: create/destroy symbol is empty");
-    }
-
-    library_handle_ =
-        open_dynamic_library(module_config.plugin_path_, cpp_plugin_error_prefix);
+void DynamicBmiModel::open_cpp_plugin(const DynamicBmiConfig& config) {
+    library_handle_ = open_dynamic_library(config.plugin_path_, cpp_plugin_error_prefix);
 
     try {
         void* create_symbol =
-            resolve_required_dynamic_symbol(library_handle_, create_function,
+            resolve_required_dynamic_symbol(library_handle_, "bmi_model_create",
                                             cpp_plugin_error_prefix);
         const CreateBmiFunction create_bmi =
             reinterpret_cast<CreateBmiFunction>(create_symbol);
 
         void* destroy_symbol =
-            resolve_required_dynamic_symbol(library_handle_, destroy_function,
+            resolve_required_dynamic_symbol(library_handle_, "bmi_model_destroy",
                                             cpp_plugin_error_prefix);
         destroy_bmi_ = reinterpret_cast<DestroyBmiFunction>(destroy_symbol);
 
@@ -234,9 +216,9 @@ void DynamicBmiModel::open_cpp_plugin(const BmiModuleConfig& module_config) {
 }
 
 // Open a Fortran plugin and resolve the procedural BMI bridge symbols
-void DynamicBmiModel::open_fortran_plugin(const BmiModuleConfig& module_config) {
+void DynamicBmiModel::open_fortran_plugin(const DynamicBmiConfig& config) {
     library_handle_ =
-        open_dynamic_library(module_config.plugin_path_, fortran_plugin_error_prefix);
+        open_dynamic_library(config.plugin_path_, fortran_plugin_error_prefix);
     try {
         void* register_symbol =
             resolve_required_dynamic_symbol(library_handle_, "register_bmi",
@@ -250,13 +232,6 @@ void DynamicBmiModel::open_fortran_plugin(const BmiModuleConfig& module_config) 
     } catch (...) {
         close_dynamic_library(library_handle_);
         throw;
-    }
-}
-
-void DynamicBmiModel::finalize_fortran_model() {
-    if (fortran_model_handle_ != nullptr && initialized_) {
-        check_bmi_status(finalize(&fortran_model_handle_), "finalize");
-        initialized_ = false;
     }
 }
 
@@ -276,32 +251,17 @@ void DynamicBmiModel::cleanup_model() {
         if (cpp_model_ == nullptr) {
             return;
         }
-        if (initialized_) {
-            try {
-                cpp_model_->Finalize();
-            } catch (...) {}
-            initialized_ = false;
-        }
-
         destroy_bmi_(cpp_model_);
         cpp_model_ = nullptr;
         return;
     }
 
-    if (fortran_model_handle_ == nullptr) {
-        return;
-    }
-    if (initialized_) {
-        (void)finalize(&fortran_model_handle_);
-        initialized_ = false;
-    }
     unregister_fortran_model();
 }
 
 void DynamicBmiModel::Initialize(std::string config_file) {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->Initialize(std::move(config_file));
-        initialized_ = true;
         return;
     }
 
@@ -312,7 +272,6 @@ void DynamicBmiModel::Initialize(std::string config_file) {
     BmiStringBuffer config_file_buffer = make_bmi_string(config_file, "BMI config path");
     check_bmi_status(initialize(&fortran_model_handle_, config_file_buffer.data()),
                      "initialize");
-    initialized_ = true;
 }
 
 void DynamicBmiModel::Update() {
@@ -334,11 +293,13 @@ void DynamicBmiModel::UpdateUntil(double time) {
 void DynamicBmiModel::Finalize() {
     if (backend_ == DynamicBmiBackend::cpp) {
         cpp_model_->Finalize();
-        initialized_ = false;
         return;
     }
-    finalize_fortran_model();
-    unregister_fortran_model();
+
+    // The procedural bridge frees the model and its handle even on finalization failure
+    const int status = finalize(&fortran_model_handle_);
+    fortran_model_handle_ = nullptr;
+    check_bmi_status(status, "finalize");
 }
 
 std::string DynamicBmiModel::GetComponentName() {

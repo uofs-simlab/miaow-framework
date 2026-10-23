@@ -52,15 +52,13 @@ int main(int argc, char* argv[]) {
 
     // Discover all config files in the config directory
     std::vector<std::string> config_files;
-    for (const auto& entry :
-         std::filesystem::directory_iterator(config_dir)) {
+    for (const auto& entry : std::filesystem::directory_iterator(config_dir)) {
         if (entry.path().extension() == ".txt") {
             config_files.push_back(entry.path().string());
         }
     }
     std::sort(config_files.begin(), config_files.end());
-    std::cout << "Found " << config_files.size()
-              << " FUSE parameter set configs\n\n";
+    std::cout << "Found " << config_files.size() << " FUSE parameter set configs\n\n";
 
     if (config_files.empty()) {
         std::cerr << "No config files found in " << config_dir << "\n";
@@ -80,7 +78,7 @@ int main(int argc, char* argv[]) {
     std::vector<miaow::DynamicBmiConfig> configs;
     for (const auto& config_file : config_files) {
         configs.push_back({
-            .backend_    = miaow::DynamicBmiBackend::fortran,
+            .backend_ = miaow::DynamicBmiBackend::fortran,
             .plugin_path_ = fuse_plugin_path,
             .init_config_ = config_file,
         });

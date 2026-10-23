@@ -36,11 +36,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Get the plugin path from the compile-time constant
     const std::string plugin_path = LIBTRIXI_BMI_PLUGIN_PATH;
     std::cout << "libtrixi BMI plugin: " << plugin_path << "\n";
 
-    // Register a fresh bundled BMI subprocess for this task
+    // Isolate the Julia runtime in a fresh process
     miaow::SimulationUnitRegistry registry;
     const miaow::SimulationUnitId bmi_subprocess =
         registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
@@ -51,9 +50,6 @@ int main(int argc, char* argv[]) {
     const miaow::DynamicBmiConfig bmi_config{
         .plugin_path_ = plugin_path,
         .init_config_ = "./advection_basic_1d.jl",
-        .output_ = miaow::BmiOutputConfig{
-            .variables_ = {"simulation_time"},
-        },
     };
     const miaow::Task task = miaow::make_bmi_task(bmi_subprocess, bmi_config);
 

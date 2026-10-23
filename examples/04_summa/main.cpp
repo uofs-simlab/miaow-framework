@@ -48,8 +48,8 @@ int main(int argc, char* argv[]) {
 
         // Create the simulation unit registry and add the worker subprocess
         miaow::SimulationUnitRegistry registry;
-        const auto worker = registry.add_subprocess(
-            miaow::bmi_subprocess_executable_path(), miaow::SubprocessLifetime::single_task);
+        const auto worker = registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
+                                                    miaow::SubprocessLifetime::single_task);
 
         // Create a task for each GRU in the manifest
         std::vector<miaow::Task> tasks;

@@ -68,15 +68,7 @@ BMI configuration
 
 .. doxygenenum:: miaow::DynamicBmiBackend
 
-.. doxygenenum:: miaow::BmiDataFormat
-
 .. doxygenvariable:: miaow::default_bmi_time_step_tolerance_seconds
-
-.. doxygenstruct:: miaow::BmiForcingConfig
-   :members:
-
-.. doxygenstruct:: miaow::BmiOutputConfig
-   :members:
 
 .. doxygenstruct:: miaow::StaticBmiConfig
    :members:
@@ -100,14 +92,6 @@ Simulation units
 .. doxygenfunction:: miaow::make_bmi_task(SimulationUnitId, const DynamicBmiConfig&)
 
 .. doxygenfunction:: miaow::make_bmi_tasks(SimulationUnitId, const std::vector<BmiConfig>&)
-
-Realization workflows
----------------------
-
-.. doxygenclass:: miaow::PartitionedBmiRealization
-   :members:
-
-.. doxygenfunction:: miaow::make_bmi_tasks(SimulationUnitId, const PartitionedBmiRealization&)
 
 I/O and CLI helpers
 -------------------

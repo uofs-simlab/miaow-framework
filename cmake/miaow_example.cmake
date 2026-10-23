@@ -35,34 +35,49 @@ function(miaow_resolve_model_root out_var)
     set(${out_var} "${resolved_model_root}" PARENT_SCOPE)
 endfunction()
 
-# miaow_add_example_smoke_test(TEST_NAME <name> EXECUTABLE_TARGET <target>
-#     [EXTERNAL_MODEL])
+# miaow_add_example_test(TEST_NAME <name> EXECUTABLE_TARGET <target>
+#     [REGRESSION <workflow>] [CASE_FILE <json>] [EXTERNAL_MODEL])
 #
-# Register one successful-run check for an illustrative example workflow
-function(miaow_add_example_smoke_test)
+# Run the example and optionally check its saved results against a known outcome
+function(miaow_add_example_test)
     set(options EXTERNAL_MODEL)
     set(one_value_args
         TEST_NAME
         EXECUTABLE_TARGET
+        REGRESSION
+        CASE_FILE
     )
     cmake_parse_arguments(MIAOW_TEST
         "${options}" "${one_value_args}" "" ${ARGN})
 
-    # Register the executable as a successful-run smoke test
-    add_test(
-        NAME ${MIAOW_TEST_TEST_NAME}
-        COMMAND $<TARGET_FILE:${MIAOW_TEST_EXECUTABLE_TARGET}>
-    )
-
-    # Label every example and identify workflows backed by external models
     set(test_labels example)
+    if(MIAOW_TEST_REGRESSION)
+        add_test(NAME ${MIAOW_TEST_TEST_NAME}
+            COMMAND ${CMAKE_COMMAND}
+                "-DEXECUTABLE=$<TARGET_FILE:${MIAOW_TEST_EXECUTABLE_TARGET}>"
+                "-DTEST_EXECUTABLE=$<TARGET_FILE:miaow_example_tests>"
+                "-DWORKFLOW=${MIAOW_TEST_REGRESSION}"
+                "-DCASE_FILE=${MIAOW_TEST_CASE_FILE}"
+                "-DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/regression-output/${MIAOW_TEST_TEST_NAME}"
+                -P "${PROJECT_SOURCE_DIR}/tests/run_example.cmake"
+        )
+        add_dependencies(${MIAOW_TEST_EXECUTABLE_TARGET} miaow_example_tests)
+        list(APPEND test_labels regression)
+        set(timeout 40)
+    else()
+        add_test(NAME ${MIAOW_TEST_TEST_NAME}
+            COMMAND $<TARGET_FILE:${MIAOW_TEST_EXECUTABLE_TARGET}>)
+        list(APPEND test_labels optional)
+        set(timeout 360)
+    endif()
+
     if(MIAOW_TEST_EXTERNAL_MODEL)
         list(APPEND test_labels external_model)
     endif()
 
     set_tests_properties(${MIAOW_TEST_TEST_NAME} PROPERTIES
         LABELS "${test_labels}"
-        TIMEOUT 360
+        TIMEOUT ${timeout}
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endfunction()

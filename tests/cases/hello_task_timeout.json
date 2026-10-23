@@ -1,0 +1,9 @@
+{
+  "exit_code": 1,
+  "max_workers": 1,
+  "task_request_timeout": 1,
+  "input": {"delay_ms": 2500, "tasks": [{"message": "hello"}]},
+  "tasks": [
+    {"status": "failed", "message": "request_timeout"}
+  ]
+}
