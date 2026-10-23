@@ -1,0 +1,10 @@
+{
+  "exit_code": 1,
+  "input": {"cpp_plugin": "./data/missing_cpp_plugin"},
+  "tasks": [
+    {"status": "failed", "message": "BMI dynamic C++ plugin error: unable to load plugin"},
+    {"status": "succeeded", "message": "updates: 40"},
+    {"status": "failed", "message": "BMI dynamic C++ plugin error: unable to load plugin"},
+    {"status": "succeeded", "message": "updates: 40"}
+  ]
+}

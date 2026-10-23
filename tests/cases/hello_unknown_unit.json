@@ -1,0 +1,7 @@
+{
+  "exit_code": 1,
+  "input": {"tasks": [{"simulation_unit_id": 999, "message": "hello"}]},
+  "tasks": [
+    {"status": "failed", "message": "unknown SimulationUnitId: 999"}
+  ]
+}

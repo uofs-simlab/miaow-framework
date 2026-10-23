@@ -4,7 +4,7 @@ Building and installation
 Prerequisites
 -------------
 
-MIAOW requires `CMake <https://cmake.org/>`_ 3.30 or newer, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See :ref:`build-options` for a description of the available provider settings.
+MIAOW requires `CMake <https://cmake.org/>`_ 3.30 or newer, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building the example regression checker. See :ref:`build-options` for a description of the available provider settings.
 
 On Ubuntu, the required compiler and build tools can be installed with the following command:
 
@@ -29,9 +29,9 @@ The repository can be configured and built with the following commands:
    cmake -S . -B build
    cmake --build build
 
-The default development build includes the framework tests and does not build examples.
+The default development build includes the ``miaow_example_tests`` checker with ``BUILD_TESTING=ON``, but examples are disabled and no CTest tests are registered. Enable example executables as described in :ref:`building-examples` to register their tests.
 
-The complete test suite runs with the following command:
+Run the tests enabled in the current build with the following command:
 
 .. code-block:: sh
 
@@ -58,6 +58,47 @@ Examples are disabled by default. The following configuration enables and builds
 Override the default example set with a semicolon-separated ``MIAOW_EXAMPLES`` value, for example ``-DMIAOW_EXAMPLES="00_hello;01_heat"``. A normal ``cmake --build build`` builds every selected example; use ``--target miaow_hello`` to narrow the build to that specific target.
 
 Each model-backed example accepts a ``MIAOW_<MODEL_NAME>_MODEL_ROOT`` override. When the override is empty, CMake resolves the source beneath ``MIAOW_DEFAULT_MODEL_BASE_DIR``. If the resolved directory is missing and the example declares a Git repository and revision, CMake fetches the model into that directory. See :doc:`examples` for model-specific dependencies and options.
+
+Regression tests
+----------------
+
+CI runs regression tests through the four default examples, including inputs that exercise failure paths. To run the same suite locally:
+
+.. code-block:: sh
+
+   cmake -S . -B build -DBUILD_EXAMPLES=ON \
+       -DMIAOW_EXAMPLES="00_hello;01_heat;03_dynamic_bmi;07_job_controller"
+   cmake --build build
+   ctest --test-dir build -L regression --output-on-failure
+
+The heat regressions use the pinned CSDMS C++ and Fortran models. CMake locates or fetches their sources for examples 01 and 03; use ``MIAOW_HEAT_MODEL_ROOT``, ``MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT``, and ``MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT`` to supply local checkouts.
+
+The regressions execute the actual example programs with a separate output directory for each case under the build tree. The CMake runner checks the expected exit code, then selects a Boost.Test case in ``tests/example_regression_checks.cpp`` to inspect saved job records. Failure cases in ``tests/cases`` supply example inputs, expected task statuses and messages, and any runtime timeout overrides. Errors that prevent a job record must produce the expected diagnostic and leave no record. A crash or an unrelated non-zero exit does not satisfy these checks.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Test
+     - Behaviour protected
+   * - ``miaow_example_00_hello``
+     - Both messages, task identities, feature metadata, and dispatch metadata survive execution and persistence
+   * - ``miaow_example_01_heat``
+     - The static C++ BMI model completes its configured 120 updates
+   * - ``miaow_example_03_dynamic_bmi``
+     - Dynamic C++ and Fortran models each complete 40 updates, both in-process and in fresh subprocesses
+   * - ``miaow_example_07_job_controller``
+     - Controller feedback produces the three expected Heron iterates and reaches the configured residual tolerance
+   * - ``miaow_example_00_hello_*``
+     - Failed tasks and subsequent successful work; unknown simulation units; invalid task names; task and job timeouts, including queued-task dispatch metadata
+   * - ``miaow_example_03_dynamic_bmi_*``
+     - Missing C++ and Fortran plugins, plus cleanup after rejecting an excessive clock tolerance, both in-process and in subprocesses
+   * - ``miaow_example_07_job_controller_*``
+     - Controller non-convergence reaches the caller; small estimates and residuals retain their numerical precision in saved output
+
+The heat checks protect BMI execution and clock handling; they do not compare temperature fields. The example models do not return those fields through a whole-run task. Scientific model validation should compare selected native output values against reviewed references with explicit numerical tolerances. The suite does not separately test CAF serialization, raw BMI value access, non-second model clocks, finalization returning failure, or every controller lifecycle and scheduling configuration.
+
+The PSO example is a manual scheduling demonstration: its wall-clock budget, randomized delays, and asynchronous execution make its trajectory unsuitable as a fixed numerical reference. LibTrixi and FUSE smoke tests are labelled ``optional`` and are registered only when those examples and their dependencies are selected. SUMMA scientific regressions require a short dataset and reviewed native-output references; they are outside the routine suite.
 
 Library installation build
 --------------------------
@@ -129,19 +170,18 @@ The following top-level CMake options are available:
      - Description
    * - ``-DBUILD_TESTING``
      - ``ON``
-     - Build the framework test executables in a top-level repository build
+     - Build the regression checker and register tests for enabled examples in a top-level repository build
    * - ``-DBUILD_EXAMPLES``
      - ``OFF``
      - Build selected example programs
    * - ``-DMIAOW_EXAMPLES``
      - | ``00_hello;01_heat;``
-       | ``02_soil_freeze_thaw;``
        | ``03_dynamic_bmi;``
        | ``07_job_controller``
      - Semicolon-separated list of examples to build when ``BUILD_EXAMPLES`` is enabled
    * - ``-DMIAOW_BOOST_PROVIDER``
      - ``auto``
-     - Boost.Test provider: ``system``, ``fetch``, or ``auto``; used only for framework tests
+     - Boost.Test provider: ``system``, ``fetch``, or ``auto``; used only for the example regression checker
    * - ``-DMIAOW_BOOST_VERSION``
      - ``1.86.0``
      - Boost version used by the ``FetchContent`` fallback

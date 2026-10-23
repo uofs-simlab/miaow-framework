@@ -1,0 +1,10 @@
+{
+  "exit_code": 1,
+  "error": "Task name error: duplicate task name 'greeting'",
+  "input": {
+    "tasks": [
+      {"message": "first", "feature_id": "greeting"},
+      {"message": "second", "feature_id": "greeting"}
+    ]
+  }
+}

@@ -1,12 +1,14 @@
 #include "internal.hpp"
 
 #include <caf/json_array.hpp>
+#include <caf/json_builder.hpp>
 #include <caf/json_object.hpp>
 #include <nlohmann/json.hpp>
 
 #include <fstream>
+#include <stdexcept>
 
-namespace miaow::io {
+namespace miaow::core {
 namespace {
 
 // Copy typed values without passing numbers through CAF's text formatter.
@@ -46,14 +48,22 @@ nlohmann::ordered_json to_json_tree(const caf::json_value& value) {
 
 } // namespace
 
-void write_json_file(const std::filesystem::path& path, const caf::json_value& value) {
+void write_job_record(const std::filesystem::path& path, const JobRecord& record) {
+    caf::json_builder builder;
+    builder.skip_object_type_annotation(true);
+    builder.skip_empty_fields(false);
+    if (!builder.apply(record)) {
+        throw std::runtime_error("failed to serialize JSON file '" + path.string() +
+                                 "': " + caf::to_string(builder.get_error()));
+    }
+
     std::ofstream output(path);
     if (!output.is_open()) {
         throw std::runtime_error("unable to open JSON file '" + path.string() + "'");
     }
     output.exceptions(std::ios::failbit | std::ios::badbit);
-    output << to_json_tree(value).dump(2) << '\n';
+    output << to_json_tree(builder.seal()).dump(2) << '\n';
     output.close();
 }
 
-} // namespace miaow::io
+} // namespace miaow::core

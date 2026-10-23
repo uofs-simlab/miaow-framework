@@ -21,7 +21,9 @@ std::string section_header(const std::string& title) {
     return prefix + std::string(section_width - prefix.size(), '=');
 }
 
-std::string section_rule() { return std::string(section_width, '='); }
+std::string section_rule() {
+    return std::string(section_width, '=');
+}
 
 std::string task_label(const TaskRecord& task_record) {
     if (!task_record.task_name_.empty()) {
@@ -51,8 +53,8 @@ void print_job_summary(const JobRecord& job_record) {
     for (const TaskRecord& task_record : job_record.tasks_) {
         output << "  [" << task_label(task_record) << "] "
                << task_status_to_string(task_record.result_.status_) << " ("
-               << task_record.run_time_.count() << " s): "
-               << task_record.result_.message_ << "\n";
+               << task_record.run_time_.count() << " s): " << task_record.result_.message_
+               << "\n";
     }
     output << "total_time: " << total_time.count() << "\n";
     output << "concurrency: " << concurrency << "\n";

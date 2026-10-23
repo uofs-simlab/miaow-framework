@@ -30,6 +30,7 @@
 
 #include "miaow.hpp"    // Core MIAOW runtime API
 #include "miaow_io.hpp" // I/O helpers for example programs
+#include "../config.hpp"
 
 namespace {
 
@@ -77,16 +78,17 @@ class HeronIterationSimulationUnit final : public miaow::SimulationUnit {
 class IterationJobController final : public miaow::JobController {
   public:
     IterationJobController(miaow::SimulationUnitId simulation_unit_id,
-                           double residual_tolerance, std::size_t maximum_iterations)
+                           double residual_tolerance, std::size_t maximum_iterations,
+                           double initial_estimate)
         : simulation_unit_id_{simulation_unit_id}, residual_tolerance_{residual_tolerance},
-          maximum_iterations_{maximum_iterations} {}
+          maximum_iterations_{maximum_iterations}, initial_estimate_{initial_estimate} {}
 
     std::vector<miaow::Task> generate_initial_tasks() override {
-        return {miaow::Task{simulation_unit_id_, caf::config_value{initial_estimate}}};
+        return {miaow::Task{simulation_unit_id_, caf::config_value{initial_estimate_}}};
     }
 
-    std::vector<miaow::Task> generate_new_tasks(
-        std::span<const miaow::TaskRecord> new_records) override {
+    std::vector<miaow::Task>
+    generate_new_tasks(std::span<const miaow::TaskRecord> new_records) override {
         iterations_ += new_records.size();
 
         // Get the last completed task record
@@ -132,6 +134,7 @@ class IterationJobController final : public miaow::JobController {
     miaow::SimulationUnitId simulation_unit_id_;
     double residual_tolerance_;
     std::size_t maximum_iterations_;
+    double initial_estimate_;
     std::size_t iterations_ = 0;
 };
 
@@ -145,19 +148,21 @@ int main(int argc, char* argv[]) {
 
     miaow::RuntimeOptions runtime_options;
     try {
-        miaow::parse_runtime_cli_options(argc, argv, runtime_options);
+        const auto config = read_example_config(argc, argv, runtime_options);
 
         miaow::SimulationUnitRegistry registry;
 
         // Register the Heron iteration simulation unit with the radicand
         const miaow::SimulationUnitId heron_iteration =
-            registry.add<HeronIterationSimulationUnit>(radicand);
+            registry.add<HeronIterationSimulationUnit>(config.value("radicand", radicand));
         miaow::Runtime runtime(registry, runtime_options);
 
         // Create a job controller that generates new tasks until convergence
         std::unique_ptr<miaow::JobController> controller =
-            std::make_unique<IterationJobController>(heron_iteration, residual_tolerance,
-                                                     maximum_iterations);
+            std::make_unique<IterationJobController>(
+                heron_iteration, config.value("residual_tolerance", residual_tolerance),
+                config.value("maximum_iterations", maximum_iterations),
+                config.value("initial_estimate", initial_estimate));
 
         // Runtime asks the controller for its first task when the job starts
         miaow::JobHandle job = runtime.submit_job(std::move(controller));

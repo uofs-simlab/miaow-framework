@@ -5,8 +5,8 @@ on:
   pull_request:
 
 jobs:
-  framework-tests:
-    name: Framework tests
+  regression-tests:
+    name: Regression tests
     runs-on: ubuntu-22.04
 
     steps:
@@ -42,85 +42,29 @@ jobs:
       - name: Install Dependencies
         run: >
           conan install .
-          --output-folder=build/conan
+          --output-folder=build-regression/conan
           --build=missing
           -s build_type=Release
 
       - name: Configure
         run: >
-          cmake -S . -B build
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_TOOLCHAIN_FILE=build/conan/conan_toolchain.cmake
-          -DMIAOW_BOOST_PROVIDER=system
-          -DMIAOW_JSON_PROVIDER=system
-          -DMIAOW_CAF_PROVIDER=system
-
-      - name: Build
-        run: cmake --build build --parallel
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure --build-config Release
-
-  example-tests:
-    name: Example tests
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Fortran compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gfortran
-
-      - name: Cache Conan
-        uses: actions/cache@v4
-        with:
-          path: ~/.conan2
-          key: ${{ runner.os }}-conan-${{ hashFiles('conanfile.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-conan-
-
-      - name: Install Conan
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install "conan>=2,<3"
-
-      - name: Configure Conan Profile
-        run: conan profile detect --force
-
-      - name: Install Dependencies
-        run: >
-          conan install .
-          --output-folder=build-examples/conan
-          --build=missing
-          -s build_type=Release
-
-      - name: Configure
-        run: >
-          cmake -S . -B build-examples
+          cmake -S . -B build-regression
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
           -DBUILD_EXAMPLES=ON
-          "-DMIAOW_EXAMPLES=00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;07_job_controller;08_particle_swarm"
-          -DCMAKE_TOOLCHAIN_FILE=build-examples/conan/conan_toolchain.cmake
+          "-DMIAOW_EXAMPLES=00_hello;01_heat;03_dynamic_bmi;07_job_controller"
+          -DCMAKE_TOOLCHAIN_FILE=build-regression/conan/conan_toolchain.cmake
           -DMIAOW_BOOST_PROVIDER=system
           -DMIAOW_JSON_PROVIDER=system
           -DMIAOW_CAF_PROVIDER=system
 
       - name: Build
-        run: cmake --build build-examples --parallel
+        run: cmake --build build-regression --parallel
 
       - name: Test
         run: >
-          ctest --test-dir build-examples
-          --label-regex example
+          ctest --test-dir build-regression
+          --label-regex regression
           --output-on-failure
           --build-config Release
 

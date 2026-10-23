@@ -4,9 +4,7 @@
 #include <concepts>
 #include <exception>
 #include <functional>
-#include <map>
 #include <memory>
-#include <optional>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -40,42 +38,11 @@ enum class DynamicBmiBackend {
 /// Default absolute tolerance for BMI model time comparisons in seconds
 inline constexpr double default_bmi_time_step_tolerance_seconds = 1e-4;
 
-/// Storage format for external BMI forcing and runtime-managed output
-enum class BmiDataFormat {
-    /// Comma-separated values
-    csv,
-};
-
-/// External forcing configuration for one BMI task
-struct BmiForcingConfig {
-    /// Forcing storage format
-    BmiDataFormat format_{BmiDataFormat::csv};
-
-    /// Forcing file path
-    std::string file_;
-
-    /// Map from BMI input variables to forcing source variables
-    std::map<std::string, std::string> variables_names_map_;
-};
-
-/// Runtime-managed output configuration for one BMI task
-struct BmiOutputConfig {
-    /// Output storage format
-    BmiDataFormat format_{BmiDataFormat::csv};
-
-    /// BMI output variables written to the task artifact; empty selects all outputs
-    std::vector<std::string> variables_;
-
-    /// Positive model-time interval; absent writes the initial state and every update
-    std::optional<double> interval_;
-};
-
 /**
- * @brief Input and output configuration for one statically typed BMI task.
+ * @brief Initialization and clock configuration for one statically typed BMI task.
  *
  * The model implementation is supplied by `StaticBmiSimulationUnit`; this
- * configuration provides only the model initialization, forcing, and output
- * settings used by the task.
+ * configuration provides the initialization path and clock tolerance for the task.
  */
 struct StaticBmiConfig {
     /// BMI initialization config path
@@ -83,16 +50,10 @@ struct StaticBmiConfig {
 
     /// Absolute tolerance for model-time comparisons in seconds
     double time_step_tolerance_seconds_{default_bmi_time_step_tolerance_seconds};
-
-    /// Optional MIAOW-managed forcing; absent delegates forcing to the model
-    std::optional<BmiForcingConfig> forcing_;
-
-    /// Optional MIAOW-managed output; absent delegates output to the model
-    std::optional<BmiOutputConfig> output_;
 };
 
 /**
- * @brief Plugin, input, and output configuration for one dynamic BMI task.
+ * @brief Plugin, initialization, and clock configuration for one dynamic BMI task.
  *
  * `backend_` selects the plugin interface used to load `plugin_path_`.
  */
@@ -108,12 +69,6 @@ struct DynamicBmiConfig {
 
     /// Absolute tolerance for model-time comparisons in seconds
     double time_step_tolerance_seconds_{default_bmi_time_step_tolerance_seconds};
-
-    /// Optional MIAOW-managed forcing; absent delegates forcing to the model
-    std::optional<BmiForcingConfig> forcing_;
-
-    /// Optional MIAOW-managed output; absent delegates output to the model
-    std::optional<BmiOutputConfig> output_;
 };
 
 /**
@@ -129,8 +84,7 @@ std::string bmi_subprocess_executable_path();
  * @param config Static BMI task configuration.
  * @return `Task` ready to submit through `Runtime::submit_job()`.
  */
-Task make_bmi_task(SimulationUnitId simulation_unit_id,
-                   const StaticBmiConfig& config);
+Task make_bmi_task(SimulationUnitId simulation_unit_id, const StaticBmiConfig& config);
 
 /**
  * @brief Build one task for a dynamically loaded BMI plugin.
@@ -138,8 +92,7 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id,
  * @param config Dynamic BMI task configuration.
  * @return `Task` ready to submit through `Runtime::submit_job()`.
  */
-Task make_bmi_task(SimulationUnitId simulation_unit_id,
-                   const DynamicBmiConfig& config);
+Task make_bmi_task(SimulationUnitId simulation_unit_id, const DynamicBmiConfig& config);
 
 /**
  * @brief Build tasks that use the same registered BMI simulation unit.
@@ -163,58 +116,9 @@ std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
     return tasks;
 }
 
-/**
- * @brief NextGen-style realization expanded into BMI tasks by feature.
- *
- * The constructor reads a
- * [NextGen-style](https://github.com/NOAA-OWP/ngen) global realization with
- * one `bmi_fortran` module and `CsvPerFeature` forcing, resolves relative
- * paths and expands sibling `catchments.geojson` features. One `Task` is built for each
- * feature (e.g., catchment or response unit) with a sequential pipeline containing the BMI
- * model and its associated forcing. The tasks can be executed concurrently by a
- * `DynamicBmiSimulationUnit`.
- */
-class PartitionedBmiRealization {
-  public:
-    /// Construct an empty realization
-    PartitionedBmiRealization() = default;
-
-    /**
-     * @brief Partition a NextGen-style realization file by feature.
-     * @param realization_path Path to the NextGen-style realization file.
-     * @throws std::runtime_error if the realization is malformed or references
-     * missing or unusable files.
-     * @throws std::filesystem::filesystem_error if a referenced path cannot be
-     * resolved or inspected.
-     */
-    explicit PartitionedBmiRealization(const std::string& realization_path);
-
-  private:
-    // Configuration and identifier for one realization feature
-    struct FeatureConfig {
-        DynamicBmiConfig config_;
-        std::string feature_id_;
-    };
-
-    // Resolved configuration and identifier for each feature
-    std::vector<FeatureConfig> feature_configs_;
-
-    friend std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
-                                            const PartitionedBmiRealization& realization);
-};
-
-/**
- * @brief Build one dynamic BMI task per realization feature.
- * @param simulation_unit_id Registered dynamic BMI simulation unit id.
- * @param realization Parsed BMI realization.
- * @return `Task`s ready to submit through `Runtime::submit_job()`.
- */
-std::vector<Task> make_bmi_tasks(SimulationUnitId simulation_unit_id,
-                                 const PartitionedBmiRealization& realization);
-
 namespace static_bmi_execution {
 
-// Execute a statically supplied BMI model through the internal pipeline
+// Execute a complete run of one statically supplied BMI model
 TaskResult execute_task(const Task& task, std::unique_ptr<bmi_api::Bmi> model);
 
 } // namespace static_bmi_execution
@@ -305,7 +209,7 @@ class StaticBmiSimulationUnit : public SimulationUnit {
 /**
  * @brief Simulation unit that runs dynamically loaded BMI plugin tasks.
  *
- * `DynamicBmiSimulationUnit` executes the internal BMI pipeline in the current process.
+ * `DynamicBmiSimulationUnit` runs one fresh BMI model per task in the current process.
  * To run BMI tasks in a separate process, register the bundled subprocess executable with
  * `SimulationUnitRegistry::add_subprocess()` instead.
  */
@@ -317,7 +221,7 @@ class DynamicBmiSimulationUnit : public SimulationUnit {
     /**
      * @brief Execute a dynamically loaded BMI plugin task.
      * @param task `Task` built from `DynamicBmiConfig`.
-     * @return Immediate result for this BMI pipeline task execution.
+     * @return Immediate result for this BMI task execution.
      */
     caf::result<TaskResult> execute(const Task& task) override;
 };

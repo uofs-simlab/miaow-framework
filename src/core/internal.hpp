@@ -57,6 +57,9 @@ inline constexpr const char* subprocess_error_prefix = "Subprocess error";
 // Map each submitted job to the promise fulfilled by the orchestrator
 using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
 
+// Write the complete job record with full-precision numerical values
+void write_job_record(const std::filesystem::path& path, const JobRecord& record);
+
 // Assign runtime-owned fields to tasks at or after first_task_index
 // Derive each task name from feature_id metadata or its vector index; reject path
 // separators and duplicate names across both earlier and assigned tasks
@@ -104,8 +107,7 @@ enum class SubprocessPhase {
 class SubprocessState : public std::enable_shared_from_this<SubprocessState> {
   public:
     // Store fixed worker configuration once for every asynchronous transition
-    SubprocessState(caf::event_based_actor* owner,
-                    caf::actor subprocess_registration_actor,
+    SubprocessState(caf::event_based_actor* owner, caf::actor subprocess_registration_actor,
                     std::uint16_t subprocess_registration_port,
                     std::chrono::milliseconds task_request_timeout);
 
@@ -243,13 +245,11 @@ caf::behavior subprocess_registration_actor(caf::event_based_actor* self);
 
 // Root actor owned by Runtime: receives jobs and resolves each pending JobHandle with
 // either the completed JobRecord or an exception reported by its job actor
-caf::behavior
-orchestrator_actor(caf::event_based_actor* self, RuntimeOptions runtime_options,
-                   std::uint64_t run_id,
-                   std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
-                   caf::actor subprocess_registration_actor,
-                   std::uint16_t subprocess_registration_port,
-                   std::mutex* pending_jobs_mutex, PendingJobs* pending_jobs);
+caf::behavior orchestrator_actor(
+    caf::event_based_actor* self, RuntimeOptions runtime_options, std::uint64_t run_id,
+    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
+    caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
+    std::mutex* pending_jobs_mutex, PendingJobs* pending_jobs);
 
 // Per-job supervisor: owns a JobState, spawns up to max_workers simulation_unit
 // worker actors, dispatches tasks to available workers, and fulfils the job's

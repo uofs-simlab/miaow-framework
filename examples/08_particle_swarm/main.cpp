@@ -40,10 +40,8 @@ namespace {
 class RastriginEvaluation final : public miaow::SimulationUnit {
   public:
     // Delay limits are inclusive milliseconds
-    explicit RastriginEvaluation(int minimum_delay_ms = 10,
-                                 int maximum_delay_ms = 200)
-        : minimum_delay_ms_{minimum_delay_ms},
-          maximum_delay_ms_{maximum_delay_ms} {
+    explicit RastriginEvaluation(int minimum_delay_ms = 10, int maximum_delay_ms = 200)
+        : minimum_delay_ms_{minimum_delay_ms}, maximum_delay_ms_{maximum_delay_ms} {
         if (minimum_delay_ms < 0 || maximum_delay_ms < minimum_delay_ms) {
             throw std::invalid_argument(
                 "Evaluation delay limits must be non-negative and min <= max");
@@ -72,7 +70,8 @@ class RastriginEvaluation final : public miaow::SimulationUnit {
         }
 
         // Return the objective through TaskResult::output_ for the controller to consume
-        return miaow::TaskResult{miaow::TaskStatus::succeeded, {},
+        return miaow::TaskResult{miaow::TaskStatus::succeeded,
+                                 {},
                                  caf::config_value{value}};
     }
 
@@ -102,25 +101,16 @@ struct Particle {
 class ParticleSwarmController final : public miaow::JobController {
   public:
     ParticleSwarmController(
-        miaow::SimulationUnitId objective,
-        miaow::TaskGenerationPolicy policy,
-        std::pair<double, double> bounds = {-5.12, 5.12},
-        std::size_t swarm_size = 32,
+        miaow::SimulationUnitId objective, miaow::TaskGenerationPolicy policy,
+        std::pair<double, double> bounds = {-5.12, 5.12}, std::size_t swarm_size = 32,
         std::chrono::duration<double> time_limit = std::chrono::seconds{30},
-        std::size_t evaluation_budget = 100000,
-        double cognitive_weight = 2.05,
-        double social_weight = 2.05,
-        std::uint32_t initial_seed = 42,
+        std::size_t evaluation_budget = 100000, double cognitive_weight = 2.05,
+        double social_weight = 2.05, std::uint32_t initial_seed = 42,
         std::uint32_t movement_seed = 1729)
-        : JobController{policy},
-          objective_{objective},
-          bounds_{bounds},
-          time_limit_{time_limit},
-          evaluation_budget_{evaluation_budget},
-          cognitive_weight_{cognitive_weight},
-          social_weight_{social_weight},
-          movement_seed_{movement_seed},
-          swarm_(swarm_size) {
+        : JobController{policy}, objective_{objective}, bounds_{bounds},
+          time_limit_{time_limit}, evaluation_budget_{evaluation_budget},
+          cognitive_weight_{cognitive_weight}, social_weight_{social_weight},
+          movement_seed_{movement_seed}, swarm_(swarm_size) {
         if (swarm_size == 0 || evaluation_budget == 0 ||
             !std::isfinite(time_limit.count()) ||
             time_limit <= std::chrono::duration<double>::zero()) {
@@ -143,8 +133,7 @@ class ParticleSwarmController final : public miaow::JobController {
         // Recreate the same initial swarm for both policies. position and velocity are
         // sampling distributions, while random supplies their shared initial-state stream.
         std::mt19937 random{initial_seed};
-        std::uniform_real_distribution<double> position{bounds_.first,
-                                                       bounds_.second};
+        std::uniform_real_distribution<double> position{bounds_.first, bounds_.second};
 
         // Example initial speeds span +/-10% of the search width per coordinate
         const double initial_speed_limit = 0.1 * (bounds_.second - bounds_.first);
@@ -190,15 +179,15 @@ class ParticleSwarmController final : public miaow::JobController {
         return tasks;
     }
 
-    std::vector<miaow::Task> generate_new_tasks(
-        std::span<const miaow::TaskRecord> new_records) override {
+    std::vector<miaow::Task>
+    generate_new_tasks(std::span<const miaow::TaskRecord> new_records) override {
         // Get the id of each particle that has completed evaluation since last callback
         std::vector<std::size_t> particles_to_update;
         for (const miaow::TaskRecord& record : new_records) {
             // A failed evaluation cannot update the optimizer; propagate it as a job error
             if (record.result_.status_ != miaow::TaskStatus::succeeded) {
-                throw std::runtime_error("Particle evaluation failed: "
-                                         + record.result_.message_);
+                throw std::runtime_error("Particle evaluation failed: " +
+                                         record.result_.message_);
             }
 
             // Metadata maps the runtime record back to its zero-based particle ID
@@ -216,10 +205,10 @@ class ParticleSwarmController final : public miaow::JobController {
         }
 
         // Get the global best particle from the swarm
-        const Particle& best = *std::min_element(
-            swarm_.begin(), swarm_.end(), [](const Particle& a, const Particle& b) {
-                return a.best_value < b.best_value;
-            });
+        const Particle& best = *std::min_element(swarm_.begin(), swarm_.end(),
+                                                 [](const Particle& a, const Particle& b) {
+                                                     return a.best_value < b.best_value;
+                                                 });
         const std::array<double, 2> global_best = best.best_position;
 
         // Propose tasks in particle-ID order, independent of this callback's result order
@@ -271,9 +260,10 @@ class ParticleSwarmController final : public miaow::JobController {
     caf::config_value finalize() override {
         // Package the labels, plotting limits, and swarm history used by animate.py
         caf::config_value::dictionary output;
-        output.emplace("policy", task_generation_policy()
-                                     == miaow::TaskGenerationPolicy::batch_synchronous
-                                 ? "synchronous" : "asynchronous");
+        output.emplace("policy", task_generation_policy() ==
+                                         miaow::TaskGenerationPolicy::batch_synchronous
+                                     ? "synchronous"
+                                     : "asynchronous");
         output.emplace("bounds", std::array{bounds_.first, bounds_.second});
         output.emplace("wall_time_limit_seconds", time_limit_.count());
         output.emplace("initial_positions", std::move(initial_positions_));
@@ -303,9 +293,9 @@ class ParticleSwarmController final : public miaow::JobController {
             const double r2 = uniform(random);
 
             // update velocity
-            v = constriction_factor_ * (v + cognitive_weight_ * r1
-                * (particle.best_position[dimension] - x)
-                   + social_weight_ * r2 * (global_best[dimension] - x));
+            v = constriction_factor_ *
+                (v + cognitive_weight_ * r1 * (particle.best_position[dimension] - x) +
+                 social_weight_ * r2 * (global_best[dimension] - x));
 
             // Clamp the updated position and clear outward velocity when a bound is crossed
             x += v;
@@ -366,16 +356,15 @@ int main(int argc, char* argv[]) {
 
         // Sequential jobs share a runtime but restart the same initial swarm and seeds.
         // policy controls callback timing; name supplies the human-readable result label.
-        for (const auto& [policy, name] : {
-                 std::pair{miaow::TaskGenerationPolicy::batch_synchronous, "synchronous"},
-                 std::pair{miaow::TaskGenerationPolicy::asynchronous, "asynchronous"}}) {
+        for (const auto& [policy, name] :
+             {std::pair{miaow::TaskGenerationPolicy::batch_synchronous, "synchronous"},
+              std::pair{miaow::TaskGenerationPolicy::asynchronous, "asynchronous"}}) {
             // Create independent optimizer state; runtime initializes it at job start
             std::unique_ptr<ParticleSwarmController> controller =
                 std::make_unique<ParticleSwarmController>(objective, policy);
 
             // Transfer ownership to the runtime and wait for the final job record
-            const miaow::JobRecord job =
-                runtime.submit_job(std::move(controller)).get();
+            const miaow::JobRecord job = runtime.submit_job(std::move(controller)).get();
 
             // Report task failures before summarizing convergence
             if (!miaow::all_tasks_succeeded(job)) {
@@ -384,14 +373,14 @@ int main(int argc, char* argv[]) {
             }
 
             // Summarize convergence directly from the completed task results
-            std::cout << name << ": " << job.tasks_.size()
-                      << " evaluations in " << job.run_time_.count() << " s";
+            std::cout << name << ": " << job.tasks_.size() << " evaluations in "
+                      << job.run_time_.count() << " s";
             if (!job.tasks_.empty()) {
                 const auto best = std::min_element(
                     job.tasks_.begin(), job.tasks_.end(),
                     [](const miaow::TaskRecord& a, const miaow::TaskRecord& b) {
-                        return caf::get<caf::config_value::real>(a.result_.output_)
-                             < caf::get<caf::config_value::real>(b.result_.output_);
+                        return caf::get<caf::config_value::real>(a.result_.output_) <
+                               caf::get<caf::config_value::real>(b.result_.output_);
                     });
                 std::cout << "; best = "
                           << caf::get<caf::config_value::real>(best->result_.output_);

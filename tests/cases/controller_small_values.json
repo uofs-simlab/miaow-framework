@@ -1,0 +1,8 @@
+{
+  "exit_code": 0,
+  "input": {
+    "radicand": 2e-16,
+    "initial_estimate": 1e-8,
+    "residual_tolerance": 1e-21
+  }
+}
