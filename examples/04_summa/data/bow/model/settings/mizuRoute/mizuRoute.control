@@ -1,0 +1,107 @@
+! ****************************************************************************************************************************
+! ****************************************************************************************************************************
+! ***** DEFINITION OF MODEL CONTROL INFORMATION ******************************************************************************
+! ****************************************************************************************************************************
+! ****************************************************************************************************************************
+! Note: lines starting with "!" are treated as comment lines -- there is no limit on the number of comment lines.
+!       lines starting with <xxx> are read till "!"
+!       Do not inclue empty line without !
+!  
+!       Followings are example of control options.  if valid variables are inserted, they are default values.
+!  
+! ****************************************************************************************************************************
+! DEFINE DIRECTORIES 
+! --------------------------
+<ancil_dir>            ./model/settings/mizuRoute/            ! directory containing ancillary data (runoff mapping data, river network data)
+<input_dir>            ../../output/bow/miaow/               ! directory containing input data (runoff data)
+<output_dir>           ../../output/bow/miaow/routing/       ! directory containing output data
+! ****************************************************************************************************************************
+! DEFINE SIMULATION CONTROLS 
+! --------------------------------------------
+<case_name>             run1                       ! name of simulation 
+<sim_start>             2002-10-01        ! time of simulation start (00:00:00 if hh:mm:ss is not included) 
+<sim_end>               2005-09-30        ! time of simulation end (00:00:00 if hh:mm:ss is not included) 
+<route_opt>             1                          ! river routing options: 0-> accumRunoff, 1->IRF, 2->KWT, 3-> KW, 4->MC, 5->DW 
+<doesBasinRoute>        0                          ! basin routing options: 0-> no, 1->IRF, otherwise error
+<newFileFrequency>      single                     ! frequency for new output options (case-insensitive): daily, monthly, yearly, or single
+<restart_write>         never                      ! restart write option (case-insensitive): never, last, specified, yearly, monthly, or daily 
+<restart_date>          yyyy-mm-dd hh:mm:ss        ! restart date.  activated only if <restart_write> is "specified" 
+!<fname_state_in>        INPUT_RESTART_NC          ! input restart netCDF name. remove for run without any particular initial channel states
+! ****************************************************************************************************************************
+! DEFINE RIVER NETWORK DATA 
+! ---------------------------------------
+<fname_ntopOld>         topology.nc                ! netCDF name for River Network
+<dname_sseg>            seg                        ! dimension name of the stream segments
+<dname_nhru>            hru                        ! dimension name of the HRUs
+! ****************************************************************************************************************************
+! DEFINE DESIRED VARIABLES FOR THE NETWORK TOPOLOGY
+! ---------------------------------------------------------
+<seg_outlet>            -9999                      ! seg_id of outlet streamflow segment. -9999 for all segments 
+! ****************************************************************************************************************************
+! DEFINE RUNOFF DATA 
+! ----------------------------------
+<fname_qsim>            runoff.nc                 ! name of file containing the HRU runoff
+<vname_qsim>            averageRoutedRunoff_mean  ! name of HRU runoff variable
+<vname_time>            time                      ! name of time variable 
+<vname_hruid>           gruId                     ! name of runoff HRU id variable (if 1D runoff vector is input)
+<dname_xlon>            DIMNAME_XLON              ! name of x(j) dimension (if 2D runoff grid is input)
+<dname_ylat>            DIMNAME_YLAT              ! name of y(i) dimension (if 2D runoff grid is input)
+<dname_time>            time                      ! name of time dimension 
+<dname_hruid>           gru                       ! name of the HRU dimension (if 1D runoff vector is input) 
+<units_qsim>            m/s                       ! units of runoff depth. Accepted units:  mm/s, mm/hr, mm/day, m/s, m/hr, m/day
+<dt_qsim>               86400                     ! time interval of the runoff [sec] e.g., 86400 sec for daily step
+<calendar>              standard                  ! Calendar of the nc file if not provided in the time variable of the nc file 
+! ****************************************************************************************************************************
+! DEFINE RUNOFF REMAPPING DATA 
+!  ----------------------------------
+<is_remap>              F                          ! logical whether or not runnoff needs to be mapped to river network HRU 
+<fname_remap>           MAPPING_NC                 ! name of runoff mapping netCDF 
+<vname_hruid_in_remap>  VARNAME_MAP_RN_HRU         ! name of variable for river network HRUs within each river network HRU 
+<vname_weight>          VARNAME_MAP_WEIGHT         ! name of variable for areal weights of runoff HRUs within each river network HRU
+<vname_qhruid>          VARNAME_MAP_RO_HRU         ! name of variable for runoff HRU ID (if 1D runoff vector is input)
+<vname_num_qhru>        VARNAME_MAP_NUM_RO_HRU     ! name of variable for a numbers of runoff HRUs within each river network HRU
+<dname_hru_remap>       DIMNAME_MAP_RN_HRU         ! name of hru dimension (if 1D runoff vector is input)
+<dname_data_remap>      DIMNAME_MAP_DATA           ! name of data dimension
+<vname_i_index>         DIMNAME_I_INDEX            ! name of xlon index dimension (if 2D runoff grid is input) 
+<vname_j_index>         DIMNAME_J_INDEX            ! name of ylat index dimension (if 2D runoff grid is input)
+! ****************************************************************************************************************************
+! NAMELIST 
+! ---------------------------
+<param_nml>             param.nml.default          ! Namelist name containing routing parameter values 
+! ****************************************************************************************************************************
+! Dictionary to map variable names
+! ---------------------------
+<varname_area>          area                       ! name of variable holding hru area
+<varname_length>        length                     ! name of variable holding segment length
+<varname_slope>         slope                      ! name of variable holding segment slope
+<varname_HRUid>         hruId                      ! name of variable holding HRU id
+<varname_hruSegId>      hruToSegId                 ! name of variable holding the stream segment below each HRU  
+<varname_segId>         segId                      ! name of variable holding the ID of each stream segment  
+<varname_downSegId>     downSegId                  ! name of variable holding the ID of the next downstream segment
+! ****************************************************************************************************************************
+! ****************************************************************************************************************************
+! ****************************************************************************************************************************
+!
+! Some of useful input options
+! See read_control.f90 for complete options
+!
+! ****************************************************************************************************************************
+! Network augmentation
+! ---------------------------
+<ntopAugmentMode>       F                          ! option for river network augmentation mode
+<fname_ntopNew>         AUGMENTED_NTOPO_NC         ! name of augmented river network netCDF
+! ****************************************************************************************************************************
+! debugging  
+! ---------------------------
+<debug>                 F                          ! print out detailed information throught the probram
+<desireId>              -9999                      ! turn off checks (-999) or speficy reach ID if necessary to print on screen
+! ****************************************************************************************************************************
+! output options
+! ---------------------------
+<netcdf_format>         netcdf4                    ! netcdf format for output 'classic','64bit_offset','netcdf4'
+<basRunoff>             F                          ! output options
+<instRunoff>            F                          ! output options
+<dlayRunoff>            F                          ! output options
+<sumUpstreamRunoff>     F                          ! output options
+<KWTroutedRunoff>       F                          ! output options
+<IRFroutedRunoff>       T                          ! output options 

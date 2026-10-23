@@ -28,7 +28,7 @@ Default examples
 Additional examples
 -------------------
 
-- `examples/04_summa <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_summa>`_: `SUMMA <https://github.com/CH-Earth/summa>`_ run using subprocess pipeline execution and one MIAOW task per staged catchment feature described by a NextGen-style realization
+- `examples/04_summa <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_summa>`_: MIAOW `SUMMA <https://github.com/CH-Earth/summa>`_ execution for the 52-GRU Bow River fixture, with offline mizuRoute routing
 - `examples/05_libtrixi_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/05_libtrixi_bmi>`_: `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin in a single-task subprocess
 - `examples/06_fuse_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/06_fuse_bmi>`_: deterministic 256-member Saltelli ensemble using the `FUSE <https://github.com/uofs-simlab/fuse>`_ dynamic Fortran BMI plugin
 - `examples/08_particle_swarm <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/08_particle_swarm>`_: compares batch-synchronous and asynchronous particle swarm optimization on Rastrigin, with randomized evaluation delays and Matplotlib playback
@@ -36,30 +36,40 @@ Additional examples
 SUMMA
 ^^^^^
 
-The ``examples/04_summa`` example builds a SUMMA BMI library from a SUMMA source tree and runs the packaged gauge realization by default. It is not part of the default example set. SUMMA requires `NetCDF <https://www.unidata.ucar.edu/software/netcdf/>`_ C/Fortran and BLAS/LAPACK support. Select it with ``MIAOW_EXAMPLES=04_summa``, then run it from the example directory:
+The optional ``examples/04_summa`` example runs `SUMMA <https://github.com/CH-Earth/summa>`_ through Fortran BMI in MIAOW, with offline routing through `mizuRoute <https://github.com/ESCOMP/mizuRoute>`_, to simulate the streamflow for the ``CAN_05BB001`` gauge on the Bow River at Banff, Alberta, Canada using a spatially distributed hydrologic model consisting of 52 grouped response units (GRUs). In addition to the :doc:`MIAOW build requirements <building>`, this example requires GNU Fortran, NetCDF C/Fortran, BLAS/LAPACK, and ``uv``. On Ubuntu, these can be installed using the following commands:
 
 .. code-block:: sh
 
-   cd examples/04_summa
-   ./miaow_summa --output_root ./output
+   sudo apt-get install libnetcdf-dev libnetcdff-dev libopenblas-dev curl
+   curl -LsSf https://astral.sh/uv/install.sh | sh
 
-The following example-specific flags control the SUMMA build:
+On macOS, we can use `Homebrew <https://brew.sh/>`_ to install the required dependencies:
 
-.. list-table::
-   :header-rows: 1
-   :widths: 35 30 45
+.. code-block:: sh
 
-   * - Flag
-     - Default
-     - Description
-   * - ``-DMIAOW_SUMMA_MODEL_ROOT``
-     - ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/summa``
-     - Local or fetched SUMMA source tree
-   * - ``-DMIAOW_SUMMA_LIBRARY_LINKS``
-     - ``-framework Accelerate`` on macOS, empty otherwise
-     - LAPACK/BLAS link flags passed to SUMMA
+   brew install netcdf-fortran uv
 
-SUMMA is distributed under the `GNU General Public License version 3 <https://github.com/CH-Earth/summa/blob/master/COPYING>`_.
+``run_summa_mizuroute.py`` accepts ``--max-workers N`` to set the maximum number of concurrent SUMMA tasks that MIAOW will run (default: 4). To set up and run the workflow, execute the following commands from the repository root:
+
+.. code-block:: sh
+
+   # 1. Set up the Python environment
+   uv sync --frozen --project examples/04_summa --python 3.12
+
+   # 2. Configure the model and routing build
+   cmake -S . -B build-summa -DCMAKE_BUILD_TYPE=Release \
+       -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=04_summa
+
+   # 3. Build the MIAOW driver, SUMMA, and mizuRoute
+   cmake --build build-summa --target miaow_summa -j 6
+
+   # 4. Run SUMMA, prepare runoff, and run mizuRoute
+   uv run --frozen --project examples/04_summa \
+       python examples/04_summa/run_summa_mizuroute.py
+
+   # 5. Calculate the modified Kling-Gupta efficiency (KGE') and plot streamflow
+   uv run --frozen --project examples/04_summa \
+       python examples/04_summa/postprocess_streamflow.py
 
 Trixi.jl
 ^^^^^^^^

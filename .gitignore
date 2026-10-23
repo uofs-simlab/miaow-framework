@@ -43,7 +43,6 @@ examples/*/extern/
 examples/*/data/plugins/
 examples/*/out/
 **/fuse_grid_data/
-/examples/06_summa_streamflow/
 
 # Local helper scripts
 scripts/preprocessing/
@@ -83,7 +82,6 @@ _*/
 
 # Generated runtime and visualization outputs
 **/output/
-examples/04_summa/data/*/summa_output/
 *.mp4
 
 # Python cache files
@@ -91,6 +89,7 @@ __pycache__/
 *.pyc
 docs/.venv/
 examples/08_particle_swarm/.venv/
+examples/04_summa/.venv/
 examples/06_fuse_bmi/data/configs/
 *.log
 
