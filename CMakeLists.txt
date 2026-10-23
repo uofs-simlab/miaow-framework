@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.30)
 
-project(miaow VERSION 0.2.1 LANGUAGES CXX Fortran)
+project(miaow VERSION 0.2.0 LANGUAGES CXX Fortran)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,11 +12,6 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
-
-find_package(netCDF 4.8 CONFIG REQUIRED)
-if(NOT TARGET netCDF::netcdf)
-    message(FATAL_ERROR "NetCDF did not provide the expected netCDF::netcdf target")
-endif()
 
 # Add framework tests to top-level development builds
 set(miaow_build_tests OFF)
@@ -234,7 +229,6 @@ target_link_libraries(miaow
         ${MIAOW_CAF_IO_TARGET}
         nlohmann_json::nlohmann_json
         iso_c_bmi
-        netCDF::netcdf
         ${CMAKE_DL_LIBS}
 )
 
@@ -243,7 +237,6 @@ set(miaow_interface_link_libraries
     "$<BUILD_INTERFACE:${MIAOW_CAF_CORE_TARGET}>"
     "$<BUILD_INTERFACE:${MIAOW_CAF_IO_TARGET}>"
     "$<BUILD_INTERFACE:$<LINK_ONLY:iso_c_bmi>>"
-    "$<BUILD_INTERFACE:$<LINK_ONLY:netCDF::netcdf>>"
 )
 if(CMAKE_DL_LIBS)
     list(APPEND miaow_interface_link_libraries "${CMAKE_DL_LIBS}")

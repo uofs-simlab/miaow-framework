@@ -61,9 +61,8 @@ int main(int argc, char* argv[]) {
             config.init_config_ = feature.at("init_config").get<std::string>();
 
             // SUMMA owns forcing, daily accumulation, and native NetCDF output
-            tasks.push_back(miaow::make_bmi_task(
-                worker, config, identifier,
-                {{"feature_id", identifier}, {"feature_type", "gru"}}));
+            tasks.push_back(miaow::make_bmi_task(worker, config));
+            tasks.back().metadata_ = {{"feature_id", identifier}, {"feature_type", "gru"}};
         }
 
         // Create the runtime, submit the tasks, and get the job record

@@ -37,10 +37,7 @@ std::size_t BmiPipeline::add_model_module(const BmiModuleConfig& module_config) 
 }
 
 // Add the optional forcing module and return whether it is present
-bool BmiPipeline::add_forcing_module(BmiDataFormat forcing_format,
-                                     const std::string& forcing_file,
-                                     const std::optional<std::string>& feature_id_variable,
-                                     const std::string& feature_id,
+bool BmiPipeline::add_forcing_module(const std::string& forcing_file,
                                      double time_step_tolerance_seconds,
                                      std::size_t model_module_index,
                                      std::size_t& forcing_module_index) {
@@ -51,10 +48,8 @@ bool BmiPipeline::add_forcing_module(BmiDataFormat forcing_format,
     // The forcing module follows every configured model module
     forcing_module_index = modules_.size();
 
-    // The receiving model clock defines forcing timestep alignment
+    // The receiving model clock defines CSV timestep alignment
     modules_.push_back(std::make_unique<ForcingBmi>(*modules_.at(model_module_index),
-                                                    forcing_format, feature_id_variable,
-                                                    feature_id,
                                                     time_step_tolerance_seconds));
     return true;
 }
@@ -71,14 +66,14 @@ void BmiPipeline::build_couplings(
 
     const auto append_validated_coupling = [&](const std::string& source_variable,
                                                const std::string& target_variable) {
-        // Variable maps apply only to model inputs receiving external forcing
+        // Variable maps currently apply only to model inputs receiving CSV forcing
         const std::vector<std::string>::const_iterator target_it =
             std::find(target_inputs.begin(), target_inputs.end(), target_variable);
         if (target_it == target_inputs.end()) {
             throw std::runtime_error(
                 "BMI forcing error: variables_names_map key '" + target_variable +
-                "' is not a BMI input variable; MIAOW maps BMI input variables to "
-                "forcing source variables");
+                "' is not a BMI input variable; MIAOW maps BMI input variables to CSV "
+                "forcing headers");
         }
 
         // Source variables must be available as BMI outputs
@@ -107,7 +102,7 @@ void BmiPipeline::build_couplings(
         return;
     }
 
-    // Explicit maps couple forcing source variables to configured BMI inputs
+    // Explicit maps couple CSV headers to configured BMI input variables
     for (const std::pair<const std::string, std::string>& map_entry : variables_names_map) {
         append_validated_coupling(map_entry.second, map_entry.first);
     }
@@ -152,11 +147,8 @@ void BmiPipeline::initialize(const BmiPipelineConfig& pipeline_config) {
 
     // Add the optional forcing module after the model module so couplings can be built
     std::size_t forcing_module_index = 0;
-    const bool has_forcing =
-        add_forcing_module(pipeline_config.forcing_format_, forcing_file,
-                           pipeline_config.forcing_feature_id_variable_,
-                           pipeline_config.feature_id_, time_step_tolerance_seconds,
-                           model_module_index, forcing_module_index);
+    const bool has_forcing = add_forcing_module(forcing_file, time_step_tolerance_seconds,
+                                                model_module_index, forcing_module_index);
 
     // Initialize the model before querying its metadata from optional forcing
     modules_.at(model_module_index)->Initialize(module_config.config_file_);

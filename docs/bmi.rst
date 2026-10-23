@@ -134,14 +134,9 @@ BMI models often require time-varying forcing data to be passed to the model at 
 1. The model reads its own forcing data from a file or other source as part of its own ``Update()`` implementation.
 2. MIAOW reads the forcing data and applies it to the model at each update.
 
-The ``forcing_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` selects the pattern. When the field is absent, MIAOW adds no forcing module and delegates forcing to the model. A configured ``BmiForcingConfig`` appends an internal forcing module after the model and exposes source variables as BMI outputs. MIAOW derives explicit couplings from ``BmiForcingConfig::variables_names_map_``, requires equal source and target item counts, applies each complete flattened variable immediately before the model update, and then advances the forcing source after the model update.
+The ``forcing_`` field in ``StaticBmiConfig`` or ``DynamicBmiConfig`` selects the pattern. When the field is absent, MIAOW adds no forcing module and delegates forcing to the model. A configured ``BmiForcingConfig`` appends the internal CSV forcing module after the model and exposes the file's data columns as BMI outputs. MIAOW derives explicit couplings from ``BmiForcingConfig::variables_names_map_``, requires equal source and target item counts, applies each complete flattened variable immediately before the model update, and then advances the forcing source after the model update. Each CSV data column currently exposes one scalar forcing variable, so a CSV forcing mapping requires a scalar target input.
 
-The variable map is interpreted as ``BMI input variable -> forcing source variable``. If it is empty, MIAOW derives an identity map from ``GetInputVarNames()`` and expects source variables with the same names as the corresponding BMI inputs. Every configured key must identify a BMI input variable; general output aliasing and aliases for model-to-model coupling are not supported.
-
-CSV forcing
-~~~~~~~~~~~
-
-CSV forcing exposes each data column as one scalar BMI output. The following example maps the ``TMP_ground_surface`` column to the BMI input variable ``ground_temperature``:
+The variable map is interpreted as ``BMI input variable -> CSV header``. If it is empty, MIAOW derives an identity map from ``GetInputVarNames()`` and expects CSV headers with the same names as the corresponding variables. Every configured key must identify a BMI input variable; general output aliasing and aliases for model-to-model coupling are not supported. The following example configuration reads CSV forcing data and maps the ``TMP_ground_surface`` column to the BMI input variable ``ground_temperature``:
 
 .. code-block:: cpp
 
@@ -156,53 +151,7 @@ CSV forcing exposes each data column as one scalar BMI output. The following exa
        },
    };
 
-The forcing file must define a ``time`` or ``Time`` column plus all required numeric data columns. Supported timestamp formats are ``YYYY-MM-DD HH:MM:SS`` and ``YYYY/MM/DD HH:MM:SS``. MIAOW treats the first forcing row as the model-start forcing values without comparing its timestamp with the model's ``start_time``, so users should ensure that the two times align. Later forcing rows are streamed as the model advances; each row-to-row timestamp delta must match the receiving BMI model timestep within ``time_step_tolerance_seconds_`` after conversion to seconds. Exhausting the forcing data before the model's ``end_time`` fails the task with a ``Forcing alignment error``; forcing rows beyond ``end_time`` are silently ignored and do not cause a task failure.
-
-NetCDF forcing
-~~~~~~~~~~~~~~
-
-Configure feature-indexed NetCDF forcing through ``DynamicBmiConfig::forcing_`` using a ``BmiForcingConfig`` with ``format_ = BmiDataFormat::netcdf``. The configured identifier variable is numeric and one-dimensional, and each task selects one finite integral identifier through the ``make_bmi_task(...)`` feature ID argument. Numeric forcing variables with the time and feature dimensions in either order are exposed as scalar BMI ``double`` outputs for the selected feature.
-
-Feature IDs must lie in the signed 64-bit integer range. Integer identifier variables are read without conversion to floating point, preserving exact 64-bit IDs.
-
-.. warning::
-
-   For concurrent NetCDF tasks, register ``bmi_subprocess_executable_path()`` with
-   ``SimulationUnitRegistry::add_subprocess(...)``, as shown below. Concurrent
-   NetCDF calls from multiple threads in one process are unsupported, even when
-   reading different files. This restriction applies across all jobs and
-   ``Runtime`` objects and includes calls made by model plugins. In-process
-   execution requires all NetCDF access in that process to be serialized.
-
-The reader detects the time coordinate from ``axis = "T"``, ``standard_name = "time"``, or the variable name ``time``. Its fixed-duration units define the conversion to seconds, and the first coordinate is normalized to elapsed time zero. Each later coordinate delta is validated against the receiving model timestep.
-
-At each time index, MIAOW reads one scalar hyperslab from every exposed forcing variable at the selected feature index. A variable's ``units`` attribute becomes its BMI unit. The reader rejects effective fill values (including NetCDF defaults when filling is enabled), declared missing values, and non-finite values in feature IDs, time coordinates, and selected forcing values.
-
-Variables with ``scale_factor`` or ``add_offset`` attributes are unsupported and produce a forcing-data error. This restriction applies to the identifier variable, the time coordinate, and all exposed forcing variables.
-
-.. code-block:: cpp
-
-   miaow::SimulationUnitRegistry registry;
-   const miaow::SimulationUnitId bmi_subprocess =
-       registry.add_subprocess(
-           miaow::bmi_subprocess_executable_path(),
-           miaow::SubprocessLifetime::persistent);
-
-   const miaow::DynamicBmiConfig config{
-       .backend_ = miaow::DynamicBmiBackend::fortran,
-       .plugin_path_ = plugin_path,
-       .init_config_ = init_config,
-       .forcing_ = miaow::BmiForcingConfig{
-           .format_ = miaow::BmiDataFormat::netcdf,
-           .file_ = "forcing.nc",
-           .feature_id_variable_ = "hruId",
-           .variables_names_map_ = {
-               {"temperature", "air_temperature"},
-           },
-       },
-   };
-   const miaow::Task task =
-       miaow::make_bmi_task(bmi_subprocess, config, "202");
+The forcing file must define a ``time`` or ``Time`` column plus all required numeric data columns. Supported timestamp formats are ``YYYY-MM-DD HH:MM:SS`` and ``YYYY/MM/DD HH:MM:SS``. MIAOW treats the first forcing row as the model-start forcing values without comparing its timestamp with the model's ``start_time``, so users should ensure that the two times align. Later forcing rows are streamed as the model advances; each row-to-row timestamp delta must match the receiving BMI model timestep within ``time_step_tolerance_seconds_`` after conversion to seconds. Because the only supported forcing source is CSV, the forcing provider for global `NextGen <https://noaa-owp.github.io/ngen/>`_-style realization files should be set to ``CsvPerFeature``. Exhausting the forcing data before the model's ``end_time`` fails the task with a ``Forcing alignment error``; forcing rows beyond ``end_time`` are silently ignored and do not cause a task failure.
 
 .. _bmi-output:
 

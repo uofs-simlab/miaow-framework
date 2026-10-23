@@ -24,7 +24,6 @@ target_link_libraries(miaow_bmi_tests PRIVATE
     miaow
     nlohmann_json::nlohmann_json
     Boost::unit_test_framework
-    netCDF::netcdf
 )
 add_dependencies(miaow_bmi_tests miaow_subprocess)
 

@@ -52,9 +52,7 @@ void validate_output_interval(const std::optional<double>& interval,
 
 // Normalized task IO shared by static and dynamic BMI configurations
 struct BmiTaskIoSettings {
-    BmiDataFormat forcing_format_{BmiDataFormat::csv};
     std::string forcing_file_;
-    std::optional<std::string> forcing_feature_id_variable_;
     std::map<std::string, std::string> variables_names_map_;
     std::optional<std::vector<std::string>> output_variables_;
     std::optional<double> output_interval_;
@@ -66,32 +64,11 @@ BmiTaskIoSettings normalize_bmi_task_io(const BmiConfig& config,
                                         std::string_view error_prefix) {
     BmiTaskIoSettings settings;
     if (config.forcing_) {
-        const BmiForcingConfig& forcing = *config.forcing_;
-        if (forcing.format_ != BmiDataFormat::csv &&
-            forcing.format_ != BmiDataFormat::netcdf) {
-            throw std::runtime_error(std::string(error_prefix) +
-                                     "unsupported forcing format");
-        }
-        if (forcing.format_ == BmiDataFormat::csv && forcing.feature_id_variable_) {
-            throw std::runtime_error(std::string(error_prefix) +
-                                     "CSV forcing does not accept feature_id_variable");
-        }
-        if (forcing.format_ == BmiDataFormat::netcdf &&
-            (!forcing.feature_id_variable_ ||
-             io::trim(*forcing.feature_id_variable_).empty())) {
-            throw std::runtime_error(std::string(error_prefix) +
-                                     "NetCDF forcing requires a non-empty "
-                                     "feature_id_variable");
-        }
-        settings.forcing_format_ = config.forcing_->format_;
+        validate_data_format(config.forcing_->format_, error_prefix, "forcing");
         settings.forcing_file_ = io::trim(config.forcing_->file_);
         if (settings.forcing_file_.empty()) {
             throw std::runtime_error(std::string(error_prefix) +
                                      "forcing file must be a non-empty string");
-        }
-        if (config.forcing_->feature_id_variable_) {
-            settings.forcing_feature_id_variable_ =
-                io::trim(*config.forcing_->feature_id_variable_);
         }
         settings.variables_names_map_ = config.forcing_->variables_names_map_;
     }
@@ -265,13 +242,10 @@ BmiModuleConfig::BmiModuleConfig(const json::object_t& module_object,
 BmiPipelineConfig::BmiPipelineConfig(std::vector<BmiModuleConfig> module_configs,
                                      std::string forcing_file, std::string feature_id,
                                      std::optional<double> output_interval,
-                                     double time_step_tolerance_seconds,
-                                     BmiDataFormat forcing_format,
-                                     std::optional<std::string> forcing_feature_id_variable)
-    : module_configs_(std::move(module_configs)), forcing_format_(forcing_format),
-      forcing_file_(std::move(forcing_file)),
-      forcing_feature_id_variable_(std::move(forcing_feature_id_variable)),
-      feature_id_(std::move(feature_id)), output_interval_(output_interval),
+                                     double time_step_tolerance_seconds)
+    : module_configs_(std::move(module_configs)),
+      forcing_file_(std::move(forcing_file)), feature_id_(std::move(feature_id)),
+      output_interval_(output_interval),
       time_step_tolerance_seconds_(time_step_tolerance_seconds) {
     if (module_configs_.empty()) {
         throw std::runtime_error(
@@ -329,20 +303,11 @@ BmiPipelineConfig::BmiPipelineConfig(const json::object_t& pipeline_config,
         const auto& forcing = forcing_value->second.get_ref<const json::object_t&>();
         const std::string provider =
             io::trim(forcing.at("provider").get<std::string>());
-        if (provider == "CsvFile") {
-            forcing_format_ = BmiDataFormat::csv;
-        } else if (provider == "NetCdf") {
-            forcing_format_ = BmiDataFormat::netcdf;
-        } else {
+        if (provider != "CsvFile") {
             io::throw_config_error(error_prefix,
                                    "unsupported forcing provider '" + provider + "'");
         }
         forcing_file_ = io::trim(forcing.at("file").get<std::string>());
-        if (const auto feature_id_variable = forcing.find("feature_id_variable");
-            feature_id_variable != forcing.end()) {
-            forcing_feature_id_variable_ =
-                io::trim(feature_id_variable->second.get<std::string>());
-        }
     }
 
     if (const auto feature_value = pipeline_config.find("feature");
@@ -376,14 +341,12 @@ caf::config_value bmi_pipeline_config_to_value(const BmiPipelineConfig& pipeline
         feature.insert("id", feature_id);
         config_dictionary.insert("feature", std::move(feature));
     }
-    config_dictionary.insert("global", bmi::make_bmi_multi_global_config(
-                                           pipeline_config.module_configs_,
-                                           pipeline_config.forcing_file_,
-                                           pipeline_config.output_module_,
-                                           pipeline_config.output_interval_,
-                                           pipeline_config.time_step_tolerance_seconds_,
-                                           pipeline_config.forcing_format_,
-                                           pipeline_config.forcing_feature_id_variable_));
+    config_dictionary.insert(
+        "global",
+        bmi::make_bmi_multi_global_config(
+            pipeline_config.module_configs_, pipeline_config.forcing_file_,
+            pipeline_config.output_module_, pipeline_config.output_interval_,
+            pipeline_config.time_step_tolerance_seconds_));
     return caf::config_value{std::move(config_dictionary)};
 }
 
@@ -393,11 +356,6 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id, const StaticBmiConfig& c
 
 Task make_bmi_task(SimulationUnitId simulation_unit_id, const DynamicBmiConfig& config) {
     return bmi::make_bmi_task(simulation_unit_id, config);
-}
-
-Task make_bmi_task(SimulationUnitId simulation_unit_id, const DynamicBmiConfig& config,
-                   const std::string& feature_id, TaskMetadata metadata) {
-    return bmi::make_bmi_task(simulation_unit_id, config, feature_id, std::move(metadata));
 }
 
 } // namespace miaow
@@ -414,10 +372,6 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id, const StaticBmiConfig& c
     validate_time_step_tolerance_seconds(config.time_step_tolerance_seconds_, error_prefix);
 
     BmiTaskIoSettings io_settings = normalize_bmi_task_io(config, error_prefix);
-    if (io_settings.forcing_format_ == BmiDataFormat::netcdf) {
-        throw std::runtime_error(std::string(error_prefix) +
-                                 "NetCDF forcing requires a dynamic task feature id");
-    }
 
     // Build the BMI module config for the supplied model
     BmiModuleConfig module_config("supplied_model", config.init_config_,
@@ -425,11 +379,11 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id, const StaticBmiConfig& c
     module_config.output_variables_ = std::move(io_settings.output_variables_);
 
     // Build the pipeline task for the registered static model
-    const BmiPipelineConfig pipeline_config(
-        std::vector<BmiModuleConfig>{std::move(module_config)},
-        std::move(io_settings.forcing_file_), "", io_settings.output_interval_,
-        config.time_step_tolerance_seconds_, io_settings.forcing_format_,
-        std::move(io_settings.forcing_feature_id_variable_));
+    const BmiPipelineConfig pipeline_config(std::vector<BmiModuleConfig>{std::move(
+                                                module_config)},
+                                            std::move(io_settings.forcing_file_), "",
+                                            io_settings.output_interval_,
+                                            config.time_step_tolerance_seconds_);
     return Task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config)};
 }
 
@@ -444,12 +398,6 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id, const DynamicBmiConfig& 
     validate_time_step_tolerance_seconds(config.time_step_tolerance_seconds_, error_prefix);
 
     BmiTaskIoSettings io_settings = normalize_bmi_task_io(config, error_prefix);
-    const std::string normalized_feature_id = io::trim(feature_id);
-    if (io_settings.forcing_format_ == BmiDataFormat::netcdf &&
-        normalized_feature_id.empty()) {
-        throw std::runtime_error(std::string(error_prefix) +
-                                 "NetCDF forcing requires a non-empty feature id");
-    }
 
     // Build the backend-specific BMI module config
     const std::string module_name =
@@ -460,11 +408,11 @@ Task make_bmi_task(SimulationUnitId simulation_unit_id, const DynamicBmiConfig& 
     module_config.output_variables_ = std::move(io_settings.output_variables_);
 
     // Build the pipeline task with its dynamic model configuration
-    const BmiPipelineConfig pipeline_config(
-        std::vector<BmiModuleConfig>{std::move(module_config)},
-        std::move(io_settings.forcing_file_), normalized_feature_id,
-        io_settings.output_interval_, config.time_step_tolerance_seconds_,
-        io_settings.forcing_format_, std::move(io_settings.forcing_feature_id_variable_));
+    const BmiPipelineConfig pipeline_config(std::vector<BmiModuleConfig>{std::move(
+                                                module_config)},
+                                            std::move(io_settings.forcing_file_),
+                                            feature_id, io_settings.output_interval_,
+                                            config.time_step_tolerance_seconds_);
     return Task{simulation_unit_id, bmi_pipeline_config_to_value(pipeline_config),
                 std::move(metadata)};
 }
@@ -515,11 +463,11 @@ void write_var_values(::bmi::Bmi& model, const std::string& name, std::size_t n_
 } // namespace
 
 // Build the serialized bmi_multi global block for one pipeline config
-caf::config_value::dictionary make_bmi_multi_global_config(
-    const std::vector<BmiModuleConfig>& module_configs, const std::string& forcing_file,
-    std::size_t output_module, std::optional<double> output_interval,
-    double time_step_tolerance_seconds, BmiDataFormat forcing_format,
-    std::optional<std::string> feature_id_variable) {
+caf::config_value::dictionary
+make_bmi_multi_global_config(const std::vector<BmiModuleConfig>& module_configs,
+                             const std::string& forcing_file, std::size_t output_module,
+                             std::optional<double> output_interval,
+                             double time_step_tolerance_seconds) {
     caf::config_value::list modules;
     for (const BmiModuleConfig& module_config : module_configs) {
         caf::config_value::dictionary module_params;
@@ -581,12 +529,8 @@ caf::config_value::dictionary make_bmi_multi_global_config(
     global.insert("formulations", std::move(formulations));
     if (!io::trim(forcing_file).empty()) {
         caf::config_value::dictionary forcing;
-        forcing.insert("provider",
-                       forcing_format == BmiDataFormat::netcdf ? "NetCdf" : "CsvFile");
+        forcing.insert("provider", "CsvFile");
         forcing.insert("file", forcing_file);
-        if (feature_id_variable) {
-            forcing.insert("feature_id_variable", *feature_id_variable);
-        }
         global.insert("forcing", std::move(forcing));
     }
 
