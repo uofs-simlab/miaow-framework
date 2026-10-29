@@ -1,7 +1,14 @@
 {
   "exit_code": 1,
-  "input": {"tasks": [{"simulation_unit_id": 999, "message": "hello"}]},
+  "max_workers": 1,
+  "input": {
+    "tasks": [
+      {"simulation_unit_id": 999, "message": "hello"},
+      {"message": "recovered"}
+    ]
+  },
   "tasks": [
-    {"status": "failed", "message": "unknown SimulationUnitId: 999"}
+    {"status": "failed", "message": "unknown SimulationUnitId: 999"},
+    {"status": "succeeded", "message": "recovered"}
   ]
 }

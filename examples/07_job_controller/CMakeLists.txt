@@ -23,7 +23,7 @@ if(BUILD_TESTING)
     miaow_add_example_test(
         TEST_NAME miaow_example_07_job_controller_non_convergence
         EXECUTABLE_TARGET miaow_job_controller
-        REGRESSION failure
+        REGRESSION expected_failure
         CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/controller_non_convergence.json"
     )
     miaow_add_example_test(

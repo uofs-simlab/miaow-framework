@@ -26,8 +26,8 @@ namespace {
 struct JobRecordChecker {
     JobRecordChecker() {
         const auto& arguments = boost::unit_test::framework::master_test_suite();
-        // Arguments: miaow_example_tests executable path and saved job-record path
-        BOOST_REQUIRE_EQUAL(arguments.argc, 2);
+        // Successful cases may also pass the JSON used to configure the example
+        BOOST_REQUIRE(arguments.argc == 2 || arguments.argc == 3);
         std::ifstream job_record_input{arguments.argv[1]};
         const auto job_record = nlohmann::json::parse(job_record_input);
 
@@ -102,6 +102,11 @@ BOOST_FIXTURE_TEST_CASE(hello, JobRecordChecker) {
     BOOST_TEST(tasks.at(1).at("task_name").get<std::string>() == "task_1");
 }
 
+// An empty submission must still produce a successful, empty job record
+BOOST_FIXTURE_TEST_CASE(hello_empty, JobRecordChecker) {
+    BOOST_TEST(tasks.empty());
+}
+
 // Registered in examples/01_heat/CMakeLists.txt using default example inputs
 BOOST_FIXTURE_TEST_CASE(heat, JobRecordChecker) {
     // The single statically linked BMI task must have a saved task record
@@ -126,6 +131,12 @@ BOOST_FIXTURE_TEST_CASE(dynamic_bmi, JobRecordChecker) {
 
     // Both models use alpha = 1, so dt = 0.25; all four runs need 40 steps to time 10
     check_updates(40);
+}
+
+// Both plugin languages and execution modes must accept a model already at its end time
+BOOST_FIXTURE_TEST_CASE(dynamic_bmi_zero_duration, JobRecordChecker) {
+    BOOST_REQUIRE_EQUAL(tasks.size(), 4);
+    check_updates(0);
 }
 
 // Registered in examples/07_job_controller/CMakeLists.txt using default example inputs
@@ -160,16 +171,12 @@ BOOST_FIXTURE_TEST_CASE(controller, JobRecordChecker) {
     }
 }
 
-// These tests perform their own setup without JobRecordChecker. failure reads the case
-// file and, when expected, the saved job record. controller_small_values reads only the
-// saved job record; tests/run_example.cmake uses the case file to configure the example.
-
 // Registered in the following examples:
 //   examples/00_hello/CMakeLists.txt (case file: tests/cases/hello_*.json)
 //   examples/03_dynamic_bmi/CMakeLists.txt (case file: tests/cases/dynamic_*.json)
 //   examples/07_job_controller/CMakeLists.txt
 //      (case file: tests/cases/controller_non_convergence.json)
-BOOST_AUTO_TEST_CASE(failure) {
+BOOST_AUTO_TEST_CASE(expected_failure) {
     const auto& arguments = boost::unit_test::framework::master_test_suite();
     // Arguments: miaow_example_tests executable path, job-record path, and case-file path
     BOOST_REQUIRE_EQUAL(arguments.argc, 3);
@@ -230,14 +237,7 @@ BOOST_AUTO_TEST_CASE(failure) {
 //
 // The example computes sqrt(2e-16); this checker verifies that small estimates and
 // residuals retain their precision in the saved job record.
-BOOST_AUTO_TEST_CASE(controller_small_values) {
-    const auto& arguments = boost::unit_test::framework::master_test_suite();
-    // Arguments: miaow_example_tests executable path, job-record path, and case-file path
-    BOOST_REQUIRE_EQUAL(arguments.argc, 3);
-    std::ifstream job_record_input{arguments.argv[1]};
-    const auto job_record = nlohmann::json::parse(job_record_input);
-    const auto& tasks = job_record.at("tasks");
-
+BOOST_FIXTURE_TEST_CASE(controller_small_values, JobRecordChecker) {
     // With radicand S = 2e-16 and x_0 = 1e-8, the expected sqrt(2) iterates are
     // scaled by 1e-8
     const std::array estimates{1.5e-8, (17.0 / 12.0) * 1e-8, (577.0 / 408.0) * 1e-8};

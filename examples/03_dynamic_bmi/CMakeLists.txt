@@ -33,11 +33,29 @@ if(BUILD_TESTING)
         REGRESSION dynamic_bmi
         EXTERNAL_MODEL
     )
-    foreach(scenario missing_cpp_plugin missing_fortran_plugin invalid_tolerance)
+    # Zero tolerance still reaches time 10 exactly after forty 0.25-second updates
+    miaow_add_example_test(
+        TEST_NAME miaow_example_03_dynamic_bmi_zero_tolerance
+        EXECUTABLE_TARGET miaow_dynamic_bmi
+        REGRESSION dynamic_bmi
+        CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/dynamic_zero_tolerance.json"
+        EXTERNAL_MODEL
+    )
+    miaow_add_example_test(
+        TEST_NAME miaow_example_03_dynamic_bmi_zero_duration
+        EXECUTABLE_TARGET miaow_dynamic_bmi
+        REGRESSION dynamic_bmi_zero_duration
+        CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/dynamic_zero_duration.json"
+        EXTERNAL_MODEL
+    )
+
+    # Failure cases cover loading, tolerance validation, and the final update boundary
+    foreach(scenario missing_cpp_plugin missing_fortran_plugin invalid_tolerance
+                     negative_tolerance tolerance_boundary overshoot)
         miaow_add_example_test(
             TEST_NAME miaow_example_03_dynamic_bmi_${scenario}
             EXECUTABLE_TARGET miaow_dynamic_bmi
-            REGRESSION failure
+            REGRESSION expected_failure
             CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/dynamic_${scenario}.json"
             EXTERNAL_MODEL
         )

@@ -71,7 +71,7 @@ endif()
 # Boost.Test consumes --run_test; arguments after -- are the job-record path and optional
 # case-file path
 # Fixture-based tests construct JobRecordChecker before their test-specific assertions
-# The examples use run_0/job_0; failure checks also handle an expected missing job record
+# The examples use run_0/job_0; expected_failure also handles an absent job record
 execute_process(
     COMMAND "${TEST_EXECUTABLE}" "--run_test=${WORKFLOW}"
         -- "${OUTPUT_ROOT}/run_0/job_0/job_record.json" ${check_arguments}

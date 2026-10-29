@@ -1,0 +1,4 @@
+{
+  "exit_code": 0,
+  "input": {"init_config": "../../tests/cases/dynamic_zero_duration.txt"}
+}

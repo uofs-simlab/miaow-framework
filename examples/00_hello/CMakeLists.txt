@@ -20,12 +20,22 @@ if(BUILD_TESTING)
         EXECUTABLE_TARGET miaow_hello
         REGRESSION hello
     )
+    # Successful empty submissions use the same shared job-record fixture
+    miaow_add_example_test(
+        TEST_NAME miaow_example_00_hello_empty
+        EXECUTABLE_TARGET miaow_hello
+        REGRESSION hello_empty
+        CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/hello_empty.json"
+    )
+
+    # Each JSON case defines the failure and any subsequent recovery work
     foreach(scenario missing_message unknown_unit duplicate_feature_id
-                     feature_id_slash feature_id_backslash task_timeout job_timeout)
+                     feature_id_slash feature_id_backslash task_timeout job_timeout
+                     invalid_max_workers invalid_task_timeout invalid_job_timeout)
         miaow_add_example_test(
             TEST_NAME miaow_example_00_hello_${scenario}
             EXECUTABLE_TARGET miaow_hello
-            REGRESSION failure
+            REGRESSION expected_failure
             CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/hello_${scenario}.json"
         )
     endforeach()

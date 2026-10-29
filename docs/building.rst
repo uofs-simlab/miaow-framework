@@ -1,5 +1,5 @@
-Building and installation
-=========================
+Building, testing, and installation
+===================================
 
 Prerequisites
 -------------
@@ -62,43 +62,74 @@ Each model-backed example accepts a ``MIAOW_<MODEL_NAME>_MODEL_ROOT`` override. 
 Regression tests
 ----------------
 
-CI runs regression tests through the four default examples, including inputs that exercise failure paths. To run the same suite locally:
+CI runs regression tests through the four default examples on every push and pull request. To run the same suite locally:
 
 .. code-block:: sh
 
-   cmake -S . -B build -DBUILD_EXAMPLES=ON \
-       -DMIAOW_EXAMPLES="00_hello;01_heat;03_dynamic_bmi;07_job_controller"
+   cmake -S . -B build -DBUILD_EXAMPLES=ON
    cmake --build build
    ctest --test-dir build -L regression --output-on-failure
 
-The heat regressions use the pinned CSDMS C++ and Fortran models. CMake locates or fetches their sources for examples 01 and 03; use ``MIAOW_HEAT_MODEL_ROOT``, ``MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT``, and ``MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT`` to supply local checkouts.
+The ``01_heat`` regression uses the pinned CSDMS C++ heat model. The ``03_dynamic_bmi`` regressions use both the C++ and Fortran heat models. CMake locates or fetches their sources; use ``MIAOW_HEAT_MODEL_ROOT``, ``MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT``, and ``MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT`` to supply local checkouts. The regressions execute the actual example programs with a separate output directory for each case under the build tree. The CMake runner checks the exact exit code, then selects a Boost.Test checker in ``tests/example_regression_checks.cpp`` to inspect saved job records. Successful-run checkers share ``JobRecordChecker``, which requires successful tasks, unique task IDs, assigned worker IDs, and dispatch offsets. The ``expected_failure`` checker exercises options that lead to expected errors, including successful work after a failed task. Errors that prevent a job record must produce the expected diagnostic and leave no record; a crash or an unrelated non-zero exit code does not satisfy these checks.
 
-The regressions execute the actual example programs with a separate output directory for each case under the build tree. The CMake runner checks the expected exit code, then selects a Boost.Test case in ``tests/example_regression_checks.cpp`` to inspect saved job records. Failure cases in ``tests/cases`` supply example inputs, expected task statuses and messages, and any runtime timeout overrides. Errors that prevent a job record must produce the expected diagnostic and leave no record. A crash or an unrelated non-zero exit does not satisfy these checks.
+Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code, and any runtime overrides. Failure cases also specify diagnostic fragments and expected task records. Heat initialization files beside the JSON cases select zero-duration and overshoot runs. Example-local ``CMakeLists.txt`` files register each CTest name and choose its checker; multiple cases can share one checker. The table below lists every default CTest case, with test names linking to their JSON case files if available. Tests without a JSON case use the default inputs defined in the example's source code; their links lead to the CMake test registration. Each dynamic BMI case runs four tasks: one in-process and one in a fresh subprocess for each of the C++ and Fortran plugins. Saved records below refer to ``job_record.json``.
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 70
+   :widths: 45 55
 
-   * - Test
-     - Behaviour protected
-   * - ``miaow_example_00_hello``
-     - Both messages, task identities, feature metadata, and dispatch metadata survive execution and persistence
-   * - ``miaow_example_01_heat``
-     - The static C++ BMI model completes its configured 120 updates
-   * - ``miaow_example_03_dynamic_bmi``
-     - Dynamic C++ and Fortran models each complete 40 updates, both in-process and in fresh subprocesses
-   * - ``miaow_example_07_job_controller``
-     - Controller feedback produces the three expected Heron iterates and reaches the configured residual tolerance
-   * - ``miaow_example_00_hello_*``
-     - Failed tasks and subsequent successful work; unknown simulation units; invalid task names; task and job timeouts, including queued-task dispatch metadata
-   * - ``miaow_example_03_dynamic_bmi_*``
-     - Missing C++ and Fortran plugins, plus cleanup after rejecting an excessive clock tolerance, both in-process and in subprocesses
-   * - ``miaow_example_07_job_controller_*``
-     - Controller non-convergence reaches the caller; small estimates and residuals retain their numerical precision in saved output
-
-The heat checks protect BMI execution and clock handling; they do not compare temperature fields. The example models do not return those fields through a whole-run task. Scientific model validation should compare selected native output values against reviewed references with explicit numerical tolerances. The suite does not separately test CAF serialization, raw BMI value access, non-second model clocks, finalization returning failure, or every controller lifecycle and scheduling configuration.
-
-The PSO example is a manual scheduling demonstration: its wall-clock budget, randomized delays, and asynchronous execution make its trajectory unsuitable as a fixed numerical reference. LibTrixi and FUSE smoke tests are labelled ``optional`` and are registered only when those examples and their dependencies are selected. SUMMA scientific regressions require a short dataset and reviewed native-output references; they are outside the routine suite.
+   * - CTest name
+     - Expected behaviour
+   * - `miaow_example_00_hello <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/00_hello/CMakeLists.txt>`_
+     - Saved tasks 0 and 1 succeed with messages ``hello`` and ``hello again``, names ``greeting`` and ``task_1``, and ``feature_id=greeting`` on task 0
+   * - `miaow_example_00_hello_empty <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_empty.json>`_
+     - Submitting a job with an empty task list succeeds and writes ``job_record.json`` with an empty ``tasks`` array
+   * - `miaow_example_00_hello_missing_message <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_missing_message.json>`_
+     - With one worker, a task without a message fails; the following task succeeds with message ``recovered``
+   * - `miaow_example_00_hello_unknown_unit <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_unknown_unit.json>`_
+     - With one worker, a task selecting unregistered unit 999 fails; the following task selects the registered unit and returns ``recovered``
+   * - `miaow_example_00_hello_duplicate_feature_id <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_duplicate_feature_id.json>`_
+     - Two tasks with ``feature_id=greeting`` produce a duplicate task name error; no job record is saved
+   * - `miaow_example_00_hello_feature_id_slash <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_feature_id_slash.json>`_
+     - A task with ``feature_id=greeting/1`` is rejected for containing a path separator; no job record is saved
+   * - `miaow_example_00_hello_feature_id_backslash <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_feature_id_backslash.json>`_
+     - A task whose feature ID contains a backslash is rejected for containing a path separator; no job record is saved
+   * - `miaow_example_00_hello_task_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_task_timeout.json>`_
+     - A task sleeping for 2.5 seconds exceeds its 1-second request timeout; its saved status is ``failed`` and its message contains ``request_timeout``
+   * - `miaow_example_00_hello_job_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_job_timeout.json>`_
+     - A 1-second job timeout marks the active 2.5-second task and a queued task failed; the queued record has no worker ID or dispatch offset and a zero run time
+   * - `miaow_example_00_hello_invalid_max_workers <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_max_workers.json>`_
+     - ``--max_workers 0`` reports ``requires a positive integer``; no job record is saved
+   * - `miaow_example_00_hello_invalid_task_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_task_timeout.json>`_
+     - ``--task_request_timeout 0`` reports ``requires a positive integer``; no job record is saved
+   * - `miaow_example_00_hello_invalid_job_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_job_timeout.json>`_
+     - ``--job_request_timeout 0`` reports ``requires a positive integer``; no job record is saved
+   * - `miaow_example_01_heat <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/01_heat/CMakeLists.txt>`_
+     - The statically linked C++ heat model completes 120 updates to its configured 20-second end time; its saved task succeeds
+   * - `miaow_example_03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/03_dynamic_bmi/CMakeLists.txt>`_
+     - All four heat tasks succeed after 40 updates to 10 seconds; each plugin uses distinct simulation unit IDs for in-process and subprocess execution
+   * - `miaow_example_03_dynamic_bmi_zero_tolerance <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_zero_tolerance.json>`_
+     - With zero clock tolerance, all four tasks succeed after forty 0.25-second updates reach 10 seconds exactly
+   * - `miaow_example_03_dynamic_bmi_zero_duration <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_zero_duration.json>`_
+     - With initial and end times both zero, all four tasks succeed with zero updates
+   * - `miaow_example_03_dynamic_bmi_missing_cpp_plugin <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_missing_cpp_plugin.json>`_
+     - A nonexistent C++ plugin path fails both C++ tasks; both Fortran tasks use a valid plugin path and succeed after 40 updates
+   * - `miaow_example_03_dynamic_bmi_missing_fortran_plugin <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_missing_fortran_plugin.json>`_
+     - A nonexistent Fortran plugin path fails both Fortran tasks; both C++ tasks use a valid plugin path and succeed after 40 updates
+   * - `miaow_example_03_dynamic_bmi_invalid_tolerance <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_invalid_tolerance.json>`_
+     - A 1-second clock tolerance exceeds half the 0.25-second timestep; all four tasks fail with zero updates
+   * - `miaow_example_03_dynamic_bmi_negative_tolerance <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_negative_tolerance.json>`_
+     - A clock tolerance of -1 second fails validation; all four tasks fail with zero updates
+   * - `miaow_example_03_dynamic_bmi_tolerance_boundary <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_tolerance_boundary.json>`_
+     - A clock tolerance of 0.125 seconds equals half the 0.25-second timestep; all four tasks fail with zero updates
+   * - `miaow_example_03_dynamic_bmi_overshoot <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_overshoot.json>`_
+     - With end time 0.1 seconds, all four tasks fail after one 0.25-second update with ``update passed the end time``
+   * - `miaow_example_07_job_controller <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/CMakeLists.txt>`_
+     - Starting from 1, three Heron estimates match 1.5, 17/12, and 577/408 within ``1e-14``; the final residual ``|x^2 - 2|`` is at most ``1e-5``
+   * - `miaow_example_07_job_controller_non_convergence <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_non_convergence.json>`_
+     - With the iteration limit set to 1, the controller reports non-convergence after its first iteration; the program exits with code 1 and saves no job record
+   * - `miaow_example_07_job_controller_small_values <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_small_values.json>`_
+     - For radicand ``2e-16``, saved estimates match ``1e-8 * [1.5, 17/12, 577/408]`` within ``1e-14`` relative error; the final residual is positive and at most ``1e-21``
 
 Library installation build
 --------------------------
@@ -114,7 +145,7 @@ The following example configures a build without tests and selects ``$HOME/.loca
    cmake --build build
    cmake --install build
 
-Building MIAOW from source requires C++20 and Fortran compilers. The completed installation can be consumed by a C++-only project without enabling Fortran or requiring a Fortran compiler.
+Building MIAOW from source requires C++20 and Fortran compilers. The completed installation can be used by a C++-only project without enabling Fortran or requiring a Fortran compiler.
 
 Using the installed package
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
