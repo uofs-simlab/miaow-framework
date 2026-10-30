@@ -10,7 +10,7 @@ Examples are opt-in workflows that demonstrate MIAOW features and model integrat
    cd ../01_heat
    ./miaow_heat
    cd ../03_dynamic_bmi
-   ./miaow_dynamic_bmi --output_root ./output --max_workers 2
+   ./miaow_dynamic_bmi --output_root ./output --max_concurrent_tasks 2
    cd ../07_job_controller
    ./miaow_job_controller
 
@@ -21,6 +21,9 @@ Default examples
 - `examples/01_heat <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/01_heat>`_: BMI integration using the `CSDMS heat example <https://github.com/csdms/bmi-example-cxx>`_
 - `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: dynamic C++ and Fortran BMI plugin integration, in-process and in fresh subprocesses, using the CSDMS heat examples
 - `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: computes a square root using Heron's method, where tasks output the next estimate and residual for the job controller to check for convergence and generate the next task
+- `examples/09_persistent_counter <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/09_persistent_counter>`_: two persistent counter executors, addressed by job-scoped handles, that retain independent state across successive string-named operations
+
+Run the counter example from the repository root with ``build/examples/09_persistent_counter/miaow_persistent_counter --max_concurrent_tasks 1``. Both units retain their executors while operations share one task slot. A controller appends the last two operations using the same unit handles. The job owns its controller before ``submit_job(std::move(job))`` transfers it to the runtime. Configure it with ``-DMIAOW_EXAMPLES=09_persistent_counter`` if it is not already selected in the build cache.
 
 The hello, dynamic BMI, and job-controller examples accept an optional ``--config <file.json>`` alongside the common runtime options. Omitted fields retain the default inputs. This allows successful and failing workflows to use the same programs.
 
@@ -63,7 +66,7 @@ On macOS, we can use `Homebrew <https://brew.sh/>`_ to install the required depe
 
    brew install netcdf-fortran uv
 
-``run_summa_mizuroute.py`` accepts ``--max-workers N`` to set the maximum number of concurrent SUMMA tasks that MIAOW will run (default: 4). To set up and run the workflow, execute the following commands from the repository root:
+``run_summa_mizuroute.py`` accepts ``--max-concurrent-tasks N`` to set the maximum number of concurrent SUMMA tasks that MIAOW will run (default: 4). To set up and run the workflow, execute the following commands from the repository root:
 
 .. code-block:: sh
 
@@ -127,7 +130,7 @@ Using six workers, the ensemble can be run from the example root directory with 
        -DMIAOW_FUSE_FETCH_DATA=ON
    cmake --build build --target miaow_fuse_bmi
    cd examples/06_fuse_bmi
-   ./miaow_fuse_bmi --max_workers 6 --task_request_timeout 900 --job_request_timeout 14400
+   ./miaow_fuse_bmi --max_concurrent_tasks 6 --task_request_timeout 900 --job_request_timeout 14400
 
 The following example-specific flags control the FUSE model and data paths:
 
@@ -184,7 +187,7 @@ Replace ``<id>`` with the run number in the path printed by the executable (``0`
 Example command-line options
 ----------------------------
 
-Examples accept the following runtime command-line options where applicable. The table shows ``RuntimeOptions`` defaults; individual examples may override them. For example, ``08_particle_swarm`` defaults to eight workers and an output root of ``output``.
+Examples accept the following runtime command-line options where applicable. The table shows ``RuntimeOptions`` defaults; individual examples may override them. For example, ``08_particle_swarm`` defaults to eight concurrent tasks and an output root of ``output``.
 
 .. list-table::
    :header-rows: 1
@@ -193,9 +196,9 @@ Examples accept the following runtime command-line options where applicable. The
    * - Option
      - Runtime default
      - Description
-   * - ``--max_workers``
+   * - ``--max_concurrent_tasks``
      - ``1``
-     - Maximum number of worker actors used for each job
+     - Maximum dispatched tasks awaiting completion per job; persistent-unit count is independent of this limit
    * - ``--task_request_timeout``
      - ``5``
      - Task-response timeout, in seconds; timed-out tasks fail. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.

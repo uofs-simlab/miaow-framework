@@ -1,6 +1,6 @@
 {
   "exit_code": 1,
-  "max_workers": 1,
+  "max_concurrent_tasks": 1,
   "input": {
     "tasks": [
       {"task_executor_id": 999, "message": "hello"},

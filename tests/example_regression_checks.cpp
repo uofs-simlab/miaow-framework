@@ -29,18 +29,18 @@ struct JobRecordChecker {
         // Successful cases may also pass the JSON used to configure the example
         BOOST_REQUIRE(arguments.argc == 2 || arguments.argc == 3);
         std::ifstream job_record_input{arguments.argv[1]};
-        const auto job_record = nlohmann::json::parse(job_record_input);
+        const nlohmann::json job_record = nlohmann::json::parse(job_record_input);
 
         // Compare task identities independently of parallel completion order
         for (const auto& task : job_record.at("tasks")) {
-            const auto id = task.at("task_id").get<std::size_t>();
+            const std::size_t id = task.at("task_id").get<std::size_t>();
             // Task IDs must be unique so no task record is lost when building the lookup
             BOOST_REQUIRE_MESSAGE(tasks.emplace(id, task).second, "duplicate task result");
 
             // This fixture checks successful runs, so every recorded task must succeed
             BOOST_TEST(task.at("result").at("status").get<std::string>() == "succeeded");
 
-            // CTest limits these jobs to two workers, with IDs starting at zero
+            // These examples use at most two simulation-unit actors, indexed from zero
             BOOST_TEST(task.at("worker_id").get<std::size_t>() < 2);
 
             // Executed tasks must include their dispatch offset from the job start
@@ -51,10 +51,10 @@ struct JobRecordChecker {
     void check_updates(std::size_t expected) const {
         for (std::size_t id = 0; id < tasks.size(); ++id) {
             BOOST_TEST_CONTEXT("task " << id) {
-                const auto message =
+                const std::string message =
                     tasks.at(id).at("result").at("message").get<std::string>();
                 constexpr std::string_view count_label = "updates: ";
-                const auto count = message.find(count_label);
+                const std::size_t count = message.find(count_label);
                 // The BMI task result message must report an update count for comparison
                 BOOST_REQUIRE_MESSAGE(count != std::string::npos, "missing update count");
 
@@ -149,8 +149,8 @@ BOOST_FIXTURE_TEST_CASE(controller, JobRecordChecker) {
     for (std::size_t id = 0; id < estimates.size(); ++id) {
         BOOST_TEST_CONTEXT("iteration " << id + 1) {
             const auto& output = tasks.at(id).at("result").at("output");
-            const auto estimate = output.at("estimate").at("value").get<double>();
-            const auto residual = output.at("residual").at("value").get<double>();
+            const double estimate = output.at("estimate").at("value").get<double>();
+            const double residual = output.at("residual").at("value").get<double>();
 
             // Check the expected iteration sequence, allowing floating-point rounding
             BOOST_TEST(std::abs(estimate - estimates[id]) < 1e-14);
@@ -181,7 +181,7 @@ BOOST_AUTO_TEST_CASE(expected_failure) {
     // Arguments: miaow_example_tests executable path, job-record path, and case-file path
     BOOST_REQUIRE_EQUAL(arguments.argc, 3);
     std::ifstream case_input{arguments.argv[2]};
-    const auto expected = nlohmann::json::parse(case_input);
+    const nlohmann::json expected = nlohmann::json::parse(case_input);
     const std::filesystem::path record_path{arguments.argv[1]};
     if (!expected.contains("tasks")) {
         // These cases fail before a final job record can be saved
@@ -190,7 +190,7 @@ BOOST_AUTO_TEST_CASE(expected_failure) {
     }
 
     std::ifstream job_record_input{record_path};
-    const auto job_record = nlohmann::json::parse(job_record_input);
+    const nlohmann::json job_record = nlohmann::json::parse(job_record_input);
     const auto& tasks = job_record.at("tasks");
     const auto& expected_tasks = expected.at("tasks");
 
@@ -210,7 +210,7 @@ BOOST_AUTO_TEST_CASE(expected_failure) {
                        reference.at("status").get<std::string>());
 
             // Match the expected message fragment, allowing extra diagnostic context
-            const auto message = result.at("message").get<std::string>();
+            const std::string message = result.at("message").get<std::string>();
             BOOST_TEST(message.find(reference.at("message").get<std::string>()) !=
                        std::string::npos);
             const bool dispatched = reference.value("dispatched", true);
@@ -223,7 +223,7 @@ BOOST_AUTO_TEST_CASE(expected_failure) {
             if (dispatched) {
                 // The assigned worker must belong to the case's configured worker pool
                 BOOST_TEST(task.at("worker_id").get<std::size_t>() <
-                           expected.value("max_workers", 2u));
+                           expected.value("max_concurrent_tasks", 2u));
             } else {
                 // Tasks that never reached a worker must have zero run time
                 BOOST_TEST(task.at("run_time").get<std::string>() == "0s");
@@ -272,6 +272,47 @@ BOOST_FIXTURE_TEST_CASE(controller_small_values, JobRecordChecker) {
                 // The final residual must satisfy the stopping tolerance
                 BOOST_TEST(residual <= 1e-21);
             }
+        }
+    }
+}
+
+// Two persistent counters share one registration and a single concurrent task slot
+BOOST_FIXTURE_TEST_CASE(persistent_counter, JobRecordChecker) {
+    const std::array expected_counts{2, 5, 1, 5, 9, 7};
+    const std::array<std::size_t, 6> expected_units{0, 0, 1, 1, 0, 1};
+    BOOST_REQUIRE_EQUAL(tasks.size(), expected_counts.size());
+
+    // CAF writes durations using a magnitude-dependent suffix
+    const auto seconds = [](const nlohmann::json& value) {
+        const std::string text = value.get<std::string>();
+        std::size_t suffix;
+        const double amount = std::stod(text, &suffix);
+        const std::map<std::string, double> scale{{"ns", 1e-9},  {"us", 1e-6},
+                                                  {"ms", 1e-3},  {"s", 1.0},
+                                                  {"min", 60.0}, {"h", 3600.0}};
+        return amount * scale.at(text.substr(suffix));
+    };
+
+    double previous_completion = 0.0;
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        BOOST_TEST_CONTEXT("operation " << id) {
+            const auto& task = tasks.at(id);
+            BOOST_TEST(task.at("operation").get<std::string>() == "increment");
+            BOOST_TEST(task.at("result").at("output").get<int>() == expected_counts[id]);
+            BOOST_TEST(task.at("worker_id").get<std::size_t>() == expected_units[id]);
+            BOOST_TEST(task.at("unit").at("index").get<std::size_t>() ==
+                       expected_units[id]);
+            BOOST_TEST(task.at("task_executor_id").get<std::size_t>() ==
+                       tasks.at(0).at("task_executor_id").get<std::size_t>());
+            const std::string feature = expected_units[id] == 0 ? "A" : "B";
+            BOOST_TEST(task.at("metadata").at("feature_id").get<std::string>() == feature);
+            BOOST_TEST(task.at("task_name").get<std::string>() ==
+                       feature + "_task_" + std::to_string(id));
+
+            // One task slot prevents overlap even though both unit actors remain alive
+            const double dispatch = seconds(task.at("dispatch_offset_from_job_start"));
+            BOOST_TEST(dispatch >= previous_completion - 1e-9);
+            previous_completion = dispatch + seconds(task.at("run_time"));
         }
     }
 }

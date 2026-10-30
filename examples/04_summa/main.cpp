@@ -44,17 +44,18 @@ int main(int argc, char* argv[]) {
         }
 
         // Parse the manifest JSON
-        const auto manifest = nlohmann::json::parse(input);
+        const nlohmann::json manifest = nlohmann::json::parse(input);
 
         // Create the task executor registry and add the worker subprocess
         miaow::TaskExecutorRegistry registry;
-        const auto worker = registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
-                                                    miaow::SubprocessLifetime::single_task);
+        const miaow::TaskExecutorId worker =
+            registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
+                                    miaow::SubprocessLifetime::single_task);
 
         // Create a task for each GRU in the manifest
         std::vector<miaow::Task> tasks;
         for (const auto& feature : manifest.at("grus")) {
-            const auto identifier = feature.at("id").get<std::string>();
+            const std::string identifier = feature.at("id").get<std::string>();
             miaow::DynamicBmiConfig config;
             config.backend_ = miaow::DynamicBmiBackend::fortran;
             config.plugin_path_ = MIAOW_SUMMA_PLUGIN_PATH;
@@ -67,7 +68,7 @@ int main(int argc, char* argv[]) {
 
         // Create the runtime, submit the tasks, and get the job record
         miaow::Runtime runtime(registry, options);
-        const auto record = runtime.submit_job(tasks).get();
+        const miaow::JobRecord record = runtime.submit_job(tasks).get();
 
         // Print the job summary and return the overall success status
         miaow::print_job_summary(record);

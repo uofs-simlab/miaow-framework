@@ -341,7 +341,7 @@ endif()
 if(PROJECT_IS_TOP_LEVEL)
     option(BUILD_EXAMPLES "Build example programs" OFF)
     set(MIAOW_EXAMPLES
-        "00_hello;01_heat;03_dynamic_bmi;07_job_controller"
+        "00_hello;01_heat;03_dynamic_bmi;07_job_controller;09_persistent_counter"
         CACHE STRING "Semicolon-separated list of examples to build"
     )
 

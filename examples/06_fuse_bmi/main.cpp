@@ -8,7 +8,7 @@
  *       -DMIAOW_EXAMPLES=06_fuse_bmi -DMIAOW_FUSE_FETCH_DATA=ON
  *   cmake --build build --target miaow_fuse_bmi
  *   cd examples/06_fuse_bmi
- *   ./miaow_fuse_bmi --max_workers 6 --task_request_timeout 900 \
+ *   ./miaow_fuse_bmi --max_concurrent_tasks 6 --task_request_timeout 900 \
  *       --job_request_timeout 14400
  *
  * CMake resolves the FUSE grid data, uses the tracked parameter sets, and

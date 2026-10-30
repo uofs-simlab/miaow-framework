@@ -148,7 +148,7 @@ int main(int argc, char* argv[]) {
 
     miaow::RuntimeOptions runtime_options;
     try {
-        const auto config = read_example_config(argc, argv, runtime_options);
+        const nlohmann::json config = read_example_config(argc, argv, runtime_options);
 
         miaow::TaskExecutorRegistry registry;
 

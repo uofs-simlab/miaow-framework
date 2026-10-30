@@ -62,7 +62,7 @@ Each model-backed example accepts a ``MIAOW_<MODEL_NAME>_MODEL_ROOT`` override. 
 Regression tests
 ----------------
 
-CI runs regression tests through the four default examples on every push and pull request. To run the same suite locally:
+CI runs regression tests through the five default examples on every push and pull request. To run the same suite locally:
 
 .. code-block:: sh
 
@@ -98,8 +98,8 @@ Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code
      - A task sleeping for 2.5 seconds exceeds its 1-second request timeout; its saved status is ``failed`` and its message contains ``request_timeout``
    * - `miaow_example_00_hello_job_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_job_timeout.json>`_
      - A 1-second job timeout marks the active 2.5-second task and a queued task failed; the queued record has no worker ID or dispatch offset and a zero run time
-   * - `miaow_example_00_hello_invalid_max_workers <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_max_workers.json>`_
-     - ``--max_workers 0`` reports ``requires a positive integer``; no job record is saved
+   * - `miaow_example_00_hello_invalid_max_concurrent_tasks <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_max_concurrent_tasks.json>`_
+     - ``--max_concurrent_tasks 0`` reports ``requires a positive integer``; no job record is saved
    * - `miaow_example_00_hello_invalid_task_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_task_timeout.json>`_
      - ``--task_request_timeout 0`` reports ``requires a positive integer``; no job record is saved
    * - `miaow_example_00_hello_invalid_job_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_job_timeout.json>`_
@@ -130,6 +130,8 @@ Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code
      - With the iteration limit set to 1, the controller reports non-convergence after its first iteration; the program exits with code 1 and saves no job record
    * - `miaow_example_07_job_controller_small_values <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_small_values.json>`_
      - For radicand ``2e-16``, saved estimates match ``1e-8 * [1.5, 17/12, 577/408]`` within ``1e-14`` relative error; the final residual is positive and at most ``1e-21``
+   * - `miaow_example_09_persistent_counter <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/09_persistent_counter/CMakeLists.txt>`_
+     - Two persistent counters share one executor registration and one task slot; repeated operations retain independent values and have non-overlapping dispatch intervals
 
 Library installation build
 --------------------------
@@ -208,7 +210,8 @@ The following top-level CMake options are available:
    * - ``-DMIAOW_EXAMPLES``
      - | ``00_hello;01_heat;``
        | ``03_dynamic_bmi;``
-       | ``07_job_controller``
+       | ``07_job_controller;``
+       | ``09_persistent_counter``
      - Semicolon-separated list of examples to build when ``BUILD_EXAMPLES`` is enabled
    * - ``-DMIAOW_BOOST_PROVIDER``
      - ``auto``

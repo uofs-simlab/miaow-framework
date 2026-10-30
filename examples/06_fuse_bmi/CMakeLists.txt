@@ -184,7 +184,7 @@ if(BUILD_TESTING AND fuse_grid_data_available)
     add_test(
         NAME miaow_example_06_fuse_bmi
         COMMAND $<TARGET_FILE:miaow_fuse_bmi_smoke>
-            --max_workers 1
+            --max_concurrent_tasks 1
             --task_request_timeout 900
             --job_request_timeout 1200
     )

@@ -102,6 +102,9 @@ static std::string task_name(const Task& task, TaskId task_id) {
             throw std::runtime_error(
                 "Task name error: feature_id must not contain path separators");
         }
+        if (task.unit_) {
+            return feature_id->second + "_task_" + std::to_string(task_id);
+        }
         return feature_id->second;
     }
     return "task_" + std::to_string(task_id);
@@ -218,58 +221,106 @@ Runtime::~Runtime() {
     }
 }
 
+Job::Job() = default;
+Job::~Job() = default;
+Job::Job(Job&&) = default;
+Job& Job::operator=(Job&&) = default;
+
+void Job::set_controller(std::unique_ptr<JobController> controller) {
+    job_controller_ = std::move(controller);
+}
+
+// Construct persistent units and retain their identities for later task routing
+SimulationUnitHandle Job::add_unit(std::string feature_id, TaskExecutorId executor_id) {
+    if (feature_id.empty()) {
+        throw std::invalid_argument("persistent unit feature_id must not be empty");
+    }
+    for (const UnitBinding& unit : unit_bindings_) {
+        if (unit.feature_id_ == feature_id) {
+            throw std::invalid_argument("duplicate persistent unit feature_id: " +
+                                        feature_id);
+        }
+    }
+    const SimulationUnitHandle handle{scope_id_, unit_bindings_.size()};
+    units_to_spawn_.emplace_back(executor_id);
+    unit_bindings_.push_back(UnitBinding{std::move(feature_id), executor_id});
+    return handle;
+}
+
+// Resolve persistent targets for both initial tasks and controller-generated operations
+void Job::bind_tasks_to_simulation_units(std::vector<Task>& tasks,
+                                         std::size_t first_task_index) const {
+    for (std::size_t index = first_task_index; index < tasks.size(); ++index) {
+        Task& task = tasks[index];
+        // If there are no persistent units and the task has no associated unit,
+        // skip binding
+        if (unit_bindings_.empty() && !task.unit_) {
+            continue;
+        }
+        // If the task has an associated unit, ensure it belongs to this job and is valid
+        if (!task.unit_ || task.unit_->scope_id_ != scope_id_ ||
+            task.unit_->index_ >= unit_bindings_.size()) {
+            throw std::invalid_argument("task target does not belong to this job");
+        }
+        const UnitBinding& unit = unit_bindings_[task.unit_->index_];
+        task.task_executor_id_ = unit.task_executor_id_;
+        task.metadata_["feature_id"] = unit.feature_id_;
+    }
+}
+
 // Submit one task through the multi-task path
 JobHandle Runtime::submit_job(const Task& task) const {
     return submit_job(std::vector<Task>{task});
 }
 
-// Submit fixed tasks with the default controller; it does not generate more tasks
+// Ordinary task submission configures the same Job state without persistent units
 JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
-    return submit_job(std::move(tasks), std::make_unique<JobController>());
+    Job job;
+    job.tasks_ = std::move(tasks);
+    job.initialize_controller_ = false;
+    return submit_job(std::move(job));
 }
 
-// Submit initial tasks and transfer controller ownership to the job actor
 JobHandle Runtime::submit_job(std::vector<Task> tasks,
                               std::unique_ptr<JobController> job_controller) const {
-    return submit_job_impl(std::move(tasks), std::move(job_controller), false);
+    Job job;
+    job.tasks_ = std::move(tasks);
+    job.initialize_controller_ = false;
+    job.set_controller(std::move(job_controller));
+    return submit_job(std::move(job));
 }
 
 JobHandle Runtime::submit_job(std::unique_ptr<JobController> job_controller) const {
-    return submit_job_impl({}, std::move(job_controller), true);
+    Job job;
+    job.set_controller(std::move(job_controller));
+    return submit_job(std::move(job));
 }
 
-JobHandle Runtime::submit_job_impl(std::vector<Task> tasks,
-                                   std::unique_ptr<JobController> job_controller,
-                                   bool initialize_controller) const {
-    if (!job_controller) {
+JobHandle Runtime::submit_job(Job job) const {
+    if (!job.job_controller_) {
         throw std::invalid_argument("Runtime requires a non-null JobController");
     }
 
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
-    // Assign names and output directories from index 0 because every submitted task is new
-    core::assign_task_runtime_fields(tasks, 0, runtime_options_, run_id_, job_id);
-
-    // The public interface transfers unique ownership of the controller to Runtime
-    // CAF may copy message payloads, so use shared ownership while the controller passes
-    // through local messages to orchestrator_actor and then job_actor
-    std::shared_ptr<JobController> shared_job_controller(std::move(job_controller));
+    // Bind initial tasks before assigning names and output directories
+    job.bind_tasks_to_simulation_units(job.tasks_, 0);
+    core::assign_task_runtime_fields(job.tasks_, 0, runtime_options_, run_id_, job_id);
 
     // Create a promise/future pair for this submitted job
     std::promise<JobRecord> promise;
 
-    JobHandle job = promise.get_future();
+    JobHandle handle = promise.get_future();
     {
         std::lock_guard<std::mutex> lock(pending_jobs_mutex_);
         // Register this in-progress job in the dictionary: job_id -> promise
         pending_jobs_.emplace(job_id, std::move(promise));
     }
 
-    // Runtime -> orchestrator_actor: submit one job
-    caf::anon_mail(caf::get_atom_v, job_id, std::move(tasks),
-                   std::move(shared_job_controller), initialize_controller)
-        .send(orchestrator_);
-    return job;
+    // CAF may copy local messages; the receiving actor adopts the prepared Job state
+    auto shared_job = std::make_shared<Job>(std::move(job));
+    caf::anon_mail(caf::get_atom_v, job_id, std::move(shared_job)).send(orchestrator_);
+    return handle;
 }
 
 } // namespace miaow

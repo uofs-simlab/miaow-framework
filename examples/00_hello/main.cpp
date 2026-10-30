@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
     // Read optional task inputs and the common runtime options
     miaow::RuntimeOptions runtime_options;
     try {
-        const auto config = read_example_config(argc, argv, runtime_options);
+        const nlohmann::json config = read_example_config(argc, argv, runtime_options);
 
         // Register the task executor and construct the runtime
         miaow::TaskExecutorRegistry registry;

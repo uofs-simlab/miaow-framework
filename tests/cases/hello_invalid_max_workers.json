@@ -1,6 +1,0 @@
-{
-  "exit_code": 1,
-  "max_workers": 0,
-  "error": "Error: --max_workers requires a positive integer",
-  "input": {}
-}

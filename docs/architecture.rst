@@ -11,7 +11,7 @@ MIAOW executes simulation workflows through an actor hierarchy inspired by `SUMM
    :align: center
    :width: 90%
 
-The five application actors use CAF-managed implementation classes in ``miaow::core``: ``Orchestrator``, ``Job``, ``SimulationUnit``, ``SubprocessRegistration``, and ``SubprocessWorker``. Each class contains its actor's state and methods, defines message handlers through ``make_behavior()``, and is spawned with ``caf::actor_from_state<Implementation>``.
+The five application actors use CAF-managed implementation classes: public ``miaow::Job`` and ``miaow::SimulationUnit``, and internal ``miaow::core::Orchestrator``, ``SubprocessRegistration``, and ``SubprocessWorker``. Each class contains its actor's state and methods, defines message handlers through ``make_behavior()``, and is spawned with ``caf::actor_from_state<Implementation>``.
 
 An actor provides identity, a mailbox, scheduling, and lifecycle management. Its contained implementation object holds application data and handles operations. Names such as ``simulation_unit_actor`` identify actor roles or handles; ``SimulationUnit`` names the corresponding implementation class. The public ``miaow::TaskExecutor`` interface supplies task execution, and ``TaskExecutorRegistry`` stores the registrations selected by ``TaskExecutorId``. ``SimulationUnit`` owns a separate ``SubprocessState`` member for asynchronous child-process lifecycle management. Its callbacks use non-owning captures and execute through the owning actor.
 
@@ -19,7 +19,7 @@ A typical workflow includes the following steps:
 
 1. Caller submits explicit tasks through ``Runtime::submit_job(task)`` or ``Runtime::submit_job(tasks)``, optionally supplying a controller through ``Runtime::submit_job(tasks, std::move(job_controller))``. Alternatively, ``Runtime::submit_job(std::move(job_controller))`` lets the controller generate its own initial tasks. Runtime takes ownership of the ``std::unique_ptr<JobController>``.
 2. Runtime assigns a ``job_id`` and sends the tasks and job controller to ``orchestrator_actor``.
-3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector. For controller-only submission, it calls ``generate_initial_tasks()`` once at job start. It creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_workers_``.
+3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector. For controller-only submission, it calls ``generate_initial_tasks()`` once at job start. It creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_concurrent_tasks_``.
 4. The ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
 5. Each worker resolves ``Task::task_executor_id_``, constructs a new ``TaskExecutor``, executes the task, and returns a ``TaskResult`` to the job actor.
 6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``. When the controller's task generation policy permits, it passes a read-only span of new completions to its controller, appends tasks returned by the controller's ``generate_new_tasks()`` method to its task vector, and adds workers if needed. It then returns to step 4. This continues until no queued tasks remain to dispatch and no dispatched tasks are awaiting results, and the controller returns no new tasks.
@@ -42,14 +42,40 @@ The following figure illustrates the task scheduling process managed by the ``jo
    :align: center
    :width: 67%
 
-The job actor adds workers as needed, up to ``RuntimeOptions::max_workers_``, and retains them until the job completes or shuts down. Idle workers do not occupy CAF scheduler threads.
+Ordinary task-vector submissions add workers as needed, up to ``RuntimeOptions::max_concurrent_tasks_``, and retain them until the job completes or shuts down. These workers construct a fresh executor for each task. Idle actors do not occupy CAF scheduler threads.
+
+Persistent simulation units
+---------------------------
+
+``Job`` owns persistent simulation units, initial tasks, and its controller before submission. ``add_unit(feature_id, executor_id)`` constructs a prepared ``SimulationUnit`` and returns its job-scoped ``SimulationUnitHandle``. The feature ID labels the scientific unit; the executor ID selects its factory. No actor is created until the job is submitted.
+
+.. code-block:: cpp
+
+   miaow::Job job;
+   const miaow::SimulationUnitHandle a = job.add_unit("A", counter_executor);
+   const miaow::SimulationUnitHandle b = job.add_unit("B", counter_executor);
+   job.add_task(a, "increment", 2);
+   job.add_task(b, "increment", 1);
+   job.add_task(a, "increment", 3);
+   job.set_controller(std::make_unique<CounterController>(a, b));
+   miaow::JobHandle result = runtime.submit_job(std::move(job));
+
+Each trailing argument to ``add_task`` becomes one ``caf::config_value`` in ``Task::args_``. The string operation is stored separately in ``Task::operation_``. The executor interprets the operation and its arguments; scheduling remains model-independent. The operation and target handle are also retained in the completed ``TaskRecord``.
+
+Submission consumes the move-only ``Job``. CAF adopts that object as the ``job_actor`` state, attaches runtime context, and moves each prepared ``SimulationUnit`` into its own actor state. The executor is constructed once at unit-actor startup and destroyed when that actor exits. The subprocess helper is created when its owning actor is available. Job routing retains only feature-to-executor bindings after the prepared units have been transferred.
+
+Handles survive job moves and can be copied into a controller; a task targeting another job is rejected. Controllers construct subsequent operations with ``Task{unit, "increment", 2}`` and return them through their existing hooks. If no initial tasks were added, the configured controller's ``generate_initial_tasks()`` supplies them. Without a custom controller, the default controller produces no additional work. The task-vector and controller-only submission overloads configure a ``Job`` internally and use the same submission path; an explicitly supplied empty task vector continues to skip initial task generation.
+
+Persistent-unit count is independent of ``max_concurrent_tasks_``. This limit bounds dispatched tasks awaiting completion across the job, with at most one operation per unit. Operations for each unit run in submission order. Pending operations for a busy unit do not prevent another unit from using an available task slot. A failed task result does not recreate or reset its executor; termination of a persistent actor fails the job and requests shutdown of the other units.
+
+Repeated feature labels identify successive operations on the same persistent unit. Their artifact stems include the task ID, such as ``A_task_0`` and ``A_task_2``, while ordinary tasks retain their existing naming rules. Persistent-unit ownership does not change the BMI executors: they still create and run a fresh BMI model per task.
 
 Task timing
 -----------
 
 ``TaskRecord::dispatch_offset_from_job_start_`` stores the elapsed seconds from job start to task dispatch, measured using the same monotonic clock as ``run_time_``. Dispatch precedes the worker beginning execution.
 
-``TaskRecord::worker_id_`` identifies the zero-based worker actor within the job, independently of its scheduler thread or subprocess process ID. A worker can execute multiple tasks. Unassigned worker IDs are ``std::nullopt`` (``null`` in JSON).
+``TaskRecord::worker_id_`` identifies the zero-based simulation-unit actor within the job, independently of its scheduler thread or subprocess process ID. For persistent jobs it is the declaration index and may exceed ``max_concurrent_tasks_ - 1``. A worker can execute multiple tasks. Unassigned worker IDs are ``std::nullopt`` (``null`` in JSON).
 
 ``TaskRecord::run_time_`` measures the interval from dispatch until the job actor records the result or timeout. It includes scheduling and communication overhead and any subprocess startup or cleanup. Adding it to the dispatch offset gives the time relative to job start when the terminal status was recorded.
 

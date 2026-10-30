@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <deque>
 #include <functional>
 #include <future>
 #include <memory>
@@ -22,12 +23,12 @@
 
 #include "miaow.hpp"
 
-// Job controllers remain in the parent process and pass only through local messages
-CAF_ALLOW_UNSAFE_MESSAGE_TYPE(std::shared_ptr<miaow::JobController>)
+// Prepared jobs stay in the parent process and pass only through local messages
+CAF_ALLOW_UNSAFE_MESSAGE_TYPE(std::shared_ptr<miaow::Job>)
 
 // Register the internal types and atoms carried by MIAOW actor messages
 CAF_BEGIN_TYPE_ID_BLOCK(miaow_internal_module, caf::id_block::miaow_module::end)
-CAF_ADD_TYPE_ID(miaow_internal_module, (std::shared_ptr<miaow::JobController>))
+CAF_ADD_TYPE_ID(miaow_internal_module, (std::shared_ptr<miaow::Job>))
 // Job deadline for the receiving job actor
 CAF_ADD_ATOM(miaow_internal_module, miaow::core, job_timeout_atom, "jobtout")
 // Shutdown request for an orchestrator, job, or simulation unit actor
@@ -64,7 +65,8 @@ void write_job_record(const std::filesystem::path& path, const JobRecord& record
 
 // Assign runtime-owned fields to tasks at or after first_task_index
 // Derive each task name from feature_id metadata or its vector index; reject path
-// separators and duplicate names across both earlier and assigned tasks
+// separators and duplicate names across both earlier and assigned tasks; persistent
+// operation names include the task ID so one feature may have successive operations
 // Set task_output_dir_ to the job results directory, creating that directory when output is
 // enabled; clear task_output_dir_ for assigned tasks when output is disabled
 // Runtime passes zero for initial tasks; job actors pass the first generated task index
@@ -267,22 +269,6 @@ class Orchestrator {
     std::unordered_map<JobId, caf::actor> active_job_actors_;
 };
 
-// Leaf worker actor with a separate asynchronous subprocess lifecycle helper
-class SimulationUnit {
-  public:
-    SimulationUnit(caf::event_based_actor* self,
-                   std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
-                   caf::actor subprocess_registration_actor,
-                   std::uint16_t subprocess_registration_port,
-                   std::chrono::milliseconds task_request_timeout);
-
-    caf::behavior make_behavior();
-
-  private:
-    std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
-    SubprocessState subprocess_state_;
-};
-
 // Child-process actor hosting the public Task-to-TaskResult handler
 class SubprocessWorker {
   public:
@@ -292,101 +278,6 @@ class SubprocessWorker {
 
   private:
     std::function<TaskResult(const Task&)> task_handler_;
-};
-
-// Per-job supervisor: owns scheduling state and calls the job controller serially
-class Job {
-  public:
-    Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
-        std::vector<Task> tasks, std::shared_ptr<JobController> job_controller,
-        bool initialize_controller, RuntimeOptions runtime_options,
-        std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
-        caf::actor subprocess_registration_actor,
-        std::uint16_t subprocess_registration_port);
-
-    caf::behavior make_behavior();
-
-  private:
-    void stop_workers();
-    void spawn_workers_for_tasks();
-    void append_controller_tasks(std::vector<Task> tasks);
-    void complete_job();
-    void complete_job_error_if_tasks_finished();
-    void begin_job_error_shutdown(std::string error_message);
-    void complete_job_if_all_tasks_finished();
-    void complete_task(std::size_t worker_id, std::size_t task_id, TaskResult task_result);
-    void dispatch_tasks();
-
-    caf::event_based_actor* self_;
-
-    // Runtime identifier copied into the final job record
-    std::uint64_t run_id_{0};
-
-    // Job identifier copied into the final job record
-    JobId job_id_{0};
-
-    // Runtime options for this job, copied from the runtime config
-    RuntimeOptions runtime_options_;
-
-    // Controller received through local CAF messages and retained for this job
-    // The task generation policy determines when the job actor calls generate_new_tasks()
-    // Returned tasks are appended to tasks_; the controller never leaves the parent process
-    std::shared_ptr<JobController> job_controller_;
-
-    // Explicit initial tasks skip the controller's initial-generation hook
-    bool initialize_controller_;
-
-    // Registry retained so workers can be created when the controller returns tasks to be
-    // executed
-    std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
-
-    // Runtime-local registrar shared by every subprocess-capable worker in this job
-    caf::actor subprocess_registration_actor_;
-
-    // Loopback port used by child actor systems to reach the registration actor
-    std::uint16_t subprocess_registration_port_{0};
-
-    // Initial and controller-generated task payloads owned by this job actor
-    // Task IDs are the index of the task in this vector
-    std::vector<Task> tasks_;
-
-    // Successful and failed task records stored in completion order
-    // Controllers borrow a view of new records during each callback
-    // The records are sorted by task ID when the final JobRecord is constructed
-    std::vector<TaskRecord> completed_task_records_;
-
-    // Boundary between records already delivered to the controller and new completions
-    std::size_t reported_task_count_{0};
-
-    // Array of worker actors currently running, indexed by worker ID
-    std::vector<caf::actor> workers_;
-
-    // Queue of worker IDs that are available to run a task
-    std::queue<std::size_t> available_workers_;
-
-    // Task ID of the next task to dispatch into an available worker slot
-    std::size_t next_task_to_dispatch_{0};
-
-    // Number of dispatched task requests awaiting results
-    std::size_t active_task_count_{0};
-
-    // Job-level error reported after all active task requests finish
-    std::optional<std::string> pending_error_message_;
-
-    // Response promise used to deliver the final JobRecord or a job-level error
-    std::optional<caf::typed_response_promise<JobRecord>> response_promise_;
-
-    // Delayed message that tells the job actor when its configured timeout expires
-    caf::disposable job_timeout_;
-
-    // Wall-clock start time for the full job
-    std::chrono::steady_clock::time_point job_start_time_;
-
-    // Start times for each task, indexed by task ID
-    std::vector<std::chrono::steady_clock::time_point> task_start_times_;
-
-    // Worker indices assigned at dispatch, indexed by task ID; queued tasks have no worker
-    std::vector<std::optional<std::size_t>> task_worker_ids_;
 };
 
 } // namespace miaow::core

@@ -69,10 +69,10 @@ void parse_runtime_cli_options(int argc, char* argv[], RuntimeOptions& runtime_o
     while (index < argc) {
         const std::string_view option_name = argv[index];
 
-        if (option_name == "--max_workers") {
+        if (option_name == "--max_concurrent_tasks") {
             const std::string_view option_value =
                 read_option_value(argc, argv, index, option_name);
-            runtime_options.max_workers_ =
+            runtime_options.max_concurrent_tasks_ =
                 parse_positive_integer_option(option_value, option_name);
             continue;
         }

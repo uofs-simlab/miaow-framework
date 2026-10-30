@@ -21,7 +21,7 @@ int main(int argc, char* argv[]) {
     // Read optional plugin inputs and the common runtime options
     miaow::RuntimeOptions runtime_options;
     try {
-        const auto config = read_example_config(argc, argv, runtime_options);
+        const nlohmann::json config = read_example_config(argc, argv, runtime_options);
 
         // Print the dynamic libraries that will be loaded by BMI tasks
         const std::string cpp_heat_plugin_path =
@@ -61,7 +61,8 @@ int main(int argc, char* argv[]) {
 
         // Run each plugin in-process and in a fresh subprocess
         std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(dynamic_bmi, configs);
-        const auto subprocess_tasks = miaow::make_bmi_tasks(subprocess_bmi, configs);
+        const std::vector<miaow::Task> subprocess_tasks =
+            miaow::make_bmi_tasks(subprocess_bmi, configs);
         tasks.insert(tasks.end(), subprocess_tasks.begin(), subprocess_tasks.end());
 
         // Wait for all four BMI lifecycles

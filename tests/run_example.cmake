@@ -8,7 +8,7 @@ file(REMOVE_RECURSE "${OUTPUT_ROOT}")
 
 # Default to a successful run using built-in example inputs and bounded request times
 set(expected_exit_code 0)
-set(max_workers 2)
+set(max_concurrent_tasks 2)
 set(task_request_timeout 10)
 set(job_request_timeout 20)
 set(example_arguments)
@@ -26,7 +26,7 @@ if(CASE_FILE)
     list(APPEND check_arguments "${CASE_FILE}")
 
     # Apply case overrides; request timeouts are measured in seconds
-    foreach(option max_workers task_request_timeout job_request_timeout)
+    foreach(option max_concurrent_tasks task_request_timeout job_request_timeout)
         string(JSON value ERROR_VARIABLE missing GET "${case}" "${option}")
         if(NOT missing)
             set(${option} "${value}")
@@ -39,7 +39,7 @@ endif()
 execute_process(
     COMMAND "${EXECUTABLE}"
         ${example_arguments}
-        --max_workers "${max_workers}"
+        --max_concurrent_tasks "${max_concurrent_tasks}"
         --task_request_timeout "${task_request_timeout}"
         --job_request_timeout "${job_request_timeout}"
         --output_root "${OUTPUT_ROOT}"

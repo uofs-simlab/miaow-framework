@@ -22,6 +22,15 @@ Identifiers and task status
 Task and job data
 ~~~~~~~~~~~~~~~~~
 
+.. doxygenclass:: miaow::SimulationUnitHandle
+   :members:
+
+.. doxygenclass:: miaow::Job
+   :members:
+
+.. doxygenclass:: miaow::SimulationUnit
+   :members:
+
 .. doxygenstruct:: miaow::Task
    :members:
 
