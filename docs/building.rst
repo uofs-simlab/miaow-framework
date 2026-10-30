@@ -86,8 +86,8 @@ Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code
      - Submitting a job with an empty task list succeeds and writes ``job_record.json`` with an empty ``tasks`` array
    * - `miaow_example_00_hello_missing_message <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_missing_message.json>`_
      - With one worker, a task without a message fails; the following task succeeds with message ``recovered``
-   * - `miaow_example_00_hello_unknown_unit <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_unknown_unit.json>`_
-     - With one worker, a task selecting unregistered unit 999 fails; the following task selects the registered unit and returns ``recovered``
+   * - `miaow_example_00_hello_unknown_executor <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_unknown_executor.json>`_
+     - With one worker, a task selecting unregistered task executor 999 fails; the following task selects the registered executor and returns ``recovered``
    * - `miaow_example_00_hello_duplicate_feature_id <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_duplicate_feature_id.json>`_
      - Two tasks with ``feature_id=greeting`` produce a duplicate task name error; no job record is saved
    * - `miaow_example_00_hello_feature_id_slash <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_feature_id_slash.json>`_
@@ -107,7 +107,7 @@ Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code
    * - `miaow_example_01_heat <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/01_heat/CMakeLists.txt>`_
      - The statically linked C++ heat model completes 120 updates to its configured 20-second end time; its saved task succeeds
    * - `miaow_example_03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/03_dynamic_bmi/CMakeLists.txt>`_
-     - All four heat tasks succeed after 40 updates to 10 seconds; each plugin uses distinct simulation unit IDs for in-process and subprocess execution
+     - All four heat tasks succeed after 40 updates to 10 seconds; each plugin uses distinct task executor IDs for in-process and subprocess execution
    * - `miaow_example_03_dynamic_bmi_zero_tolerance <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_zero_tolerance.json>`_
      - With zero clock tolerance, all four tasks succeed after forty 0.25-second updates reach 10 seconds exactly
    * - `miaow_example_03_dynamic_bmi_zero_duration <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_zero_duration.json>`_
@@ -183,7 +183,7 @@ The MIAOW package locates the required CAF components when ``find_package(miaow)
 
 .. note::
 
-   Configure ``CMAKE_INSTALL_PREFIX`` before building so ``bmi_subprocess_executable_path()`` can locate the installed worker. Changing only ``cmake --install build --prefix <path>`` does not update this lookup. If you relocate the installation, reconfigure and rebuild MIAOW or pass the installed worker path directly to ``SimulationUnitRegistry::add_subprocess()``.
+   Configure ``CMAKE_INSTALL_PREFIX`` before building so ``bmi_subprocess_executable_path()`` can locate the installed worker. Changing only ``cmake --install build --prefix <path>`` does not update this lookup. If you relocate the installation, reconfigure and rebuild MIAOW or pass the installed worker path directly to ``TaskExecutorRegistry::add_subprocess()``.
 
 .. _build-options:
 

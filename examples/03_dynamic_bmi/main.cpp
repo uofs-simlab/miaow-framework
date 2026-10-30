@@ -39,10 +39,10 @@ int main(int argc, char* argv[]) {
                          miaow::default_bmi_time_step_tolerance_seconds);
 
         // Register in-process and subprocess execution
-        miaow::SimulationUnitRegistry registry;
-        const miaow::SimulationUnitId dynamic_bmi =
-            registry.add<miaow::DynamicBmiSimulationUnit>();
-        const miaow::SimulationUnitId subprocess_bmi =
+        miaow::TaskExecutorRegistry registry;
+        const miaow::TaskExecutorId dynamic_bmi =
+            registry.add<miaow::DynamicBmiTaskExecutor>();
+        const miaow::TaskExecutorId subprocess_bmi =
             registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
                                     miaow::SubprocessLifetime::single_task);
         miaow::Runtime runtime(registry, runtime_options);

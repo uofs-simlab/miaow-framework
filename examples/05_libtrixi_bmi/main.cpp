@@ -40,8 +40,8 @@ int main(int argc, char* argv[]) {
     std::cout << "libtrixi BMI plugin: " << plugin_path << "\n";
 
     // Isolate the Julia runtime in a fresh process
-    miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId bmi_subprocess =
+    miaow::TaskExecutorRegistry registry;
+    const miaow::TaskExecutorId bmi_subprocess =
         registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
                                 miaow::SubprocessLifetime::single_task);
     miaow::Runtime runtime(registry, runtime_options);

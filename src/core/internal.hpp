@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -16,6 +17,7 @@
 #include <sys/types.h>
 
 #include <caf/all.hpp>
+#include <caf/actor_from_state.hpp>
 #include <caf/allowed_unsafe_message_type.hpp>
 
 #include "miaow.hpp"
@@ -104,7 +106,7 @@ enum class SubprocessPhase {
 };
 
 // Process, child actor, and pending request state for one local simulation_unit_actor
-class SubprocessState : public std::enable_shared_from_this<SubprocessState> {
+class SubprocessState {
   public:
     // Store fixed worker configuration once for every asynchronous transition
     SubprocessState(caf::event_based_actor* owner, caf::actor subprocess_registration_actor,
@@ -229,48 +231,94 @@ class SubprocessState : public std::enable_shared_from_this<SubprocessState> {
     bool shutdown_requested_{false};
 };
 
-// Construct registered units and query timeout ownership without exposing registration data
-class SimulationUnitRegistryAccess {
+// Allocate launch IDs and forward each registered child only to its local worker actor
+class SubprocessRegistration {
   public:
-    static bool uses_subprocess(const SimulationUnitRegistry& registry,
-                                SimulationUnitId simulation_unit_id);
+    caf::behavior make_behavior();
 
-    static std::unique_ptr<SimulationUnit> construct(const SimulationUnitRegistry& registry,
-                                                     SimulationUnitId simulation_unit_id,
-                                                     SubprocessState& subprocess_state);
+  private:
+    SubprocessLaunchId next_launch_id_{0};
+    std::unordered_map<SubprocessLaunchId, caf::actor> launch_owners_;
 };
 
-// Allocate launch IDs and forward each registered child only to its local worker actor
-caf::behavior subprocess_registration_actor(caf::event_based_actor* self);
+// Root actor owned by Runtime: receives jobs and resolves each pending JobHandle
+class Orchestrator {
+  public:
+    Orchestrator(caf::event_based_actor* self, RuntimeOptions runtime_options,
+                 std::uint64_t run_id,
+                 std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
+                 caf::actor subprocess_registration_actor,
+                 std::uint16_t subprocess_registration_port, std::mutex* pending_jobs_mutex,
+                 PendingJobs* pending_jobs);
 
-// Root actor owned by Runtime: receives jobs and resolves each pending JobHandle with
-// either the completed JobRecord or an exception reported by its job actor
-caf::behavior orchestrator_actor(
-    caf::event_based_actor* self, RuntimeOptions runtime_options, std::uint64_t run_id,
-    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
-    caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
-    std::mutex* pending_jobs_mutex, PendingJobs* pending_jobs);
+    caf::behavior make_behavior();
 
-// Per-job supervisor: owns a JobState, spawns up to max_workers simulation_unit
-// worker actors, dispatches tasks to available workers, and fulfils the job's
-// response promise with a JobRecord after task completion or an error after job failure
-caf::behavior
-job_actor(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
-          std::vector<Task> tasks, std::shared_ptr<JobController> job_controller,
-          bool initialize_controller, RuntimeOptions runtime_options,
-          std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
-          caf::actor subprocess_registration_actor,
-          std::uint16_t subprocess_registration_port);
+  private:
+    caf::event_based_actor* self_;
+    RuntimeOptions runtime_options_;
+    std::uint64_t run_id_;
+    std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
+    caf::actor subprocess_registration_actor_;
+    std::uint16_t subprocess_registration_port_;
 
-// Leaf worker actor: runs in-process tasks or owns one asynchronous POSIX child at a time
-caf::behavior simulation_unit_actor(
-    caf::event_based_actor* self,
-    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry,
-    caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
-    std::chrono::milliseconds task_request_timeout);
+    // Runtime owns the promises and mutex until the actor system has shut down
+    std::mutex* pending_jobs_mutex_;
+    PendingJobs* pending_jobs_;
+    std::unordered_map<JobId, caf::actor> active_job_actors_;
+};
 
-// Mutable scheduling state for one job; only its job actor reads or writes it
-struct JobState {
+// Leaf worker actor with a separate asynchronous subprocess lifecycle helper
+class SimulationUnit {
+  public:
+    SimulationUnit(caf::event_based_actor* self,
+                   std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
+                   caf::actor subprocess_registration_actor,
+                   std::uint16_t subprocess_registration_port,
+                   std::chrono::milliseconds task_request_timeout);
+
+    caf::behavior make_behavior();
+
+  private:
+    std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
+    SubprocessState subprocess_state_;
+};
+
+// Child-process actor hosting the public Task-to-TaskResult handler
+class SubprocessWorker {
+  public:
+    explicit SubprocessWorker(std::function<TaskResult(const Task&)> task_handler);
+
+    caf::behavior make_behavior();
+
+  private:
+    std::function<TaskResult(const Task&)> task_handler_;
+};
+
+// Per-job supervisor: owns scheduling state and calls the job controller serially
+class Job {
+  public:
+    Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
+        std::vector<Task> tasks, std::shared_ptr<JobController> job_controller,
+        bool initialize_controller, RuntimeOptions runtime_options,
+        std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
+        caf::actor subprocess_registration_actor,
+        std::uint16_t subprocess_registration_port);
+
+    caf::behavior make_behavior();
+
+  private:
+    void stop_workers();
+    void spawn_workers_for_tasks();
+    void append_controller_tasks(std::vector<Task> tasks);
+    void complete_job();
+    void complete_job_error_if_tasks_finished();
+    void begin_job_error_shutdown(std::string error_message);
+    void complete_job_if_all_tasks_finished();
+    void complete_task(std::size_t worker_id, std::size_t task_id, TaskResult task_result);
+    void dispatch_tasks();
+
+    caf::event_based_actor* self_;
+
     // Runtime identifier copied into the final job record
     std::uint64_t run_id_{0};
 
@@ -285,9 +333,12 @@ struct JobState {
     // Returned tasks are appended to tasks_; the controller never leaves the parent process
     std::shared_ptr<JobController> job_controller_;
 
+    // Explicit initial tasks skip the controller's initial-generation hook
+    bool initialize_controller_;
+
     // Registry retained so workers can be created when the controller returns tasks to be
     // executed
-    std::shared_ptr<const SimulationUnitRegistry> simulation_unit_registry_;
+    std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
 
     // Runtime-local registrar shared by every subprocess-capable worker in this job
     caf::actor subprocess_registration_actor_;

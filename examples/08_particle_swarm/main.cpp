@@ -37,7 +37,7 @@
 namespace {
 
 // Rastrigin simulation with artificial evaluation costs
-class RastriginEvaluation final : public miaow::SimulationUnit {
+class RastriginEvaluation final : public miaow::TaskExecutor {
   public:
     // Delay limits are inclusive milliseconds
     explicit RastriginEvaluation(int minimum_delay_ms = 10, int maximum_delay_ms = 200)
@@ -101,7 +101,7 @@ struct Particle {
 class ParticleSwarmController final : public miaow::JobController {
   public:
     ParticleSwarmController(
-        miaow::SimulationUnitId objective, miaow::TaskGenerationPolicy policy,
+        miaow::TaskExecutorId objective, miaow::TaskGenerationPolicy policy,
         std::pair<double, double> bounds = {-5.12, 5.12}, std::size_t swarm_size = 32,
         std::chrono::duration<double> time_limit = std::chrono::seconds{30},
         std::size_t evaluation_budget = 100000, double cognitive_weight = 2.05,
@@ -310,7 +310,7 @@ class ParticleSwarmController final : public miaow::JobController {
     }
 
     // Registry ID used by every objective-evaluation task
-    miaow::SimulationUnitId objective_;
+    miaow::TaskExecutorId objective_;
 
     // Per-controller settings and their derived Clerc-Kennedy constriction
     std::pair<double, double> bounds_;
@@ -348,10 +348,10 @@ int main(int argc, char* argv[]) {
         miaow::parse_runtime_cli_options(argc, argv, options);
 
         // Register the Rastrigin evaluator with its default artificial evaluation costs
-        miaow::SimulationUnitRegistry registry;
-        const miaow::SimulationUnitId objective = registry.add<RastriginEvaluation>();
+        miaow::TaskExecutorRegistry registry;
+        const miaow::TaskExecutorId objective = registry.add<RastriginEvaluation>();
 
-        // Create the runtime with the registered simulation units and the parsed options
+        // Create the runtime with the registered task executors and the parsed options
         miaow::Runtime runtime{registry, options};
 
         // Sequential jobs share a runtime but restart the same initial swarm and seeds.

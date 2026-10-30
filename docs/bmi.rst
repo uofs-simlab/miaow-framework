@@ -22,25 +22,25 @@ The setup pattern depends on whether the BMI model implementation comes from a s
 BMI task configuration
 ~~~~~~~~~~~~~~~~~~~~~~
 
-The ``SimulationUnitId`` passed to ``make_bmi_task(...)`` or ``make_bmi_tasks(...)`` selects the ``SimulationUnit`` subclass that executes the BMI task. An ID returned by ``SimulationUnitRegistry::add<StaticBmiSimulationUnit<BmiModelType>>()`` selects static execution in the parent process, while an ID returned by ``SimulationUnitRegistry::add<DynamicBmiSimulationUnit>()`` selects dynamic plugin execution in the parent process. An ID returned by ``SimulationUnitRegistry::add_subprocess(bmi_subprocess_executable_path(), lifetime)`` selects dynamic plugin execution in a child subprocess, which is useful for non-thread-safe models. We describe the different options below.
+The ``TaskExecutorId`` passed to ``make_bmi_task(...)`` or ``make_bmi_tasks(...)`` selects the ``TaskExecutor`` subclass that executes the BMI task. An ID returned by ``TaskExecutorRegistry::add<StaticBmiTaskExecutor<BmiModelType>>()`` selects static execution in the parent process, while an ID returned by ``TaskExecutorRegistry::add<DynamicBmiTaskExecutor>()`` selects dynamic plugin execution in the parent process. An ID returned by ``TaskExecutorRegistry::add_subprocess(bmi_subprocess_executable_path(), lifetime)`` selects dynamic plugin execution in a child subprocess, which is useful for non-thread-safe models. We describe the different options below.
 
 Static BMI model
 ~~~~~~~~~~~~~~~~
 
-The static model setup applies when the concrete BMI model type is known when compiling the executable that uses MIAOW. Tasks which specify a ``SimulationUnitId`` returned by ``SimulationUnitRegistry::add<StaticBmiSimulationUnit<YourModel>>()`` construct one new model object per task and execute the BMI lifecycle in the parent process. The following example registers the model type and constructs one task.
+The static model setup applies when the concrete BMI model type is known when compiling the executable that uses MIAOW. Tasks which specify a ``TaskExecutorId`` returned by ``TaskExecutorRegistry::add<StaticBmiTaskExecutor<YourModel>>()`` construct one new model object per task and execute the BMI lifecycle in the parent process. The following example registers the model type and constructs one task.
 
 .. code-block:: cpp
 
-   miaow::SimulationUnitRegistry registry;
-   const miaow::SimulationUnitId heat =
-       registry.add<miaow::StaticBmiSimulationUnit<BmiHeat>>();
+   miaow::TaskExecutorRegistry registry;
+   const miaow::TaskExecutorId heat =
+       registry.add<miaow::StaticBmiTaskExecutor<BmiHeat>>();
 
    const miaow::StaticBmiConfig config{
        .init_config_ = heat_config,
    };
    const miaow::Task task = miaow::make_bmi_task(heat, config);
 
-The same registered simulation unit ID can be applied to several configurations. The following example constructs one ``Task`` for each ``StaticBmiConfig`` in a vector, using ``first_heat_config`` and ``second_heat_config`` as their initialization configurations. The resulting tasks share the registered simulation unit ID ``heat`` and execute in the parent process:
+The same registered task executor ID can be applied to several configurations. The following example constructs one ``Task`` for each ``StaticBmiConfig`` in a vector, using ``first_heat_config`` and ``second_heat_config`` as their initialization configurations. The resulting tasks share the registered task executor ID ``heat`` and execute in the parent process:
 
 .. code-block:: cpp
 
@@ -51,7 +51,7 @@ The same registered simulation unit ID can be applied to several configurations.
    const std::vector<miaow::Task> tasks =
        miaow::make_bmi_tasks(heat, configs);
 
-These tasks are then submitted to the MIAOW runtime to be dispatched by a ``job_actor`` and executed concurrently by instances of the registered ``StaticBmiSimulationUnit<BmiHeat>`` simulation unit. The ``submit_job(...)`` call returns a ``JobHandle`` immediately, and ``JobHandle::get()`` waits for the completed ``JobRecord``:
+These tasks are then submitted to the MIAOW runtime to be dispatched by a ``job_actor`` and executed concurrently by instances of the registered ``StaticBmiTaskExecutor<BmiHeat>`` task executor. The ``submit_job(...)`` call returns a ``JobHandle`` immediately, and ``JobHandle::get()`` waits for the completed ``JobRecord``:
 
 .. code-block:: cpp
 
@@ -67,9 +67,9 @@ The dynamic plugin setup applies when the model is loaded from a C++ or Fortran 
 
 .. code-block:: cpp
 
-   miaow::SimulationUnitRegistry registry;
-   const miaow::SimulationUnitId dynamic_bmi =
-       registry.add<miaow::DynamicBmiSimulationUnit>();
+   miaow::TaskExecutorRegistry registry;
+   const miaow::TaskExecutorId dynamic_bmi =
+       registry.add<miaow::DynamicBmiTaskExecutor>();
 
    const miaow::DynamicBmiConfig config{
        .backend_ = miaow::DynamicBmiBackend::fortran,
@@ -78,18 +78,18 @@ The dynamic plugin setup applies when the model is loaded from a C++ or Fortran 
    };
    const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, config);
 
-Dynamic BMI plugins can be executed in child subprocesses by registering a ``SimulationUnitId`` through the generic ``add_subprocess(executable, lifetime)`` method rather than through ``add<DynamicBmiSimulationUnit>()``. The following example registers a single-task subprocess and constructs one dynamic BMI task to be executed in the child:
+Dynamic BMI plugins can be executed in child subprocesses by registering a ``TaskExecutorId`` through the generic ``add_subprocess(executable, lifetime)`` method rather than through ``add<DynamicBmiTaskExecutor>()``. The following example registers a single-task subprocess and constructs one dynamic BMI task to be executed in the child:
 
 .. code-block:: cpp
 
-   const miaow::SimulationUnitId dynamic_bmi_subprocess =
+   const miaow::TaskExecutorId dynamic_bmi_subprocess =
        registry.add_subprocess(
            miaow::bmi_subprocess_executable_path(),
            miaow::SubprocessLifetime::single_task);
    const miaow::Task subprocess_task =
        miaow::make_bmi_task(dynamic_bmi_subprocess, config);
 
-In the above example, ``bmi_subprocess_executable_path()`` resolves the bundled worker that loads and runs one model in the subprocess. As described in :ref:`simulation-unit-execution`, ``SubprocessLifetime::single_task`` starts one child for each task, whereas ``SubprocessLifetime::persistent`` retains the child after a successful task. Every task constructs a fresh model, including tasks that reuse a persistent child process. The same job worker reuses the child only when its next task selects a persistent registration with the same executable and the child actor remains available. Another executable can be registered when it implements the public ``Task`` to ``TaskResult`` contract described in :ref:`custom-subprocess-executables`.
+In the above example, ``bmi_subprocess_executable_path()`` resolves the bundled worker that loads and runs one model in the subprocess. As described in :ref:`task-execution`, ``SubprocessLifetime::single_task`` starts one child for each task, whereas ``SubprocessLifetime::persistent`` retains the child after a successful task. Every task constructs a fresh model, including tasks that reuse a persistent child process. The same job worker reuses the child only when its next task selects a persistent registration with the same executable and the child actor remains available. Another executable can be registered when it implements the public ``Task`` to ``TaskResult`` contract described in :ref:`custom-subprocess-executables`.
 
 Dynamic C++ plugins must export the ``bmi_model_create()`` and ``bmi_model_destroy(...)`` symbols as C linkage. Dynamic Fortran plugins must export ``register_bmi(void**)`` for the linked `NOAA-OWP iso_c_fortran_bmi bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_. See ``examples/03_dynamic_bmi`` for examples of concrete C++ and Fortran plugin workflows.
 

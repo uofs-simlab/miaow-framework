@@ -121,13 +121,13 @@ BOOST_FIXTURE_TEST_CASE(dynamic_bmi, JobRecordChecker) {
     // Each of the C++ and Fortran plugins runs in-process and in a subprocess
     BOOST_REQUIRE_EQUAL(tasks.size(), 4);
 
-    // The C++ tasks must use distinct registered units for the two execution modes
-    BOOST_TEST(tasks.at(0).at("simulation_unit_id").get<std::size_t>() !=
-               tasks.at(2).at("simulation_unit_id").get<std::size_t>());
+    // The C++ tasks must use distinct registered executors for the two execution modes
+    BOOST_TEST(tasks.at(0).at("task_executor_id").get<std::size_t>() !=
+               tasks.at(2).at("task_executor_id").get<std::size_t>());
 
-    // The Fortran tasks must also use distinct units for the two execution modes
-    BOOST_TEST(tasks.at(1).at("simulation_unit_id").get<std::size_t>() !=
-               tasks.at(3).at("simulation_unit_id").get<std::size_t>());
+    // The Fortran tasks must also use distinct executors for the two execution modes
+    BOOST_TEST(tasks.at(1).at("task_executor_id").get<std::size_t>() !=
+               tasks.at(3).at("task_executor_id").get<std::size_t>());
 
     // Both models use alpha = 1, so dt = 0.25; all four runs need 40 steps to time 10
     check_updates(40);

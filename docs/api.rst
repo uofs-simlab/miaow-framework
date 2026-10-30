@@ -7,7 +7,7 @@ Core runtime
 Identifiers and task status
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. doxygentypedef:: miaow::SimulationUnitId
+.. doxygentypedef:: miaow::TaskExecutorId
 
 .. doxygentypedef:: miaow::TaskId
 
@@ -39,7 +39,7 @@ Task and job data
 Runtime orchestration
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. doxygenclass:: miaow::SimulationUnit
+.. doxygenclass:: miaow::TaskExecutor
    :members:
 
 .. doxygenenum:: miaow::TaskGenerationPolicy
@@ -47,7 +47,7 @@ Runtime orchestration
 .. doxygenclass:: miaow::JobController
    :members:
 
-.. doxygenclass:: miaow::SimulationUnitRegistry
+.. doxygenclass:: miaow::TaskExecutorRegistry
    :members:
 
 .. doxygenenum:: miaow::SubprocessLifetime
@@ -76,22 +76,22 @@ BMI configuration
 .. doxygenstruct:: miaow::DynamicBmiConfig
    :members:
 
-Simulation units
-~~~~~~~~~~~~~~~~
+Task executors
+~~~~~~~~~~~~~~
 
-.. doxygenclass:: miaow::StaticBmiSimulationUnit
+.. doxygenclass:: miaow::StaticBmiTaskExecutor
    :members:
 
-.. doxygenclass:: miaow::DynamicBmiSimulationUnit
+.. doxygenclass:: miaow::DynamicBmiTaskExecutor
    :members:
 
 .. doxygenfunction:: miaow::bmi_subprocess_executable_path
 
-.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitId, const StaticBmiConfig&)
+.. doxygenfunction:: miaow::make_bmi_task(TaskExecutorId, const StaticBmiConfig&)
 
-.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitId, const DynamicBmiConfig&)
+.. doxygenfunction:: miaow::make_bmi_task(TaskExecutorId, const DynamicBmiConfig&)
 
-.. doxygenfunction:: miaow::make_bmi_tasks(SimulationUnitId, const std::vector<BmiConfig>&)
+.. doxygenfunction:: miaow::make_bmi_tasks(TaskExecutorId, const std::vector<BmiConfig>&)
 
 I/O and CLI helpers
 -------------------

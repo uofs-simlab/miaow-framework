@@ -166,21 +166,20 @@ static void initialize_caf_once() {
 }
 
 // Construct a Runtime with default runtime options
-Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry)
-    : Runtime(simulation_unit_registry, RuntimeOptions{}) {}
+Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry)
+    : Runtime(task_executor_registry, RuntimeOptions{}) {}
 
 // Construct a Runtime with one shared actor system and orchestrator
-Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
-                 RuntimeOptions options)
-    : simulation_unit_registry_(
-          std::make_shared<const SimulationUnitRegistry>(simulation_unit_registry)),
+Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry, RuntimeOptions options)
+    : task_executor_registry_(
+          std::make_shared<const TaskExecutorRegistry>(task_executor_registry)),
       runtime_options_(std::move(options)) {
     // initialize CAF global meta objects exactly once in a thread-safe way
     initialize_caf_once();
 
-    // Require registered units before starting the runtime
-    if (simulation_unit_registry_->empty()) {
-        throw std::invalid_argument("Runtime requires at least one SimulationUnit");
+    // Require registered task executors before starting the runtime
+    if (task_executor_registry_->empty()) {
+        throw std::invalid_argument("Runtime requires at least one TaskExecutor");
     }
     run_id_ = allocate_run_id(runtime_options_);
 
@@ -191,7 +190,7 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
 
     // Children connect back to this one Runtime-local actor through the middleman
     const caf::actor subprocess_registration_actor =
-        actor_system_->spawn(core::subprocess_registration_actor);
+        actor_system_->spawn(caf::actor_from_state<core::SubprocessRegistration>);
     const caf::expected<std::uint16_t> subprocess_registration_port =
         actor_system_->middleman().publish(subprocess_registration_actor, 0,
                                            core::subprocess_registration_host);
@@ -205,10 +204,10 @@ Runtime::Runtime(const SimulationUnitRegistry& simulation_unit_registry,
 
     // Spawn the shared orchestrator actor to handle job requests and job completion
     orchestrator_ =
-        actor_system_->spawn(core::orchestrator_actor, runtime_options_, run_id_,
-                             simulation_unit_registry_, subprocess_registration_actor,
-                             *subprocess_registration_port, &pending_jobs_mutex_,
-                             &pending_jobs_);
+        actor_system_->spawn(caf::actor_from_state<core::Orchestrator>, runtime_options_,
+                             run_id_, task_executor_registry_,
+                             subprocess_registration_actor, *subprocess_registration_port,
+                             &pending_jobs_mutex_, &pending_jobs_);
 }
 
 // Request actor shutdown before releasing the shared actor system

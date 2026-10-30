@@ -31,7 +31,7 @@ The hello, dynamic BMI, and job-controller examples accept an optional ``--confi
    * - Example
      - Fields
    * - Hello
-     - ``delay_ms`` sets the delay before each task executes. ``tasks`` replaces the default messages with a list of objects containing optional ``message``, ``feature_id``, and ``simulation_unit_id`` fields. An omitted message produces a failed task.
+     - ``delay_ms`` sets the delay before each task executes. ``tasks`` replaces the default messages with a list of objects containing optional ``message``, ``feature_id``, and ``task_executor_id`` fields. An omitted message produces a failed task.
    * - Dynamic BMI
      - ``cpp_plugin``, ``fortran_plugin``, ``init_config``, and ``time_step_tolerance_seconds`` override the plugin paths and shared model configuration.
    * - Job controller

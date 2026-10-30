@@ -66,12 +66,12 @@ int main(int argc, char* argv[]) {
     }
 
     // Register the bundled BMI worker for one FUSE task per subprocess
-    miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId bmi_subprocess =
+    miaow::TaskExecutorRegistry registry;
+    const miaow::TaskExecutorId bmi_subprocess =
         registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
                                 miaow::SubprocessLifetime::single_task);
 
-    // Create the runtime with the registered simulation unit and options
+    // Create the runtime with the registered task executor and options
     miaow::Runtime runtime(registry, runtime_options);
 
     // Create one DynamicBmiConfig per parameter set

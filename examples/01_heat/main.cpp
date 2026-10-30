@@ -8,7 +8,7 @@
 #include "bmi_heat.hxx" // defines the BmiHeat class that implements the BMI interface
 
 #include "miaow.hpp"     // Core MIAOW runtime API
-#include "miaow_bmi.hpp" // MIAOW API for running BMI models as simulation units
+#include "miaow_bmi.hpp" // MIAOW API for running BMI models as task executors
 #include "miaow_io.hpp"  // I/O helpers for example programs
 
 int main(int argc, char* argv[]) {
@@ -26,10 +26,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Register the statically typed BMI unit and build runtime routing
-    miaow::SimulationUnitRegistry registry;
-    const miaow::SimulationUnitId heat =
-        registry.add<miaow::StaticBmiSimulationUnit<BmiHeat>>();
+    // Register the statically typed BMI task executor and build runtime routing
+    miaow::TaskExecutorRegistry registry;
+    const miaow::TaskExecutorId heat =
+        registry.add<miaow::StaticBmiTaskExecutor<BmiHeat>>();
     miaow::Runtime runtime(registry, runtime_options);
 
     // Build one task from the model initialization file

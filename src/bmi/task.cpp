@@ -14,20 +14,20 @@
 
 namespace miaow {
 
-Task make_bmi_task(SimulationUnitId simulation_unit_id, const StaticBmiConfig& config) {
+Task make_bmi_task(TaskExecutorId task_executor_id, const StaticBmiConfig& config) {
     caf::config_value::dictionary values;
     values.insert("init_config", config.init_config_);
     values.insert("time_step_tolerance_seconds", config.time_step_tolerance_seconds_);
-    return Task{simulation_unit_id, caf::config_value{std::move(values)}};
+    return Task{task_executor_id, caf::config_value{std::move(values)}};
 }
 
-Task make_bmi_task(SimulationUnitId simulation_unit_id, const DynamicBmiConfig& config) {
+Task make_bmi_task(TaskExecutorId task_executor_id, const DynamicBmiConfig& config) {
     caf::config_value::dictionary values;
     values.insert("backend", config.backend_ == DynamicBmiBackend::cpp ? "cpp" : "fortran");
     values.insert("plugin_path", config.plugin_path_);
     values.insert("init_config", config.init_config_);
     values.insert("time_step_tolerance_seconds", config.time_step_tolerance_seconds_);
-    return Task{simulation_unit_id, caf::config_value{std::move(values)}};
+    return Task{task_executor_id, caf::config_value{std::move(values)}};
 }
 
 namespace {
@@ -188,7 +188,7 @@ TaskResult static_bmi_execution::execute_task(const Task& task,
     return run_model(*model, config.init_config_, config.time_step_tolerance_seconds_);
 }
 
-caf::result<TaskResult> DynamicBmiSimulationUnit::execute(const Task& task) {
+caf::result<TaskResult> DynamicBmiTaskExecutor::execute(const Task& task) {
     return bmi::execute_task(task);
 }
 

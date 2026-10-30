@@ -1,5 +1,5 @@
 /**
- * A minimal simulation unit and runtime workflow.
+ * A minimal task executor and runtime workflow.
  */
 
 #include <chrono>
@@ -15,16 +15,16 @@
 #include "../config.hpp"
 
 /**
- * @brief A simple simulation unit that returns a string task argument.
+ * @brief A simple task executor that returns a string task argument.
  */
-class HelloSimulationUnit : public miaow::SimulationUnit {
+class HelloTaskExecutor : public miaow::TaskExecutor {
   public:
-    explicit HelloSimulationUnit(std::chrono::milliseconds delay) : delay_{delay} {}
+    explicit HelloTaskExecutor(std::chrono::milliseconds delay) : delay_{delay} {}
 
     /**
      * @brief Override execute to return the first task string argument.
      *
-     * In a real simulation unit, this is where you would implement the logic to initialize
+     * In a real task executor, this is where you would implement the logic to initialize
      * and run your model.
      * @param task Task payload; args[0] is expected to be a string.
      * @return Structured task result with status and message.
@@ -53,9 +53,9 @@ int main(int argc, char* argv[]) {
     try {
         const auto config = read_example_config(argc, argv, runtime_options);
 
-        // Register the simulation unit and construct the runtime
-        miaow::SimulationUnitRegistry registry;
-        const miaow::SimulationUnitId hello = registry.add<HelloSimulationUnit>(
+        // Register the task executor and construct the runtime
+        miaow::TaskExecutorRegistry registry;
+        const miaow::TaskExecutorId hello = registry.add<HelloTaskExecutor>(
             std::chrono::milliseconds{config.value("delay_ms", 0)});
         miaow::Runtime runtime(registry, runtime_options);
 
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
         if (config.contains("tasks")) {
             tasks.clear();
             for (const auto& input : config.at("tasks")) {
-                miaow::Task task{input.value("simulation_unit_id", hello),
+                miaow::Task task{input.value("task_executor_id", hello),
                                  std::vector<caf::config_value>{}};
                 if (input.contains("message")) {
                     task.args_.emplace_back(input.at("message").get<std::string>());

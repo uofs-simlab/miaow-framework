@@ -46,8 +46,8 @@ int main(int argc, char* argv[]) {
         // Parse the manifest JSON
         const auto manifest = nlohmann::json::parse(input);
 
-        // Create the simulation unit registry and add the worker subprocess
-        miaow::SimulationUnitRegistry registry;
+        // Create the task executor registry and add the worker subprocess
+        miaow::TaskExecutorRegistry registry;
         const auto worker = registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
                                                     miaow::SubprocessLifetime::single_task);
 
