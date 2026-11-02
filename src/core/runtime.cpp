@@ -235,15 +235,15 @@ SimulationUnitHandle Job::add_unit(std::string feature_id, TaskExecutorId execut
     if (feature_id.empty()) {
         throw std::invalid_argument("persistent unit feature_id must not be empty");
     }
-    for (const UnitBinding& unit : unit_bindings_) {
-        if (unit.feature_id_ == feature_id) {
+    for (const std::optional<UnitBinding>& unit : units_) {
+        if (unit && unit->feature_id_ == feature_id) {
             throw std::invalid_argument("duplicate persistent unit feature_id: " +
                                         feature_id);
         }
     }
-    const SimulationUnitHandle handle{scope_id_, unit_bindings_.size()};
-    units_to_spawn_.emplace_back(executor_id);
-    unit_bindings_.push_back(UnitBinding{std::move(feature_id), executor_id});
+    const SimulationUnitHandle handle{scope_id_, units_.size()};
+    units_.emplace_back(UnitBinding{std::move(feature_id), executor_id,
+                                    SimulationUnit{executor_id}, std::nullopt});
     return handle;
 }
 
@@ -254,15 +254,15 @@ void Job::bind_tasks_to_simulation_units(std::vector<Task>& tasks,
         Task& task = tasks[index];
         // If there are no persistent units and the task has no associated unit,
         // skip binding
-        if (unit_bindings_.empty() && !task.unit_) {
+        if (units_.empty() && !task.unit_) {
             continue;
         }
         // If the task has an associated unit, ensure it belongs to this job and is valid
         if (!task.unit_ || task.unit_->scope_id_ != scope_id_ ||
-            task.unit_->index_ >= unit_bindings_.size()) {
+            task.unit_->index_ >= units_.size() || !units_[task.unit_->index_]) {
             throw std::invalid_argument("task target does not belong to this job");
         }
-        const UnitBinding& unit = unit_bindings_[task.unit_->index_];
+        const UnitBinding& unit = *units_[task.unit_->index_];
         task.task_executor_id_ = unit.task_executor_id_;
         task.metadata_["feature_id"] = unit.feature_id_;
     }

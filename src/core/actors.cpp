@@ -22,26 +22,36 @@ void Job::stop_workers() {
         // job_actor -> simulation_unit_actor: stop work and release child resources
         caf::anon_mail(core::shutdown_atom_v).urgent().send(worker);
     }
+    for (const std::optional<UnitBinding>& unit : units_) {
+        if (unit) {
+            if (const caf::actor* actor = std::get_if<caf::actor>(&unit->instance_)) {
+                caf::anon_mail(core::shutdown_atom_v).urgent().send(*actor);
+            }
+        }
+    }
 }
 
 // Persistent units are created from declarations; ordinary workers follow task demand
 void Job::spawn_workers_for_tasks() {
-    if (!unit_bindings_.empty()) {
-        while (workers_.size() < unit_bindings_.size()) {
-            caf::actor actor =
-                self_->spawn(caf::actor_from_state<SimulationUnit>,
-                             std::move(units_to_spawn_[workers_.size()]),
-                             task_executor_registry_, subprocess_registration_actor_,
-                             subprocess_registration_port_,
-                             runtime_options_.task_request_timeout_);
-            self_->monitor(actor, [this](const caf::error& reason) {
-                begin_job_error_shutdown("persistent simulation unit terminated: " +
-                                         caf::to_string(reason));
-            });
-            workers_.push_back(std::move(actor));
-            unit_busy_.push_back(false);
+    if (!units_.empty()) {
+        for (std::optional<UnitBinding>& unit : units_) {
+            if (!unit) {
+                continue;
+            }
+            if (SimulationUnit* prepared = std::get_if<SimulationUnit>(&unit->instance_)) {
+                caf::actor actor =
+                    self_->spawn(caf::actor_from_state<SimulationUnit>,
+                                 std::move(*prepared), task_executor_registry_,
+                                 subprocess_registration_actor_,
+                                 subprocess_registration_port_,
+                                 runtime_options_.task_request_timeout_);
+                self_->monitor(actor, [this](const caf::error& reason) {
+                    begin_job_error_shutdown("persistent simulation unit terminated: " +
+                                             caf::to_string(reason));
+                });
+                unit->instance_ = std::move(actor);
+            }
         }
-        units_to_spawn_.clear();
         return;
     }
 
@@ -167,11 +177,11 @@ void Job::complete_task(std::size_t worker_id, std::size_t task_id,
         --active_task_count_;
     }
 
-    // Worker slot is free again, so add it back to the available_workers queue
-    if (unit_bindings_.empty()) {
+    // Release the ordinary worker slot or the unit's active task
+    if (units_.empty()) {
         available_workers_.push(worker_id);
     } else {
-        unit_busy_.at(worker_id) = false;
+        units_.at(worker_id)->active_task_.reset();
     }
 
     // Record the wall-clock duration and success/failure message for this task ID
@@ -241,22 +251,26 @@ void Job::dispatch_tasks() {
            active_task_count_ < runtime_options_.max_concurrent_tasks_) {
         auto pending = pending_tasks_.begin();
         std::size_t worker_id;
-        if (!unit_bindings_.empty()) {
-            pending = std::find_if(pending_tasks_.begin(), pending_tasks_.end(),
-                                   [this](std::size_t task_id) {
-                                       return !unit_busy_[tasks_[task_id].unit_->index_];
-                                   });
+        caf::actor worker;
+        if (!units_.empty()) {
+            pending = std::find_if(
+                pending_tasks_.begin(), pending_tasks_.end(), [this](std::size_t task_id) {
+                    return !units_[tasks_[task_id].unit_->index_]->active_task_;
+                });
             if (pending == pending_tasks_.end()) {
                 break;
             }
             worker_id = tasks_[*pending].unit_->index_;
-            unit_busy_[worker_id] = true;
+            UnitBinding& unit = *units_[worker_id];
+            unit.active_task_ = static_cast<TaskId>(*pending);
+            worker = std::get<caf::actor>(unit.instance_);
         } else {
             if (available_workers_.empty()) {
                 break;
             }
             worker_id = available_workers_.front();
             available_workers_.pop();
+            worker = workers_.at(worker_id);
         }
         const std::size_t task_id = *pending;
         pending_tasks_.erase(pending);
@@ -278,7 +292,7 @@ void Job::dispatch_tasks() {
         // caf::get_atom_v is matched by caf::get_atom in the worker handler, request()
         // returns a response handle, and then() installs one response behaviour
         self_->mail(caf::get_atom_v, tasks_.at(task_id))
-            .request(workers_.at(worker_id), simulation_unit_request_timeout)
+            .request(worker, simulation_unit_request_timeout)
             .then(
                 // simulation_unit_actor -> job_actor: return the completed task result
                 [this, worker_id, task_id](TaskResult task_result) {

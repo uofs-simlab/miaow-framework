@@ -807,13 +807,14 @@ class Job {
     struct UnitBinding {
         std::string feature_id_;
         TaskExecutorId task_executor_id_;
+        std::variant<SimulationUnit, caf::actor> instance_;
+        std::optional<TaskId> active_task_;
     };
 
     // Unit identities remain available for routing after CAF adopts the prepared units
     inline static std::atomic<std::uint64_t> next_scope_id_{1};
     std::uint64_t scope_id_{next_scope_id_.fetch_add(1, std::memory_order_relaxed)};
-    std::vector<UnitBinding> unit_bindings_;
-    std::vector<SimulationUnit> units_to_spawn_;
+    std::vector<std::optional<UnitBinding>> units_;
 
     void bind_tasks_to_simulation_units(std::vector<Task>& tasks,
                                         std::size_t first_task_index) const;
@@ -830,7 +831,7 @@ class Job {
     // Boundary between records already delivered to the controller and new completions
     std::size_t reported_task_count_{0};
 
-    // Array of worker actors currently running, indexed by worker ID
+    // Ordinary worker-pool actors, indexed by worker ID
     std::vector<caf::actor> workers_;
 
     // Queue of worker IDs that are available to run a task
@@ -838,9 +839,6 @@ class Job {
 
     // Pending task IDs remain in submission order; busy persistent targets may be skipped
     std::deque<std::size_t> pending_tasks_;
-
-    // One active operation per persistent unit, independent of the job concurrency limit
-    std::vector<bool> unit_busy_;
 
     // Number of dispatched task requests awaiting results
     std::size_t active_task_count_{0};
