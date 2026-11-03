@@ -86,4 +86,11 @@ if(BUILD_TESTING)
         CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/dynamic_repeated_run.json"
         EXTERNAL_MODEL
     )
+    miaow_add_example_test(
+        TEST_NAME miaow_bmi_repeated_run_concurrent
+        EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+        REGRESSION bmi_repeated_run
+        CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/dynamic_repeated_run_concurrent.json"
+        EXTERNAL_MODEL
+    )
 endif()

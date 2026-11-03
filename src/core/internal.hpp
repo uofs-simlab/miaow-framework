@@ -124,7 +124,7 @@ class SubprocessState {
 
     // Accept the child actor handle for the current launch
     void accept_registration(SubprocessLaunchId launch_id,
-                             const caf::actor& subprocess_worker);
+                             const caf::actor& subprocess_worker_actor);
 
     // Fail the current launch when its child does not register before the deadline
     void expire_startup(SubprocessLaunchId launch_id);
@@ -202,7 +202,7 @@ class SubprocessState {
     std::optional<pid_t> subprocess_pid_;
 
     // CAF proxy for the worker actor running in the child identified by subprocess_pid_
-    caf::actor subprocess_worker_;
+    caf::actor subprocess_worker_actor_;
 
     // Deferred response to the job actor; pending() reports whether delivery remains
     caf::typed_response_promise<TaskResult> response_promise_;
@@ -236,7 +236,7 @@ class SubprocessRegistration {
 
   private:
     SubprocessLaunchId next_launch_id_{0};
-    std::unordered_map<SubprocessLaunchId, caf::actor> launch_owners_;
+    std::unordered_map<SubprocessLaunchId, caf::actor> launch_owner_actors_;
 };
 
 // Root actor owned by Runtime: receives jobs and resolves each pending JobHandle

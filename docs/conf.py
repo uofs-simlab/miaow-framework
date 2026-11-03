@@ -11,7 +11,8 @@ html_show_copyright = False
 html_baseurl = "https://tjbmontoya.com/miaow-framework/"
 html_copy_source = False
 
-extensions = ["breathe"]
+extensions = ["breathe", "sphinxcontrib.mermaid"]
+mermaid_version = "11.12.1"
 
 source_suffix = {
     ".rst": "restructuredtext",

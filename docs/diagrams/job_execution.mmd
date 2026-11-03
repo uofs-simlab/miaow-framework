@@ -1,0 +1,48 @@
+---
+config:
+  sequence:
+    useMaxWidth: true
+    mirrorActors: false
+    width: 180
+    actorMargin: 24
+    diagramMarginX: 16
+    diagramMarginY: 12
+    messageMargin: 18
+    actorFontSize: 14
+    messageFontSize: 14
+    noteFontSize: 14
+  themeVariables:
+    actorBkg: "#edf2f6"
+    actorBorder: "#4a657d"
+    actorTextColor: "#222222"
+    signalColor: "#4a657d"
+    noteBkgColor: "#fff3df"
+    noteBorderColor: "#e8a84b"
+---
+sequenceDiagram
+    participant R as Runtime
+    participant O as orchestrator_actor
+
+    R-)O: get_atom + job submission
+    create participant J as job_actor
+    O->>J: spawn Job
+    O-)J: get_atom
+    J->>J: JobController::initialize(job)
+    create participant U as simulation_unit_actor
+    J->>U: spawn SimulationUnit<br/>on first dispatch
+    U->>U: Construct TaskExecutor once
+
+    loop Tasks assigned to this unit
+        J-)U: get_atom + Task
+        U->>U: TaskExecutor::execute(task)
+        U-->>J: TaskResult
+        J->>J: Create TaskRecord
+        J->>J: JobController::callback()<br/>according to selected policy
+    end
+
+    J-)U: shutdown_atom
+    U->>U: Release executor<br/>For SubprocessTaskExecutor:<br/>terminate child and wait for exit
+    U-->>J: CAF termination notification
+    J->>J: JobController::finalize()
+    J-->>O: JobRecord
+    O->>O: Fulfil JobHandle promise

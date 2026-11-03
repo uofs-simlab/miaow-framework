@@ -701,8 +701,9 @@ class Job {
     void advance();
     void fail_unit(std::size_t unit_index, std::string reason);
     void unit_terminated(std::size_t unit_index, const caf::error& reason);
-    void record_task(std::size_t task_id, TaskResult task_result);
-    void complete_task(std::size_t unit_index, std::size_t task_id, TaskResult task_result);
+    void record_task(std::size_t task_index, TaskResult task_result);
+    void complete_task(std::size_t unit_index, std::size_t task_index,
+                       TaskResult task_result);
     void dispatch_tasks();
 
     caf::event_based_actor* self_{nullptr};
@@ -736,7 +737,7 @@ class Job {
         std::string feature_id_;
         TaskExecutorId task_executor_id_;
         std::variant<SimulationUnit, caf::actor> instance_;
-        std::optional<TaskId> active_task_;
+        std::optional<std::size_t> active_task_index_;
         UnitState state_{UnitState::accepting_tasks};
     };
 
@@ -762,8 +763,8 @@ class Job {
     // Boundary between records already delivered to the controller and new completions
     std::size_t reported_task_count_{0};
 
-    // Pending task IDs remain in submission order; busy targets may be skipped
-    std::deque<std::size_t> pending_tasks_;
+    // Pending task indices remain in submission order; busy targets may be skipped
+    std::deque<std::size_t> pending_task_indices_;
 
     // Occupied task slots; timed-out native calls hold their slot until actor termination
     std::size_t active_task_count_{0};
@@ -955,7 +956,7 @@ class Runtime {
 
     // Actor that receives requests from `Runtime`, spawns one `job_actor` per request,
     // and fulfills `Runtime` promises when jobs complete
-    caf::actor orchestrator_;
+    caf::actor orchestrator_actor_;
 };
 
 } // namespace miaow

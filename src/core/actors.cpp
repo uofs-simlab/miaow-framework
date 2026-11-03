@@ -22,10 +22,10 @@ void Job::shutdown_unit(std::size_t unit_index) {
     if (!unit) {
         return;
     }
-    const caf::actor* actor = std::get_if<caf::actor>(&unit->instance_);
-    if (actor && *actor) {
+    const caf::actor* simulation_unit_actor = std::get_if<caf::actor>(&unit->instance_);
+    if (simulation_unit_actor && *simulation_unit_actor) {
         unit->state_ = UnitState::stopping;
-        caf::anon_mail(core::shutdown_atom_v).urgent().send(*actor);
+        caf::anon_mail(core::shutdown_atom_v).urgent().send(*simulation_unit_actor);
     } else {
         unit.reset();
     }
@@ -46,7 +46,7 @@ void Job::prepare_tasks(std::size_t first_task_index) {
     core::assign_task_runtime_fields(tasks_, first_task_index, runtime_options_, run_id_,
                                      job_submission_id_);
     for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
-        pending_tasks_.push_back(index);
+        pending_task_indices_.push_back(index);
     }
     task_start_times_.resize(tasks_.size());
     task_completed_.resize(tasks_.size(), false);
@@ -73,8 +73,9 @@ void Job::finish_job() {
     }
     for (const std::optional<UnitBinding>& unit : units_) {
         if (unit) {
-            if (const caf::actor* actor = std::get_if<caf::actor>(&unit->instance_);
-                actor && *actor) {
+            if (const caf::actor* simulation_unit_actor =
+                    std::get_if<caf::actor>(&unit->instance_);
+                simulation_unit_actor && *simulation_unit_actor) {
                 return;
             }
         }
@@ -115,20 +116,20 @@ void Job::begin_job_error_shutdown(std::string error_message) {
 }
 
 // Record each task once, including queued tasks invalidated by unit loss or a deadline
-void Job::record_task(std::size_t task_id, TaskResult task_result) {
-    if (task_completed_.at(task_id)) {
+void Job::record_task(std::size_t task_index, TaskResult task_result) {
+    if (task_completed_.at(task_index)) {
         return;
     }
-    task_completed_[task_id] = true;
-    const Task& task = tasks_[task_id];
+    task_completed_[task_index] = true;
+    const Task& task = tasks_[task_index];
     std::chrono::duration<double> run_time{};
     std::optional<std::chrono::duration<double>> dispatch_offset;
-    if (task_start_times_[task_id]) {
-        dispatch_offset = *task_start_times_[task_id] - job_start_time_;
-        run_time = std::chrono::steady_clock::now() - *task_start_times_[task_id];
+    if (task_start_times_[task_index]) {
+        dispatch_offset = *task_start_times_[task_index] - job_start_time_;
+        run_time = std::chrono::steady_clock::now() - *task_start_times_[task_index];
     }
     completed_task_records_.emplace_back(task, units_[task.unit_.index_]->task_executor_id_,
-                                         static_cast<TaskId>(task_id),
+                                         static_cast<TaskId>(task_index),
                                          std::move(task_result), run_time, dispatch_offset);
 }
 
@@ -142,25 +143,26 @@ void Job::fail_unit(std::size_t unit_index, std::string reason) {
     unit.state_ = UnitState::failed;
     pending_unit_failures_.push_back(
         UnitFailure{SimulationUnitHandle{job_creation_id_, unit_index}, reason});
-    if (unit.active_task_) {
-        record_task(*unit.active_task_, make_failed_task_result(reason, "Unit failure"));
+    if (unit.active_task_index_) {
+        record_task(*unit.active_task_index_,
+                    make_failed_task_result(reason, "Unit failure"));
     }
-    std::erase_if(pending_tasks_, [this, unit_index, &reason](std::size_t task_id) {
-        if (tasks_[task_id].unit_.index_ != unit_index) {
+    std::erase_if(pending_task_indices_, [this, unit_index, &reason](std::size_t task_index) {
+        if (tasks_[task_index].unit_.index_ != unit_index) {
             return false;
         }
-        record_task(task_id, make_failed_task_result(reason, "Unit failure"));
+        record_task(task_index, make_failed_task_result(reason, "Unit failure"));
         return true;
     });
-    const caf::actor& actor = std::get<caf::actor>(unit.instance_);
-    caf::anon_mail(core::shutdown_atom_v).urgent().send(actor);
+    const caf::actor& simulation_unit_actor = std::get<caf::actor>(unit.instance_);
+    caf::anon_mail(core::shutdown_atom_v).urgent().send(simulation_unit_actor);
 }
 
 void Job::unit_terminated(std::size_t unit_index, const caf::error& reason) {
     UnitBinding& unit = *units_[unit_index];
     fail_unit(unit_index, "simulation unit terminated: " + caf::to_string(reason));
-    if (unit.active_task_) {
-        unit.active_task_.reset();
+    if (unit.active_task_index_) {
+        unit.active_task_index_.reset();
         --active_task_count_;
     }
     unit.instance_ = caf::actor{};
@@ -176,7 +178,7 @@ void Job::advance() {
         finish_job();
         return;
     }
-    const bool batch_finished = pending_tasks_.empty() && active_task_count_ == 0;
+    const bool batch_finished = pending_task_indices_.empty() && active_task_count_ == 0;
     const bool has_updates = reported_task_count_ < completed_task_records_.size() ||
                              !pending_unit_failures_.empty();
     if (has_updates &&
@@ -206,10 +208,10 @@ void Job::advance() {
     // Drain removal requests without interrupting accepted operations
     for (std::size_t index = 0; index < units_.size(); ++index) {
         if (units_[index] && units_[index]->state_ == UnitState::removal_requested &&
-            !units_[index]->active_task_ &&
-            std::none_of(pending_tasks_.begin(), pending_tasks_.end(),
-                         [this, index](std::size_t task_id) {
-                             return tasks_[task_id].unit_.index_ == index;
+            !units_[index]->active_task_index_ &&
+            std::none_of(pending_task_indices_.begin(), pending_task_indices_.end(),
+                         [this, index](std::size_t task_index) {
+                             return tasks_[task_index].unit_.index_ == index;
                          })) {
             shutdown_unit(index);
         }
@@ -217,63 +219,66 @@ void Job::advance() {
     dispatch_tasks();
 }
 
-void Job::complete_task(std::size_t unit_index, std::size_t task_id,
+void Job::complete_task(std::size_t unit_index, std::size_t task_index,
                         TaskResult task_result) {
-    if (!units_[unit_index] || units_[unit_index]->active_task_ != task_id ||
-        task_completed_[task_id]) {
+    if (!units_[unit_index] || units_[unit_index]->active_task_index_ != task_index ||
+        task_completed_[task_index]) {
         return;
     }
-    record_task(task_id, std::move(task_result));
-    units_[unit_index]->active_task_.reset();
+    record_task(task_index, std::move(task_result));
+    units_[unit_index]->active_task_index_.reset();
     --active_task_count_;
     advance();
 }
 
 void Job::dispatch_tasks() {
-    while (!pending_tasks_.empty() &&
+    while (!pending_task_indices_.empty() &&
            active_task_count_ < runtime_options_.max_concurrent_tasks_) {
         const auto pending = std::find_if(
-            pending_tasks_.begin(), pending_tasks_.end(), [this](std::size_t task_id) {
-                const UnitBinding& unit = *units_[tasks_[task_id].unit_.index_];
-                return !unit.active_task_ && (unit.state_ == UnitState::accepting_tasks ||
-                                              unit.state_ == UnitState::removal_requested);
+            pending_task_indices_.begin(), pending_task_indices_.end(),
+            [this](std::size_t task_index) {
+                const UnitBinding& unit = *units_[tasks_[task_index].unit_.index_];
+                return !unit.active_task_index_ &&
+                       (unit.state_ == UnitState::accepting_tasks ||
+                        unit.state_ == UnitState::removal_requested);
             });
-        if (pending == pending_tasks_.end()) {
+        if (pending == pending_task_indices_.end()) {
             break;
         }
-        const std::size_t task_id = *pending;
-        const std::size_t unit_index = tasks_[task_id].unit_.index_;
+        const std::size_t task_index = *pending;
+        const std::size_t unit_index = tasks_[task_index].unit_.index_;
         UnitBinding& unit = *units_[unit_index];
         if (SimulationUnit* prepared = std::get_if<SimulationUnit>(&unit.instance_)) {
-            caf::actor actor =
+            caf::actor simulation_unit_actor =
                 self_->spawn(caf::actor_from_state<SimulationUnit>, std::move(*prepared),
                              task_executor_registry_, subprocess_registration_actor_,
                              subprocess_registration_port_,
                              runtime_options_.task_request_timeout_);
-            self_->monitor(actor, [this, unit_index](const caf::error& reason) {
-                unit_terminated(unit_index, reason);
-            });
-            unit.instance_ = std::move(actor);
+            self_->monitor(simulation_unit_actor,
+                           [this, unit_index](const caf::error& reason) {
+                               unit_terminated(unit_index, reason);
+                           });
+            unit.instance_ = std::move(simulation_unit_actor);
         }
         const caf::actor& simulation_unit_actor = std::get<caf::actor>(unit.instance_);
-        unit.active_task_ = static_cast<TaskId>(task_id);
-        pending_tasks_.erase(pending);
+        unit.active_task_index_ = task_index;
+        pending_task_indices_.erase(pending);
         ++active_task_count_;
-        task_start_times_[task_id] = std::chrono::steady_clock::now();
+        task_start_times_[task_index] = std::chrono::steady_clock::now();
 
         // SubprocessState owns its deadline and reports context loss after reaping
         const caf::timespan timeout =
             task_executor_registry_->is_subprocess(unit.task_executor_id_)
                 ? caf::infinite
                 : runtime_options_.task_request_timeout_;
-        self_->mail(caf::get_atom_v, tasks_[task_id])
+        self_->mail(caf::get_atom_v, tasks_[task_index])
             .request(simulation_unit_actor, timeout)
             .then(
-                [this, unit_index, task_id](TaskResult result) {
-                    complete_task(unit_index, task_id, std::move(result));
+                [this, unit_index, task_index](TaskResult result) {
+                    complete_task(unit_index, task_index, std::move(result));
                 },
-                [this, unit_index, task_id](const caf::error& error) {
-                    if (finishing_ || task_completed_[task_id]) {
+                [this, unit_index, task_index](const caf::error& error) {
+                    if (finishing_ || task_completed_[task_index]) {
                         return;
                     }
                     if (error == caf::sec::request_timeout) {
@@ -281,13 +286,13 @@ void Job::dispatch_tasks() {
                         advance();
                     } else if (error != caf::sec::request_receiver_down) {
                         // Actor loss is settled by its monitor with the termination reason
-                        complete_task(unit_index, task_id,
+                        complete_task(unit_index, task_index,
                                       make_failed_task_result(caf::to_string(error),
                                                               "CAF error"));
                     }
                 });
     }
-    if (pending_tasks_.empty() && active_task_count_ == 0) {
+    if (pending_task_indices_.empty() && active_task_count_ == 0) {
         complete_job();
     }
 }
@@ -335,8 +340,8 @@ caf::behavior SimulationUnit::make_behavior() {
         },
         // Accept the current launch's child handle and send the task held during startup
         [this](core::register_subprocess_worker_atom, core::SubprocessLaunchId launch_id,
-               const caf::actor& subprocess_worker) {
-            subprocess_state_->accept_registration(launch_id, subprocess_worker);
+               const caf::actor& subprocess_worker_actor) {
+            subprocess_state_->accept_registration(launch_id, subprocess_worker_actor);
         },
         // Enforce registration timing; ignore this deadline once startup has ended
         [this](core::subprocess_startup_timeout_atom, core::SubprocessLaunchId launch_id) {
@@ -419,9 +424,9 @@ caf::behavior Job::make_behavior() {
                 if (finishing_) {
                     return;
                 }
-                for (std::size_t task_id = 0; task_id < tasks_.size(); ++task_id) {
-                    if (!task_completed_[task_id]) {
-                        record_task(task_id,
+                for (std::size_t task_index = 0; task_index < tasks_.size(); ++task_index) {
+                    if (!task_completed_[task_index]) {
+                        record_task(task_index,
                                     make_failed_task_result(
                                         "configured job timeout expired", "Job timeout"));
                     }
@@ -454,16 +459,16 @@ caf::behavior Orchestrator::make_behavior() {
         [this](caf::get_atom, JobSubmissionId job_submission_id,
                std::shared_ptr<miaow::Job> prepared_job) {
             // Spawn one job actor for this request
-            caf::actor job =
+            caf::actor job_actor =
                 self_->spawn(caf::actor_from_state<miaow::Job>, run_id_, job_submission_id,
                              std::move(prepared_job), runtime_options_,
                              task_executor_registry_, subprocess_registration_actor_,
                              subprocess_registration_port_);
-            active_job_actors_.emplace(job_submission_id, job);
+            active_job_actors_.emplace(job_submission_id, job_actor);
 
             // orchestrator_actor -> job_actor: request execution of one job
             self_->mail(caf::get_atom_v)
-                .request(job, caf::infinite)
+                .request(job_actor, caf::infinite)
                 .then(
                     // job_actor -> orchestrator_actor: resolve successful completion
                     [this, job_submission_id](JobRecord job_record) {
@@ -501,9 +506,9 @@ caf::behavior Orchestrator::make_behavior() {
                         promise.set_value(std::move(job_record));
                     },
                     // job_actor -> orchestrator_actor: report the job error
-                    [this, job, job_submission_id](const caf::error& err) {
+                    [this, job_actor, job_submission_id](const caf::error& err) {
                         // orchestrator_actor -> job_actor: stop after a request error
-                        caf::anon_mail(shutdown_atom_v).send(job);
+                        caf::anon_mail(shutdown_atom_v).send(job_actor);
                         active_job_actors_.erase(job_submission_id);
 
                         // Remove the matching promise so it is resolved exactly once

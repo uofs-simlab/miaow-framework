@@ -5,13 +5,9 @@
  *
  *     x_(n+1) = 1/2 * (x_n + S / x_n)
  *
- * Each task supplies the current estimate, performs one iteration, and returns a
- * TaskResult::output_ dictionary containing the next estimate and its residual.
- * IterationJobController uses the returned estimate as the next task's input and stops
- * generating tasks when the residual reaches its configured tolerance. The maximum
- * iteration count reports non-convergence instead of allowing the job to continue
- * indefinitely. This run uses S = 2 and x_0 = 1 to find sqrt(2) with a residual tolerance
- * of 1e-5 and a maximum of 20 iterations.
+ * The executor retains the current estimate across tasks. Each task requests one
+ * iteration and returns the updated estimate and residual. The controller requests
+ * iterations until the residual meets its tolerance or the iteration limit is reached.
  */
 
 #include <caf/settings.hpp>
@@ -26,7 +22,6 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "miaow.hpp"    // Core MIAOW runtime API
 #include "miaow_io.hpp" // I/O helpers for example programs
@@ -40,29 +35,19 @@ constexpr double default_residual_tolerance = 1e-5;
 constexpr std::size_t default_maximum_iterations = 20;
 
 /**
- * @brief Perform one Heron iteration and output the next estimate and residual.
+ * @brief Perform one Heron iteration using the unit's current estimate.
  */
 class HeronIterationTaskExecutor final : public miaow::TaskExecutor {
   public:
-    explicit HeronIterationTaskExecutor(double radicand) : radicand_{radicand} {}
+    HeronIterationTaskExecutor(double radicand, double initial_estimate)
+        : radicand_{radicand}, estimate_{initial_estimate} {}
 
-    caf::result<miaow::TaskResult> execute(const miaow::Task& task) override {
-        // Get the current estimate from the task arguments
-        const caf::config_value::real* estimate =
-            task.args_.size() == 1
-                ? caf::get_if<caf::config_value::real>(&task.args_.front())
-                : nullptr;
-        if (estimate == nullptr) {
-            return miaow::TaskResult{miaow::TaskStatus::failed,
-                                     "Heron input error: expected one real estimate"};
-        }
-
+    caf::result<miaow::TaskResult> execute(const miaow::Task&) override {
         // Perform one iteration of Heron's method: x_(n+1) = 1/2 * (x_n + S / x_n)
-        const double next_estimate = 0.5 * (*estimate + radicand_ / *estimate);
-        const double residual = std::abs(next_estimate * next_estimate - radicand_);
+        estimate_ = 0.5 * (estimate_ + radicand_ / estimate_);
+        const double residual = std::abs(estimate_ * estimate_ - radicand_);
 
-        // Return the next estimate and residual to the job controller in a dictionary
-        caf::config_value::dictionary output{{"estimate", caf::config_value{next_estimate}},
+        caf::config_value::dictionary output{{"estimate", caf::config_value{estimate_}},
                                              {"residual", caf::config_value{residual}}};
         return miaow::TaskResult{miaow::TaskStatus::succeeded, "Heron iteration complete",
                                  caf::config_value{std::move(output)}};
@@ -70,6 +55,7 @@ class HeronIterationTaskExecutor final : public miaow::TaskExecutor {
 
   private:
     double radicand_;
+    double estimate_;
 };
 
 /**
@@ -78,14 +64,13 @@ class HeronIterationTaskExecutor final : public miaow::TaskExecutor {
 class IterationJobController final : public miaow::JobController {
   public:
     IterationJobController(miaow::TaskExecutorId task_executor_id,
-                           double residual_tolerance, std::size_t maximum_iterations,
-                           double initial_estimate)
+                           double residual_tolerance, std::size_t maximum_iterations)
         : task_executor_id_{task_executor_id}, residual_tolerance_{residual_tolerance},
-          maximum_iterations_{maximum_iterations}, initial_estimate_{initial_estimate} {}
+          maximum_iterations_{maximum_iterations} {}
 
     void initialize(miaow::Job& job) override {
         unit_ = job.add_unit("iteration", task_executor_id_);
-        job.add_task(unit_, "iterate", initial_estimate_);
+        job.add_task(unit_, "iterate");
     }
 
     void callback(miaow::Job& job, std::span<const miaow::TaskRecord> new_records,
@@ -97,7 +82,6 @@ class IterationJobController final : public miaow::JobController {
         }
         iterations_ += new_records.size();
 
-        // Get the last completed task record
         const miaow::TaskRecord& completed_task = new_records.back();
 
         // If the last task failed, stop generating new tasks
@@ -112,17 +96,13 @@ class IterationJobController final : public miaow::JobController {
             throw std::runtime_error("JobController output error: expected a dictionary");
         }
 
-        // Extract the estimate and residual from the output dictionary
-        const caf::config_value::real* estimate =
-            caf::get_if<caf::config_value::real>(output, "estimate");
+        // Use the residual to decide whether the unit needs another iteration
         const caf::config_value::real* residual =
             caf::get_if<caf::config_value::real>(output, "residual");
-        if (estimate == nullptr || residual == nullptr) {
-            throw std::runtime_error(
-                "JobController output error: estimate and residual must be reals");
+        if (residual == nullptr) {
+            throw std::runtime_error("JobController output error: residual must be a real");
         }
 
-        // If the residual is below the tolerance, stop generating new tasks
         if (*residual <= residual_tolerance_) {
             return;
         }
@@ -133,8 +113,8 @@ class IterationJobController final : public miaow::JobController {
             return;
         }
 
-        // Otherwise, generate a new task with the next estimate
-        job.add_task(unit_, "iterate", *estimate);
+        // Otherwise, request another iteration using the unit's retained estimate
+        job.add_task(unit_, "iterate");
     }
 
   private:
@@ -142,7 +122,6 @@ class IterationJobController final : public miaow::JobController {
     miaow::SimulationUnitHandle unit_;
     double residual_tolerance_;
     std::size_t maximum_iterations_;
-    double initial_estimate_;
     std::size_t iterations_ = 0;
 };
 
@@ -168,19 +147,16 @@ int main(int argc, char* argv[]) {
 
         miaow::TaskExecutorRegistry registry;
 
-        // Register the Heron iteration task executor with the radicand
+        // Initialize each unit's numerical state through its executor constructor
         const miaow::TaskExecutorId heron_iteration =
-            registry.add<HeronIterationTaskExecutor>(radicand);
+            registry.add<HeronIterationTaskExecutor>(radicand, initial_estimate);
         miaow::Runtime runtime(registry, runtime_options);
-
-        // Create a job controller that generates new tasks until convergence
-        std::unique_ptr<miaow::JobController> controller =
-            std::make_unique<IterationJobController>(heron_iteration, residual_tolerance,
-                                                     maximum_iterations, initial_estimate);
 
         // Runtime initializes the controller before dispatching its first task
         miaow::Job job;
-        job.set_controller(std::move(controller));
+        job.set_controller(std::make_unique<IterationJobController>(heron_iteration,
+                                                                    residual_tolerance,
+                                                                    maximum_iterations));
 
         // Submit the job
         miaow::JobHandle job_handle = runtime.submit_job(std::move(job));

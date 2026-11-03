@@ -4,134 +4,134 @@ Architecture
 Orchestration model
 -------------------
 
-MIAOW executes simulation workflows through an actor hierarchy inspired by `SUMMA-Actors <https://github.com/uofs-simlab/Summa-Actors>`_ (`Klenk and Spiteri, 2024 <https://doi.org/10.1007/s10586-024-04318-5>`_), as illustrated in the figure below. Each remote actor system shown here is a subprocess on the same host:
+MIAOW organizes simulation workflows into jobs. A ``Job`` groups simulation units, tasks to execute on them, and a controller that can add work in response to results.
 
-.. image:: images/orchestration_overview_tikz.png
+A **simulation unit** is the basic unit of computation orchestrated by MIAOW, such as a whole model or a spatial subdomain. A ``Task`` requests an operation on a particular unit and supplies its arguments. Each unit owns an executor: a C++ object implementing the ``TaskExecutor`` interface that carries out those operations. The executor can retain state between tasks.
+
+``Runtime`` coordinates jobs through an actor hierarchy inspired by `SUMMA-Actors <https://github.com/uofs-simlab/Summa-Actors>`_ (`Klenk and Spiteri, 2024 <https://doi.org/10.1007/s10586-024-04318-5>`_). The orchestrator creates a job actor for each submitted job. Each job actor manages its ``Job`` object and creates actors to manage its ``SimulationUnit`` objects. The job actor dispatches tasks and calls the controller; the unit actors execute the tasks.
+
+A unit using ``SubprocessTaskExecutor`` runs its task code in a separate process on the same host. Its unit actor and executor remain in the parent process alongside ``Runtime``. The hierarchy below includes this subprocess arrangement.
+
+.. mermaid:: diagrams/orchestration.mmd
    :alt: MIAOW orchestration actor hierarchy
    :align: center
-   :width: 90%
 
-The five application actors use CAF-managed implementation classes: public ``miaow::Job`` and ``miaow::SimulationUnit``, and internal ``miaow::core::Orchestrator``, ``SubprocessRegistration``, and ``SubprocessWorker``. Each class contains its actor's state and methods, defines message handlers through ``make_behavior()``, and is spawned with ``caf::actor_from_state<Implementation>``.
+Job execution
+-------------
 
-An actor provides identity, a mailbox, scheduling, and lifecycle management. Its contained implementation object holds application data and handles operations. Names such as ``simulation_unit_actor`` identify actor roles or handles; ``SimulationUnit`` names the corresponding implementation class. The public ``miaow::TaskExecutor`` interface supplies task execution, and ``TaskExecutorRegistry`` stores the registrations selected by ``TaskExecutorId``. ``SimulationUnit`` owns a separate ``SubprocessState`` member for asynchronous child-process lifecycle management. Subprocess lifecycle callbacks run serially in that actor, so their captures refer to actor-owned state.
-
-A typical workflow includes the following steps:
-
-1. Caller prepares a ``Job`` with declared simulation units, initial tasks, and an optional controller, then calls ``Runtime::submit_job(std::move(job))``.
-2. Runtime assigns a ``job_submission_id`` and sends the prepared job to ``orchestrator_actor``.
-3. ``orchestrator_actor`` spawns one ``job_actor`` that adopts the prepared state and calls ``initialize(Job&)`` once. The controller may add units and tasks alongside caller-provided work.
-4. The job selects the earliest queued task whose target unit is idle, subject to ``RuntimeOptions::max_concurrent_tasks_``. It activates that unit on first use and sends the task to its actor.
-5. The unit constructs its selected ``TaskExecutor`` once and retains it across operations. Each task calls that executor and returns a ``TaskResult`` to the job actor.
-6. The job records completed tasks and invokes ``JobController::callback(Job&, completed_tasks, failed_units)`` according to the controller policy. The controller appends work through ``Job::add_task()``; preparation and dispatch follow after the callback returns. Execution ends when no queued or active tasks remain and the controller adds no further work.
-7. The job actor waits for remaining units to shut down, then calls ``JobController::finalize()`` once to collect structured job output. Completed ``TaskRecord`` values are sorted by ``TaskId`` and stored with this output in one ``JobRecord``.
-8. Runtime fulfils the caller's ``JobHandle`` future.
-
-Each ``JobController`` selects a ``TaskGenerationPolicy`` through its constructor:
-
-- ``asynchronous`` (default): call ``callback()`` after an operation completes or a unit becomes unavailable.
-- ``batch_synchronous``: call ``callback()`` when every task in the current batch has reported a result. Caller-provided tasks and tasks added during initialization form the first batch; tasks added by each callback form the next batch.
-
-Both policies pass new task records in completion order through a borrowed ``std::span<const TaskRecord>``. Asynchronous callbacks receive an operation completion or the records affected by unit loss; batch callbacks receive the completed batch. A batch is complete when its queued tasks are settled and its active operations have finished.
-
-The controller retains any history it needs between callbacks. It decides how to respond to reported operation failures and unavailable units.
-
-Controller hooks run serially in the job actor. ``initialize(Job&)`` always runs once before the initial dispatch and may add tasks alongside caller-provided work. An empty job finalizes normally when initialization adds no tasks. Controllers can request job-level failure through ``Job::fail(reason)``; hook exceptions also propagate through ``JobHandle::get()`` and produce no final job record.
-
-``UnitFailure`` identifies an unavailable unit by handle and diagnostic reason. Executor or subprocess startup failure, unexpected actor or child termination, and task timeout can make a unit unavailable. Its active and queued tasks receive failed records exactly once. An idle unit can fail without producing a task record.
-
-The callback receives these records and the unit failure together. Asynchronous policy reports the loss promptly; batch policy waits for the current batch to finish. The default controller fails the job. A custom controller may continue other units, remove the failed unit, or explicitly construct a replacement. Recovery never reconstructs state or replays tasks automatically.
-
-The following figure illustrates the task scheduling process managed by the ``job_actor`` in steps 4 through 6 of the above workflow, where the orange cat icons represent tasks and the worker groups contain simulation-unit actors. Each task is dispatched to its declared unit when that unit is idle:
-
-.. image:: images/task_scheduling_tikz.png
-   :alt: MIAOW task queue and dispatch to simulation units
-   :align: center
-   :width: 67%
-
-Units activate when their first ready task is dispatched. Each ``SimulationUnit`` owns its own executor instance and retains it across operations. ``RuntimeOptions::max_concurrent_tasks_`` limits active operations, independently of unit count. Idle actors do not occupy CAF scheduler threads.
+A caller declares units, assigns tasks to them, and submits the job to ``Runtime``. The job actor then schedules those tasks and collects their results.
 
 Simulation units
------------------
+^^^^^^^^^^^^^^^^
 
-``Job`` owns simulation units, initial tasks, and its controller before submission. ``add_unit(feature_id, executor_id)`` constructs a prepared ``SimulationUnit`` and returns its job-scoped ``SimulationUnitHandle``. The feature ID labels the scientific unit; the executor ID selects its factory. The unit actor is created when its first ready task is dispatched.
-
-Each job receives a process-local ``JobCreationId`` at construction and retains it across moves. Unit handles store this identity as ``job_creation_id`` alongside their vector ``index``, so handles from different jobs remain distinct. Submission assigns a separate runtime-local ``JobSubmissionId``, stored as ``job_submission_id`` in the final job record and used to number the job's output directory.
+``job.add_unit(feature_id, executor_id)`` declares a simulation unit and returns a ``SimulationUnitHandle`` that can be used only with that job. The feature ID labels the scientific unit; the executor ID selects its registered executor. Every task targets a unit in its owning job. For example, with an executor registered as ``executor`` that accepts an operation named ``increment`` and an integer argument, we can create a job with two units and submit tasks to them as follows:
 
 .. code-block:: cpp
 
    miaow::Job job;
-   const miaow::SimulationUnitHandle a = job.add_unit("A", counter_executor);
-   const miaow::SimulationUnitHandle b = job.add_unit("B", counter_executor);
+   const miaow::SimulationUnitHandle a = job.add_unit("A", executor);
+   const miaow::SimulationUnitHandle b = job.add_unit("B", executor);
    job.add_task(a, "increment", 2);
    job.add_task(b, "increment", 1);
    job.add_task(a, "increment", 3);
-   job.set_controller(std::make_unique<CounterController>(a, b));
    miaow::JobHandle result = runtime.submit_job(std::move(job));
-
-``add_task(unit, operation, args...)`` stores the operation in ``Task::operation_`` and converts each trailing argument to a ``caf::config_value`` in ``Task::args_``. The executor interprets these values; completed ``TaskRecord`` values retain the operation and target handle.
-
-Unit handles survive job moves and may be stored in a controller. Every task targets a unit in its owning job. Controllers can add units through ``job.add_unit(...)`` and append operations through ``job.add_task(...)`` during execution.
-
-Each unit retains its executor until shutdown and runs one operation at a time in submission order. ``max_concurrent_tasks_`` limits occupied task slots across the job, independently of unit count. Tasks for busy units do not block ready tasks for other units.
-
-``job.remove_unit(handle)`` closes a unit to new tasks and drains accepted operations before shutdown. Repeated removal is harmless, and expected shutdown is not a unit failure. Unit indices are never reused. Replacements for removing or failed units may reuse their feature labels but receive distinct handles. Job completion shuts down all remaining units and waits for cleanup before delivering its result.
-
-Operations on a unit share its feature label, with unique task IDs in artifact stems such as ``A_task_0`` and ``A_task_2``. BMI executors create a fresh model for each task.
-
-Task timing
------------
-
-``TaskRecord::dispatch_offset_from_job_start_`` stores the elapsed seconds from job start to task dispatch, measured using the same monotonic clock as ``run_time_``. Dispatch precedes the unit actor beginning execution.
-
-``TaskRecord::unit_`` is required and retains the declared target's ``job_creation_id`` and ``index``, including for tasks that never dispatch. The index is the unit's position in the job's bindings and may exceed ``max_concurrent_tasks_ - 1``. A non-null dispatch offset identifies a dispatched task, independently of its scheduler thread or subprocess PID.
-
-``TaskRecord::run_time_`` measures the interval from dispatch until the job actor records the result or timeout. It includes scheduling and communication overhead and any subprocess startup or cleanup. Adding it to the dispatch offset gives the time relative to job start when the terminal status was recorded.
-
-Tasks that reach the job timeout before dispatch have a null dispatch offset and zero runtime. Dispatched tasks retain their dispatch offset and elapsed runtime up to the timeout. Unavailable dispatch offsets are ``std::nullopt`` (``null`` in JSON).
-
-Structured task output
-----------------------
-
-``TaskResult::output_`` carries optional structured output as a ``caf::config_value``. It supports scalar values and recursively nested lists and dictionaries, and remains available through the completed ``TaskRecord`` values passed to ``JobController::callback()`` and retained by the final ``JobRecord``. Controllers are responsible for validating the structure and value types defined by their task executors. Large time series, grids, and model state should be written to files and referenced by ``TaskResult::artifact_paths_``.
-
-When ``RuntimeOptions::output_root_`` is configured, each task's structured output (or a ``null`` value) is included in the ``job_record.json`` written when the job completes.
-
-CAF uses MIAOW's ``inspect()`` functions to collect each job record's fields. nlohmann/json then writes the record to a JSON file. Saved records retain CAF's type annotations and duration strings, with enough digits to round-trip finite double values. Non-finite numerical values are written as JSON ``null``.
-
-Structured job output
----------------------
-
-``JobController::finalize()`` returns optional structured output as a ``caf::config_value``, with null as the default. Runtime retains the result in ``JobRecord::output_`` and includes it in ``job_record.json`` when output is enabled.
-
-The job actor calls ``finalize()`` once when creating the final record, including for empty jobs and job timeouts. At a timeout, the controller can return its accumulated state; synthetic timeout records are not passed to ``callback()``. Finalization is serialized with task-generation calls and should return promptly. Controller errors and runtime shutdown produce no final record. Exceptions from controller hooks propagate through ``JobHandle::get()``.
-
-.. warning::
-
-   With CAF 1.1, task and job output must not contain null list elements or dictionary values: binary deserialization fails. Returning ``caf::config_value{}`` for the entire output is supported.
 
 .. _task-execution:
 
-Task execution
---------------
+Task dispatch and executors
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A unit's ``TaskExecutorId`` selects its registered executor. ``TaskExecutorRegistry::add<TaskExecutorType>(...)`` registers parent-process execution; ``TaskExecutorRegistry::add_subprocess(executable)`` registers a subprocess-backed executor. Each task selects the unit through ``Task::unit_``.
+The job scans queued tasks in submission order and selects the first whose target unit is idle. It skips tasks for busy units so that tasks for other units can proceed. ``RuntimeOptions::max_concurrent_tasks_`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
 
-Completed task records retain the executor selection as ``task_executor_id``, derived from the unit binding. The registry ID identifies an implementation and its configuration; the unit handle identifies a particular job-scoped instance.
+When dispatching a unit's first task, the job creates its actor. The unit constructs one ``TaskExecutor`` before executing that task and reuses the executor for subsequent tasks. Operations on a unit run serially in the order they are received in the actor's mailbox.
 
-Every unit actor constructs one executor and calls ``execute(task)`` for each operation. Operation failures use failed ``TaskResult`` values. Subprocess executors delegate their response while actor-owned state starts or reuses the child and receives its result without blocking a parent scheduler thread. The child implements the ``Task`` to ``TaskResult`` contract through ``run_subprocess_worker()`` and does not receive the parent registry.
+A unit's ``TaskExecutorId`` selects an executor registered through ``TaskExecutorRegistry``. The registration determines where its task code runs:
 
-A subprocess task timeout terminates and reaps the child before reporting unit loss. A job timeout marks all unfinished tasks as failed and requests unit shutdown; it remains a hard deadline that controller policy cannot extend. Running in-process evaluations are not interrupted by either timeout; their actors shut down after ``execute()`` returns. Job delivery waits for shutdown, so cleanup or an uninterruptible native call may delay delivery beyond the configured deadline.
+.. list-table::
+   :header-rows: 1
+   :widths: 40 35 25
 
-Each subprocess-backed unit starts its own child on first use and retains it between operations. Reported operation failures retain the child and its diagnostics.
+   * - Registration
+     - Task executor
+     - Task code runs in
+   * - ``add<MyTaskExecutor>(...)``
+     - ``MyTaskExecutor``
+     - Parent process
+   * - ``add_subprocess(executable)``
+     - ``SubprocessTaskExecutor``
+     - Child process
 
-Startup failure, child termination, and task timeout trigger cleanup and report unit loss. Removal and job completion also request child shutdown. Cleanup polls for process exit without blocking a parent scheduler thread; the unit quits only after its child is reaped.
+The executor object remains in the parent process in both cases. ``SubprocessTaskExecutor`` forwards tasks to a child process, as described under :ref:`subprocess-execution`.
+
+Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Individual BMI operations are not supported yet, so the BMI model does not persist across tasks. See :doc:`bmi` for the model lifecycle.
+
+Job lifecycle
+^^^^^^^^^^^^^
+
+After submission, the job actor calls the controller's ``initialize()`` hook and begins dispatching tasks. Each executor returns a ``TaskResult``. The job actor adds the task's identity and timing to create a ``TaskRecord``, then passes new records to the controller according to its callback policy. The controller can use those results to add more tasks.
+
+The sequence below shows one job with one unit. Open arrowheads are asynchronous CAF messages; dashed arrows are replies or termination notifications; filled arrowheads are local calls, actor creation, or labelled OS signals.
+
+.. mermaid:: diagrams/job_execution.mmd
+   :alt: Job submission, lazy unit creation, repeated tasks, and completion
+   :align: center
+
+When no tasks are queued or running and the controller adds no more tasks, the job actor tells each simulation-unit actor to shut down and waits for all of them to terminate. It then calls ``JobController::finalize()`` and returns a ``JobRecord`` through the caller's ``JobHandle`` future.
+
+Job controllers
+---------------
+
+A ``JobController`` determines how the workflow proceeds after tasks return results. For example, an optimization controller can submit tasks for a batch of candidate parameters and use their results to choose the next batch. The job actor handles dispatch and unit lifetimes for the work the controller requests.
+
+Lifecycle hooks
+^^^^^^^^^^^^^^^
+
+The following controller hooks run serially inside the job actor:
+
+- ``initialize(Job&)`` runs once before initial dispatch, and may declare units and add tasks alongside caller-provided work. If the job has no tasks after initialization, it calls ``finalize()`` and returns an empty task-record list.
+
+- ``callback(Job&, completed_tasks, failed_units)`` receives new task records and unit failures. The controller may append tasks or declare, remove, or replace units. The job waits for the callback to return before dispatching any tasks it added.
+
+- ``finalize()`` runs once when creating the final job record, after units have shut down. It returns structured job output and also runs for empty jobs and job timeouts. Hooks should return promptly.
+
+Calling ``Job::fail(reason)`` or throwing from a controller hook causes ``JobHandle::get()`` to throw instead of returning a ``JobRecord``. Runtime shutdown also produces no final job record.
+
+Callback policies
+^^^^^^^^^^^^^^^^^
+
+Each ``JobController`` selects a ``TaskGenerationPolicy`` through its constructor:
+
+- ``asynchronous`` (default): call ``callback()`` after a task succeeds or fails, or a unit fails.
+- ``batch_synchronous``: call ``callback()`` after every task in the current batch has a success or failure record and no task from that batch is still running. Caller-provided tasks and tasks added during initialization form the first batch; tasks added by each callback form the next batch.
+
+Both policies pass new task records in completion order through ``std::span<const TaskRecord>``. The controller must copy any records it needs after the callback returns. An asynchronous callback receives the newly completed task's record or the records for tasks affected by a unit failure; a batch callback receives all records from that batch.
+
+.. _subprocess-execution:
+
+Subprocess execution
+--------------------
+
+Subprocess execution gives each unit a separate address space. Models that use process-global state can therefore run concurrently without sharing that state. MIAOW can also stop a timed-out task by terminating its child process.
+
+Registering an executable with ``TaskExecutorRegistry::add_subprocess()`` selects ``SubprocessTaskExecutor`` for units using that registration. Each such unit launches its own child for its first task and reuses it for later tasks. The executor sends each ``Task`` to a worker actor in the child, where a handler performs the computation and returns a ``TaskResult``. The unit actor forwards that result to the job actor.
+
+``SubprocessState`` manages the child's launch, communication, and termination inside the unit actor. The unit actor can process messages while waiting for the child; it does not block a parent scheduler thread for the duration of the computation.
+
+Registration and reuse
+^^^^^^^^^^^^^^^^^^^^^^
+
+Before the first task can execute, the parent needs the child worker's actor handle to send it messages. The child registers that handle with ``subprocess_registration_actor``, which routes it to the unit that launched the child. The unit then sends the waiting task. Later tasks reuse the same child and handler, invoked serially once per task.
+
+.. mermaid:: diagrams/subprocess_registration.mmd
+   :alt: Subprocess launch, worker registration, and first task response
+   :align: center
 
 .. _custom-subprocess-executables:
 
 Custom subprocess executables
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The following setup registers an executable, declares a unit, and appends one operation:
+An executable supplies the computation that runs in the child. MIAOW provides a BMI worker (see :doc:`bmi`); a custom executable can handle other operations. In the parent program, register its path, declare a unit, and append a task:
 
 .. code-block:: cpp
 
@@ -143,7 +143,7 @@ The following setup registers an executable, declares a unit, and appends one op
    const miaow::SimulationUnitHandle unit = job.add_unit("custom", custom_executor_id);
    job.add_task(unit, "run", "input");
 
-The parent registry constructs a ``SubprocessTaskExecutor`` for each activated unit. The selected executable links against MIAOW and implements the task contract by supplying any synchronous callable that accepts ``const Task&`` and returns ``TaskResult``:
+The executable links against MIAOW and supplies a synchronous callable accepting ``const Task&`` and returning ``TaskResult``. ``run_subprocess_worker()`` registers the worker with the parent and invokes this callable for each task it receives:
 
 .. code-block:: cpp
 
@@ -157,10 +157,83 @@ The parent registry constructs a ``SubprocessTaskExecutor`` for each activated u
        return miaow::run_subprocess_worker(argc, argv, execute_task);
    }
 
-The executable's ``main()`` must pass its supplied ``argc`` and ``argv`` to ``run_subprocess_worker()`` unchanged because MIAOW uses those arguments for parent registration. Custom configuration travels in ``Task`` rather than additional command-line arguments. The worker invokes the handler serially once per received task; a persistent subprocess may invoke the same handler object for multiple tasks. An exception from the handler becomes a failed ``TaskResult``.
+Pass ``argc`` and ``argv`` unchanged to ``run_subprocess_worker()``; they carry parent-registration settings. Task data and custom configuration arrive through ``Task`` messages. The child does not receive the parent registry. An exception from the handler becomes a failed ``TaskResult``.
+
+Cleanup
+^^^^^^^
+
+When the child returns a failed ``TaskResult``, the unit keeps the child available for later tasks and retains its diagnostic files. If child startup fails, the child terminates unexpectedly, or a task times out, the unit stops and reports ``UnitFailure``. Unit removal and job completion also stop the child.
+
+The sequence shows shutdown of a ``SubprocessTaskExecutor`` unit that has launched a child. ``SubprocessState`` terminates the child and collects its exit status before the unit actor quits. A task timeout or unexpected child termination follows the same cleanup steps.
+
+.. mermaid:: diagrams/subprocess_cleanup.mmd
+   :alt: Child termination, non-blocking reaping, and unit termination
+   :align: center
+
+Failures and shutdown
+---------------------
+
+Task and unit failures
+^^^^^^^^^^^^^^^^^^^^^^
+
+An operation failure produces a failed ``TaskResult``; the unit remains available for later tasks. A ``UnitFailure`` means that the unit can no longer execute tasks. Failure to construct an executor, unexpected actor termination, and task timeout can cause a unit failure. For a ``SubprocessTaskExecutor``, failure to start the child or unexpected child termination also causes a unit failure.
+
+``UnitFailure`` includes the unit handle and a message describing the cause. Its running and queued tasks each receive one failed record. An idle unit can fail without producing a task record.
+
+The callback receives the affected records and the ``UnitFailure`` together. Asynchronous policy reports the failure without waiting for other tasks; batch policy waits until no tasks from the batch remain queued or running. The default controller fails the job. A custom controller may continue other units, remove the failed unit, or construct a replacement. MIAOW does not recreate failed units or retry their tasks automatically.
+
+Timeouts
+^^^^^^^^
+
+A task timeout makes its unit unavailable and is reported to the controller as a ``UnitFailure``. At a job timeout, the job actor marks all unfinished tasks as failed and tells each simulation-unit actor to shut down. The controller cannot extend this deadline. Task records created because of the job timeout are not passed to ``callback()``; ``finalize()`` can return output based on earlier callbacks.
+
+For a ``SubprocessTaskExecutor``, a task timeout terminates the child and waits for it to exit before reporting ``UnitFailure``. Tasks executing in the parent process cannot be interrupted by a task or job timeout. Their actors stop after ``execute()`` returns, so the job result may arrive after the configured deadline.
+
+Runtime shutdown
+^^^^^^^^^^^^^^^^
+
+Destroying ``Runtime`` ends execution of its active jobs. Runtime tells the orchestrator to shut down; the orchestrator forwards that request to each job actor and exits. Each job actor tells its unit actors to shut down and waits for them to terminate. Actor-system destruction waits for the remaining actors. Jobs interrupted this way produce no final ``JobRecord``.
+
+.. mermaid:: diagrams/runtime_shutdown.mmd
+   :alt: Concurrent orchestrator shutdown and job cleanup
+   :align: center
+
+Results and records
+-------------------
+
+Task records
+^^^^^^^^^^^^
+
+The job actor combines each ``TaskResult`` with the task's ID, operation, metadata, executor ID, and timing information to create a ``TaskRecord``. A ``TaskId`` identifies a task within its job. The final ``JobRecord`` contains these records sorted by ``TaskId``.
+
+``TaskRecord::unit_`` identifies the task's target unit, including for tasks that never dispatch. Unit identity is independent of the concurrent-task limit. The saved ``task_executor_id`` identifies the executor registration used by that unit.
+
+Operations on a unit share its feature label, with unique task IDs in artifact stems such as ``A_task_0`` and ``A_task_2``.
+
+Task timing
+^^^^^^^^^^^
+
+``TaskRecord::dispatch_offset_from_job_start_`` stores the elapsed seconds from job start to dispatch, using the same monotonic clock as ``run_time_``. Dispatch precedes the unit actor beginning execution. A non-null offset identifies a dispatched task, independently of its scheduler thread or subprocess PID.
+
+``TaskRecord::run_time_`` measures the interval from dispatch until the job actor records success or failure. It includes scheduling, communication, and any subprocess startup or cleanup that occurs before the result is recorded. Adding it to the dispatch offset gives the time relative to job start when that result was recorded.
+
+Tasks that reach the job timeout before dispatch have a null dispatch offset and zero runtime. Dispatched tasks retain their offset and elapsed runtime up to the timeout. Unavailable offsets are ``std::nullopt`` (``null`` in JSON).
+
+Structured output
+^^^^^^^^^^^^^^^^^
+
+``TaskResult::output_`` carries optional structured output as a ``caf::config_value``. It supports scalar values and nested lists and dictionaries, and remains available through the ``TaskRecord`` values passed to the controller and retained by the final ``JobRecord``. Controllers validate the structure and value types defined by their task executors. Large time series, grids, and model state belong in files referenced by ``TaskResult::artifact_paths_``.
+
+``JobController::finalize()`` returns optional structured output in the same format, with null as the default. Runtime retains this value in ``JobRecord::output_``.
+
+When ``RuntimeOptions::output_root_`` is configured, Runtime writes the completed ``JobRecord``, including task and job output, to ``job_record.json``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
+
+.. note::
+
+   CAF has a binary-deserialization limitation for null entries in ``caf::config_value`` lists and dictionaries, which also applies to structured task and job output. A null value for the entire output (``caf::config_value{}``) is supported.
 
 Limitations
 -----------
 
-- Although subprocess execution is currently supported using remote actors, MIAOW does not currently support distributed-memory parallelism across multiple nodes. This is a planned feature for future releases.
-- Microsoft Windows is not currently supported, and there are no immediate plans to support it. MIAOW has been tested on Linux and macOS, and future releases will continue to support these platforms.
+- Subprocess actors currently run on the same host. Distributed-memory parallelism across multiple nodes is planned.
+- MIAOW has been tested on Linux and macOS. Microsoft Windows is not currently supported, and there are no immediate plans to support it.

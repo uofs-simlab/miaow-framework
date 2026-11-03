@@ -20,10 +20,9 @@ Default examples
 - `examples/00_hello <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/00_hello>`_: minimal orchestration and diagnostics output
 - `examples/01_heat <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/01_heat>`_: BMI integration using the `CSDMS heat example <https://github.com/csdms/bmi-example-cxx>`_
 - `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: C++ and Fortran heat plugins, each run in-process and in its own unit subprocess
-- `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: computes a square root using Heron's method, where tasks output the next estimate and residual for the job controller to check for convergence and generate the next task
-- `examples/09_persistent_counter <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/09_persistent_counter>`_: independent counter values retained across operations, with queued work drained before unit removal
+- `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: computes a square root using Heron's method, with the executor retaining its estimate across tasks and the job controller requesting iterations until the residual meets the convergence tolerance
 
-The hello, dynamic BMI, and job-controller examples accept an optional ``--config <file.json>`` alongside the common runtime options. Omitted fields retain the default inputs. This allows successful and failing workflows to use the same programs.
+The hello, dynamic BMI, and job-controller examples accept an optional ``--config <file.json>`` alongside the common runtime options. Omitted fields retain the default inputs. This allows tests for successful and failing workflows to use the same programs.
 
 .. list-table:: Optional JSON inputs
    :header-rows: 1
@@ -31,14 +30,14 @@ The hello, dynamic BMI, and job-controller examples accept an optional ``--confi
 
    * - Example
      - Fields
-   * - Hello
+   * - ``00_hello``
      - ``delay_ms`` sets the delay before each task executes. ``tasks`` replaces the default messages with a list of objects containing optional ``message``, ``feature_id``, and ``task_executor_id`` fields. Each entry declares a unit; ``task_executor_id`` selects its executor registration. An omitted message produces a failed task.
-   * - Dynamic BMI
+   * - ``03_dynamic_bmi``
      - ``cpp_plugin``, ``fortran_plugin``, ``init_config``, and ``time_step_tolerance_seconds`` override the plugin paths and shared model configuration.
-   * - Job controller
+   * - ``07_job_controller``
      - ``radicand``, ``initial_estimate``, ``residual_tolerance``, and ``maximum_iterations`` set the iteration inputs and stopping conditions.
 
-For example, a job-controller config containing ``{"maximum_iterations": 1}`` reports non-convergence after the first iteration. Run it with ``./miaow_job_controller --config <file.json>`` from the example directory. Plugin and model configuration paths are also resolved from the example's working directory.
+For example, a job controller config containing ``{"maximum_iterations": 1}`` reports non-convergence after the first iteration. Run it with ``./miaow_job_controller --config <file.json>`` from the example directory. Plugin and model configuration paths are also resolved from the example's working directory.
 
 Additional examples
 -------------------

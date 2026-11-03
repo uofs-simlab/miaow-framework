@@ -130,14 +130,14 @@ The BMI operation regressions use a test driver with the heat models from ``03_d
      - Five execution paths each reject an unknown operation and then complete a valid run after 40 updates
    * - `miaow_bmi_repeated_run <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_repeated_run.json>`_
      - Five execution paths each complete two successive runs on the same unit, with 40 updates per run
+   * - `miaow_bmi_repeated_run_concurrent <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_repeated_run_concurrent.json>`_
+     - The same repeated runs succeed with three concurrent task slots and 40 updates per run
    * - `miaow_example_07_job_controller <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/CMakeLists.txt>`_
      - Starting from 1, three Heron estimates match 1.5, 17/12, and 577/408 within ``1e-14``; the final residual ``|x^2 - 2|`` is at most ``1e-5``
    * - `miaow_example_07_job_controller_non_convergence <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_non_convergence.json>`_
      - With the iteration limit set to 1, the controller reports non-convergence after its first iteration; the program exits with code 1 and saves no job record
    * - `miaow_example_07_job_controller_small_values <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_small_values.json>`_
      - For radicand ``2e-16``, saved estimates match ``1e-8 * [1.5, 17/12, 577/408]`` within ``1e-14`` relative error; the final residual is positive and at most ``1e-21``
-   * - `miaow_example_09_persistent_counter <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/09_persistent_counter/CMakeLists.txt>`_
-     - Two counter units share one executor registration and one task slot; repeated operations retain independent values, and accepted increments drain after removal is requested
 
 Library installation build
 --------------------------
@@ -216,8 +216,7 @@ The following top-level CMake options are available:
    * - ``-DMIAOW_EXAMPLES``
      - | ``00_hello;01_heat;``
        | ``03_dynamic_bmi;``
-       | ``07_job_controller;``
-       | ``09_persistent_counter``
+       | ``07_job_controller``
      - Semicolon-separated list of examples to build when ``BUILD_EXAMPLES`` is enabled
    * - ``-DMIAOW_BOOST_PROVIDER``
      - ``auto``
@@ -255,7 +254,7 @@ Provider values are interpreted as follows:
 Documentation build
 -------------------
 
-The generated API documentation uses `Doxygen <https://www.doxygen.nl/>`_ for C++ documentation-comment extraction and `Sphinx <https://www.sphinx-doc.org/>`_ with `Breathe <https://breathe.readthedocs.io/>`_ for HTML rendering. Doxygen must be installed separately and available on ``PATH``.
+The generated API documentation uses `Doxygen <https://www.doxygen.nl/>`_ for C++ documentation-comment extraction and `Sphinx <https://www.sphinx-doc.org/>`_ with `Breathe <https://breathe.readthedocs.io/>`_ for HTML rendering. Architecture diagrams use Mermaid sources in ``docs/diagrams``, rendered by ``sphinxcontrib-mermaid``. Doxygen must be installed separately and available on ``PATH``.
 
 The following commands create a dedicated Python environment and build the documentation:
 

@@ -180,7 +180,7 @@ Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry, RuntimeOpti
     }
 
     // Spawn the shared orchestrator actor to handle job requests and job completion
-    orchestrator_ =
+    orchestrator_actor_ =
         actor_system_->spawn(caf::actor_from_state<core::Orchestrator>, runtime_options_,
                              run_id_, task_executor_registry_,
                              subprocess_registration_actor, *subprocess_registration_port,
@@ -189,9 +189,9 @@ Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry, RuntimeOpti
 
 // Request actor shutdown before releasing the shared actor system
 Runtime::~Runtime() {
-    if (orchestrator_) {
+    if (orchestrator_actor_) {
         // Runtime -> orchestrator_actor: stop active jobs and child registration
-        caf::anon_mail(core::shutdown_atom_v).urgent().send(orchestrator_);
+        caf::anon_mail(core::shutdown_atom_v).urgent().send(orchestrator_actor_);
     }
 }
 
@@ -295,7 +295,7 @@ JobHandle Runtime::submit_job(Job job) const {
     // CAF may copy local messages; the receiving actor adopts the prepared Job state
     auto shared_job = std::make_shared<Job>(std::move(job));
     caf::anon_mail(caf::get_atom_v, job_submission_id, std::move(shared_job))
-        .send(orchestrator_);
+        .send(orchestrator_actor_);
     return handle;
 }
 

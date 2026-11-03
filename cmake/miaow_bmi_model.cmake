@@ -1,5 +1,3 @@
-include(CMakeParseArguments)
-
 # miaow_add_bmi_model(EXECUTABLE_TARGET <target>
 #     [MODEL_ROOT <dir> | MODEL_LOCAL_SUBDIR <dir>]
 #     [MODEL_GIT_REPOSITORY <url> MODEL_GIT_TAG <rev>]

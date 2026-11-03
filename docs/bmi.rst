@@ -72,8 +72,8 @@ Custom executables can implement the same :ref:`task contract <custom-subprocess
 
 Dynamic C++ plugins must export the ``bmi_model_create()`` and ``bmi_model_destroy(...)`` symbols as C linkage. Dynamic Fortran plugins must export ``register_bmi(void**)`` for the linked `NOAA-OWP iso_c_fortran_bmi bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_. See ``examples/03_dynamic_bmi`` for examples of concrete C++ and Fortran plugin workflows.
 
-Model time
-----------
+Model timekeeping
+-----------------
 
 ``time_step_tolerance_seconds_`` defines the absolute tolerance for the final-time comparison, with a default of ``1e-4`` seconds. It must be finite, non-negative, and less than half the model time step. MIAOW converts the tolerance to the units reported by ``GetTimeUnits()``, supporting seconds, minutes, hours, and days with common abbreviations and singular or plural names.
 

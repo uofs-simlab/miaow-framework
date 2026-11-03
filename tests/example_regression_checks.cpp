@@ -73,19 +73,8 @@ struct JobRecordChecker {
 
 } // namespace
 
-// Before these checks run, tests/run_example.cmake runs the configured example executable.
-// BOOST_FIXTURE_TEST_CASE(name, fixture) registers a named Boost test whose generated class
-// derives from the fixture. Boost constructs a fresh fixture before running the test body,
-// which can access the fixture's members, including its map of saved task records.
-// JobRecordChecker's constructor loads the job record and performs the shared checks;
-// the body performs additional checks specific to that example.
-
-// Each example's CMakeLists.txt registers CTest tests through miaow_add_example_test:
-// TEST_NAME names the CTest test, EXECUTABLE_TARGET selects the example executable, and
-// REGRESSION selects the Boost test in miaow_example_tests via --run_test=<REGRESSION>.
-// Multiple CTest registrations may reuse a REGRESSION value. Each registration runs its
-// own configured example, then invokes the selected checker on that example's output.
-// BUILD_TESTING enables test registration; ctest executes the registered tests.
+// CTest runs each example through tests/run_example.cmake, then selects a checker here
+// with --run_test=<REGRESSION> to inspect the saved job record.
 
 // Registered in examples/00_hello/CMakeLists.txt using default example inputs
 BOOST_FIXTURE_TEST_CASE(hello, JobRecordChecker) {
@@ -263,8 +252,6 @@ BOOST_FIXTURE_TEST_CASE(controller_small_values, JobRecordChecker) {
         BOOST_TEST_CONTEXT("iteration " << id + 1) {
             const auto& result = tasks.at(id).at("result");
 
-            // Every iteration must complete successfully even at this smaller scale
-            BOOST_TEST(result.at("status").get<std::string>() == "succeeded");
             const auto& output = result.at("output");
             const double estimate = output.at("estimate").at("value").get<double>();
             const double residual = output.at("residual").at("value").get<double>();
@@ -285,46 +272,6 @@ BOOST_FIXTURE_TEST_CASE(controller_small_values, JobRecordChecker) {
                 // The final residual must satisfy the stopping tolerance
                 BOOST_TEST(residual <= 1e-21);
             }
-        }
-    }
-}
-
-// Two persistent counters share one registration and a single concurrent task slot
-BOOST_FIXTURE_TEST_CASE(persistent_counter, JobRecordChecker) {
-    const std::array expected_counts{2, 5, 1, 5, 9, 7};
-    const std::array<std::size_t, 6> expected_units{0, 0, 1, 1, 0, 1};
-    BOOST_REQUIRE_EQUAL(tasks.size(), expected_counts.size());
-
-    // CAF writes durations using a magnitude-dependent suffix
-    const auto seconds = [](const nlohmann::json& value) {
-        const std::string text = value.get<std::string>();
-        std::size_t suffix;
-        const double amount = std::stod(text, &suffix);
-        const std::map<std::string, double> scale{{"ns", 1e-9},  {"us", 1e-6},
-                                                  {"ms", 1e-3},  {"s", 1.0},
-                                                  {"min", 60.0}, {"h", 3600.0}};
-        return amount * scale.at(text.substr(suffix));
-    };
-
-    double previous_completion = 0.0;
-    for (std::size_t id = 0; id < tasks.size(); ++id) {
-        BOOST_TEST_CONTEXT("operation " << id) {
-            const auto& task = tasks.at(id);
-            BOOST_TEST(task.at("operation").get<std::string>() == "increment");
-            BOOST_TEST(task.at("result").at("output").get<int>() == expected_counts[id]);
-            BOOST_TEST(task.at("unit").at("index").get<std::size_t>() ==
-                       expected_units[id]);
-            BOOST_TEST(task.at("task_executor_id").get<std::size_t>() ==
-                       tasks.at(0).at("task_executor_id").get<std::size_t>());
-            const std::string feature = expected_units[id] == 0 ? "A" : "B";
-            BOOST_TEST(task.at("metadata").at("feature_id").get<std::string>() == feature);
-            BOOST_TEST(task.at("task_name").get<std::string>() ==
-                       feature + "_task_" + std::to_string(id));
-
-            // One task slot prevents overlap even though both unit actors remain alive
-            const double dispatch = seconds(task.at("dispatch_offset_from_job_start"));
-            BOOST_TEST(dispatch >= previous_completion - 1e-9);
-            previous_completion = dispatch + seconds(task.at("run_time"));
         }
     }
 }

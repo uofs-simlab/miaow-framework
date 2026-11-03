@@ -1,5 +1,3 @@
-include(CMakeParseArguments)
-
 # miaow_resolve_model_root(<out-var> [MODEL_ROOT <dir>]
 #     [MODEL_LOCAL_SUBDIR <dir>] [MODEL_LABEL <label>])
 #

@@ -1,0 +1,40 @@
+---
+config:
+  sequence:
+    useMaxWidth: true
+    mirrorActors: false
+    width: 180
+    actorMargin: 24
+    diagramMarginX: 16
+    diagramMarginY: 12
+    messageMargin: 18
+    actorFontSize: 14
+    messageFontSize: 14
+    noteFontSize: 14
+  themeVariables:
+    actorBkg: "#edf2f6"
+    actorBorder: "#4a657d"
+    actorTextColor: "#222222"
+    signalColor: "#4a657d"
+    noteBkgColor: "#fff3df"
+    noteBorderColor: "#e8a84b"
+---
+sequenceDiagram
+    participant R as Runtime
+    participant O as orchestrator_actor
+    participant Reg as subprocess_registration_actor
+    participant J as job_actor
+    participant U as simulation_unit_actor
+
+    R-)O: shutdown_atom
+    O-)J: shutdown_atom<br/>for each active job
+    par Orchestrator shutdown
+        O-)Reg: CAF exit (user_shutdown)
+        O->>O: quit()
+    and Job and unit cleanup
+        J-)U: shutdown_atom<br/>for each live unit
+        U->>U: Release executor<br/>For SubprocessTaskExecutor:<br/>terminate child and wait for exit
+        U-->>J: CAF termination notification
+        Note over J: Wait for all unit actors to terminate
+        J->>J: Return Runtime shutdown error<br/>then quit()
+    end

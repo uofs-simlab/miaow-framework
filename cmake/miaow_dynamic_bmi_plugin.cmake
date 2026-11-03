@@ -1,5 +1,3 @@
-include(CMakeParseArguments)
-
 # miaow_add_dynamic_bmi_plugin(PLUGIN_TARGET <target> SOURCES <src>...
 #     [FORTRAN_MODULE_DIR <dir>] [INCLUDE_DIRS <dir>...]
 #     [LINK_ISO_C_BMI]
