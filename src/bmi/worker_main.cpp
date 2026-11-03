@@ -4,5 +4,7 @@
 // DynamicBmiTaskExecutor::execute calls the same function for in-process tasks.
 // Both paths initialize the model, advance it to its end time, and finalize it.
 int main(int argc, char* argv[]) {
-    return miaow::run_subprocess_worker(argc, argv, miaow::bmi::execute_task);
+    return miaow::run_subprocess_worker(argc, argv, [](const miaow::Task& task) {
+        return miaow::bmi::execute_task(task);
+    });
 }

@@ -1,5 +1,6 @@
 #include "bmi_heat.hxx"
 
+// Let the plugin loader create and destroy this C++ model through C-linkage symbols
 extern "C" bmi::Bmi* bmi_model_create() {
     return new BmiHeat();
 }

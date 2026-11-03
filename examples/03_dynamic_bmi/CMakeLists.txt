@@ -60,4 +60,30 @@ if(BUILD_TESTING)
             EXTERNAL_MODEL
         )
     endforeach()
+
+    # Run dispatch scenarios through the saved-record regression checker
+    add_executable(miaow_bmi_dispatch_driver
+        "${PROJECT_SOURCE_DIR}/tests/bmi_task_dispatch_driver.cpp")
+    target_compile_features(miaow_bmi_dispatch_driver PRIVATE cxx_std_20)
+    target_link_libraries(miaow_bmi_dispatch_driver PRIVATE
+        miaow miaow_dynamic_cpp_heat_plugin nlohmann_json::nlohmann_json)
+    miaow_attach_plugin_paths(miaow_bmi_dispatch_driver
+        MIAOW_CPP_HEAT_PLUGIN_PATH      miaow_dynamic_cpp_heat_plugin
+        MIAOW_FORTRAN_HEAT_PLUGIN_PATH  miaow_dynamic_fortran_heat_plugin
+    )
+    add_dependencies(miaow_bmi_dispatch_driver miaow_subprocess)
+    miaow_add_example_test(
+        TEST_NAME miaow_bmi_task_dispatch
+        EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+        REGRESSION expected_failure
+        CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/dynamic_unknown_operation.json"
+        EXTERNAL_MODEL
+    )
+    miaow_add_example_test(
+        TEST_NAME miaow_bmi_repeated_run
+        EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+        REGRESSION bmi_repeated_run
+        CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/dynamic_repeated_run.json"
+        EXTERNAL_MODEL
+    )
 endif()

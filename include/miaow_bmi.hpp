@@ -80,48 +80,26 @@ std::string bmi_subprocess_executable_path();
 
 /**
  * @brief Build one task for a statically typed BMI model.
- * @param task_executor_id Registered static BMI task executor id.
+ * @param unit Unit declared with a static BMI executor registration.
  * @param config Static BMI task configuration.
- * @return `Task` ready to submit through `Runtime::submit_job()`.
+ * @return Complete model-run task to append to its owning `Job`.
  */
-Task make_bmi_task(TaskExecutorId task_executor_id, const StaticBmiConfig& config);
+Task make_bmi_task(SimulationUnitHandle unit, const StaticBmiConfig& config);
 
 /**
  * @brief Build one task for a dynamically loaded BMI plugin.
- * @param task_executor_id Registered dynamic BMI task executor id.
+ * @param unit Unit declared with a dynamic BMI executor registration.
  * @param config Dynamic BMI task configuration.
- * @return `Task` ready to submit through `Runtime::submit_job()`.
+ * @return Complete model-run task to append to its owning `Job`.
  */
-Task make_bmi_task(TaskExecutorId task_executor_id, const DynamicBmiConfig& config);
+Task make_bmi_task(SimulationUnitHandle unit, const DynamicBmiConfig& config);
 
-/**
- * @brief Build tasks that use the same registered BMI task executor.
- *
- * Internally, this function calls `make_bmi_task()` for each configuration.
- * @tparam BmiConfig `StaticBmiConfig` or `DynamicBmiConfig`.
- * @param task_executor_id Registered BMI task executor id.
- * @param configs BMI task configurations.
- * @return `Task`s ready to submit through `Runtime::submit_job()`.
- */
-template <class BmiConfig>
-    requires(std::same_as<BmiConfig, StaticBmiConfig> ||
-             std::same_as<BmiConfig, DynamicBmiConfig>)
-std::vector<Task> make_bmi_tasks(TaskExecutorId task_executor_id,
-                                 const std::vector<BmiConfig>& configs) {
-    std::vector<Task> tasks;
-    tasks.reserve(configs.size());
-    for (const BmiConfig& config : configs) {
-        tasks.push_back(make_bmi_task(task_executor_id, config));
-    }
-    return tasks;
-}
-
-namespace static_bmi_execution {
+namespace bmi {
 
 // Execute a complete run of one statically supplied BMI model
 TaskResult execute_task(const Task& task, std::unique_ptr<bmi_api::Bmi> model);
 
-} // namespace static_bmi_execution
+} // namespace bmi
 
 /**
  * @brief Task executor for a statically typed BMI model.
@@ -174,7 +152,7 @@ class StaticBmiTaskExecutor : public TaskExecutor {
     caf::result<TaskResult> execute(const Task& task) override {
         try {
             // Pass one fresh static model through the internal execution bridge
-            return static_bmi_execution::execute_task(task, model_factory_());
+            return bmi::execute_task(task, model_factory_());
         } catch (...) {
             // Exceptions become failed task results so the job can keep running
             return make_failed_task_result(std::current_exception(), "BMI error");

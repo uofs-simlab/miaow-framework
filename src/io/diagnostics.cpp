@@ -47,7 +47,7 @@ void print_job_summary(const JobRecord& job_record) {
 
     std::ostringstream output;
     output << "\n" << section_header("MIAOW Job Summary") << "\n";
-    output << "job_id: " << job_record.job_id_ << "\n";
+    output << "job_submission_id: " << job_record.job_submission_id_ << "\n";
     output << std::fixed << std::setprecision(6);
     output << "tasks:\n";
     for (const TaskRecord& task_record : job_record.tasks_) {

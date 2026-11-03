@@ -16,75 +16,42 @@
 
 namespace miaow {
 
-// Request shutdown from every worker and any subprocess it retains
-void Job::stop_workers() {
-    for (const caf::actor& worker : workers_) {
-        // job_actor -> simulation_unit_actor: stop work and release child resources
-        caf::anon_mail(core::shutdown_atom_v).urgent().send(worker);
+// Request actor shutdown, or release a binding with no live actor
+void Job::shutdown_unit(std::size_t unit_index) {
+    std::optional<UnitBinding>& unit = units_[unit_index];
+    if (!unit) {
+        return;
     }
-    for (const std::optional<UnitBinding>& unit : units_) {
-        if (unit) {
-            if (const caf::actor* actor = std::get_if<caf::actor>(&unit->instance_)) {
-                caf::anon_mail(core::shutdown_atom_v).urgent().send(*actor);
-            }
-        }
+    const caf::actor* actor = std::get_if<caf::actor>(&unit->instance_);
+    if (actor && *actor) {
+        unit->state_ = UnitState::stopping;
+        caf::anon_mail(core::shutdown_atom_v).urgent().send(*actor);
+    } else {
+        unit.reset();
     }
 }
 
-// Persistent units are created from declarations; ordinary workers follow task demand
-void Job::spawn_workers_for_tasks() {
-    if (!units_.empty()) {
-        for (std::optional<UnitBinding>& unit : units_) {
-            if (!unit) {
-                continue;
-            }
-            if (SimulationUnit* prepared = std::get_if<SimulationUnit>(&unit->instance_)) {
-                caf::actor actor =
-                    self_->spawn(caf::actor_from_state<SimulationUnit>,
-                                 std::move(*prepared), task_executor_registry_,
-                                 subprocess_registration_actor_,
-                                 subprocess_registration_port_,
-                                 runtime_options_.task_request_timeout_);
-                self_->monitor(actor, [this](const caf::error& reason) {
-                    begin_job_error_shutdown("persistent simulation unit terminated: " +
-                                             caf::to_string(reason));
-                });
-                unit->instance_ = std::move(actor);
-            }
-        }
-        return;
-    }
-
-    const std::size_t task_count_without_records =
-        tasks_.size() - completed_task_records_.size();
-    const std::size_t worker_count =
-        std::min(runtime_options_.max_concurrent_tasks_, task_count_without_records);
-    while (workers_.size() < worker_count) {
-        const std::size_t worker_id = workers_.size();
-        workers_.emplace_back(
-            self_->spawn(caf::actor_from_state<SimulationUnit>, task_executor_registry_,
-                         subprocess_registration_actor_, subprocess_registration_port_,
-                         runtime_options_.task_request_timeout_));
-        available_workers_.push(worker_id);
+void Job::shutdown_units() {
+    for (std::size_t index = 0; index < units_.size(); ++index) {
+        shutdown_unit(index);
     }
 }
 
 // Prepare tasks appended by the caller or controller before dispatch
 void Job::prepare_tasks(std::size_t first_task_index) {
-    if (first_task_index < tasks_.size()) {
-        bind_tasks_to_simulation_units(tasks_, first_task_index);
-        core::assign_task_runtime_fields(tasks_, first_task_index, runtime_options_,
-                                         run_id_, job_id_);
-        for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
-            pending_tasks_.push_back(index);
-        }
-        task_start_times_.resize(tasks_.size(), job_start_time_);
-        task_worker_ids_.resize(tasks_.size());
+    if (first_task_index >= tasks_.size()) {
+        return;
     }
-    spawn_workers_for_tasks();
+    prepare_task_metadata(first_task_index);
+    core::assign_task_runtime_fields(tasks_, first_task_index, runtime_options_, run_id_,
+                                     job_submission_id_);
+    for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
+        pending_tasks_.push_back(index);
+    }
+    task_start_times_.resize(tasks_.size());
+    task_completed_.resize(tasks_.size(), false);
 }
 
-// Use the job's error-shutdown path for controller-reported failures
 void Job::fail(std::string reason) {
     if (!self_) {
         throw std::logic_error("Job::fail requires a running controller hook");
@@ -92,241 +59,246 @@ void Job::fail(std::string reason) {
     begin_job_error_shutdown("JobController error: " + std::move(reason));
 }
 
-// Deliver the records currently held by the job actor and request worker shutdown
+// Wait for remaining unit actors to terminate before delivering the job result
 void Job::complete_job() {
-    // Ignore completion attempts after the job response has already been delivered
-    if (!response_promise_.has_value()) {
-        return;
-    }
-
-    // Collect controller-owned output before handing the final record to the caller.
-    caf::config_value output;
-    try {
-        output = job_controller_->finalize();
-    } catch (const std::exception& exception) {
-        begin_job_error_shutdown("JobController error: " + std::string(exception.what()));
-        return;
-    } catch (...) {
-        begin_job_error_shutdown("JobController error: unknown exception");
-        return;
-    }
-
-    // Keep task records in submitted task order even when workers finish out of order
-    std::vector<TaskRecord> task_records = std::move(completed_task_records_);
-    std::sort(task_records.begin(), task_records.end(),
-              [](const TaskRecord& left, const TaskRecord& right) {
-                  return left.task_id_ < right.task_id_;
-              });
-
-    // Build the final record and stop the job actor
-    const std::chrono::duration<double> job_run_time =
-        std::chrono::steady_clock::now() - job_start_time_;
-    JobRecord job_record{run_id_, job_id_, std::move(task_records), job_run_time,
-                         std::move(output)};
-
-    // Stop job-owned work before completing the deferred request from the orchestrator
+    finishing_ = true;
     job_timeout_.dispose();
-    stop_workers();
-
-    // Fulfil the job actor's CAF response so the orchestrator receives the JobRecord
-    response_promise_->deliver(std::move(job_record));
-    response_promise_.reset();
-    self_->quit();
+    shutdown_units();
+    finish_job();
 }
 
-// Deliver a pending job-level error after all active requests have finished
-void Job::complete_job_error_if_tasks_finished() {
-    if (!pending_error_message_.has_value() || active_task_count_ != 0 ||
-        !response_promise_.has_value()) {
+void Job::finish_job() {
+    if (!finishing_ || !response_promise_) {
         return;
     }
+    for (const std::optional<UnitBinding>& unit : units_) {
+        if (unit) {
+            if (const caf::actor* actor = std::get_if<caf::actor>(&unit->instance_);
+                actor && *actor) {
+                return;
+            }
+        }
+    }
 
-    // Complete the outstanding CAF request with an error for the orchestrator to forward
-    response_promise_->deliver(
-        caf::make_error(caf::sec::runtime_error, std::move(*pending_error_message_)));
+    if (!pending_error_message_) {
+        try {
+            caf::config_value output = job_controller_->finalize();
+            std::sort(completed_task_records_.begin(), completed_task_records_.end(),
+                      [](const TaskRecord& left, const TaskRecord& right) {
+                          return left.task_id_ < right.task_id_;
+                      });
+            const std::chrono::duration<double> run_time =
+                std::chrono::steady_clock::now() - job_start_time_;
+            response_promise_->deliver(JobRecord{run_id_, job_submission_id_,
+                                                 std::move(completed_task_records_),
+                                                 run_time, std::move(output)});
+        } catch (const std::exception& exception) {
+            pending_error_message_ =
+                "JobController error: " + std::string(exception.what());
+        } catch (...) {
+            pending_error_message_ = "JobController error: unknown exception";
+        }
+    }
+    if (pending_error_message_) {
+        response_promise_->deliver(
+            caf::make_error(caf::sec::runtime_error, std::move(*pending_error_message_)));
+    }
     response_promise_.reset();
     self_->quit();
 }
 
-// Stop dispatch after a job-level error and wait for active workers to finish
 void Job::begin_job_error_shutdown(std::string error_message) {
-    if (pending_error_message_.has_value()) {
-        return;
+    if (!pending_error_message_) {
+        pending_error_message_ = std::move(error_message);
+        complete_job();
     }
-
-    pending_error_message_ = std::move(error_message);
-    job_timeout_.dispose();
-
-    // Urgent shutdown runs after active execution but before queued task requests
-    stop_workers();
-    complete_job_error_if_tasks_finished();
 }
 
-// Complete when no queued tasks remain to dispatch and no dispatched tasks await results
-void Job::complete_job_if_all_tasks_finished() {
-    // There is still queued work or at least one dispatched task awaiting a result
-    if (!pending_tasks_.empty() || active_task_count_ != 0) {
+// Record each task once, including queued tasks invalidated by unit loss or a deadline
+void Job::record_task(std::size_t task_id, TaskResult task_result) {
+    if (task_completed_.at(task_id)) {
         return;
     }
-
-    complete_job();
+    task_completed_[task_id] = true;
+    const Task& task = tasks_[task_id];
+    std::chrono::duration<double> run_time{};
+    std::optional<std::chrono::duration<double>> dispatch_offset;
+    if (task_start_times_[task_id]) {
+        dispatch_offset = *task_start_times_[task_id] - job_start_time_;
+        run_time = std::chrono::steady_clock::now() - *task_start_times_[task_id];
+    }
+    completed_task_records_.emplace_back(task, units_[task.unit_.index_]->task_executor_id_,
+                                         static_cast<TaskId>(task_id),
+                                         std::move(task_result), run_time, dispatch_offset);
 }
 
-void Job::complete_task(std::size_t worker_id, std::size_t task_id,
-                        TaskResult task_result) {
-    // Task is done, so decrement active_task_count
-    if (active_task_count_ > 0) {
+// Fail accepted work once; hold occupied capacity until the unit actor terminates
+void Job::fail_unit(std::size_t unit_index, std::string reason) {
+    UnitBinding& unit = *units_[unit_index];
+    if (finishing_ || unit.state_ == UnitState::failed ||
+        unit.state_ == UnitState::stopping) {
+        return;
+    }
+    unit.state_ = UnitState::failed;
+    pending_unit_failures_.push_back(
+        UnitFailure{SimulationUnitHandle{job_creation_id_, unit_index}, reason});
+    if (unit.active_task_) {
+        record_task(*unit.active_task_, make_failed_task_result(reason, "Unit failure"));
+    }
+    std::erase_if(pending_tasks_, [this, unit_index, &reason](std::size_t task_id) {
+        if (tasks_[task_id].unit_.index_ != unit_index) {
+            return false;
+        }
+        record_task(task_id, make_failed_task_result(reason, "Unit failure"));
+        return true;
+    });
+    const caf::actor& actor = std::get<caf::actor>(unit.instance_);
+    caf::anon_mail(core::shutdown_atom_v).urgent().send(actor);
+}
+
+void Job::unit_terminated(std::size_t unit_index, const caf::error& reason) {
+    UnitBinding& unit = *units_[unit_index];
+    fail_unit(unit_index, "simulation unit terminated: " + caf::to_string(reason));
+    if (unit.active_task_) {
+        unit.active_task_.reset();
         --active_task_count_;
     }
-
-    // Release the ordinary worker slot or the unit's active task
-    if (units_.empty()) {
-        available_workers_.push(worker_id);
-    } else {
-        units_.at(worker_id)->active_task_.reset();
+    unit.instance_ = caf::actor{};
+    if (unit.state_ == UnitState::stopping) {
+        units_[unit_index].reset();
     }
+    advance();
+}
 
-    // Record the wall-clock duration and success/failure message for this task ID
-    const std::chrono::duration<double> task_run_time =
-        std::chrono::steady_clock::now() - task_start_times_.at(task_id);
-    const std::chrono::duration<double> dispatch_offset_from_job_start =
-        task_start_times_.at(task_id) - job_start_time_;
-
-    // Runtime creates a task record only after the task has completed
-    completed_task_records_.push_back(
-        TaskRecord{tasks_.at(task_id), static_cast<TaskId>(task_id), std::move(task_result),
-                   task_run_time, dispatch_offset_from_job_start, worker_id});
-
-    // During error shutdown, record active results without generating or dispatching work
-    if (pending_error_message_.has_value()) {
-        complete_job_error_if_tasks_finished();
+// Prepare and dispatch controller-added tasks only after the callback returns
+void Job::advance() {
+    if (finishing_) {
+        finish_job();
         return;
     }
-
-    // Check whether the controller uses batch-synchronous task generation
-    if (job_controller_->task_generation_policy() ==
-        TaskGenerationPolicy::batch_synchronous) {
-        // Check whether queued tasks remain to dispatch or there are dispatched tasks
-        // awaiting results; if so, dispatch tasks and return without generating new tasks.
-        if (!pending_tasks_.empty() || active_task_count_ != 0) {
-            dispatch_tasks();
+    const bool batch_finished = pending_tasks_.empty() && active_task_count_ == 0;
+    const bool has_updates = reported_task_count_ < completed_task_records_.size() ||
+                             !pending_unit_failures_.empty();
+    if (has_updates &&
+        (job_controller_->task_generation_policy() == TaskGenerationPolicy::asynchronous ||
+         batch_finished)) {
+        try {
+            const std::span<const TaskRecord> records{completed_task_records_};
+            const std::size_t first_task_index = tasks_.size();
+            job_controller_->callback(*this, records.subspan(reported_task_count_),
+                                      pending_unit_failures_);
+            reported_task_count_ = records.size();
+            pending_unit_failures_.clear();
+            if (finishing_) {
+                return;
+            }
+            prepare_tasks(first_task_index);
+        } catch (const std::exception& exception) {
+            begin_job_error_shutdown("JobController error: " +
+                                     std::string(exception.what()));
+            return;
+        } catch (...) {
+            begin_job_error_shutdown("JobController error: unknown exception");
             return;
         }
-        // If we reach this point, it means there are no queued tasks and no active tasks,
-        // so we can proceed to generate new tasks. This will be a new batch of tasks.
     }
 
-    try {
-        // Deliver each completion once through a view of the new records
-        const std::span<const TaskRecord> records{completed_task_records_};
-
-        // Let the controller append work without dispatching within its callback
-        const std::size_t first_task_index = tasks_.size();
-        job_controller_->callback(*this, records.subspan(reported_task_count_), {});
-        reported_task_count_ = records.size();
-        if (pending_error_message_) {
-            return;
+    // Drain removal requests without interrupting accepted operations
+    for (std::size_t index = 0; index < units_.size(); ++index) {
+        if (units_[index] && units_[index]->state_ == UnitState::removal_requested &&
+            !units_[index]->active_task_ &&
+            std::none_of(pending_tasks_.begin(), pending_tasks_.end(),
+                         [this, index](std::size_t task_id) {
+                             return tasks_[task_id].unit_.index_ == index;
+                         })) {
+            shutdown_unit(index);
         }
-        prepare_tasks(first_task_index);
-    } catch (const std::exception& exception) {
-        begin_job_error_shutdown("JobController error: " + std::string(exception.what()));
-        return;
-    } catch (...) {
-        begin_job_error_shutdown("JobController error: unknown exception");
-        return;
     }
-
-    // Dispatch more tasks if there are any left, now that a worker slot is free
     dispatch_tasks();
 }
 
-void Job::dispatch_tasks() {
-    // A controller error prevents pending tasks from entering worker mailboxes
-    if (pending_error_message_.has_value()) {
-        complete_job_error_if_tasks_finished();
+void Job::complete_task(std::size_t unit_index, std::size_t task_id,
+                        TaskResult task_result) {
+    if (!units_[unit_index] || units_[unit_index]->active_task_ != task_id ||
+        task_completed_[task_id]) {
         return;
     }
-
-    // Select the earliest ready operation, preserving submission order within each unit
-    while (!pending_tasks_.empty() &&
-           active_task_count_ < runtime_options_.max_concurrent_tasks_) {
-        auto pending = pending_tasks_.begin();
-        std::size_t worker_id;
-        caf::actor worker;
-        if (!units_.empty()) {
-            pending = std::find_if(
-                pending_tasks_.begin(), pending_tasks_.end(), [this](std::size_t task_id) {
-                    return !units_[tasks_[task_id].unit_->index_]->active_task_;
-                });
-            if (pending == pending_tasks_.end()) {
-                break;
-            }
-            worker_id = tasks_[*pending].unit_->index_;
-            UnitBinding& unit = *units_[worker_id];
-            unit.active_task_ = static_cast<TaskId>(*pending);
-            worker = std::get<caf::actor>(unit.instance_);
-        } else {
-            if (available_workers_.empty()) {
-                break;
-            }
-            worker_id = available_workers_.front();
-            available_workers_.pop();
-            worker = workers_.at(worker_id);
-        }
-        const std::size_t task_id = *pending;
-        pending_tasks_.erase(pending);
-
-        // Task is active now that it's dispatched, so increment active_task_count
-        ++active_task_count_;
-
-        // Retain the dispatch time and worker assignment for task diagnostics
-        task_start_times_.at(task_id) = std::chrono::steady_clock::now();
-        task_worker_ids_.at(task_id) = worker_id;
-
-        // SubprocessState owns its timeout so cleanup precedes the delegated response
-        const caf::timespan simulation_unit_request_timeout =
-            task_executor_registry_->is_subprocess(tasks_.at(task_id).task_executor_id_)
-                ? caf::infinite
-                : runtime_options_.task_request_timeout_;
-
-        // job_actor -> simulation_unit_actor: request execution of one Task;
-        // caf::get_atom_v is matched by caf::get_atom in the worker handler, request()
-        // returns a response handle, and then() installs one response behaviour
-        self_->mail(caf::get_atom_v, tasks_.at(task_id))
-            .request(worker, simulation_unit_request_timeout)
-            .then(
-                // simulation_unit_actor -> job_actor: return the completed task result
-                [this, worker_id, task_id](TaskResult task_result) {
-                    complete_task(worker_id, task_id, std::move(task_result));
-                },
-                // simulation_unit_actor -> job_actor: report a task request error
-                [this, worker_id, task_id](const caf::error& err) {
-                    const TaskResult failed_task_result =
-                        miaow::make_failed_task_result(caf::to_string(err), "CAF error");
-                    complete_task(worker_id, task_id, failed_task_result);
-                });
-    }
-
-    // Are all jobs finished? if so, deliver final results and stop the job actor
-    complete_job_if_all_tasks_finished();
+    record_task(task_id, std::move(task_result));
+    units_[unit_index]->active_task_.reset();
+    --active_task_count_;
+    advance();
 }
 
-// Prepared state carries executor selection; CAF context is attached on submission
+void Job::dispatch_tasks() {
+    while (!pending_tasks_.empty() &&
+           active_task_count_ < runtime_options_.max_concurrent_tasks_) {
+        const auto pending = std::find_if(
+            pending_tasks_.begin(), pending_tasks_.end(), [this](std::size_t task_id) {
+                const UnitBinding& unit = *units_[tasks_[task_id].unit_.index_];
+                return !unit.active_task_ && (unit.state_ == UnitState::accepting_tasks ||
+                                              unit.state_ == UnitState::removal_requested);
+            });
+        if (pending == pending_tasks_.end()) {
+            break;
+        }
+        const std::size_t task_id = *pending;
+        const std::size_t unit_index = tasks_[task_id].unit_.index_;
+        UnitBinding& unit = *units_[unit_index];
+        if (SimulationUnit* prepared = std::get_if<SimulationUnit>(&unit.instance_)) {
+            caf::actor actor =
+                self_->spawn(caf::actor_from_state<SimulationUnit>, std::move(*prepared),
+                             task_executor_registry_, subprocess_registration_actor_,
+                             subprocess_registration_port_,
+                             runtime_options_.task_request_timeout_);
+            self_->monitor(actor, [this, unit_index](const caf::error& reason) {
+                unit_terminated(unit_index, reason);
+            });
+            unit.instance_ = std::move(actor);
+        }
+        const caf::actor& simulation_unit_actor = std::get<caf::actor>(unit.instance_);
+        unit.active_task_ = static_cast<TaskId>(task_id);
+        pending_tasks_.erase(pending);
+        ++active_task_count_;
+        task_start_times_[task_id] = std::chrono::steady_clock::now();
+
+        // SubprocessState owns its deadline and reports context loss after reaping
+        const caf::timespan timeout =
+            task_executor_registry_->is_subprocess(unit.task_executor_id_)
+                ? caf::infinite
+                : runtime_options_.task_request_timeout_;
+        self_->mail(caf::get_atom_v, tasks_[task_id])
+            .request(simulation_unit_actor, timeout)
+            .then(
+                [this, unit_index, task_id](TaskResult result) {
+                    complete_task(unit_index, task_id, std::move(result));
+                },
+                [this, unit_index, task_id](const caf::error& error) {
+                    if (finishing_ || task_completed_[task_id]) {
+                        return;
+                    }
+                    if (error == caf::sec::request_timeout) {
+                        fail_unit(unit_index, caf::to_string(error));
+                        advance();
+                    } else if (error != caf::sec::request_receiver_down) {
+                        // Actor loss is settled by its monitor with the termination reason
+                        complete_task(unit_index, task_id,
+                                      make_failed_task_result(caf::to_string(error),
+                                                              "CAF error"));
+                    }
+                });
+    }
+    if (pending_tasks_.empty() && active_task_count_ == 0) {
+        complete_job();
+    }
+}
+
+// Prepared state carries executor selection; CAF attaches context on first dispatch
 SimulationUnit::SimulationUnit(TaskExecutorId executor_id)
-    : persistent_executor_id_(executor_id) {}
+    : task_executor_id_(executor_id) {}
 
 SimulationUnit::~SimulationUnit() = default;
 SimulationUnit::SimulationUnit(SimulationUnit&&) noexcept = default;
 SimulationUnit& SimulationUnit::operator=(SimulationUnit&&) noexcept = default;
-
-SimulationUnit::SimulationUnit(
-    caf::event_based_actor* self,
-    std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
-    caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
-    std::chrono::milliseconds task_request_timeout)
-    : SimulationUnit(self, SimulationUnit{}, std::move(task_executor_registry),
-                     std::move(subprocess_registration_actor), subprocess_registration_port,
-                     task_request_timeout) {}
 
 SimulationUnit::SimulationUnit(
     caf::event_based_actor* self, SimulationUnit&& unit,
@@ -343,78 +315,55 @@ SimulationUnit::SimulationUnit(
 }
 
 caf::behavior SimulationUnit::make_behavior() {
-    // Persistent executors are initialized when the actor starts and retained until exit
-    if (persistent_executor_id_) {
-        task_executor_ = task_executor_registry_->make_executor(*persistent_executor_id_,
-                                                                *subprocess_state_);
-        if (!task_executor_) {
-            throw std::runtime_error("unknown TaskExecutorId: " +
-                                     std::to_string(*persistent_executor_id_));
-        }
+    task_executor_ =
+        task_executor_registry_->make_executor(task_executor_id_, *subprocess_state_);
+    if (!task_executor_) {
+        throw std::runtime_error("unknown TaskExecutorId: " +
+                                 std::to_string(task_executor_id_));
     }
     return {
-        // job_actor -> simulation_unit_actor: execute one Task and return or defer its
-        // result; caf::get_atom matches the caf::get_atom_v value sent by job_actor, and
-        // CAF interprets caf::result<TaskResult> as a value, error, or delegated response
+        // job_actor -> simulation_unit_actor: execute with the retained executor
+        // Subprocess execution defers the response; execution exceptions fail the operation
         [this](caf::get_atom, const Task& task) -> caf::result<TaskResult> {
             try {
-                // Ordinary workers construct per task; persistent units reuse their member
-                std::unique_ptr<TaskExecutor> task_executor;
-                TaskExecutor* executor = task_executor_.get();
-                if (!executor) {
-                    task_executor =
-                        task_executor_registry_->make_executor(task.task_executor_id_,
-                                                               *subprocess_state_);
-                    executor = task_executor.get();
-                }
-                if (!executor) {
-                    return caf::make_error(caf::sec::runtime_error,
-                                           "unknown TaskExecutorId: " +
-                                               std::to_string(task.task_executor_id_));
-                }
-                return executor->execute(task);
+                return task_executor_->execute(task);
             } catch (const std::exception& exception) {
-                return caf::make_error(caf::sec::runtime_error, exception.what());
+                return make_failed_task_result(exception.what());
             } catch (...) {
-                return caf::make_error(caf::sec::runtime_error,
-                                       "unknown TaskExecutor exception");
+                return make_failed_task_result("unknown TaskExecutor exception");
             }
         },
-        // subprocess_registration_actor -> simulation_unit_actor: deliver the child
-        // handle; accept only the current launch, install CAF monitoring, and send the
-        // task retained while the child process started
+        // Accept the current launch's child handle and send the task held during startup
         [this](core::register_subprocess_worker_atom, core::SubprocessLaunchId launch_id,
                const caf::actor& subprocess_worker) {
             subprocess_state_->accept_registration(launch_id, subprocess_worker);
         },
-        // simulation_unit_actor -> simulation_unit_actor: enforce the registration
-        // deadline; the launch ID makes this delayed message harmless after registration,
-        // failure, or replacement advances the worker to another lifecycle state
+        // Enforce registration timing; ignore this deadline once startup has ended
         [this](core::subprocess_startup_timeout_atom, core::SubprocessLaunchId launch_id) {
             subprocess_state_->expire_startup(launch_id);
         },
-        // simulation_unit_actor -> simulation_unit_actor: poll the stopping child process;
-        // each callback performs one non-blocking waitpid check and reschedules itself
-        // until the child is reaped and the worker can complete its next transition
+        // Poll without blocking a scheduler thread until the child is reaped
         [this](core::poll_subprocess_exit_atom, core::SubprocessLaunchId launch_id) {
             subprocess_state_->poll_for_subprocess_exit(launch_id);
         },
-        // job_actor -> simulation_unit_actor: stop work and release owned resources;
-        // resolve any pending task response and keep this actor alive until launch
-        // reservation or child process reaping completes
-        [this](core::shutdown_atom) { subprocess_state_->shutdown(); }};
+        // Release the executor, then finish pending launch or child cleanup before quitting
+        [this](core::shutdown_atom) {
+            task_executor_.reset();
+            subprocess_state_->shutdown();
+        }};
 }
 
 // CAF adopts the caller's Job as its state and supplies execution context
-Job::Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
-         std::shared_ptr<Job> job, RuntimeOptions runtime_options,
+Job::Job(caf::event_based_actor* self, std::uint64_t run_id,
+         JobSubmissionId job_submission_id, std::shared_ptr<Job> job,
+         RuntimeOptions runtime_options,
          std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
          caf::actor subprocess_registration_actor,
          std::uint16_t subprocess_registration_port)
     : Job(std::move(*job)) {
     self_ = self;
     run_id_ = run_id;
-    job_id_ = job_id;
+    job_submission_id_ = job_submission_id;
     runtime_options_ = std::move(runtime_options);
     task_executor_registry_ = std::move(task_executor_registry);
     subprocess_registration_actor_ = std::move(subprocess_registration_actor);
@@ -424,96 +373,63 @@ Job::Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
 caf::behavior Job::make_behavior() {
     job_start_time_ = std::chrono::steady_clock::now();
 
-    // Completed task records are appended as workers return success or failure results
+    // Retain task results in completion order for controller callbacks
     completed_task_records_.reserve(tasks_.size());
 
-    return {
-        // orchestrator_actor -> job_actor: start dispatching tasks for this job
-        [this](caf::get_atom) -> caf::result<JobRecord> {
-            if (response_promise_.has_value()) {
-                return caf::make_error(caf::sec::runtime_error,
-                                       "job_actor only accepts one get_atom request");
-            }
+    return {// orchestrator_actor -> job_actor: start dispatching tasks for this job
+            [this](caf::get_atom) -> caf::result<JobRecord> {
+                if (response_promise_.has_value()) {
+                    return caf::make_error(caf::sec::runtime_error,
+                                           "job_actor only accepts one get_atom request");
+                }
 
-            // Create a deferred CAF response for the orchestrator's pending request
-            response_promise_ = self_->make_response_promise<JobRecord>();
-            // Keep the response token even if initialization finishes an empty job
-            const auto response = *response_promise_;
+                // Create a deferred CAF response for the orchestrator's pending request
+                response_promise_ = self_->make_response_promise<JobRecord>();
+                // Keep the response token even if initialization finishes an empty job
+                const auto response = *response_promise_;
 
-            // job_actor -> job_actor: enforce the configured job deadline; schedule
-            // the deadline within the actor that owns all task state
-            job_timeout_ = self_->mail(core::job_timeout_atom_v)
-                               .delay(runtime_options_.job_request_timeout_)
-                               .send(self_);
+                // Schedule the hard deadline in the actor that owns the job state
+                job_timeout_ = self_->mail(core::job_timeout_atom_v)
+                                   .delay(runtime_options_.job_request_timeout_)
+                                   .send(self_);
 
-            // Initialize once, then prepare caller-provided and controller-added work
-            try {
-                job_controller_->initialize(*this);
-                if (pending_error_message_) {
+                // Initialize once, then prepare caller-provided and controller-added work
+                try {
+                    job_controller_->initialize(*this);
+                    if (pending_error_message_) {
+                        return response;
+                    }
+                    prepare_tasks(0);
+                } catch (const std::exception& exception) {
+                    begin_job_error_shutdown("JobController error: " +
+                                             std::string(exception.what()));
+                    return response;
+                } catch (...) {
+                    begin_job_error_shutdown("JobController error: unknown exception");
                     return response;
                 }
-                prepare_tasks(0);
-            } catch (const std::exception& exception) {
-                begin_job_error_shutdown("JobController error: " +
-                                         std::string(exception.what()));
+
+                advance();
+
+                // Retain the request until task settlement and unit shutdown finish
                 return response;
-            } catch (...) {
-                begin_job_error_shutdown("JobController error: unknown exception");
-                return response;
-            }
-
-            dispatch_tasks();
-
-            // Return the response token that complete_job fulfils after all tasks
-            // finish
-            return response;
-        },
-        // job_actor -> job_actor: fail every remaining task at the job deadline
-        [this](core::job_timeout_atom) {
-            // A controller error takes precedence over an already queued timeout
-            if (pending_error_message_.has_value()) {
-                return;
-            }
-
-            // Use one observed timeout time for every unfinished task
-            const auto timeout_time = std::chrono::steady_clock::now();
-            std::vector<bool> task_has_record(tasks_.size(), false);
-            for (const TaskRecord& task_record : completed_task_records_) {
-                const std::size_t task_id = static_cast<std::size_t>(task_record.task_id_);
-                task_has_record.at(task_id) = true;
-            }
-
-            for (std::size_t task_id = 0; task_id < tasks_.size(); ++task_id) {
-                if (task_has_record.at(task_id)) {
-                    continue;
+            },
+            // A whole-job deadline is final; it does not invoke controller policy
+            [this](core::job_timeout_atom) {
+                if (finishing_) {
+                    return;
                 }
-                TaskResult task_result =
-                    make_failed_task_result("configured job timeout expired",
-                                            "Job timeout");
-
-                // Queued tasks have no dispatch offset or elapsed execution interval
-                std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start;
-                std::chrono::duration<double> task_run_time{};
-                if (task_worker_ids_.at(task_id).has_value()) {
-                    const auto task_start_time = task_start_times_.at(task_id);
-                    dispatch_offset_from_job_start = task_start_time - job_start_time_;
-                    task_run_time = timeout_time - task_start_time;
+                for (std::size_t task_id = 0; task_id < tasks_.size(); ++task_id) {
+                    if (!task_completed_[task_id]) {
+                        record_task(task_id,
+                                    make_failed_task_result(
+                                        "configured job timeout expired", "Job timeout"));
+                    }
                 }
-                completed_task_records_.push_back(
-                    TaskRecord{tasks_.at(task_id), static_cast<TaskId>(task_id),
-                               std::move(task_result), task_run_time,
-                               dispatch_offset_from_job_start,
-                               task_worker_ids_.at(task_id)});
-            }
-
-            complete_job();
-        },
-        // orchestrator_actor -> job_actor: request worker shutdown
-        [this](core::shutdown_atom) {
-            job_timeout_.dispose();
-            stop_workers();
-            self_->quit();
-        }};
+                complete_job();
+            },
+            // Runtime shutdown also waits for running handlers and subprocess reaping
+            [this](core::shutdown_atom) { begin_job_error_shutdown("Runtime shutdown"); }};
 }
 
 } // namespace miaow
@@ -535,28 +451,29 @@ Orchestrator::Orchestrator(
 caf::behavior Orchestrator::make_behavior() {
     return {
         // Runtime -> orchestrator_actor: submit one job
-        [this](caf::get_atom, JobId job_id, std::shared_ptr<miaow::Job> prepared_job) {
+        [this](caf::get_atom, JobSubmissionId job_submission_id,
+               std::shared_ptr<miaow::Job> prepared_job) {
             // Spawn one job actor for this request
             caf::actor job =
-                self_->spawn(caf::actor_from_state<miaow::Job>, run_id_, job_id,
+                self_->spawn(caf::actor_from_state<miaow::Job>, run_id_, job_submission_id,
                              std::move(prepared_job), runtime_options_,
                              task_executor_registry_, subprocess_registration_actor_,
                              subprocess_registration_port_);
-            active_job_actors_.emplace(job_id, job);
+            active_job_actors_.emplace(job_submission_id, job);
 
             // orchestrator_actor -> job_actor: request execution of one job
             self_->mail(caf::get_atom_v)
                 .request(job, caf::infinite)
                 .then(
                     // job_actor -> orchestrator_actor: resolve successful completion
-                    [this, job_id](JobRecord job_record) {
-                        active_job_actors_.erase(job_id);
+                    [this, job_submission_id](JobRecord job_record) {
+                        active_job_actors_.erase(job_submission_id);
 
                         std::promise<JobRecord> promise;
                         {
                             std::lock_guard<std::mutex> lock(*pending_jobs_mutex_);
                             PendingJobs::iterator pending_job_entry =
-                                pending_jobs_->find(job_id);
+                                pending_jobs_->find(job_submission_id);
                             if (pending_job_entry == pending_jobs_->end()) {
                                 return;
                             }
@@ -568,9 +485,8 @@ caf::behavior Orchestrator::make_behavior() {
                             // Write the job record to disk if an output root is configured
                             if (!runtime_options_.output_root_.empty()) {
                                 const std::filesystem::path job_directory =
-                                    std::filesystem::path(runtime_options_.output_root_) /
-                                    ("run_" + std::to_string(job_record.run_id_)) /
-                                    ("job_" + std::to_string(job_record.job_id_));
+                                    job_directory_path(runtime_options_, job_record.run_id_,
+                                                       job_record.job_submission_id_);
                                 std::filesystem::create_directories(job_directory);
                                 write_job_record(job_directory / "job_record.json",
                                                  job_record);
@@ -585,17 +501,17 @@ caf::behavior Orchestrator::make_behavior() {
                         promise.set_value(std::move(job_record));
                     },
                     // job_actor -> orchestrator_actor: report the job error
-                    [this, job, job_id](const caf::error& err) {
+                    [this, job, job_submission_id](const caf::error& err) {
                         // orchestrator_actor -> job_actor: stop after a request error
                         caf::anon_mail(shutdown_atom_v).send(job);
-                        active_job_actors_.erase(job_id);
+                        active_job_actors_.erase(job_submission_id);
 
                         // Remove the matching promise so it is resolved exactly once
                         std::promise<JobRecord> promise;
                         {
                             std::lock_guard<std::mutex> lock(*pending_jobs_mutex_);
                             PendingJobs::iterator pending_job_entry =
-                                pending_jobs_->find(job_id);
+                                pending_jobs_->find(job_submission_id);
                             if (pending_job_entry == pending_jobs_->end()) {
                                 return;
                             }
@@ -610,7 +526,7 @@ caf::behavior Orchestrator::make_behavior() {
         },
         // Runtime -> orchestrator_actor: stop jobs and child registration
         [this](shutdown_atom) {
-            for (const std::pair<const JobId, caf::actor>& active_job :
+            for (const std::pair<const JobSubmissionId, caf::actor>& active_job :
                  active_job_actors_) {
                 // orchestrator_actor -> job_actor: stop one active job
                 caf::anon_mail(shutdown_atom_v).urgent().send(active_job.second);

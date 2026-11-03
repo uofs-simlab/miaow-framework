@@ -1,108 +1,87 @@
 BMI integration
 ===============
 
-This page describes the Basic Model Interface (BMI) integration paths and how to configure tasks for different BMI model execution patterns; see the :doc:`examples` section for concrete workflows and the :doc:`api` for constructor, member, and function details.
+MIAOW runs models implementing the Basic Model Interface (BMI) either in the parent process or in a unit-owned subprocess. See :doc:`examples` for complete programs and :doc:`api` for configuration fields and function signatures.
 
 BMI task lifecycle
 ------------------
 
-Build individual tasks with ``make_bmi_task(...)`` and task sets with ``make_bmi_tasks(...)``. Each task carries one flat model configuration in ``Task::args_`` and owns one complete model run:
+``make_bmi_task(unit, config)`` creates a task targeting the given unit. It stores ``"run"`` in ``Task::operation_`` and the model configuration in ``Task::args_``. Add the task to its owning job with ``job.add_task(...)``. Each execution performs one complete model run:
 
 1. Construct or load a fresh BMI model and call ``Initialize(init_config_)``.
 2. Call ``Update()`` until the model reaches its end time.
 3. Call ``Finalize()`` and release the model before reporting success.
 
-Models manage their own forcing and scientific output. On failure, MIAOW attempts to finalize a successfully initialized model before releasing it. Each task result reports the number of completed updates.
+Models manage their own forcing and scientific output. If a BMI call fails, the runner attempts to finalize a successfully initialized model before releasing it. Results report the number of completed updates.
 
-Task configuration options
---------------------------
-
-The setup pattern depends on whether the BMI model implementation comes from a statically typed C++ model or a dynamic plugin.
-
-BMI task configuration
-~~~~~~~~~~~~~~~~~~~~~~
-
-The ``TaskExecutorId`` passed to ``make_bmi_task(...)`` or ``make_bmi_tasks(...)`` selects the ``TaskExecutor`` subclass that executes the BMI task. An ID returned by ``TaskExecutorRegistry::add<StaticBmiTaskExecutor<BmiModelType>>()`` selects static execution in the parent process, while an ID returned by ``TaskExecutorRegistry::add<DynamicBmiTaskExecutor>()`` selects dynamic plugin execution in the parent process. An ID returned by ``TaskExecutorRegistry::add_subprocess(bmi_subprocess_executable_path(), lifetime)`` selects dynamic plugin execution in a child subprocess, which is useful for non-thread-safe models. We describe the different options below.
+A unit retains its executor across operations, but these BMI executors construct a fresh model for every task. Persistent unit or subprocess lifetime does not preserve BMI model state between ``run`` operations.
 
 Static BMI model
-~~~~~~~~~~~~~~~~
+----------------
 
-The static model setup applies when the concrete BMI model type is known when compiling the executable that uses MIAOW. Tasks which specify a ``TaskExecutorId`` returned by ``TaskExecutorRegistry::add<StaticBmiTaskExecutor<YourModel>>()`` construct one new model object per task and execute the BMI lifecycle in the parent process. The following example registers the model type and constructs one task.
+Register the concrete C++ model type, declare a unit, and add its run operation:
 
 .. code-block:: cpp
 
    miaow::TaskExecutorRegistry registry;
    const miaow::TaskExecutorId heat =
        registry.add<miaow::StaticBmiTaskExecutor<BmiHeat>>();
-
-   const miaow::StaticBmiConfig config{
-       .init_config_ = heat_config,
-   };
-   const miaow::Task task = miaow::make_bmi_task(heat, config);
-
-The same registered task executor ID can be applied to several configurations. The following example constructs one ``Task`` for each ``StaticBmiConfig`` in a vector, using ``first_heat_config`` and ``second_heat_config`` as their initialization configurations. The resulting tasks share the registered task executor ID ``heat`` and execute in the parent process:
-
-.. code-block:: cpp
-
-   const std::vector<miaow::StaticBmiConfig> configs{
-       {.init_config_ = first_heat_config},
-       {.init_config_ = second_heat_config},
-   };
-   const std::vector<miaow::Task> tasks =
-       miaow::make_bmi_tasks(heat, configs);
-
-These tasks are then submitted to the MIAOW runtime to be dispatched by a ``job_actor`` and executed concurrently by instances of the registered ``StaticBmiTaskExecutor<BmiHeat>`` task executor. The ``submit_job(...)`` call returns a ``JobHandle`` immediately, and ``JobHandle::get()`` waits for the completed ``JobRecord``:
-
-.. code-block:: cpp
-
    miaow::Runtime runtime(registry);
-   miaow::JobHandle job = runtime.submit_job(tasks);
-   const miaow::JobRecord job_record = job.get();
+   miaow::Job job;
+   const miaow::SimulationUnitHandle unit = job.add_unit("heat", heat);
+   const miaow::StaticBmiConfig config{.init_config_ = heat_config};
+   job.add_task(miaow::make_bmi_task(unit, config));
 
+   // Submit the job
+   miaow::JobHandle job_handle = runtime.submit_job(std::move(job));
+
+   // Wait for completion and retrieve the job record
+   const miaow::JobRecord record = job_handle.get();
+
+For concurrent independent runs, declare one unit per configuration using the same executor registration. Repeated tasks targeting one unit execute sequentially and reuse its executor.
 
 Dynamic BMI plugin
-~~~~~~~~~~~~~~~~~~
+------------------
 
-The dynamic plugin setup applies when the model is loaded from a C++ or Fortran plugin library. ``DynamicBmiConfig`` contains the backend, plugin path, initialization path, and clock tolerance for one task. The following example registers parent-process execution and configures one dynamic Fortran plugin task:
+Register ``DynamicBmiTaskExecutor`` for in-process plugin execution, or register the bundled executable for subprocess isolation. The configuration selects a C++ or Fortran plugin and its initialization file:
 
 .. code-block:: cpp
 
    miaow::TaskExecutorRegistry registry;
-   const miaow::TaskExecutorId dynamic_bmi =
-       registry.add<miaow::DynamicBmiTaskExecutor>();
-
+   const miaow::TaskExecutorId executor =
+       registry.add_subprocess(miaow::bmi_subprocess_executable_path());
+   miaow::Runtime runtime(registry);
+   miaow::Job job;
+   const miaow::SimulationUnitHandle unit = job.add_unit("model", executor);
    const miaow::DynamicBmiConfig config{
        .backend_ = miaow::DynamicBmiBackend::fortran,
        .plugin_path_ = plugin_path,
        .init_config_ = init_config,
    };
-   const miaow::Task task = miaow::make_bmi_task(dynamic_bmi, config);
+   job.add_task(miaow::make_bmi_task(unit, config));
 
-Dynamic BMI plugins can be executed in child subprocesses by registering a ``TaskExecutorId`` through the generic ``add_subprocess(executable, lifetime)`` method rather than through ``add<DynamicBmiTaskExecutor>()``. The following example registers a single-task subprocess and constructs one dynamic BMI task to be executed in the child:
+   // Submit the job
+   miaow::JobHandle job_handle = runtime.submit_job(std::move(job));
 
-.. code-block:: cpp
+   // Wait for completion and retrieve the job record
+   const miaow::JobRecord record = job_handle.get();
 
-   const miaow::TaskExecutorId dynamic_bmi_subprocess =
-       registry.add_subprocess(
-           miaow::bmi_subprocess_executable_path(),
-           miaow::SubprocessLifetime::single_task);
-   const miaow::Task subprocess_task =
-       miaow::make_bmi_task(dynamic_bmi_subprocess, config);
+A subprocess-backed unit keeps its child alive between operations until removal or job completion. Each BMI operation still creates and finalizes its own model. The Julia/Trixi example places one simulation in a dedicated unit subprocess.
 
-In the above example, ``bmi_subprocess_executable_path()`` resolves the bundled worker that loads and runs one model in the subprocess. As described in :ref:`task-execution`, ``SubprocessLifetime::single_task`` starts one child for each task, whereas ``SubprocessLifetime::persistent`` retains the child after a successful task. Every task constructs a fresh model, including tasks that reuse a persistent child process. The same job worker reuses the child only when its next task selects a persistent registration with the same executable and the child actor remains available. Another executable can be registered when it implements the public ``Task`` to ``TaskResult`` contract described in :ref:`custom-subprocess-executables`.
+Custom executables can implement the same :ref:`task contract <custom-subprocess-executables>`.
 
 Dynamic C++ plugins must export the ``bmi_model_create()`` and ``bmi_model_destroy(...)`` symbols as C linkage. Dynamic Fortran plugins must export ``register_bmi(void**)`` for the linked `NOAA-OWP iso_c_fortran_bmi bridge <https://github.com/NOAA-OWP/iso_c_fortran_bmi>`_. See ``examples/03_dynamic_bmi`` for examples of concrete C++ and Fortran plugin workflows.
 
 Model time
 ----------
 
-``time_step_tolerance_seconds_`` defines the absolute tolerance for the final-time comparison, with a default of ``1e-4`` seconds. It must be finite, non-negative, and less than half the model timestep. MIAOW converts the tolerance to the units reported by ``GetTimeUnits()``, supporting seconds, minutes, hours, and days with common abbreviations and singular or plural names.
+``time_step_tolerance_seconds_`` defines the absolute tolerance for the final-time comparison, with a default of ``1e-4`` seconds. It must be finite, non-negative, and less than half the model time step. MIAOW converts the tolerance to the units reported by ``GetTimeUnits()``, supporting seconds, minutes, hours, and days with common abbreviations and singular or plural names.
 
 The runner calls ``Update()`` repeatedly and fails the task if an update passes the end time beyond this tolerance. A model already at its end time receives initialization and finalization with no updates.
 
 Diagnostics and artifacts
 -------------------------
 
-When ``RuntimeOptions::output_root_`` or CLI ``--output_root`` is set, MIAOW writes a ``job_record.json`` under ``<output_root>/run_<run_id>/job_<job_id>/``. Records include task configurations, status, messages, metadata, structured results, timings, and artifact paths. Subprocess stdout and stderr logs may also be retained there.
+When ``RuntimeOptions::output_root_`` or CLI ``--output_root`` is set, MIAOW writes a ``job_record.json`` under ``<output_root>/run_<run_id>/job_<job_submission_id>/``. Records include unit and executor identifiers, operations, status, messages, metadata, structured output, timings, and artifact paths. Subprocess stdout and stderr logs may also be retained there.
 
 Scientific output files and their locations are controlled by the model's initialization configuration. BMI tasks produce no additional scientific output or resolved configuration files.

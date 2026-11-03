@@ -19,11 +19,9 @@ Default examples
 
 - `examples/00_hello <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/00_hello>`_: minimal orchestration and diagnostics output
 - `examples/01_heat <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/01_heat>`_: BMI integration using the `CSDMS heat example <https://github.com/csdms/bmi-example-cxx>`_
-- `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: dynamic C++ and Fortran BMI plugin integration, in-process and in fresh subprocesses, using the CSDMS heat examples
+- `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: C++ and Fortran heat plugins, each run in-process and in its own unit subprocess
 - `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: computes a square root using Heron's method, where tasks output the next estimate and residual for the job controller to check for convergence and generate the next task
-- `examples/09_persistent_counter <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/09_persistent_counter>`_: two persistent counter executors, addressed by job-scoped handles, that retain independent state across successive string-named operations
-
-Run the counter example from the repository root with ``build/examples/09_persistent_counter/miaow_persistent_counter --max_concurrent_tasks 1``. Both units retain their executors while operations share one task slot. A controller appends the last two operations using the same unit handles. The job owns its controller before ``submit_job(std::move(job))`` transfers it to the runtime. Configure it with ``-DMIAOW_EXAMPLES=09_persistent_counter`` if it is not already selected in the build cache.
+- `examples/09_persistent_counter <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/09_persistent_counter>`_: independent counter values retained across operations, with queued work drained before unit removal
 
 The hello, dynamic BMI, and job-controller examples accept an optional ``--config <file.json>`` alongside the common runtime options. Omitted fields retain the default inputs. This allows successful and failing workflows to use the same programs.
 
@@ -34,7 +32,7 @@ The hello, dynamic BMI, and job-controller examples accept an optional ``--confi
    * - Example
      - Fields
    * - Hello
-     - ``delay_ms`` sets the delay before each task executes. ``tasks`` replaces the default messages with a list of objects containing optional ``message``, ``feature_id``, and ``task_executor_id`` fields. An omitted message produces a failed task.
+     - ``delay_ms`` sets the delay before each task executes. ``tasks`` replaces the default messages with a list of objects containing optional ``message``, ``feature_id``, and ``task_executor_id`` fields. Each entry declares a unit; ``task_executor_id`` selects its executor registration. An omitted message produces a failed task.
    * - Dynamic BMI
      - ``cpp_plugin``, ``fortran_plugin``, ``init_config``, and ``time_step_tolerance_seconds`` override the plugin paths and shared model configuration.
    * - Job controller
@@ -46,7 +44,7 @@ Additional examples
 -------------------
 
 - `examples/04_summa <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_summa>`_: MIAOW `SUMMA <https://github.com/CH-Earth/summa>`_ execution for the 52-GRU Bow River fixture, with offline mizuRoute routing
-- `examples/05_libtrixi_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/05_libtrixi_bmi>`_: `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin in a single-task subprocess
+- `examples/05_libtrixi_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/05_libtrixi_bmi>`_: `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin in a dedicated unit subprocess
 - `examples/06_fuse_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/06_fuse_bmi>`_: deterministic 256-member Saltelli ensemble using the `FUSE <https://github.com/uofs-simlab/fuse>`_ dynamic Fortran BMI plugin
 - `examples/08_particle_swarm <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/08_particle_swarm>`_: compares batch-synchronous and asynchronous particle swarm optimization on Rastrigin, with randomized evaluation delays and Matplotlib playback
 
@@ -120,7 +118,7 @@ FUSE
 
 The ``examples/06_fuse_bmi`` example runs a deterministic 256-member Saltelli ensemble through FUSE's dynamic Fortran BMI plugin. It requires NetCDF Fortran and Python 3 with no additional packages. The NetCDF parameter files are tracked in ``examples/06_fuse_bmi/data/paramsets``, while CMake locates or downloads the forcing, elevation-band, and settings data. This case is not part of the default example set.
 
-Using six workers, the ensemble can be run from the example root directory with the following commands:
+To run up to six model evaluations concurrently, use these commands from the repository root:
 
 .. code-block:: sh
 
@@ -163,7 +161,7 @@ The ``08_particle_swarm`` example compares two methods for scheduling particle s
 - ``batch_synchronous``: the controller waits for every particle in a generation to finish, then updates the whole swarm using that generation's best result and submits the next generation.
 - ``asynchronous``: the controller updates each particle as its result arrives, using the best result available at that time, and submits its next evaluation without waiting for the other particles.
 
-The synchronous job runs to completion first, then the asynchronous job starts. Both start from identical particle positions and velocities, using 32 particles and eight workers by default. Each stops submitting work after 30 seconds or 100,000 evaluations; queued and active evaluations finish normally.
+The synchronous job runs to completion first, then the asynchronous job starts. Both start from identical positions and velocities, using 32 particle units and a limit of eight concurrent evaluations by default. Each stops submitting work after 30 seconds or 100,000 evaluations; queued and active evaluations finish normally.
 
 Select, build, and run this additional example from the repository root:
 
@@ -174,7 +172,7 @@ Select, build, and run this additional example from the repository root:
    cd examples/08_particle_swarm
    ./miaow_particle_swarm
 
-Results are saved under ``output/run_<id>``. To compare particle histories, worker usage, and convergence, use the provided Python script:
+Results are saved under ``output/run_<id>``. To compare particle histories, unit activity, and convergence, use the provided Python script:
 
 .. code-block:: sh
 
@@ -198,13 +196,13 @@ Examples accept the following runtime command-line options where applicable. The
      - Description
    * - ``--max_concurrent_tasks``
      - ``1``
-     - Maximum dispatched tasks awaiting completion per job; persistent-unit count is independent of this limit
+     - Maximum occupied task slots per job; unit count is independent of this limit. Timed-out native calls retain their slots until they return.
    * - ``--task_request_timeout``
-     - ``5``
-     - Task-response timeout, in seconds; timed-out tasks fail. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.
+     - ``60``
+     - Task-response timeout, in seconds; expiry makes the unit unavailable and notifies the controller. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.
    * - ``--job_request_timeout``
      - ``300``
-     - Job timeout, in seconds; unfinished tasks fail and worker shutdown is requested. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.
+     - Job timeout, in seconds; unfinished tasks fail and unit shutdown is requested. Delivery waits for cleanup, including running in-process evaluations, which are not interrupted.
    * - ``--output_root``
      - ``""``
      - Root directory path for runtime-managed output folders, disabled by default

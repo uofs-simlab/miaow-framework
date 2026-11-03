@@ -158,8 +158,8 @@ class ParticleSwarmController final : public miaow::JobController {
     void initialize(miaow::Job& job) override {
         start_time_ = std::chrono::steady_clock::now();
 
-        // One task per particle forms the first batch. The runtime queues tasks beyond
-        // the worker limit and dispatches them as workers become available.
+        // Give each particle a unit and queue its initial evaluation.
+        // The runtime limits active operations independently of the number of particles.
         for (std::size_t id = 0; id < swarm_.size(); ++id) {
             if (submitted_ == evaluation_budget_ ||
                 std::chrono::steady_clock::now() - start_time_ >= time_limit_) {
@@ -167,23 +167,25 @@ class ParticleSwarmController final : public miaow::JobController {
             }
             const Particle& particle = swarm_[id];
 
-            // Pass the point; metadata identifies the particle for result handling
-            job.add_task(miaow::Task{
-                objective_,
-                std::vector<caf::config_value>{caf::config_value{particle.position[0]},
-                                               caf::config_value{particle.position[1]}},
-                miaow::TaskMetadata{{"particle", std::to_string(id)}}});
+            const miaow::SimulationUnitHandle unit =
+                job.add_unit("particle_" + std::to_string(id), objective_);
+            particle_units_.push_back(unit);
+            miaow::Task task{unit, "evaluate", particle.position[0], particle.position[1]};
+            task.metadata_["particle"] = std::to_string(id);
+            job.add_task(std::move(task));
             ++submitted_;
         }
     }
 
     void callback(miaow::Job& job, std::span<const miaow::TaskRecord> new_records,
                   std::span<const miaow::UnitFailure> failed_units) override {
+        // Fail the job if a unit becomes unavailable
         if (!failed_units.empty()) {
-            JobController::callback(job, new_records, failed_units);
+            job.fail(failed_units.front().reason_);
             return;
         }
-        // Get the id of each particle that has completed evaluation since last callback
+
+        // Collect the particles whose results can now update the optimizer
         std::vector<std::size_t> particles_to_update;
         for (const miaow::TaskRecord& record : new_records) {
             // A failed evaluation cannot update the optimizer; propagate it as a job error
@@ -227,12 +229,11 @@ class ParticleSwarmController final : public miaow::JobController {
             // Move the particle according to the PSO update rule
             update_particle(id, global_best);
 
-            // Add a new task to the queue for evaluating the particle's new position
-            job.add_task(miaow::Task{
-                objective_,
-                std::vector<caf::config_value>{caf::config_value{swarm_[id].position[0]},
-                                               caf::config_value{swarm_[id].position[1]}},
-                miaow::TaskMetadata{{"particle", std::to_string(id)}}});
+            // Evaluate the new position using the same particle unit
+            miaow::Task task{particle_units_[id], "evaluate", swarm_[id].position[0],
+                             swarm_[id].position[1]};
+            task.metadata_["particle"] = std::to_string(id);
+            job.add_task(std::move(task));
             ++submitted_;
         }
 
@@ -326,6 +327,9 @@ class ParticleSwarmController final : public miaow::JobController {
     // Persistent position, velocity, and personal-best state indexed by particle ID
     std::vector<Particle> swarm_;
 
+    // Route later evaluations back to the same unit for each particle
+    std::vector<miaow::SimulationUnitHandle> particle_units_;
+
     // Initial positions and per-update snapshots for animation playback
     std::vector<std::array<double, 2>> initial_positions_;
     caf::config_value::list updates_;
@@ -339,18 +343,18 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     try {
-        // Default to eight workers, independently of the swarm size.
-        // CLI options can override the worker limit and the default output directory.
-        miaow::RuntimeOptions options{8};
-        options.output_root_ = "output";
-        miaow::parse_runtime_cli_options(argc, argv, options);
+        // Default to eight concurrent evaluations and a separate unit per particle.
+        // Runtime CLI options can override concurrency and the output directory.
+        miaow::RuntimeOptions runtime_options{8};
+        runtime_options.output_root_ = "output";
+        miaow::parse_runtime_cli_options(argc, argv, runtime_options);
 
         // Register the Rastrigin evaluator with its default artificial evaluation costs
         miaow::TaskExecutorRegistry registry;
         const miaow::TaskExecutorId objective = registry.add<RastriginEvaluation>();
 
         // Create the runtime with the registered task executors and the parsed options
-        miaow::Runtime runtime{registry, options};
+        miaow::Runtime runtime{registry, runtime_options};
 
         // Sequential jobs share a runtime but restart the same initial swarm and seeds.
         // policy controls callback timing; name supplies the human-readable result label.
@@ -361,21 +365,28 @@ int main(int argc, char* argv[]) {
             std::unique_ptr<ParticleSwarmController> controller =
                 std::make_unique<ParticleSwarmController>(objective, policy);
 
-            // Transfer ownership to the runtime and wait for the final job record
-            const miaow::JobRecord job = runtime.submit_job(std::move(controller)).get();
+            // Prepare a job with its controller
+            miaow::Job job;
+            job.set_controller(std::move(controller));
+
+            // Submit the job
+            miaow::JobHandle job_handle = runtime.submit_job(std::move(job));
+
+            // Wait for completion and retrieve the job record
+            const miaow::JobRecord job_record = job_handle.get();
 
             // Report task failures before summarizing convergence
-            if (!miaow::all_tasks_succeeded(job)) {
-                miaow::print_job_summary(job);
+            if (!miaow::all_tasks_succeeded(job_record)) {
+                miaow::print_job_summary(job_record);
                 return 1;
             }
 
             // Summarize convergence directly from the completed task results
-            std::cout << name << ": " << job.tasks_.size() << " evaluations in "
-                      << job.run_time_.count() << " s";
-            if (!job.tasks_.empty()) {
+            std::cout << name << ": " << job_record.tasks_.size() << " evaluations in "
+                      << job_record.run_time_.count() << " s";
+            if (!job_record.tasks_.empty()) {
                 const auto best = std::min_element(
-                    job.tasks_.begin(), job.tasks_.end(),
+                    job_record.tasks_.begin(), job_record.tasks_.end(),
                     [](const miaow::TaskRecord& a, const miaow::TaskRecord& b) {
                         return caf::get<caf::config_value::real>(a.result_.output_) <
                                caf::get<caf::config_value::real>(b.result_.output_);
@@ -386,8 +397,9 @@ int main(int argc, char* argv[]) {
             std::cout << '\n';
 
             // Show the run directory containing both job records for animation playback
-            if (!options.output_root_.empty()) {
-                std::cout << "  " << options.output_root_ << "/run_" << job.run_id_ << '\n';
+            if (!runtime_options.output_root_.empty()) {
+                std::cout << "  " << runtime_options.output_root_ << "/run_"
+                          << job_record.run_id_ << '\n';
             }
         }
         return 0;

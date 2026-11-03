@@ -86,54 +86,28 @@ static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
     return run_id;
 }
 
-// Get directory path for a job, which is a subdirectory of the run directory
-static std::filesystem::path job_directory_path(const RuntimeOptions& runtime_options,
-                                                std::uint64_t run_id, JobId job_id) {
-    return run_directory_path(runtime_options, run_id) / ("job_" + std::to_string(job_id));
+std::filesystem::path core::job_directory_path(const RuntimeOptions& runtime_options,
+                                               std::uint64_t run_id,
+                                               JobSubmissionId job_submission_id) {
+    return run_directory_path(runtime_options, run_id) /
+           ("job_" + std::to_string(job_submission_id));
 }
 
-// Generate a name for a task from its metadata or vector index; first try the feature_id
-// from the task's metadata, otherwise use task_<task_id> when no feature_id is available
-static std::string task_name(const Task& task, TaskId task_id) {
-    const TaskMetadata::const_iterator feature_id = task.metadata_.find("feature_id");
-    if (feature_id != task.metadata_.end() && !feature_id->second.empty()) {
-        if (feature_id->second.find('/') != std::string::npos ||
-            feature_id->second.find('\\') != std::string::npos) {
-            throw std::runtime_error(
-                "Task name error: feature_id must not contain path separators");
-        }
-        if (task.unit_) {
-            return feature_id->second + "_task_" + std::to_string(task_id);
-        }
-        return feature_id->second;
-    }
-    return "task_" + std::to_string(task_id);
-}
-
-// Prepare initial or generated tasks for dispatch without changing earlier task fields
+// Prepare unit operations without changing previously assigned runtime fields
 void core::assign_task_runtime_fields(std::vector<Task>& tasks,
                                       std::size_t first_task_index,
                                       const RuntimeOptions& runtime_options,
-                                      std::uint64_t run_id, JobId job_id) {
-    // Track task names so logs and artifacts can identify tasks unambiguously
-    std::vector<std::string> assigned_task_names;
-    assigned_task_names.reserve(tasks.size());
-    for (std::size_t task_index = 0; task_index < first_task_index; ++task_index) {
-        assigned_task_names.push_back(tasks.at(task_index).task_name_);
-    }
-
-    // Assign unique names from feature_id metadata or task indices in the requested range
-    for (std::size_t task_index = first_task_index; task_index < tasks.size();
-         ++task_index) {
-        Task& task = tasks.at(task_index);
-        const TaskId task_id = static_cast<TaskId>(task_index);
-        task.task_name_ = task_name(task, task_id);
-        if (std::find(assigned_task_names.begin(), assigned_task_names.end(),
-                      task.task_name_) != assigned_task_names.end()) {
-            throw std::runtime_error("Task name error: duplicate task name '" +
-                                     task.task_name_ + "'");
+                                      std::uint64_t run_id,
+                                      JobSubmissionId job_submission_id) {
+    for (std::size_t index = first_task_index; index < tasks.size(); ++index) {
+        Task& task = tasks[index];
+        const std::string& feature_id = task.metadata_.at("feature_id");
+        if (feature_id.find('/') != std::string::npos ||
+            feature_id.find('\\') != std::string::npos) {
+            throw std::runtime_error(
+                "Task name error: feature_id must not contain path separators");
         }
-        assigned_task_names.push_back(task.task_name_);
+        task.task_name_ = feature_id + "_task_" + std::to_string(index);
     }
 
     // Clear output paths when artifact storage is disabled
@@ -147,7 +121,7 @@ void core::assign_task_runtime_fields(std::vector<Task>& tasks,
 
     // Create the job results directory before assigning task output paths
     const std::filesystem::path job_directory =
-        job_directory_path(runtime_options, run_id, job_id);
+        job_directory_path(runtime_options, run_id, job_submission_id);
     const std::filesystem::path results_directory = job_directory / "results";
     std::filesystem::create_directories(results_directory);
 
@@ -234,78 +208,65 @@ void JobController::callback(Job& job, std::span<const TaskRecord>,
 }
 
 void Job::add_task(Task task) {
+    if (task.unit_.job_creation_id_ != job_creation_id_ ||
+        task.unit_.index_ >= units_.size() || !units_[task.unit_.index_]) {
+        throw std::invalid_argument("task target does not belong to this job");
+    }
+    if (units_[task.unit_.index_]->state_ != UnitState::accepting_tasks || finishing_) {
+        throw std::invalid_argument("task target is no longer accepting work");
+    }
     tasks_.push_back(std::move(task));
+}
+
+void Job::remove_unit(SimulationUnitHandle handle) {
+    if (!self_) {
+        throw std::logic_error("Job::remove_unit requires a running controller hook");
+    }
+    if (handle.job_creation_id_ != job_creation_id_ || handle.index_ >= units_.size()) {
+        throw std::invalid_argument("unit does not belong to this job");
+    }
+    if (units_[handle.index_]) {
+        UnitBinding& unit = *units_[handle.index_];
+        if (unit.state_ == UnitState::accepting_tasks) {
+            unit.state_ = UnitState::removal_requested;
+        } else if (unit.state_ == UnitState::failed) {
+            shutdown_unit(handle.index_);
+        }
+    }
 }
 
 void Job::set_controller(std::unique_ptr<JobController> controller) {
     job_controller_ = std::move(controller);
 }
 
-// Construct persistent units and retain their identities for later task routing
+// Prepare unit state without constructing an executor or starting an actor
 SimulationUnitHandle Job::add_unit(std::string feature_id, TaskExecutorId executor_id) {
-    if (!workers_.empty()) {
-        throw std::invalid_argument("cannot add units to a job using ordinary workers");
-    }
     if (feature_id.empty()) {
-        throw std::invalid_argument("persistent unit feature_id must not be empty");
+        throw std::invalid_argument("unit feature_id must not be empty");
     }
     for (const std::optional<UnitBinding>& unit : units_) {
-        if (unit && unit->feature_id_ == feature_id) {
-            throw std::invalid_argument("duplicate persistent unit feature_id: " +
-                                        feature_id);
+        if (unit && unit->state_ == UnitState::accepting_tasks &&
+            unit->feature_id_ == feature_id) {
+            throw std::invalid_argument("duplicate unit feature_id: " + feature_id);
         }
     }
-    const SimulationUnitHandle handle{scope_id_, units_.size()};
+    const SimulationUnitHandle handle{job_creation_id_, units_.size()};
     units_.emplace_back(UnitBinding{std::move(feature_id), executor_id,
                                     SimulationUnit{executor_id}, std::nullopt});
     return handle;
 }
 
-// Resolve persistent targets for both initial tasks and controller-generated operations
-void Job::bind_tasks_to_simulation_units(std::vector<Task>& tasks,
-                                         std::size_t first_task_index) const {
-    for (std::size_t index = first_task_index; index < tasks.size(); ++index) {
-        Task& task = tasks[index];
-        // If there are no persistent units and the task has no associated unit,
-        // skip binding
-        if (units_.empty() && !task.unit_) {
-            continue;
-        }
-        // If the task has an associated unit, ensure it belongs to this job and is valid
-        if (!task.unit_ || task.unit_->scope_id_ != scope_id_ ||
-            task.unit_->index_ >= units_.size() || !units_[task.unit_->index_]) {
+// Copy scientific feature labels from unit bindings into newly accepted tasks
+void Job::prepare_task_metadata(std::size_t first_task_index) {
+    for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
+        Task& task = tasks_[index];
+        if (task.unit_.job_creation_id_ != job_creation_id_ ||
+            task.unit_.index_ >= units_.size() || !units_[task.unit_.index_]) {
             throw std::invalid_argument("task target does not belong to this job");
         }
-        const UnitBinding& unit = *units_[task.unit_->index_];
-        task.task_executor_id_ = unit.task_executor_id_;
+        const UnitBinding& unit = *units_[task.unit_.index_];
         task.metadata_["feature_id"] = unit.feature_id_;
     }
-}
-
-// Submit one task through the multi-task path
-JobHandle Runtime::submit_job(const Task& task) const {
-    return submit_job(std::vector<Task>{task});
-}
-
-// Ordinary task submission configures the same Job state without persistent units
-JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
-    Job job;
-    job.tasks_ = std::move(tasks);
-    return submit_job(std::move(job));
-}
-
-JobHandle Runtime::submit_job(std::vector<Task> tasks,
-                              std::unique_ptr<JobController> job_controller) const {
-    Job job;
-    job.tasks_ = std::move(tasks);
-    job.set_controller(std::move(job_controller));
-    return submit_job(std::move(job));
-}
-
-JobHandle Runtime::submit_job(std::unique_ptr<JobController> job_controller) const {
-    Job job;
-    job.set_controller(std::move(job_controller));
-    return submit_job(std::move(job));
 }
 
 JobHandle Runtime::submit_job(Job job) const {
@@ -313,11 +274,13 @@ JobHandle Runtime::submit_job(Job job) const {
         throw std::invalid_argument("Runtime requires a non-null JobController");
     }
 
-    const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
+    const JobSubmissionId job_submission_id =
+        next_job_submission_id_.fetch_add(1, std::memory_order_relaxed);
 
     // Bind initial tasks before assigning names and output directories
-    job.bind_tasks_to_simulation_units(job.tasks_, 0);
-    core::assign_task_runtime_fields(job.tasks_, 0, runtime_options_, run_id_, job_id);
+    job.prepare_task_metadata(0);
+    core::assign_task_runtime_fields(job.tasks_, 0, runtime_options_, run_id_,
+                                     job_submission_id);
 
     // Create a promise/future pair for this submitted job
     std::promise<JobRecord> promise;
@@ -325,13 +288,14 @@ JobHandle Runtime::submit_job(Job job) const {
     JobHandle handle = promise.get_future();
     {
         std::lock_guard<std::mutex> lock(pending_jobs_mutex_);
-        // Register this in-progress job in the dictionary: job_id -> promise
-        pending_jobs_.emplace(job_id, std::move(promise));
+        // Register this in-progress job in the dictionary: job_submission_id -> promise
+        pending_jobs_.emplace(job_submission_id, std::move(promise));
     }
 
     // CAF may copy local messages; the receiving actor adopts the prepared Job state
     auto shared_job = std::make_shared<Job>(std::move(job));
-    caf::anon_mail(caf::get_atom_v, job_id, std::move(shared_job)).send(orchestrator_);
+    caf::anon_mail(caf::get_atom_v, job_submission_id, std::move(shared_job))
+        .send(orchestrator_);
     return handle;
 }
 

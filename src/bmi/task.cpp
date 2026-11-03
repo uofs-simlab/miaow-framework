@@ -14,20 +14,20 @@
 
 namespace miaow {
 
-Task make_bmi_task(TaskExecutorId task_executor_id, const StaticBmiConfig& config) {
+Task make_bmi_task(SimulationUnitHandle unit, const StaticBmiConfig& config) {
     caf::config_value::dictionary values;
     values.insert("init_config", config.init_config_);
     values.insert("time_step_tolerance_seconds", config.time_step_tolerance_seconds_);
-    return Task{task_executor_id, caf::config_value{std::move(values)}};
+    return Task{unit, "run", caf::config_value{std::move(values)}};
 }
 
-Task make_bmi_task(TaskExecutorId task_executor_id, const DynamicBmiConfig& config) {
+Task make_bmi_task(SimulationUnitHandle unit, const DynamicBmiConfig& config) {
     caf::config_value::dictionary values;
     values.insert("backend", config.backend_ == DynamicBmiBackend::cpp ? "cpp" : "fortran");
     values.insert("plugin_path", config.plugin_path_);
     values.insert("init_config", config.init_config_);
     values.insert("time_step_tolerance_seconds", config.time_step_tolerance_seconds_);
-    return Task{task_executor_id, caf::config_value{std::move(values)}};
+    return Task{unit, "run", caf::config_value{std::move(values)}};
 }
 
 namespace {
@@ -84,7 +84,7 @@ double seconds_per_time_unit(std::string_view raw_units) {
 // One task owns the complete lifecycle; forcing and scientific output belong to the model
 TaskResult run_model(bmi_api::Bmi& model, const std::string& init_config,
                      double tolerance_seconds) {
-    bool finalization_pending = false;
+    bool needs_finalization = false;
     std::size_t completed_updates = 0;
     try {
         if (!std::isfinite(tolerance_seconds) || tolerance_seconds < 0.0) {
@@ -92,7 +92,7 @@ TaskResult run_model(bmi_api::Bmi& model, const std::string& init_config,
                 "BMI error: time_step_tolerance_seconds must be finite and non-negative");
         }
         model.Initialize(init_config);
-        finalization_pending = true;
+        needs_finalization = true;
 
         // Compare times in the model's units while keeping the public tolerance in seconds
         const double tolerance =
@@ -106,6 +106,7 @@ TaskResult run_model(bmi_api::Bmi& model, const std::string& init_config,
                                      "than half the time step");
         }
 
+        // Check current and end times for validity and consistency
         const double end_time = model.GetEndTime();
         if (!std::isfinite(end_time)) {
             throw std::runtime_error("BMI error: end time must be finite");
@@ -118,6 +119,8 @@ TaskResult run_model(bmi_api::Bmi& model, const std::string& init_config,
         if (remaining_time < -tolerance) {
             throw std::runtime_error("BMI error: current time is later than the end time");
         }
+
+        // Main update loop: continue until the remaining time is within the tolerance
         while (remaining_time > tolerance) {
             model.Update();
             ++completed_updates;
@@ -132,12 +135,12 @@ TaskResult run_model(bmi_api::Bmi& model, const std::string& init_config,
         }
 
         // Attempt finalization once, including when the model reports a failure
-        finalization_pending = false;
+        needs_finalization = false;
         model.Finalize();
     } catch (...) {
         TaskResult result = make_failed_task_result(std::current_exception(), "BMI error");
         result.message_ += " (updates: " + std::to_string(completed_updates) + ")";
-        if (finalization_pending) {
+        if (needs_finalization) {
             try {
                 model.Finalize();
             } catch (...) {
@@ -151,6 +154,17 @@ TaskResult run_model(bmi_api::Bmi& model, const std::string& init_config,
 
     return TaskResult{TaskStatus::succeeded, "BMI workflow complete (updates: " +
                                                  std::to_string(completed_updates) + ")"};
+}
+
+// Route each supported BMI operation to its implementation
+TaskResult execute_model_operation(const Task& task, bmi_api::Bmi& model,
+                                   const std::string& init_config,
+                                   double tolerance_seconds) {
+    if (task.operation_ == "run") {
+        return run_model(model, init_config, tolerance_seconds);
+    }
+    return make_failed_task_result("unsupported operation '" + task.operation_ + "'",
+                                   "BMI error");
 }
 
 } // namespace
@@ -170,24 +184,32 @@ std::string bmi_subprocess_executable_path() {
 
 namespace bmi {
 
+// Load the task's plugin and execute its operation on a fresh model.
+// Shared by DynamicBmiTaskExecutor in the parent and SubprocessWorker in the child.
+// Setup exceptions become failed TaskResult values.
 TaskResult execute_task(const Task& task) {
     try {
         const DynamicBmiConfig config = read_dynamic_config(task);
         DynamicBmiModel model(config);
-        return run_model(model, config.init_config_, config.time_step_tolerance_seconds_);
+        return execute_model_operation(task, model, config.init_config_,
+                                       config.time_step_tolerance_seconds_);
     } catch (...) {
         return make_failed_task_result(std::current_exception(), "BMI error");
     }
 }
 
-} // namespace bmi
-
-TaskResult static_bmi_execution::execute_task(const Task& task,
-                                              std::unique_ptr<bmi_api::Bmi> model) {
+// Execute the task's operation on a fresh model supplied by StaticBmiTaskExecutor.
+// Configuration exceptions propagate to the executor, which returns a failed result.
+TaskResult execute_task(const Task& task, std::unique_ptr<bmi_api::Bmi> model) {
     const StaticBmiConfig config = read_static_config(task);
-    return run_model(*model, config.init_config_, config.time_step_tolerance_seconds_);
+    return execute_model_operation(task, *model, config.init_config_,
+                                   config.time_step_tolerance_seconds_);
 }
 
+} // namespace bmi
+
+// Implement TaskExecutor::execute for in-process dynamic BMI execution.
+// Adapt the shared handler's TaskResult to the interface's caf::result<TaskResult>.
 caf::result<TaskResult> DynamicBmiTaskExecutor::execute(const Task& task) {
     return bmi::execute_task(task);
 }

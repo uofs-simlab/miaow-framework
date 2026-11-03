@@ -12,6 +12,7 @@
 // Read optional example inputs and forward the common runtime options
 inline nlohmann::json read_example_config(int argc, char* argv[],
                                           miaow::RuntimeOptions& runtime_options) {
+    // Separate the example's input file from options handled by the runtime
     std::string config_path;
     std::vector<char*> runtime_arguments{argv[0]};
     for (int index = 1; index < argc; ++index) {
@@ -24,8 +25,10 @@ inline nlohmann::json read_example_config(int argc, char* argv[],
             runtime_arguments.push_back(argv[index]);
         }
     }
+    // Apply common execution settings before reading example-specific inputs
     miaow::parse_runtime_cli_options(static_cast<int>(runtime_arguments.size()),
                                      runtime_arguments.data(), runtime_options);
+    // An omitted file leaves each example to supply its own input defaults
     if (config_path.empty()) {
         return nlohmann::json::object();
     }

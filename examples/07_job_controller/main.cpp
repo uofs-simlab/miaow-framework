@@ -34,10 +34,10 @@
 
 namespace {
 
-constexpr double radicand = 2.0;
-constexpr double initial_estimate = 1.0;
-constexpr double residual_tolerance = 1e-5;
-constexpr std::size_t maximum_iterations = 20;
+constexpr double default_radicand = 2.0;
+constexpr double default_initial_estimate = 1.0;
+constexpr double default_residual_tolerance = 1e-5;
+constexpr std::size_t default_maximum_iterations = 20;
 
 /**
  * @brief Perform one Heron iteration and output the next estimate and residual.
@@ -84,13 +84,15 @@ class IterationJobController final : public miaow::JobController {
           maximum_iterations_{maximum_iterations}, initial_estimate_{initial_estimate} {}
 
     void initialize(miaow::Job& job) override {
-        job.add_task(miaow::Task{task_executor_id_, caf::config_value{initial_estimate_}});
+        unit_ = job.add_unit("iteration", task_executor_id_);
+        job.add_task(unit_, "iterate", initial_estimate_);
     }
 
     void callback(miaow::Job& job, std::span<const miaow::TaskRecord> new_records,
                   std::span<const miaow::UnitFailure> failed_units) override {
+        // Fail the job if a unit becomes unavailable
         if (!failed_units.empty()) {
-            JobController::callback(job, new_records, failed_units);
+            job.fail(failed_units.front().reason_);
             return;
         }
         iterations_ += new_records.size();
@@ -132,11 +134,12 @@ class IterationJobController final : public miaow::JobController {
         }
 
         // Otherwise, generate a new task with the next estimate
-        job.add_task(miaow::Task{task_executor_id_, caf::config_value{*estimate}});
+        job.add_task(unit_, "iterate", *estimate);
     }
 
   private:
     miaow::TaskExecutorId task_executor_id_;
+    miaow::SimulationUnitHandle unit_;
     double residual_tolerance_;
     std::size_t maximum_iterations_;
     double initial_estimate_;
@@ -153,27 +156,39 @@ int main(int argc, char* argv[]) {
 
     miaow::RuntimeOptions runtime_options;
     try {
+        // Resolve example inputs and defaults before constructing execution objects
         const nlohmann::json config = read_example_config(argc, argv, runtime_options);
+        const double radicand = config.value("radicand", default_radicand);
+        const double initial_estimate =
+            config.value("initial_estimate", default_initial_estimate);
+        const double residual_tolerance =
+            config.value("residual_tolerance", default_residual_tolerance);
+        const std::size_t maximum_iterations =
+            config.value("maximum_iterations", default_maximum_iterations);
 
         miaow::TaskExecutorRegistry registry;
 
         // Register the Heron iteration task executor with the radicand
         const miaow::TaskExecutorId heron_iteration =
-            registry.add<HeronIterationTaskExecutor>(config.value("radicand", radicand));
+            registry.add<HeronIterationTaskExecutor>(radicand);
         miaow::Runtime runtime(registry, runtime_options);
 
         // Create a job controller that generates new tasks until convergence
         std::unique_ptr<miaow::JobController> controller =
-            std::make_unique<IterationJobController>(
-                heron_iteration, config.value("residual_tolerance", residual_tolerance),
-                config.value("maximum_iterations", maximum_iterations),
-                config.value("initial_estimate", initial_estimate));
+            std::make_unique<IterationJobController>(heron_iteration, residual_tolerance,
+                                                     maximum_iterations, initial_estimate);
 
-        // Runtime asks the controller for its first task when the job starts
-        miaow::JobHandle job = runtime.submit_job(std::move(controller));
+        // Runtime initializes the controller before dispatching its first task
+        miaow::Job job;
+        job.set_controller(std::move(controller));
 
-        // Get the final job record and check if all tasks succeeded
-        const miaow::JobRecord job_record = job.get();
+        // Submit the job
+        miaow::JobHandle job_handle = runtime.submit_job(std::move(job));
+
+        // Wait for completion and retrieve the job record
+        const miaow::JobRecord job_record = job_handle.get();
+
+        // Report task failures before displaying the converged iteration sequence
         miaow::print_job_summary(job_record);
         if (!miaow::all_tasks_succeeded(job_record)) {
             return 1;

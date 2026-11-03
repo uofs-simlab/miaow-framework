@@ -8,9 +8,7 @@
 #include <exception>
 #include <functional>
 #include <deque>
-#include <queue>
 #include <future>
-#include <initializer_list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -54,9 +52,14 @@ using TaskExecutorId = std::uint64_t;
 using TaskId = std::uint64_t;
 
 /**
- * @brief Monotonic identifier assigned to each submitted job.
+ * @brief Process-local identifier assigned when a logical job is created.
  */
-using JobId = std::uint64_t;
+using JobCreationId = std::uint64_t;
+
+/**
+ * @brief Runtime-local identifier assigned when a job is submitted.
+ */
+using JobSubmissionId = std::uint64_t;
 
 /**
  * @brief Descriptive task metadata preserved for reporting and postprocessing.
@@ -64,18 +67,9 @@ using JobId = std::uint64_t;
 using TaskMetadata = std::map<std::string, std::string>;
 
 /**
- * @brief Select whether a subprocess handles one task or remains available for reuse.
- */
-enum class SubprocessLifetime {
-    /// Stop the subprocess after one task result
-    single_task,
-
-    /// Retain the subprocess after successful tasks
-    persistent,
-};
-
-/**
- * @brief Job-scoped reference to one declared persistent simulation unit.
+ * @brief Reference to a unit through its owning job's creation ID and unit index.
+ *
+ * The creation ID is assigned before submission and retained when the job moves.
  */
 class SimulationUnitHandle {
   public:
@@ -83,16 +77,17 @@ class SimulationUnitHandle {
     bool operator==(const SimulationUnitHandle&) const = default;
 
   private:
-    SimulationUnitHandle(std::uint64_t scope_id, std::size_t index)
-        : scope_id_(scope_id), index_(index) {}
+    SimulationUnitHandle(JobCreationId job_creation_id, std::size_t index)
+        : job_creation_id_(job_creation_id), index_(index) {}
 
-    std::uint64_t scope_id_{0};
+    JobCreationId job_creation_id_{0};
     std::size_t index_{0};
 
     friend class Job;
     template <class Inspector>
     friend bool inspect(Inspector& inspector, SimulationUnitHandle& unit) {
-        return inspector.object(unit).fields(inspector.field("scope_id", unit.scope_id_),
+        return inspector.object(unit).fields(inspector.field("job_creation_id",
+                                                             unit.job_creation_id_),
                                              inspector.field("index", unit.index_));
     }
 };
@@ -104,14 +99,11 @@ class SimulationUnitHandle {
  * implementation inside `TaskExecutor::execute()`.
  */
 struct Task {
-    /// `TaskExecutorId` that selects which registered executor handles this task
-    TaskExecutorId task_executor_id_{0};
-
-    /// Named executor operation; ordinary executors may leave this empty
+    /// Named operation interpreted by the unit's executor
     std::string operation_;
 
-    /// Persistent unit selected by a job; absent for ordinary tasks
-    std::optional<SimulationUnitHandle> unit_;
+    /// Job-scoped unit that executes this operation
+    SimulationUnitHandle unit_;
 
     /// Generic arguments for this task to pass into `TaskExecutor::execute()`
     std::vector<caf::config_value> args_;
@@ -120,7 +112,7 @@ struct Task {
     /// task artifacts
     std::string task_output_dir_;
 
-    /// Artifact stem assigned by Runtime; persistent operations also include their task ID
+    /// Artifact stem formed from the unit label and task ID
     std::string task_name_;
 
     /// Metadata preserves labels used by reporting and postprocessing tools
@@ -129,7 +121,7 @@ struct Task {
     /// Construct an empty task
     Task() = default;
 
-    /// Construct an operation for a persistent unit, including controller-generated work
+    /// Construct an operation for a unit, including controller-generated work
     Task(SimulationUnitHandle unit, std::string operation,
          std::vector<caf::config_value> args = {})
         : operation_(std::move(operation)), unit_(unit), args_(std::move(args)) {}
@@ -139,64 +131,6 @@ struct Task {
     Task(SimulationUnitHandle unit, std::string operation, Args... args)
         : Task(unit, std::move(operation),
                std::vector<caf::config_value>{caf::config_value{std::move(args)}...}) {}
-
-    /**
-     * @brief Construct a `Task` from positional config values.
-     * @param task_executor_id `TaskExecutorId` for this task.
-     * @param task_args Positional arguments for this task.
-     */
-    Task(TaskExecutorId task_executor_id, std::vector<caf::config_value> task_args)
-        : task_executor_id_(task_executor_id), args_(std::move(task_args)) {}
-
-    /**
-     * @brief Construct a `Task` from positional config values and metadata.
-     * @param task_executor_id `TaskExecutorId` for this task.
-     * @param task_args Positional arguments for this task.
-     * @param task_metadata Metadata preserved for reporting and postprocessing.
-     */
-    Task(TaskExecutorId task_executor_id, std::vector<caf::config_value> task_args,
-         TaskMetadata task_metadata)
-        : task_executor_id_(task_executor_id), args_(std::move(task_args)),
-          metadata_(std::move(task_metadata)) {}
-
-    /**
-     * @brief Construct a `Task` from one config value.
-     * @param task_executor_id `TaskExecutorId` for this task.
-     * @param arg Single `caf::config_value` for this task.
-     */
-    Task(TaskExecutorId task_executor_id, caf::config_value arg)
-        : task_executor_id_(task_executor_id), args_{std::move(arg)} {}
-
-    /**
-     * @brief Construct a `Task` from one config value and metadata.
-     * @param task_executor_id `TaskExecutorId` for this task.
-     * @param arg Single `caf::config_value` for this task.
-     * @param task_metadata Metadata preserved for reporting and postprocessing.
-     */
-    Task(TaskExecutorId task_executor_id, caf::config_value arg, TaskMetadata task_metadata)
-        : task_executor_id_(task_executor_id), args_{std::move(arg)},
-          metadata_(std::move(task_metadata)) {}
-
-    /**
-     * @brief Construct a `Task` from one string argument.
-     * @param task_executor_id `TaskExecutorId` for this task.
-     * @param arg Single string argument for this task.
-     */
-    Task(TaskExecutorId task_executor_id, std::string arg)
-        : task_executor_id_(task_executor_id), args_{caf::config_value{std::move(arg)}} {}
-
-    /**
-     * @brief Construct a `Task` from positional string arguments.
-     * @param task_executor_id `TaskExecutorId` for this task.
-     * @param string_args Positional string arguments for this task.
-     */
-    Task(TaskExecutorId task_executor_id, std::initializer_list<std::string> string_args)
-        : task_executor_id_(task_executor_id) {
-        args_.reserve(string_args.size());
-        for (const std::string& string_arg : string_args) {
-            args_.emplace_back(string_arg);
-        }
-    }
 
     /**
      * @brief Return a pointer to a string at a given positional argument index.
@@ -311,23 +245,21 @@ struct TaskRecord {
 
     /**
      * @brief Construct a completed `TaskRecord` from a task and its success or failure.
-     * @param task Submitted task whose metadata and task executor ID are copied.
+     * @param task Submitted task whose operation, unit, and metadata are copied.
+     * @param task_executor_id Executor selected by the unit binding.
      * @param task_id `TaskId` within the submitted job.
      * @param result Success or failure result for this task.
      * @param run_time Elapsed time from dispatch until the result or timeout is recorded.
      * @param dispatch_offset_from_job_start Time from job start to dispatch, if known.
-     * @param worker_id Zero-based worker index within the job, if assigned.
      */
-    TaskRecord(const Task& task, TaskId task_id, TaskResult result,
-               std::chrono::duration<double> run_time,
+    TaskRecord(const Task& task, TaskExecutorId task_executor_id, TaskId task_id,
+               TaskResult result, std::chrono::duration<double> run_time,
                std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start =
-                   std::nullopt,
-               std::optional<std::size_t> worker_id = std::nullopt)
-        : task_id_{task_id}, task_executor_id_{task.task_executor_id_},
+                   std::nullopt)
+        : task_id_{task_id}, task_executor_id_{task_executor_id},
           task_name_{task.task_name_}, operation_{task.operation_}, unit_{task.unit_},
           metadata_{task.metadata_}, result_{std::move(result)}, run_time_{run_time},
-          dispatch_offset_from_job_start_{dispatch_offset_from_job_start},
-          worker_id_{worker_id} {}
+          dispatch_offset_from_job_start_{dispatch_offset_from_job_start} {}
 
     /// `TaskId` within the submitted job
     TaskId task_id_{0};
@@ -341,8 +273,8 @@ struct TaskRecord {
     /// Operation copied from the submitted task
     std::string operation_;
 
-    /// Persistent target copied from the submitted task
-    std::optional<SimulationUnitHandle> unit_;
+    /// Required target, retained even when the task was never dispatched
+    SimulationUnitHandle unit_;
 
     /// Metadata copied from the submitted task
     TaskMetadata metadata_;
@@ -355,20 +287,16 @@ struct TaskRecord {
 
     /// Time from job start to dispatch; absent if not dispatched or timing is unavailable
     std::optional<std::chrono::duration<double>> dispatch_offset_from_job_start_;
-
-    /// Zero-based worker index within the job; absent if no worker assignment is available
-    std::optional<std::size_t> worker_id_;
 };
 
 /**
- * @brief Select when a job controller generates tasks from completed records.
+ * @brief Select when a controller receives task completions and unit failures.
  */
 enum class TaskGenerationPolicy {
-    /// Call the controller after each task reports success or failure
+    /// Notify after an operation completes or a unit becomes unavailable
     asynchronous,
 
-    /// Call the controller when no queued tasks remain to dispatch and no dispatched
-    /// tasks are awaiting results
+    /// Notify when no queued or active operations remain in the current batch
     batch_synchronous,
 };
 
@@ -376,7 +304,9 @@ enum class TaskGenerationPolicy {
  * @brief Loss of one simulation unit's execution context.
  */
 struct UnitFailure {
+    /// Unit whose executor or process can no longer accept operations
     SimulationUnitHandle unit_;
+    /// Diagnostic describing the loss of execution context
     std::string reason_;
 };
 
@@ -411,13 +341,16 @@ class JobController {
 
     /**
      * @brief Respond to completed tasks and unavailable simulation units.
-     * @param job Job to which the controller may add units or tasks, or report failure.
+     * @param job Job whose work and unit lifetimes the controller manages.
      * @param completed_tasks New completions in completion order, delivered once per task.
      * @param failed_units Units whose execution context is unavailable.
      *
      * Spans are borrowed for this call and must not be retained. Asynchronous callbacks
-     * receive each task result; batch-synchronous callbacks receive the completed batch.
+     * receive an operation completion or the tasks affected by unit loss. Batch callbacks
+     * receive all completions and unit failures from the current batch.
      * The default policy fails the job on unit loss and permits reported task failures.
+     * Unit loss also fails accepted tasks targeting that unit. Batch policy waits for
+     * the current batch before reporting unit failures. Units are never rebuilt implicitly.
      * Synthetic job-timeout records remain only in the final JobRecord.
      */
     virtual void callback(Job& job, std::span<const TaskRecord> completed_tasks,
@@ -451,21 +384,22 @@ struct JobRecord {
     /**
      * @brief Construct a final `JobRecord` from IDs, task records, and runtime.
      * @param run_id Runtime identifier for this `Runtime` instance.
-     * @param job_id `JobId` assigned to this submitted job.
+     * @param job_submission_id `JobSubmissionId` assigned to this submitted job.
      * @param tasks Task records in submitted task order.
      * @param run_time Wall-clock duration for this job.
      * @param output Structured output returned by the job controller.
      */
-    JobRecord(std::uint64_t run_id, JobId job_id, std::vector<TaskRecord> tasks = {},
+    JobRecord(std::uint64_t run_id, JobSubmissionId job_submission_id,
+              std::vector<TaskRecord> tasks = {},
               std::chrono::duration<double> run_time = {}, caf::config_value output = {})
-        : run_id_{run_id}, job_id_{job_id}, tasks_{std::move(tasks)}, run_time_{run_time},
-          output_{std::move(output)} {}
+        : run_id_{run_id}, job_submission_id_{job_submission_id}, tasks_{std::move(tasks)},
+          run_time_{run_time}, output_{std::move(output)} {}
 
     /// Runtime identifier for this `Runtime` instance
     std::uint64_t run_id_{0};
 
-    /// `JobId` assigned to this submitted job
-    JobId job_id_{0};
+    /// `JobSubmissionId` assigned to this submitted job
+    JobSubmissionId job_submission_id_{0};
 
     /// Task records in submitted task order
     std::vector<TaskRecord> tasks_;
@@ -523,7 +457,8 @@ inline TaskResult make_failed_task_result(std::exception_ptr exception,
  *
  * The only requirement of a `TaskExecutor` is that it must implement an `execute` method
  * that takes a `Task` and returns a `caf::result<TaskResult>`, which can be an immediate
- * result, a CAF error, or a delegated response. The `TaskExecutor` class is intended to
+ * result, a CAF error, or a delegated response. Operation failures use a failed
+ * `TaskResult`; CAF errors describe request or protocol failures. The class is intended to
  * be subclassed by concrete implementations that define the specific behavior of the
  * task executor.
  */
@@ -551,7 +486,7 @@ class TaskExecutorRegistry {
     /**
      * @brief Register a concrete `TaskExecutor` type.
      *
-     * Builds a factory that workers use for `TaskExecutorType` instances.
+     * Each activated simulation unit constructs its own `TaskExecutorType` instance.
      *
      * @tparam TaskExecutorType Concrete `TaskExecutor` type.
      * @tparam ConstructorArgs Constructor argument types for `TaskExecutorType`.
@@ -592,12 +527,10 @@ class TaskExecutorRegistry {
      *
      * @param subprocess_executable Non-empty path to an executable whose `main()` calls
      * `run_subprocess_worker()`.
-     * @param lifetime Select a single-task or persistent child process.
      * @return `TaskExecutorId` assigned to this subprocess task executor.
      * @throws std::invalid_argument if `subprocess_executable` is empty.
      */
-    TaskExecutorId add_subprocess(std::string subprocess_executable,
-                                  SubprocessLifetime lifetime);
+    TaskExecutorId add_subprocess(std::string subprocess_executable);
 
     /**
      * @brief Return true when no task executors have been registered.
@@ -620,7 +553,6 @@ class TaskExecutorRegistry {
 
     struct SubprocessRegistration {
         std::string executable_;
-        SubprocessLifetime lifetime_;
     };
 
     using Registration = std::variant<TaskExecutorFactory, SubprocessRegistration>;
@@ -638,15 +570,15 @@ class TaskExecutorRegistry {
  * Solver-specific options should be passed in `Task` arguments.
  */
 struct RuntimeOptions {
-    /// Maximum number of dispatched tasks awaiting completion in each job
+    /// Maximum occupied task slots per job, including timed-out native calls still running
     std::size_t max_concurrent_tasks_;
 
-    /// Timeout for one task response; expiry marks the task as failed. Subprocess tasks
-    /// are terminated; in-process execute() calls are not interrupted.
+    /// Timeout for one task response; expiry makes the unit unavailable. Subprocess tasks
+    /// are terminated; in-process calls retain capacity until execute() returns.
     std::chrono::milliseconds task_request_timeout_;
 
-    /// Job timeout; expiry marks unfinished tasks as failed and requests worker shutdown.
-    /// Only subprocess tasks are terminated; in-process calls are not interrupted.
+    /// Job timeout; expiry marks unfinished tasks as failed and requests unit shutdown.
+    /// Delivery waits for cleanup; in-process calls are not interrupted.
     std::chrono::milliseconds job_request_timeout_;
 
     /// Root output directory for run and job artifact folders; an empty value disables
@@ -658,7 +590,7 @@ struct RuntimeOptions {
      * @param concurrent_tasks Maximum active task requests for each job. Values of zero are
      *                clamped to one.
      * @param task_timeout Task-response timeout; terminates only subprocess tasks.
-     * @param job_timeout Timeout that fails unfinished tasks and requests worker shutdown.
+     * @param job_timeout Timeout that fails unfinished tasks and requests unit shutdown.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      */
@@ -682,7 +614,8 @@ using JobHandle = std::future<JobRecord>;
 /**
  * @brief Simulation-unit state prepared before submission and managed by CAF afterward.
  *
- * The selected executor is constructed when the actor starts and retained across tasks.
+ * Each SimulationUnit owns its own executor instance, constructed when the actor starts
+ * and retained across tasks.
  */
 class SimulationUnit {
   public:
@@ -694,12 +627,7 @@ class SimulationUnit {
     SimulationUnit& operator=(const SimulationUnit&) = delete;
 
     /// @cond
-    // CAF supplies context to prepared units and to ordinary per-task workers
-    SimulationUnit(caf::event_based_actor* self,
-                   std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
-                   caf::actor subprocess_registration_actor,
-                   std::uint16_t subprocess_registration_port,
-                   std::chrono::milliseconds task_request_timeout);
+    // CAF supplies context while adopting the prepared unit state
     SimulationUnit(caf::event_based_actor* self, SimulationUnit&& unit,
                    std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
                    caf::actor subprocess_registration_actor,
@@ -709,11 +637,9 @@ class SimulationUnit {
     /// @endcond
 
   private:
-    SimulationUnit() = default;
-
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
     std::unique_ptr<core::SubprocessState> subprocess_state_;
-    std::optional<TaskExecutorId> persistent_executor_id_;
+    TaskExecutorId task_executor_id_;
     std::unique_ptr<TaskExecutor> task_executor_;
 };
 
@@ -732,8 +658,12 @@ class Job {
     Job(const Job&) = delete;
     Job& operator=(const Job&) = delete;
 
-    /// Construct one persistent simulation unit under a unique scientific feature label
+    /// Prepare a unit under a feature label unique among units accepting new work
     SimulationUnitHandle add_unit(std::string feature_id, TaskExecutorId executor_id);
+
+    /// Request removal during a controller hook; accepted tasks finish before shutdown
+    /// New tasks are rejected immediately; repeated removal is harmless
+    void remove_unit(SimulationUnitHandle unit);
 
     /// Append a task before submission or during a controller hook
     void add_task(Task task);
@@ -752,8 +682,9 @@ class Job {
 
     /// @cond
     // CAF supplies actor context while adopting the prepared job state
-    Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
-        std::shared_ptr<Job> job, RuntimeOptions runtime_options,
+    Job(caf::event_based_actor* self, std::uint64_t run_id,
+        JobSubmissionId job_submission_id, std::shared_ptr<Job> job,
+        RuntimeOptions runtime_options,
         std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
         caf::actor subprocess_registration_actor,
         std::uint16_t subprocess_registration_port);
@@ -761,14 +692,17 @@ class Job {
     /// @endcond
 
   private:
-    void stop_workers();
-    void spawn_workers_for_tasks();
+    void shutdown_units();
+    void shutdown_unit(std::size_t unit_index);
     void prepare_tasks(std::size_t first_task_index);
     void complete_job();
-    void complete_job_error_if_tasks_finished();
+    void finish_job();
     void begin_job_error_shutdown(std::string error_message);
-    void complete_job_if_all_tasks_finished();
-    void complete_task(std::size_t worker_id, std::size_t task_id, TaskResult task_result);
+    void advance();
+    void fail_unit(std::size_t unit_index, std::string reason);
+    void unit_terminated(std::size_t unit_index, const caf::error& reason);
+    void record_task(std::size_t task_id, TaskResult task_result);
+    void complete_task(std::size_t unit_index, std::size_t task_id, TaskResult task_result);
     void dispatch_tasks();
 
     caf::event_based_actor* self_{nullptr};
@@ -776,8 +710,8 @@ class Job {
     // Runtime identifier copied into the final job record
     std::uint64_t run_id_{0};
 
-    // Job identifier copied into the final job record
-    JobId job_id_{0};
+    // Runtime-assigned submission identifier copied into the final job record
+    JobSubmissionId job_submission_id_{0};
 
     // Runtime options for this job, copied from the runtime config
     RuntimeOptions runtime_options_;
@@ -787,29 +721,34 @@ class Job {
     // The controller appends tasks through this job and stays in the parent process
     std::unique_ptr<JobController> job_controller_{std::make_unique<JobController>()};
 
-    // Registry retained so workers can be created for controller-added tasks
+    // Registry used to activate units on first task demand
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
 
-    // Runtime-local registrar shared by every subprocess-capable worker in this job
+    // Runtime-local registrar shared by the subprocess-backed units in this job
     caf::actor subprocess_registration_actor_;
 
     // Loopback port used by child actor systems to reach the registration actor
     std::uint16_t subprocess_registration_port_{0};
+
+    enum class UnitState { accepting_tasks, removal_requested, stopping, failed };
 
     struct UnitBinding {
         std::string feature_id_;
         TaskExecutorId task_executor_id_;
         std::variant<SimulationUnit, caf::actor> instance_;
         std::optional<TaskId> active_task_;
+        UnitState state_{UnitState::accepting_tasks};
     };
 
-    // Unit identities remain available for routing after CAF adopts the prepared units
-    inline static std::atomic<std::uint64_t> next_scope_id_{1};
-    std::uint64_t scope_id_{next_scope_id_.fetch_add(1, std::memory_order_relaxed)};
+    // Ownership identity allocated at construction and retained across job moves
+    inline static std::atomic<JobCreationId> next_job_creation_id_{1};
+    JobCreationId job_creation_id_{
+        next_job_creation_id_.fetch_add(1, std::memory_order_relaxed)};
+
+    // Bindings keep stable indices before and after CAF adopts the prepared units
     std::vector<std::optional<UnitBinding>> units_;
 
-    void bind_tasks_to_simulation_units(std::vector<Task>& tasks,
-                                        std::size_t first_task_index) const;
+    void prepare_task_metadata(std::size_t first_task_index);
 
     // Initial and controller-generated task payloads owned by this job actor
     // Task IDs are the index of the task in this vector
@@ -823,19 +762,18 @@ class Job {
     // Boundary between records already delivered to the controller and new completions
     std::size_t reported_task_count_{0};
 
-    // Ordinary worker-pool actors, indexed by worker ID
-    std::vector<caf::actor> workers_;
-
-    // Queue of worker IDs that are available to run a task
-    std::queue<std::size_t> available_workers_;
-
-    // Pending task IDs remain in submission order; busy persistent targets may be skipped
+    // Pending task IDs remain in submission order; busy targets may be skipped
     std::deque<std::size_t> pending_tasks_;
 
-    // Number of dispatched task requests awaiting results
+    // Occupied task slots; timed-out native calls hold their slot until actor termination
     std::size_t active_task_count_{0};
 
-    // Job-level error reported after all active task requests finish
+    // Settlement is independent of actor cleanup, so late replies cannot record twice
+    std::vector<bool> task_completed_;
+    std::vector<UnitFailure> pending_unit_failures_;
+
+    // Final delivery waits until every activated unit has terminated
+    bool finishing_{false};
     std::optional<std::string> pending_error_message_;
 
     // Response promise used to deliver the final JobRecord or a job-level error
@@ -847,11 +785,8 @@ class Job {
     // Wall-clock start time for the full job
     std::chrono::steady_clock::time_point job_start_time_;
 
-    // Start times for each task, indexed by task ID
-    std::vector<std::chrono::steady_clock::time_point> task_start_times_;
-
-    // Worker indices assigned at dispatch, indexed by task ID; queued tasks have no worker
-    std::vector<std::optional<std::size_t>> task_worker_ids_;
+    // Dispatch times indexed by task ID; queued tasks have no start time
+    std::vector<std::optional<std::chrono::steady_clock::time_point>> task_start_times_;
 
     friend class Runtime;
 };
@@ -866,10 +801,8 @@ class Job {
 template <class Inspector> bool inspect(Inspector& inspector, Task& task) {
     // Defines how CAF serializes/deserializes `Task` for actor messaging
     return inspector.object(task).fields(
-        inspector.field("task_executor_id", task.task_executor_id_),
         inspector.field("operation", task.operation_).fallback(std::string{}),
-        inspector.field("unit", task.unit_).fallback(std::optional<SimulationUnitHandle>{}),
-        inspector.field("args", task.args_),
+        inspector.field("unit", task.unit_), inspector.field("args", task.args_),
         inspector.field("task_output_dir", task.task_output_dir_),
         inspector.field("task_name", task.task_name_),
         inspector.field("metadata", task.metadata_));
@@ -925,14 +858,12 @@ template <class Inspector> bool inspect(Inspector& inspector, TaskRecord& task_r
             inspector.field("task_executor_id", task_record.task_executor_id_),
             inspector.field("task_name", task_record.task_name_),
             inspector.field("operation", task_record.operation_).fallback(std::string{}),
-            inspector.field("unit", task_record.unit_)
-                .fallback(std::optional<SimulationUnitHandle>{}),
+            inspector.field("unit", task_record.unit_),
             inspector.field("metadata", task_record.metadata_),
             inspector.field("result", task_record.result_),
             inspector.field("run_time", task_record.run_time_),
             inspector.field("dispatch_offset_from_job_start",
-                            task_record.dispatch_offset_from_job_start_),
-            inspector.field("worker_id", task_record.worker_id_));
+                            task_record.dispatch_offset_from_job_start_));
 }
 
 /**
@@ -947,7 +878,7 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
     return inspector.object(job_record)
         .fields(
             inspector.field("run_id", job_record.run_id_),
-            inspector.field("job_id", job_record.job_id_),
+            inspector.field("job_submission_id", job_record.job_submission_id_),
             inspector.field("tasks", job_record.tasks_),
             inspector.field("run_time", job_record.run_time_),
             inspector.field("output", job_record.output_).fallback(caf::config_value{}));
@@ -957,9 +888,9 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
  * @brief Actor runtime for orchestrating simulation `Task`s.
  *
  * The runtime is model-agnostic and thread-safe.
- * Ordinary tasks with unknown `TaskExecutorId` values fail individually. Persistent
- * executor initialization errors fail the job.
- * Persistent subprocess workers are owned by one submitted job.
+ * Each job manages its simulation units. Each SimulationUnit owns its executor instance
+ * and any subprocess resources. The controller handles unavailable units; its default
+ * policy fails the job.
  */
 class Runtime {
   public:
@@ -982,77 +913,7 @@ class Runtime {
     ~Runtime();
 
     /**
-     * @brief Submit one `Task` as an asynchronous job.
-     *
-     * The returned handle may throw if job execution or final `job_record.json` output
-     * fails.
-     * @param task Generic `Task` arguments.
-     * @return `JobHandle` for retrieving the final `JobRecord`.
-     * @throws std::filesystem::filesystem_error if runtime output directories
-     * cannot be created.
-     */
-    JobHandle submit_job(const Task& task) const;
-
-    /**
-     * @brief Submit multiple tasks and return immediately with a `JobHandle`.
-     *
-     * Call `JobHandle::get()` to wait for the tasks to finish and obtain their
-     * `JobRecord`.
-     *
-     * Passing an already-created task vector copies the vector and its tasks,
-     * leaving the original unchanged. Passing a temporary task vector, such as the
-     * return value of a function call, or using `std::move` allows MIAOW to reuse
-     * the vector's existing storage and tasks instead of copying them. Do not rely
-     * on the contents of an explicitly moved vector afterward.
-     *
-     * The returned handle may throw if job execution or final `job_record.json` output
-     * fails.
-     * @param tasks Tasks to submit.
-     * @return `JobHandle` used to wait for and retrieve the resulting `JobRecord`.
-     * @throws std::filesystem::filesystem_error if runtime output directories
-     * cannot be created.
-     */
-    JobHandle submit_job(std::vector<Task> tasks) const;
-
-    /**
-     * @brief Submit a controller that generates its own initial tasks at job start.
-     *
-     * Calls initialize(Job&) once in the job actor. Controller hooks are
-     * serialized, and their errors propagate through JobHandle::get().
-     * @param job_controller Controller transferred to the submitted job.
-     * @return Handle for retrieving the final JobRecord.
-     * @throws std::invalid_argument if job_controller is null.
-     */
-    JobHandle submit_job(std::unique_ptr<JobController> job_controller) const;
-
-    /**
-     * @brief Submit tasks with a controller that may generate additional work.
-     *
-     * The runtime takes ownership of `job_controller`. After each task execution
-     * returns success or failure, the owning job actor creates its `TaskRecord`. When
-     * the controller's task generation policy permits, it passes new completions to
-     * the controller. The controller appends further work through Job::add_task().
-     * The initialize(Job&) hook runs once before dispatch, including when the
-     * supplied task vector is empty.
-     * The controller's finalize() output is retained in `JobRecord::output_`.
-     *
-     * If the controller or preparation of its added tasks fails, the job stops
-     * dispatching pending tasks and allows active tasks to finish. The returned handle
-     * then throws `std::runtime_error`. No final `JobRecord` or `job_record.json` is
-     * produced for this job-level error. Output failures may also be rethrown by the
-     * handle.
-     * @param tasks Initial tasks to submit.
-     * @param job_controller Controller transferred to the submitted job.
-     * @return `JobHandle` used to wait for and retrieve the resulting `JobRecord`.
-     * @throws std::invalid_argument if `job_controller` is null.
-     * @throws std::filesystem::filesystem_error if runtime output directories
-     * cannot be created.
-     */
-    JobHandle submit_job(std::vector<Task> tasks,
-                         std::unique_ptr<JobController> job_controller) const;
-
-    /**
-     * @brief Transfer a configured job to the runtime and create its CAF actors.
+     * @brief Submit a configured job for asynchronous unit execution.
      *
      * The controller's initialize(Job&) hook runs once before dispatch and may add
      * work alongside caller-provided tasks. Controller errors
@@ -1066,7 +927,7 @@ class Runtime {
 
   private:
     // Map each submitted job to the promise fulfilled by the orchestrator
-    using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
+    using PendingJobs = std::unordered_map<JobSubmissionId, std::promise<JobRecord>>;
 
     // Shared task executor registry used by all `simulation_unit_actor`s in this runtime
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
@@ -1077,13 +938,13 @@ class Runtime {
     // Monotonic run ID used to create deterministic output directory layouts
     std::uint64_t run_id_{0};
 
-    // Monotonic counter for generating unique `JobId`s for each submitted job
-    mutable std::atomic<JobId> next_job_id_{0};
+    // Monotonic counter for generating unique `JobSubmissionId`s for each submitted job
+    mutable std::atomic<JobSubmissionId> next_job_submission_id_{0};
 
     // Mutex to protect access to the `pending_jobs_` dictionary
     mutable std::mutex pending_jobs_mutex_;
 
-    // Dictionary mapping in-progress `JobId`s to their completion promises
+    // Dictionary mapping in-progress `JobSubmissionId`s to their completion promises
     mutable PendingJobs pending_jobs_;
 
     // CAF actor system configuration for this runtime instance

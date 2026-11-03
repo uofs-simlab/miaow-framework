@@ -14,6 +14,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -30,6 +31,7 @@ struct JobRecordChecker {
         BOOST_REQUIRE(arguments.argc == 2 || arguments.argc == 3);
         std::ifstream job_record_input{arguments.argv[1]};
         const nlohmann::json job_record = nlohmann::json::parse(job_record_input);
+        BOOST_TEST(job_record.at("job_submission_id").is_number_unsigned());
 
         // Compare task identities independently of parallel completion order
         for (const auto& task : job_record.at("tasks")) {
@@ -40,8 +42,9 @@ struct JobRecordChecker {
             // This fixture checks successful runs, so every recorded task must succeed
             BOOST_TEST(task.at("result").at("status").get<std::string>() == "succeeded");
 
-            // These examples use at most two simulation-unit actors, indexed from zero
-            BOOST_TEST(task.at("worker_id").get<std::size_t>() < 2);
+            // Targets retain the job's creation identity and their declaration index
+            BOOST_TEST(task.at("unit").at("job_creation_id").get<std::uint64_t>() > 0);
+            BOOST_TEST(task.at("unit").at("index").is_number_unsigned());
 
             // Executed tasks must include their dispatch offset from the job start
             BOOST_TEST(!task.at("dispatch_offset_from_job_start").is_null());
@@ -97,9 +100,9 @@ BOOST_FIXTURE_TEST_CASE(hello, JobRecordChecker) {
     BOOST_TEST(tasks.at(0).at("metadata").at("feature_id").get<std::string>() ==
                "greeting");
 
-    // A feature_id supplies the task name; without one, use task_<task_id>
-    BOOST_TEST(tasks.at(0).at("task_name").get<std::string>() == "greeting");
-    BOOST_TEST(tasks.at(1).at("task_name").get<std::string>() == "task_1");
+    // Unit labels and task IDs identify each operation's artifacts
+    BOOST_TEST(tasks.at(0).at("task_name").get<std::string>() == "greeting_task_0");
+    BOOST_TEST(tasks.at(1).at("task_name").get<std::string>() == "message_1_task_1");
 }
 
 // An empty submission must still produce a successful, empty job record
@@ -137,6 +140,18 @@ BOOST_FIXTURE_TEST_CASE(dynamic_bmi, JobRecordChecker) {
 BOOST_FIXTURE_TEST_CASE(dynamic_bmi_zero_duration, JobRecordChecker) {
     BOOST_REQUIRE_EQUAL(tasks.size(), 4);
     check_updates(0);
+}
+
+// Each BMI execution path must complete two fresh model runs on the same unit
+BOOST_FIXTURE_TEST_CASE(bmi_repeated_run, JobRecordChecker) {
+    BOOST_REQUIRE_EQUAL(tasks.size(), 10);
+    check_updates(40);
+
+    for (std::size_t id = 0; id < tasks.size(); id += 2) {
+        BOOST_TEST_CONTEXT("tasks " << id << " and " << id + 1) {
+            BOOST_TEST(tasks.at(id).at("unit") == tasks.at(id + 1).at("unit"));
+        }
+    }
 }
 
 // Registered in examples/07_job_controller/CMakeLists.txt using default example inputs
@@ -191,6 +206,7 @@ BOOST_AUTO_TEST_CASE(expected_failure) {
 
     std::ifstream job_record_input{record_path};
     const nlohmann::json job_record = nlohmann::json::parse(job_record_input);
+    BOOST_TEST(job_record.at("job_submission_id").is_number_unsigned());
     const auto& tasks = job_record.at("tasks");
     const auto& expected_tasks = expected.at("tasks");
 
@@ -215,17 +231,14 @@ BOOST_AUTO_TEST_CASE(expected_failure) {
                        std::string::npos);
             const bool dispatched = reference.value("dispatched", true);
 
-            // A worker must be assigned exactly when the task was dispatched
-            BOOST_TEST(task.at("worker_id").is_null() == !dispatched);
+            // Accepted tasks retain their target even when they never dispatch
+            BOOST_TEST(task.at("unit").at("job_creation_id").get<std::uint64_t>() > 0);
+            BOOST_TEST(task.at("unit").at("index").is_number_unsigned());
 
             // Dispatch timing must be present for dispatched tasks and null otherwise
             BOOST_TEST(task.at("dispatch_offset_from_job_start").is_null() == !dispatched);
-            if (dispatched) {
-                // The assigned worker must belong to the case's configured worker pool
-                BOOST_TEST(task.at("worker_id").get<std::size_t>() <
-                           expected.value("max_concurrent_tasks", 2u));
-            } else {
-                // Tasks that never reached a worker must have zero run time
+            if (!dispatched) {
+                // Tasks that never dispatched must have zero run time
                 BOOST_TEST(task.at("run_time").get<std::string>() == "0s");
             }
         }
@@ -299,7 +312,6 @@ BOOST_FIXTURE_TEST_CASE(persistent_counter, JobRecordChecker) {
             const auto& task = tasks.at(id);
             BOOST_TEST(task.at("operation").get<std::string>() == "increment");
             BOOST_TEST(task.at("result").at("output").get<int>() == expected_counts[id]);
-            BOOST_TEST(task.at("worker_id").get<std::size_t>() == expected_units[id]);
             BOOST_TEST(task.at("unit").at("index").get<std::size_t>() ==
                        expected_units[id]);
             BOOST_TEST(task.at("task_executor_id").get<std::size_t>() ==

@@ -70,9 +70,11 @@ CI runs regression tests through the five default examples on every push and pul
    cmake --build build
    ctest --test-dir build -L regression --output-on-failure
 
-The ``01_heat`` regression uses the pinned CSDMS C++ heat model. The ``03_dynamic_bmi`` regressions use both the C++ and Fortran heat models. CMake locates or fetches their sources; use ``MIAOW_HEAT_MODEL_ROOT``, ``MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT``, and ``MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT`` to supply local checkouts. The regressions execute the actual example programs with a separate output directory for each case under the build tree. The CMake runner checks the exact exit code, then selects a Boost.Test checker in ``tests/example_regression_checks.cpp`` to inspect saved job records. Successful-run checkers share ``JobRecordChecker``, which requires successful tasks, unique task IDs, assigned worker IDs, and dispatch offsets. The ``expected_failure`` checker exercises options that lead to expected errors, including successful work after a failed task. Errors that prevent a job record must produce the expected diagnostic and leave no record; a crash or an unrelated non-zero exit code does not satisfy these checks.
+The ``01_heat`` regression uses the pinned CSDMS C++ heat model. The ``03_dynamic_bmi`` regressions use both the C++ and Fortran heat models. CMake locates or fetches their sources; use ``MIAOW_HEAT_MODEL_ROOT``, ``MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT``, and ``MIAOW_DYNAMIC_BMI_FORTRAN_MODEL_ROOT`` to supply local checkouts. The regressions execute the actual example programs with a separate output directory for each case under the build tree. The CMake runner checks the exact exit code, then selects a Boost.Test checker in ``tests/example_regression_checks.cpp`` to inspect saved job records. Successful-run checkers share ``JobRecordChecker``, which requires successful tasks, unique task IDs, target unit handles (``unit``), and dispatch offsets. The ``expected_failure`` checker exercises options that lead to expected errors, including successful work after a failed task. Errors that prevent a job record must produce the expected diagnostic and leave no record; a crash or an unrelated non-zero exit code does not satisfy these checks.
 
-Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code, and any runtime overrides. Failure cases also specify diagnostic fragments and expected task records. Heat initialization files beside the JSON cases select zero-duration and overshoot runs. Example-local ``CMakeLists.txt`` files register each CTest name and choose its checker; multiple cases can share one checker. The table below lists every default CTest case, with test names linking to their JSON case files if available. Tests without a JSON case use the default inputs defined in the example's source code; their links lead to the CMake test registration. Each dynamic BMI case runs four tasks: one in-process and one in a fresh subprocess for each of the C++ and Fortran plugins. Saved records below refer to ``job_record.json``.
+Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code, and any runtime overrides. Failure cases also specify diagnostic fragments and expected task records. Heat initialization files beside the JSON cases select zero-duration and overshoot runs. Example-local ``CMakeLists.txt`` files register each CTest name and choose its checker; multiple cases can share one checker. The table below lists every default CTest case, with test names linking to their JSON case files if available. Example tests without a JSON case use the default inputs defined in the example's source code; their links lead to the CMake test registration. Each dynamic BMI example case runs four tasks: one in-process and one in a separate unit subprocess for each of the C++ and Fortran plugins. Saved records below refer to ``job_record.json``.
+
+The BMI operation regressions use a test driver with the heat models from ``03_dynamic_bmi`` and the existing saved-record checkers. Their JSON cases cover an unknown operation followed by a valid run and two successive valid runs on each unit, covering statically typed models and C++ and Fortran plugins in-process and in subprocesses.
 
 .. list-table::
    :header-rows: 1
@@ -85,19 +87,19 @@ Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code
    * - `miaow_example_00_hello_empty <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_empty.json>`_
      - Submitting a job with an empty task list succeeds and writes ``job_record.json`` with an empty ``tasks`` array
    * - `miaow_example_00_hello_missing_message <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_missing_message.json>`_
-     - With one worker, a task without a message fails; the following task succeeds with message ``recovered``
+     - With one concurrent task slot, an operation without a message fails; the following unit's operation succeeds with message ``recovered``
    * - `miaow_example_00_hello_unknown_executor <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_unknown_executor.json>`_
-     - With one worker, a task selecting unregistered task executor 999 fails; the following task selects the registered executor and returns ``recovered``
+     - A unit selecting unregistered executor 999 fails during activation; the default controller fails the job and no job record is saved
    * - `miaow_example_00_hello_duplicate_feature_id <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_duplicate_feature_id.json>`_
-     - Two tasks with ``feature_id=greeting`` produce a duplicate task name error; no job record is saved
+     - Declaring two units with ``feature_id=greeting`` produces a duplicate unit-label error; no job record is saved
    * - `miaow_example_00_hello_feature_id_slash <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_feature_id_slash.json>`_
      - A task with ``feature_id=greeting/1`` is rejected for containing a path separator; no job record is saved
    * - `miaow_example_00_hello_feature_id_backslash <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_feature_id_backslash.json>`_
      - A task whose feature ID contains a backslash is rejected for containing a path separator; no job record is saved
    * - `miaow_example_00_hello_task_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_task_timeout.json>`_
-     - A task sleeping for 2.5 seconds exceeds its 1-second request timeout; its saved status is ``failed`` and its message contains ``request_timeout``
+     - A 2.5-second operation exceeds its 1-second deadline; the default controller fails the job with ``request_timeout`` and saves no job record. Shutdown waits for the native call to return
    * - `miaow_example_00_hello_job_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_job_timeout.json>`_
-     - A 1-second job timeout marks the active 2.5-second task and a queued task failed; the queued record has no worker ID or dispatch offset and a zero run time
+     - A 1-second job timeout marks the active 2.5-second task and a queued task failed; the queued record retains its target, has no dispatch offset, and has a zero run time
    * - `miaow_example_00_hello_invalid_max_concurrent_tasks <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_max_concurrent_tasks.json>`_
      - ``--max_concurrent_tasks 0`` reports ``requires a positive integer``; no job record is saved
    * - `miaow_example_00_hello_invalid_task_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_task_timeout.json>`_
@@ -124,6 +126,10 @@ Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code
      - A clock tolerance of 0.125 seconds equals half the 0.25-second timestep; all four tasks fail with zero updates
    * - `miaow_example_03_dynamic_bmi_overshoot <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_overshoot.json>`_
      - With end time 0.1 seconds, all four tasks fail after one 0.25-second update with ``update passed the end time``
+   * - `miaow_bmi_task_dispatch <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_unknown_operation.json>`_
+     - Five execution paths each reject an unknown operation and then complete a valid run after 40 updates
+   * - `miaow_bmi_repeated_run <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_repeated_run.json>`_
+     - Five execution paths each complete two successive runs on the same unit, with 40 updates per run
    * - `miaow_example_07_job_controller <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/CMakeLists.txt>`_
      - Starting from 1, three Heron estimates match 1.5, 17/12, and 577/408 within ``1e-14``; the final residual ``|x^2 - 2|`` is at most ``1e-5``
    * - `miaow_example_07_job_controller_non_convergence <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_non_convergence.json>`_
@@ -131,7 +137,7 @@ Each JSON case in ``tests/cases`` supplies example inputs, an expected exit code
    * - `miaow_example_07_job_controller_small_values <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_small_values.json>`_
      - For radicand ``2e-16``, saved estimates match ``1e-8 * [1.5, 17/12, 577/408]`` within ``1e-14`` relative error; the final residual is positive and at most ``1e-21``
    * - `miaow_example_09_persistent_counter <https://github.com/uofs-simlab/miaow-framework/blob/main/examples/09_persistent_counter/CMakeLists.txt>`_
-     - Two persistent counters share one executor registration and one task slot; repeated operations retain independent values and have non-overlapping dispatch intervals
+     - Two counter units share one executor registration and one task slot; repeated operations retain independent values, and accepted increments drain after removal is requested
 
 Library installation build
 --------------------------

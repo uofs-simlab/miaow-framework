@@ -1,11 +1,14 @@
-/** Run one SUMMA BMI task per GRU */
+/** Run each SUMMA GRU as one complete BMI simulation in its own subprocess */
 #include <chrono>
 #include <exception>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -13,13 +16,29 @@
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
 
+class SummaController : public miaow::JobController {
+  public:
+    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> completed_tasks,
+                  std::span<const miaow::UnitFailure> failed_units) override {
+        if (!failed_units.empty()) {
+            job.fail(failed_units.front().reason_);
+            return;
+        }
+
+        // Each GRU has one task; release its subprocess after that task completes
+        for (const miaow::TaskRecord& record : completed_tasks) {
+            job.remove_unit(record.unit_);
+        }
+    }
+};
+
 int main(int argc, char* argv[]) {
     try {
         std::string config_path;
-        miaow::RuntimeOptions options;
-        options.job_request_timeout_ = std::chrono::minutes(20);
+        miaow::RuntimeOptions runtime_options;
+        runtime_options.job_request_timeout_ = std::chrono::minutes(20);
 
-        // Consume the fixture path before passing common options to the runtime
+        // Separate the GRU manifest option from the shared runtime options
         std::vector<char*> runtime_arguments{argv[0]};
         for (int index = 1; index < argc; ++index) {
             if (std::string(argv[index]) == "--config") {
@@ -32,43 +51,49 @@ int main(int argc, char* argv[]) {
             }
         }
         miaow::parse_runtime_cli_options(static_cast<int>(runtime_arguments.size()),
-                                         runtime_arguments.data(), options);
+                                         runtime_arguments.data(), runtime_options);
         if (config_path.empty()) {
             throw std::runtime_error("--config requires a fixture manifest");
         }
 
-        // The fixture manifest preserves attribute-file order
-        std::ifstream input(config_path);
-        if (!input) {
+        // Read GRU IDs and BMI input paths in manifest order
+        std::ifstream manifest_file(config_path);
+        if (!manifest_file) {
             throw std::runtime_error("Cannot open " + config_path);
         }
 
-        // Parse the manifest JSON
-        const nlohmann::json manifest = nlohmann::json::parse(input);
+        const nlohmann::json manifest = nlohmann::json::parse(manifest_file);
 
-        // Create the task executor registry and add the worker subprocess
+        // Use separate subprocesses to isolate Fortran model state between GRUs
         miaow::TaskExecutorRegistry registry;
-        const miaow::TaskExecutorId worker =
-            registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
-                                    miaow::SubprocessLifetime::single_task);
+        const miaow::TaskExecutorId summa_executor =
+            registry.add_subprocess(miaow::bmi_subprocess_executable_path());
 
-        // Create a task for each GRU in the manifest
-        std::vector<miaow::Task> tasks;
+        // Give each GRU a unit and queue its complete simulation
+        miaow::Job job;
         for (const auto& feature : manifest.at("grus")) {
-            const std::string identifier = feature.at("id").get<std::string>();
+            const std::string gru_id = feature.at("id").get<std::string>();
             miaow::DynamicBmiConfig config;
             config.backend_ = miaow::DynamicBmiBackend::fortran;
             config.plugin_path_ = MIAOW_SUMMA_PLUGIN_PATH;
             config.init_config_ = feature.at("init_config").get<std::string>();
 
-            // SUMMA owns forcing, daily accumulation, and native NetCDF output
-            tasks.push_back(miaow::make_bmi_task(worker, config));
-            tasks.back().metadata_ = {{"feature_id", identifier}, {"feature_type", "gru"}};
+            // SUMMA handles its own forcing, daily accumulation, and NetCDF output
+            const miaow::SimulationUnitHandle gru = job.add_unit(gru_id, summa_executor);
+            miaow::Task task = miaow::make_bmi_task(gru, config);
+            task.metadata_["feature_type"] = "gru";
+            job.add_task(std::move(task));
         }
+        job.set_controller(std::make_unique<SummaController>());
 
-        // Create the runtime, submit the tasks, and get the job record
-        miaow::Runtime runtime(registry, options);
-        const miaow::JobRecord record = runtime.submit_job(tasks).get();
+        // Create the runtime using the requested concurrency and timeouts
+        miaow::Runtime runtime(registry, runtime_options);
+
+        // Submit the job
+        miaow::JobHandle job_handle = runtime.submit_job(std::move(job));
+
+        // Wait for completion and retrieve the job record
+        const miaow::JobRecord record = job_handle.get();
 
         // Print the job summary and return the overall success status
         miaow::print_job_summary(record);

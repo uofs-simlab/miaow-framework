@@ -1,0 +1,17 @@
+{
+  "exit_code": 1,
+  "max_concurrent_tasks": 1,
+  "input": {"operation": "unknown"},
+  "tasks": [
+    {"status": "failed", "message": "BMI error: unsupported operation 'unknown'"},
+    {"status": "succeeded", "message": "BMI workflow complete (updates: 40)"},
+    {"status": "failed", "message": "BMI error: unsupported operation 'unknown'"},
+    {"status": "succeeded", "message": "BMI workflow complete (updates: 40)"},
+    {"status": "failed", "message": "BMI error: unsupported operation 'unknown'"},
+    {"status": "succeeded", "message": "BMI workflow complete (updates: 40)"},
+    {"status": "failed", "message": "BMI error: unsupported operation 'unknown'"},
+    {"status": "succeeded", "message": "BMI workflow complete (updates: 40)"},
+    {"status": "failed", "message": "BMI error: unsupported operation 'unknown'"},
+    {"status": "succeeded", "message": "BMI workflow complete (updates: 40)"}
+  ]
+}

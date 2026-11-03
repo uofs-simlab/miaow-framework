@@ -11,7 +11,9 @@ Identifiers and task status
 
 .. doxygentypedef:: miaow::TaskId
 
-.. doxygentypedef:: miaow::JobId
+.. doxygentypedef:: miaow::JobCreationId
+
+.. doxygentypedef:: miaow::JobSubmissionId
 
 .. doxygentypedef:: miaow::TaskMetadata
 
@@ -62,8 +64,6 @@ Runtime orchestration
 .. doxygenclass:: miaow::TaskExecutorRegistry
    :members:
 
-.. doxygenenum:: miaow::SubprocessLifetime
-
 .. doxygenfunction:: miaow::run_subprocess_worker
 
 .. doxygenstruct:: miaow::RuntimeOptions
@@ -99,11 +99,9 @@ Task executors
 
 .. doxygenfunction:: miaow::bmi_subprocess_executable_path
 
-.. doxygenfunction:: miaow::make_bmi_task(TaskExecutorId, const StaticBmiConfig&)
+.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitHandle, const StaticBmiConfig&)
 
-.. doxygenfunction:: miaow::make_bmi_task(TaskExecutorId, const DynamicBmiConfig&)
-
-.. doxygenfunction:: miaow::make_bmi_tasks(TaskExecutorId, const std::vector<BmiConfig>&)
+.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitHandle, const DynamicBmiConfig&)
 
 I/O and CLI helpers
 -------------------

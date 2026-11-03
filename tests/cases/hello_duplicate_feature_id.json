@@ -1,6 +1,6 @@
 {
   "exit_code": 1,
-  "error": "Task name error: duplicate task name 'greeting'",
+  "error": "duplicate unit feature_id: greeting",
   "input": {
     "tasks": [
       {"message": "first", "feature_id": "greeting"},

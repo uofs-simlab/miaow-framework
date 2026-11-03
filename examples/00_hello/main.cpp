@@ -5,6 +5,7 @@
 #include <chrono>
 #include <exception>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -42,8 +43,40 @@ class HelloTaskExecutor : public miaow::TaskExecutor {
     std::chrono::milliseconds delay_;
 };
 
+// Parsed inputs keep JSON access separate from unit and task construction
+struct GreetingInput {
+    std::string feature_id;
+    miaow::TaskExecutorId executor_id;
+    std::optional<std::string> message;
+};
+
+std::vector<GreetingInput> parse_greetings(const nlohmann::json& config,
+                                           miaow::TaskExecutorId default_executor) {
+    // Default task inputs; the first includes a feature ID, the second uses a generated ID
+    const nlohmann::json default_tasks = {
+        {{"message", "hello"}, {"feature_id", "greeting"}},
+        {{"message", "hello again"}},
+    };
+
+    // Use defaults only when "tasks" is absent; an explicit empty array stays empty
+    const nlohmann::json tasks = config.value("tasks", default_tasks);
+    std::vector<GreetingInput> inputs;
+    for (std::size_t index = 0; index < tasks.size(); ++index) {
+        const nlohmann::json& task = tasks[index];
+        GreetingInput input{task.value("feature_id", "message_" + std::to_string(index)),
+                            task.value("task_executor_id", default_executor), std::nullopt};
+
+        // Preserve a missing message so the executor can report it as a task failure
+        if (task.contains("message")) {
+            input.message = task.at("message").get<std::string>();
+        }
+        inputs.push_back(std::move(input));
+    }
+    return inputs;
+}
+
 int main(int argc, char* argv[]) {
-    // Check that we're running from the expected directory for proper relative paths
+    // Require the example directory so relative input paths resolve correctly
     if (!miaow::ensure_expected_run_dir(MIAOW_HELLO_RUN_DIR)) {
         return 1;
     }
@@ -53,35 +86,33 @@ int main(int argc, char* argv[]) {
     try {
         const nlohmann::json config = read_example_config(argc, argv, runtime_options);
 
-        // Register the task executor and construct the runtime
+        const std::chrono::milliseconds delay{config.value("delay_ms", 0)};
+
+        // Register the executor so task inputs can resolve their default executor ID
         miaow::TaskExecutorRegistry registry;
-        const miaow::TaskExecutorId hello = registry.add<HelloTaskExecutor>(
-            std::chrono::milliseconds{config.value("delay_ms", 0)});
+        const miaow::TaskExecutorId hello = registry.add<HelloTaskExecutor>(delay);
+        const std::vector<GreetingInput> inputs = parse_greetings(config, hello);
         miaow::Runtime runtime(registry, runtime_options);
 
-        // Submit one job containing two independent messages
-        std::vector<miaow::Task> tasks{
-            miaow::Task{hello, caf::config_value{"hello"},
-                        miaow::TaskMetadata{{"feature_id", "greeting"}}},
-            miaow::Task{hello, "hello again"},
-        };
-        if (config.contains("tasks")) {
-            tasks.clear();
-            for (const auto& input : config.at("tasks")) {
-                miaow::Task task{input.value("task_executor_id", hello),
-                                 std::vector<caf::config_value>{}};
-                if (input.contains("message")) {
-                    task.args_.emplace_back(input.at("message").get<std::string>());
-                }
-                if (input.contains("feature_id")) {
-                    task.metadata_["feature_id"] =
-                        input.at("feature_id").get<std::string>();
-                }
-                tasks.push_back(std::move(task));
+        // Each greeting gets its own unit; all JSON defaults have already been resolved
+        miaow::Job job;
+        for (const GreetingInput& input : inputs) {
+            const miaow::SimulationUnitHandle unit =
+                job.add_unit(input.feature_id, input.executor_id);
+
+            // Pass a supplied message, or let the executor report that it is missing
+            if (input.message) {
+                job.add_task(unit, "greet", *input.message);
+            } else {
+                job.add_task(unit, "greet");
             }
         }
-        miaow::JobHandle job = runtime.submit_job(tasks);
-        const miaow::JobRecord job_record = job.get();
+
+        // Submit the job
+        miaow::JobHandle job_handle = runtime.submit_job(std::move(job));
+
+        // Wait for completion and retrieve the job record
+        const miaow::JobRecord job_record = job_handle.get();
 
         // Print task results and aggregate timing information
         miaow::print_job_summary(job_record);

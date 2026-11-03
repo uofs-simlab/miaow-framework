@@ -3,12 +3,14 @@
   "max_concurrent_tasks": 1,
   "input": {
     "tasks": [
-      {"task_executor_id": 999, "message": "hello"},
-      {"message": "recovered"}
+      {
+        "task_executor_id": 999,
+        "message": "hello"
+      },
+      {
+        "message": "recovered"
+      }
     ]
   },
-  "tasks": [
-    {"status": "failed", "message": "unknown TaskExecutorId: 999"},
-    {"status": "succeeded", "message": "recovered"}
-  ]
+  "error": "unknown TaskExecutorId: 999"
 }

@@ -19,6 +19,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <span>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -26,72 +29,94 @@
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
 
-int main(int argc, char* argv[]) {
+class FuseController : public miaow::JobController {
+  public:
+    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> completed_tasks,
+                  std::span<const miaow::UnitFailure> failed_units) override {
+        if (!failed_units.empty()) {
+            job.fail(failed_units.front().reason_);
+            return;
+        }
 
-    // Initialize runtime options and parse CLI arguments
-    miaow::RuntimeOptions runtime_options;
+        // Each parameter set has one task; release its subprocess after completion
+        for (const miaow::TaskRecord& record : completed_tasks) {
+            job.remove_unit(record.unit_);
+        }
+    }
+};
+
+int main(int argc, char* argv[]) {
     try {
+        // Initialize runtime options and parse CLI arguments
+        miaow::RuntimeOptions runtime_options;
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
+
+        // Path to the compiled FUSE BMI shared library plugin
+        const std::string fuse_plugin_path = MIAOW_FUSE_PLUGIN_PATH;
+        std::cout << "FUSE BMI plugin: " << fuse_plugin_path << "\n";
+
+        // Directory containing per-parameter-set BMI config files
+        // Each file is named fuse_bmi_config_NNNNN.txt and contains:
+        //   line 1: path to FUSE file manager
+        //   line 2: domain ID
+        //   line 3: parameter set NetCDF filename
+        //   line 4: FUSE output mode
+        const std::string config_dir = MIAOW_FUSE_CONFIG_DIR;
+        std::cout << "Config directory: " << config_dir << "\n";
+
+        // Sort parameter-set files so task IDs follow a reproducible input order
+        std::vector<std::string> config_files;
+        for (const auto& entry : std::filesystem::directory_iterator(config_dir)) {
+            if (entry.path().extension() == ".txt") {
+                config_files.push_back(entry.path().string());
+            }
+        }
+        std::sort(config_files.begin(), config_files.end());
+        std::cout << "Found " << config_files.size() << " FUSE parameter set configs\n\n";
+
+        if (config_files.empty()) {
+            std::cerr << "No config files found in " << config_dir << "\n";
+            return 1;
+        }
+
+        // Register the bundled BMI executable; each parameter-set unit owns its child
+        miaow::TaskExecutorRegistry registry;
+        const miaow::TaskExecutorId bmi_subprocess =
+            registry.add_subprocess(miaow::bmi_subprocess_executable_path());
+
+        // Create the runtime with the registered task executor and options
+        miaow::Runtime runtime(registry, runtime_options);
+
+        // Prepare one unit and one complete model run per parameter set
+        miaow::Job job;
+        for (const std::string& config_file : config_files) {
+            const miaow::DynamicBmiConfig config{
+                .backend_ = miaow::DynamicBmiBackend::fortran,
+                .plugin_path_ = fuse_plugin_path,
+                .init_config_ = config_file,
+            };
+            const miaow::SimulationUnitHandle unit =
+                job.add_unit(std::filesystem::path(config_file).stem().string(),
+                             bmi_subprocess);
+            job.add_task(miaow::make_bmi_task(unit, config));
+        }
+        job.set_controller(std::make_unique<FuseController>());
+
+        // Report the number of model runs
+        std::cout << "Submitting " << config_files.size() << " FUSE tasks to MIAOW...\n\n";
+
+        // Submit the job
+        miaow::JobHandle job_handle = runtime.submit_job(std::move(job));
+
+        // Wait for completion and retrieve the job record
+        const miaow::JobRecord job_record = job_handle.get();
+
+        // Print results and diagnostics
+        miaow::print_job_summary(job_record);
+
+        return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << "\n";
         return 1;
     }
-
-    // Path to the compiled FUSE BMI shared library plugin
-    const std::string fuse_plugin_path = MIAOW_FUSE_PLUGIN_PATH;
-    std::cout << "FUSE BMI plugin: " << fuse_plugin_path << "\n";
-
-    // Directory containing per-parameter-set BMI config files
-    // Each file is named fuse_bmi_config_NNNNN.txt and contains:
-    //   line 1: path to FUSE file manager
-    //   line 2: domain ID
-    //   line 3: parameter set NetCDF filename
-    //   line 4: FUSE output mode
-    const std::string config_dir = MIAOW_FUSE_CONFIG_DIR;
-    std::cout << "Config directory: " << config_dir << "\n";
-
-    // Discover all config files in the config directory
-    std::vector<std::string> config_files;
-    for (const auto& entry : std::filesystem::directory_iterator(config_dir)) {
-        if (entry.path().extension() == ".txt") {
-            config_files.push_back(entry.path().string());
-        }
-    }
-    std::sort(config_files.begin(), config_files.end());
-    std::cout << "Found " << config_files.size() << " FUSE parameter set configs\n\n";
-
-    if (config_files.empty()) {
-        std::cerr << "No config files found in " << config_dir << "\n";
-        return 1;
-    }
-
-    // Register the bundled BMI worker for one FUSE task per subprocess
-    miaow::TaskExecutorRegistry registry;
-    const miaow::TaskExecutorId bmi_subprocess =
-        registry.add_subprocess(miaow::bmi_subprocess_executable_path(),
-                                miaow::SubprocessLifetime::single_task);
-
-    // Create the runtime with the registered task executor and options
-    miaow::Runtime runtime(registry, runtime_options);
-
-    // Create one DynamicBmiConfig per parameter set
-    std::vector<miaow::DynamicBmiConfig> configs;
-    for (const auto& config_file : config_files) {
-        configs.push_back({
-            .backend_ = miaow::DynamicBmiBackend::fortran,
-            .plugin_path_ = fuse_plugin_path,
-            .init_config_ = config_file,
-        });
-    }
-
-    // Build task list and submit job
-    const std::vector<miaow::Task> tasks = miaow::make_bmi_tasks(bmi_subprocess, configs);
-    std::cout << "Submitting " << tasks.size() << " FUSE tasks to MIAOW...\n\n";
-    miaow::JobHandle job = runtime.submit_job(tasks);
-    const miaow::JobRecord job_record = job.get();
-
-    // Print results and diagnostics
-    miaow::print_job_summary(job_record);
-
-    return miaow::all_tasks_succeeded(job_record) ? 0 : 1;
 }
