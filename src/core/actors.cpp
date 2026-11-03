@@ -69,25 +69,27 @@ void Job::spawn_workers_for_tasks() {
     }
 }
 
-// Prepare controller-generated tasks for dispatch using the normal runtime fields
-void Job::append_controller_tasks(std::vector<Task> tasks) {
-    if (tasks.empty()) {
-        return;
+// Prepare tasks appended by the caller or controller before dispatch
+void Job::prepare_tasks(std::size_t first_task_index) {
+    if (first_task_index < tasks_.size()) {
+        bind_tasks_to_simulation_units(tasks_, first_task_index);
+        core::assign_task_runtime_fields(tasks_, first_task_index, runtime_options_,
+                                         run_id_, job_id_);
+        for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
+            pending_tasks_.push_back(index);
+        }
+        task_start_times_.resize(tasks_.size(), job_start_time_);
+        task_worker_ids_.resize(tasks_.size());
     }
-    const std::size_t first_task_index = tasks_.size();
-    tasks_.reserve(first_task_index + tasks.size());
-    for (Task& task : tasks) {
-        tasks_.push_back(std::move(task));
-    }
-    bind_tasks_to_simulation_units(tasks_, first_task_index);
-    core::assign_task_runtime_fields(tasks_, first_task_index, runtime_options_, run_id_,
-                                     job_id_);
-    for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
-        pending_tasks_.push_back(index);
-    }
-    task_start_times_.resize(tasks_.size(), job_start_time_);
-    task_worker_ids_.resize(tasks_.size());
     spawn_workers_for_tasks();
+}
+
+// Use the job's error-shutdown path for controller-reported failures
+void Job::fail(std::string reason) {
+    if (!self_) {
+        throw std::logic_error("Job::fail requires a running controller hook");
+    }
+    begin_job_error_shutdown("JobController error: " + std::move(reason));
 }
 
 // Deliver the records currently held by the job actor and request worker shutdown
@@ -218,15 +220,14 @@ void Job::complete_task(std::size_t worker_id, std::size_t task_id,
         // Deliver each completion once through a view of the new records
         const std::span<const TaskRecord> records{completed_task_records_};
 
-        // Call the job controller to generate new tasks based on the completed task records
-        std::vector<Task> generated_tasks =
-            job_controller_->generate_new_tasks(records.subspan(reported_task_count_));
-
-        // Update the count of reported tasks to include the newly completed ones
+        // Let the controller append work without dispatching within its callback
+        const std::size_t first_task_index = tasks_.size();
+        job_controller_->callback(*this, records.subspan(reported_task_count_), {});
         reported_task_count_ = records.size();
-
-        // Add the generated tasks to the queue for dispatching
-        append_controller_tasks(std::move(generated_tasks));
+        if (pending_error_message_) {
+            return;
+        }
+        prepare_tasks(first_task_index);
     } catch (const std::exception& exception) {
         begin_job_error_shutdown("JobController error: " + std::string(exception.what()));
         return;
@@ -426,13 +427,6 @@ caf::behavior Job::make_behavior() {
     // Completed task records are appended as workers return success or failure results
     completed_task_records_.reserve(tasks_.size());
 
-    // Task start times are filled when each task is dispatched
-    task_start_times_.assign(tasks_.size(), job_start_time_);
-    task_worker_ids_.resize(tasks_.size());
-    for (std::size_t index = 0; index < tasks_.size(); ++index) {
-        pending_tasks_.push_back(index);
-    }
-
     return {
         // orchestrator_actor -> job_actor: start dispatching tasks for this job
         [this](caf::get_atom) -> caf::result<JobRecord> {
@@ -452,20 +446,20 @@ caf::behavior Job::make_behavior() {
                                .delay(runtime_options_.job_request_timeout_)
                                .send(self_);
 
-            // Accept the job request before persistent initialization can report a failure
-            spawn_workers_for_tasks();
-
-            if (initialize_controller_) {
-                try {
-                    append_controller_tasks(job_controller_->generate_initial_tasks());
-                } catch (const std::exception& exception) {
-                    begin_job_error_shutdown("JobController error: " +
-                                             std::string(exception.what()));
-                    return response;
-                } catch (...) {
-                    begin_job_error_shutdown("JobController error: unknown exception");
+            // Initialize once, then prepare caller-provided and controller-added work
+            try {
+                job_controller_->initialize(*this);
+                if (pending_error_message_) {
                     return response;
                 }
+                prepare_tasks(0);
+            } catch (const std::exception& exception) {
+                begin_job_error_shutdown("JobController error: " +
+                                         std::string(exception.what()));
+                return response;
+            } catch (...) {
+                begin_job_error_shutdown("JobController error: unknown exception");
+                return response;
             }
 
             dispatch_tasks();

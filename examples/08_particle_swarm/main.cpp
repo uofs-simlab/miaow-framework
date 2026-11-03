@@ -155,12 +155,11 @@ class ParticleSwarmController final : public miaow::JobController {
         }
     }
 
-    std::vector<miaow::Task> generate_initial_tasks() override {
+    void initialize(miaow::Job& job) override {
         start_time_ = std::chrono::steady_clock::now();
 
         // One task per particle forms the first batch. The runtime queues tasks beyond
         // the worker limit and dispatches them as workers become available.
-        std::vector<miaow::Task> tasks;
         for (std::size_t id = 0; id < swarm_.size(); ++id) {
             if (submitted_ == evaluation_budget_ ||
                 std::chrono::steady_clock::now() - start_time_ >= time_limit_) {
@@ -169,18 +168,21 @@ class ParticleSwarmController final : public miaow::JobController {
             const Particle& particle = swarm_[id];
 
             // Pass the point; metadata identifies the particle for result handling
-            tasks.emplace_back(
+            job.add_task(miaow::Task{
                 objective_,
                 std::vector<caf::config_value>{caf::config_value{particle.position[0]},
                                                caf::config_value{particle.position[1]}},
-                miaow::TaskMetadata{{"particle", std::to_string(id)}});
+                miaow::TaskMetadata{{"particle", std::to_string(id)}}});
             ++submitted_;
         }
-        return tasks;
     }
 
-    std::vector<miaow::Task>
-    generate_new_tasks(std::span<const miaow::TaskRecord> new_records) override {
+    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> new_records,
+                  std::span<const miaow::UnitFailure> failed_units) override {
+        if (!failed_units.empty()) {
+            JobController::callback(job, new_records, failed_units);
+            return;
+        }
         // Get the id of each particle that has completed evaluation since last callback
         std::vector<std::size_t> particles_to_update;
         for (const miaow::TaskRecord& record : new_records) {
@@ -215,7 +217,6 @@ class ParticleSwarmController final : public miaow::JobController {
         std::sort(particles_to_update.begin(), particles_to_update.end());
 
         // Add new tasks for particles that need to be updated
-        std::vector<miaow::Task> tasks;
         for (const std::size_t id : particles_to_update) {
             // Check both search limits before moving the particle
             if (submitted_ == evaluation_budget_ ||
@@ -227,11 +228,11 @@ class ParticleSwarmController final : public miaow::JobController {
             update_particle(id, global_best);
 
             // Add a new task to the queue for evaluating the particle's new position
-            tasks.emplace_back(
+            job.add_task(miaow::Task{
                 objective_,
                 std::vector<caf::config_value>{caf::config_value{swarm_[id].position[0]},
                                                caf::config_value{swarm_[id].position[1]}},
-                miaow::TaskMetadata{{"particle", std::to_string(id)}});
+                miaow::TaskMetadata{{"particle", std::to_string(id)}}});
             ++submitted_;
         }
 
@@ -251,9 +252,6 @@ class ParticleSwarmController final : public miaow::JobController {
             {"time", caf::config_value{time}},
             {"positions", caf::config_value{std::move(positions)}},
             {"best_position", caf::config_value{global_best}}});
-
-        // With no new tasks, the runtime finishes once queued and active evaluations drain
-        return tasks;
     }
 
     // Transfer the buffered history to the runtime for job_record.json and the caller

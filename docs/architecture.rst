@@ -19,21 +19,23 @@ A typical workflow includes the following steps:
 
 1. Caller submits explicit tasks through ``Runtime::submit_job(task)`` or ``Runtime::submit_job(tasks)``, optionally supplying a controller through ``Runtime::submit_job(tasks, std::move(job_controller))``. Alternatively, ``Runtime::submit_job(std::move(job_controller))`` lets the controller generate its own initial tasks. Runtime takes ownership of the ``std::unique_ptr<JobController>``.
 2. Runtime assigns a ``job_id`` and sends the tasks and job controller to ``orchestrator_actor``.
-3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector. For controller-only submission, it calls ``generate_initial_tasks()`` once at job start. It creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_concurrent_tasks_``.
+3. ``orchestrator_actor`` spawns one ``job_actor`` for that job. The job actor owns the controller and task vector. It calls ``initialize(Job&)`` once at job start, including when the caller supplied initial tasks. The controller can add units and tasks through the job. It creates enough reusable ``simulation_unit_actor`` workers for the initial tasks, up to ``RuntimeOptions::max_concurrent_tasks_``.
 4. The ``job_actor`` greedily dispatches tasks to available ``simulation_unit_actor`` workers.
 5. Each worker resolves ``Task::task_executor_id_``, constructs a new ``TaskExecutor``, executes the task, and returns a ``TaskResult`` to the job actor.
-6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``. When the controller's task generation policy permits, it passes a read-only span of new completions to its controller, appends tasks returned by the controller's ``generate_new_tasks()`` method to its task vector, and adds workers if needed. It then returns to step 4. This continues until no queued tasks remain to dispatch and no dispatched tasks are awaiting results, and the controller returns no new tasks.
+6. After each task execution returns a successful or failed ``TaskResult``, the ``job_actor`` creates its ``TaskRecord``. When the controller's task generation policy permits, it calls ``JobController::callback(Job&, completed_tasks, failed_units)`` with a read-only span of new completions. The controller appends work through ``Job::add_task()``; the runtime prepares that work and adds workers after the callback returns. It then returns to step 4. This continues until no queued tasks remain to dispatch and no dispatched tasks are awaiting results, and the controller adds no new tasks.
 7. Runtime calls ``JobController::finalize()`` once to collect structured job output. Completed ``TaskRecord`` values are sorted by ``TaskId`` and stored with this output in one ``JobRecord``.
 8. Runtime fulfils the caller's ``JobHandle`` future.
 
 Each ``JobController`` selects a ``TaskGenerationPolicy`` through its constructor:
 
-- ``asynchronous`` (default): call ``generate_new_tasks()`` after each task reports a result.
-- ``batch_synchronous``: call ``generate_new_tasks()`` when every task in the current batch has reported a result. The initial task vector forms the first batch, and each returned vector forms the next batch.
+- ``asynchronous`` (default): call ``callback()`` after each task reports a result.
+- ``batch_synchronous``: call ``callback()`` when every task in the current batch has reported a result. Caller-provided tasks and tasks added during initialization form the first batch; tasks added by each callback form the next batch.
 
-Successful and failed results, including task timeouts, count toward batch completion; the controller decides how to handle failures. Both policies pass a ``std::span<const TaskRecord>`` containing only new completions to ``JobController::generate_new_tasks()``, in completion order: one record for asynchronous callbacks, or the completed batch for batch-synchronous callbacks. The controller is responsible for maintaining its own history-dependent state across multiple invocations of ``generate_new_tasks()``.
+Successful and failed results, including task timeouts, count toward batch completion; the controller decides how to handle failures. Both policies pass a ``std::span<const TaskRecord>`` containing only new completions to ``JobController::callback()``, in completion order: one record for asynchronous callbacks, or the completed batch for batch-synchronous callbacks. The controller is responsible for maintaining its own history-dependent state across multiple invocations of ``callback()``.
 
-Controller policies run serially in the job actor. Controller-only job submission calls ``generate_initial_tasks()`` before the initial dispatch and finalizes normally if it returns no tasks. Explicit task submission skips ``generate_initial_tasks()``, including when an empty vector is supplied. Initialization errors propagate through ``JobHandle::get()`` and produce no final job record.
+Controller hooks run serially in the job actor. ``initialize(Job&)`` always runs once before the initial dispatch and may add tasks alongside caller-provided work. An empty job finalizes normally when initialization adds no tasks. Controllers can request job-level failure through ``Job::fail(reason)``; hook exceptions also propagate through ``JobHandle::get()`` and produce no final job record.
+
+``UnitFailure`` contains a unit handle and reason. The callback interface includes a span of these failures, and its default implementation fails the job if that span is nonempty. Actor termination currently follows the direct job-error shutdown path, so runtime callbacks receive an empty unit-failure span.
 
 The following figure illustrates the task scheduling process managed by the ``job_actor`` in steps 4 through 6 of the above workflow, where the orange cat icons represent tasks:
 
@@ -62,9 +64,9 @@ Persistent simulation units
 
 Each trailing argument to ``add_task`` becomes one ``caf::config_value`` in ``Task::args_``. The string operation is stored separately in ``Task::operation_``. The executor interprets the operation and its arguments; scheduling remains model-independent. The operation and target handle are also retained in the completed ``TaskRecord``.
 
-Submission consumes the move-only ``Job``. CAF adopts that object as the ``job_actor`` state, attaches runtime context, and moves each prepared ``SimulationUnit`` into its own actor state. The executor is constructed once at unit-actor startup and destroyed when that actor exits. The subprocess helper is created when its owning actor is available. Job routing retains only feature-to-executor bindings after the prepared units have been transferred.
+Submission consumes the move-only ``Job``. CAF adopts that object as the ``job_actor`` state, attaches runtime context, and moves each prepared ``SimulationUnit`` into its own actor state. The executor is constructed once at unit-actor startup and destroyed when that actor exits. The subprocess helper is created when its owning actor is available. Job bindings retain feature labels, executor selections, actor handles, and active-task information after the prepared units have been transferred.
 
-Handles survive job moves and can be copied into a controller; a task targeting another job is rejected. Controllers construct subsequent operations with ``Task{unit, "increment", 2}`` and return them through their existing hooks. If no initial tasks were added, the configured controller's ``generate_initial_tasks()`` supplies them. Without a custom controller, the default controller produces no additional work. The task-vector and controller-only submission overloads configure a ``Job`` internally and use the same submission path; an explicitly supplied empty task vector continues to skip initial task generation.
+Handles survive job moves and can be copied into a controller; a task targeting another job is rejected. Controllers append subsequent operations with ``job.add_task(unit, "increment", 2)`` or ``job.add_task(Task{unit, "increment", 2})``. They may also create units through ``job.add_unit(...)`` in a declared-unit workflow. Jobs using the ordinary worker pool cannot switch to declared-unit routing during execution. Without a custom controller, initialization adds no work and callbacks permit reported task failures. The task-vector and controller-only submission overloads configure a ``Job`` internally and use the same submission path.
 
 Persistent-unit count is independent of ``max_concurrent_tasks_``. This limit bounds dispatched tasks awaiting completion across the job, with at most one operation per unit. Operations for each unit run in submission order. Pending operations for a busy unit do not prevent another unit from using an available task slot. A failed task result does not recreate or reset its executor; termination of a persistent actor fails the job and requests shutdown of the other units.
 
@@ -84,7 +86,7 @@ Tasks that reach the job timeout before dispatch have a null dispatch offset and
 Structured task output
 ----------------------
 
-``TaskResult::output_`` carries optional structured output as a ``caf::config_value``. It supports scalar values and recursively nested lists and dictionaries, and remains available through the completed ``TaskRecord`` values passed to ``JobController::generate_new_tasks()`` and retained by the final ``JobRecord``. Controllers are responsible for validating the structure and value types defined by their task executors. Large time series, grids, and model state should be written to files and referenced by ``TaskResult::artifact_paths_``.
+``TaskResult::output_`` carries optional structured output as a ``caf::config_value``. It supports scalar values and recursively nested lists and dictionaries, and remains available through the completed ``TaskRecord`` values passed to ``JobController::callback()`` and retained by the final ``JobRecord``. Controllers are responsible for validating the structure and value types defined by their task executors. Large time series, grids, and model state should be written to files and referenced by ``TaskResult::artifact_paths_``.
 
 When ``RuntimeOptions::output_root_`` is configured, each task's structured output (or a ``null`` value) is included in the ``job_record.json`` written when the job completes.
 
@@ -95,7 +97,7 @@ Structured job output
 
 ``JobController::finalize()`` returns optional structured output as a ``caf::config_value``, with null as the default. Runtime retains the result in ``JobRecord::output_`` and includes it in ``job_record.json`` when output is enabled.
 
-The job actor calls ``finalize()`` once when creating the final record, including for empty jobs and job timeouts. At a timeout, the controller can return its accumulated state; synthetic timeout records are not passed to ``generate_new_tasks()``. Finalization is serialized with task-generation calls and should return promptly. Controller errors and runtime shutdown produce no final record. Exceptions from controller hooks propagate through ``JobHandle::get()``.
+The job actor calls ``finalize()`` once when creating the final record, including for empty jobs and job timeouts. At a timeout, the controller can return its accumulated state; synthetic timeout records are not passed to ``callback()``. Finalization is serialized with task-generation calls and should return promptly. Controller errors and runtime shutdown produce no final record. Exceptions from controller hooks propagate through ``JobHandle::get()``.
 
 .. warning::
 

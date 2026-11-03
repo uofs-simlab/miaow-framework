@@ -226,12 +226,26 @@ Job::~Job() = default;
 Job::Job(Job&&) = default;
 Job& Job::operator=(Job&&) = default;
 
+void JobController::callback(Job& job, std::span<const TaskRecord>,
+                             std::span<const UnitFailure> failed_units) {
+    if (!failed_units.empty()) {
+        job.fail(failed_units.front().reason_);
+    }
+}
+
+void Job::add_task(Task task) {
+    tasks_.push_back(std::move(task));
+}
+
 void Job::set_controller(std::unique_ptr<JobController> controller) {
     job_controller_ = std::move(controller);
 }
 
 // Construct persistent units and retain their identities for later task routing
 SimulationUnitHandle Job::add_unit(std::string feature_id, TaskExecutorId executor_id) {
+    if (!workers_.empty()) {
+        throw std::invalid_argument("cannot add units to a job using ordinary workers");
+    }
     if (feature_id.empty()) {
         throw std::invalid_argument("persistent unit feature_id must not be empty");
     }
@@ -277,7 +291,6 @@ JobHandle Runtime::submit_job(const Task& task) const {
 JobHandle Runtime::submit_job(std::vector<Task> tasks) const {
     Job job;
     job.tasks_ = std::move(tasks);
-    job.initialize_controller_ = false;
     return submit_job(std::move(job));
 }
 
@@ -285,7 +298,6 @@ JobHandle Runtime::submit_job(std::vector<Task> tasks,
                               std::unique_ptr<JobController> job_controller) const {
     Job job;
     job.tasks_ = std::move(tasks);
-    job.initialize_controller_ = false;
     job.set_controller(std::move(job_controller));
     return submit_job(std::move(job));
 }

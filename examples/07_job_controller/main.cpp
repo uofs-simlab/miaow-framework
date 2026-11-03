@@ -83,12 +83,16 @@ class IterationJobController final : public miaow::JobController {
         : task_executor_id_{task_executor_id}, residual_tolerance_{residual_tolerance},
           maximum_iterations_{maximum_iterations}, initial_estimate_{initial_estimate} {}
 
-    std::vector<miaow::Task> generate_initial_tasks() override {
-        return {miaow::Task{task_executor_id_, caf::config_value{initial_estimate_}}};
+    void initialize(miaow::Job& job) override {
+        job.add_task(miaow::Task{task_executor_id_, caf::config_value{initial_estimate_}});
     }
 
-    std::vector<miaow::Task>
-    generate_new_tasks(std::span<const miaow::TaskRecord> new_records) override {
+    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> new_records,
+                  std::span<const miaow::UnitFailure> failed_units) override {
+        if (!failed_units.empty()) {
+            JobController::callback(job, new_records, failed_units);
+            return;
+        }
         iterations_ += new_records.size();
 
         // Get the last completed task record
@@ -96,7 +100,7 @@ class IterationJobController final : public miaow::JobController {
 
         // If the last task failed, stop generating new tasks
         if (completed_task.result_.status_ != miaow::TaskStatus::succeeded) {
-            return {};
+            return;
         }
 
         // Get the output dictionary from the last completed task's result
@@ -118,16 +122,17 @@ class IterationJobController final : public miaow::JobController {
 
         // If the residual is below the tolerance, stop generating new tasks
         if (*residual <= residual_tolerance_) {
-            return {};
+            return;
         }
 
-        // If the maximum iteration count has been reached, throw an error
+        // Fail the job if the maximum iteration count has been reached
         if (iterations_ >= maximum_iterations_) {
-            throw std::runtime_error("Convergence error: maximum iteration count reached");
+            job.fail("Convergence error: maximum iteration count reached");
+            return;
         }
 
         // Otherwise, generate a new task with the next estimate
-        return {miaow::Task{task_executor_id_, caf::config_value{*estimate}}};
+        job.add_task(miaow::Task{task_executor_id_, caf::config_value{*estimate}});
     }
 
   private:

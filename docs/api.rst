@@ -37,6 +37,9 @@ Task and job data
 .. doxygenstruct:: miaow::TaskResult
    :members:
 
+.. doxygenstruct:: miaow::UnitFailure
+   :members:
+
 .. doxygenstruct:: miaow::TaskRecord
    :members:
 

@@ -373,28 +373,28 @@ enum class TaskGenerationPolicy {
 };
 
 /**
- * @brief Per-job policy for generating tasks from completed task records.
+ * @brief Loss of one simulation unit's execution context.
+ */
+struct UnitFailure {
+    SimulationUnitHandle unit_;
+    std::string reason_;
+};
+
+/**
+ * @brief Per-job policy for configuring units and responding to execution results.
  *
- * One controller instance belongs to each submitted job and remains in the parent
- * process that owns `Runtime`. Only the owning job actor calls controller hooks.
- * Calls are serialized even when multiple workers finish concurrently, so controller
- * members accessed only by these hooks do not require a mutex. Results from workers
- * that finish concurrently may be processed in either order.
+ * One controller belongs to each job and stays in the parent process. The job actor
+ * serializes its hooks, so controller members accessed only by these hooks need no mutex.
+ * Hooks should return promptly: blocking work delays results, shutdown, and job timeouts.
  *
- * Controller hooks run synchronously and should return promptly. Long-running or
- * blocking work delays queued task results, shutdown requests, and the job timeout.
- *
- * Tasks returned by one call are appended to the job in vector order. The first
- * returned task receives the next available `TaskId`, and the remaining tasks receive
- * consecutive `TaskId` values. Before dispatch, returned tasks undergo the same
- * runtime-field assignment and duplicate-name validation as initial tasks.
- * With `TaskGenerationPolicy::batch_synchronous`, the initial tasks form the first batch
- * and each returned vector forms the next batch. Failed tasks, including task timeouts,
- * count toward batch completion; the controller decides how to handle their results.
+ * Controllers add work through Job::add_task(), in task-ID order. The runtime prepares
+ * and dispatches that work after the hook returns. With batch-synchronous policy, tasks
+ * added during initialization form the first batch alongside caller-provided tasks;
+ * tasks added by each callback form the next batch. Failed tasks count toward completion.
  */
 class JobController {
   public:
-    /// Select when the job actor calls generate_new_tasks()
+    /// Select when the job actor calls callback()
     explicit JobController(
         TaskGenerationPolicy task_generation_policy = TaskGenerationPolicy::asynchronous)
         : task_generation_policy_{task_generation_policy} {}
@@ -406,37 +406,28 @@ class JobController {
         return task_generation_policy_;
     }
 
-    /**
-     * @brief Generate the initial tasks for controller-only submission.
-     *
-     * Called once at job start, before dispatch. Explicit task submission skips this
-     * hook. Returning no tasks produces an empty job and still calls finalize().
-     */
-    virtual std::vector<Task> generate_initial_tasks() {
-        return {};
-    }
+    /// Called once before dispatch, including when the caller supplied initial tasks
+    virtual void initialize(Job&) {}
 
     /**
-     * @brief Generate tasks when the selected task generation policy permits.
-     * @param new_records Completions since the previous callback, valid only during
-     * this call. The span and references into it must not be retained.
+     * @brief Respond to completed tasks and unavailable simulation units.
+     * @param job Job to which the controller may add units or tasks, or report failure.
+     * @param completed_tasks New completions in completion order, delivered once per task.
+     * @param failed_units Units whose execution context is unavailable.
      *
-     * Contains successful and failed results in completion order: one record for
-     * asynchronous callbacks or the completed batch for batch-synchronous callbacks.
-     * The span is never empty, and each completion is delivered exactly once.
-     * Synthetic job-timeout records are retained only in the final JobRecord.
-     * @return Tasks to append to the current job in the order returned.
+     * Spans are borrowed for this call and must not be retained. Asynchronous callbacks
+     * receive each task result; batch-synchronous callbacks receive the completed batch.
+     * The default policy fails the job on unit loss and permits reported task failures.
+     * Synthetic job-timeout records remain only in the final JobRecord.
      */
-    virtual std::vector<Task> generate_new_tasks(std::span<const TaskRecord> new_records) {
-        static_cast<void>(new_records);
-        return {};
-    }
+    virtual void callback(Job& job, std::span<const TaskRecord> completed_tasks,
+                          std::span<const UnitFailure> failed_units);
 
     /**
      * @brief Return structured output for the final `JobRecord`.
      *
      * Called once by the job actor on completion, including a job timeout or an empty
-     * job. Calls are serialized with generate_new_tasks(), and this method should
+     * job. Calls are serialized with callback(), and this method should
      * return promptly. Implementations may move accumulated data into the result.
      * Task-generation errors and runtime shutdown produce no final record and do not call
      * this method. Exceptions propagate through `JobHandle::get()` as job errors.
@@ -744,12 +735,17 @@ class Job {
     /// Construct one persistent simulation unit under a unique scientific feature label
     SimulationUnitHandle add_unit(std::string feature_id, TaskExecutorId executor_id);
 
-    /// Append an initial operation using the Task argument constructors
+    /// Append a task before submission or during a controller hook
+    void add_task(Task task);
+
+    /// Append an operation using the Task argument constructors
     template <class... Args>
     void add_task(SimulationUnitHandle unit, std::string operation, Args&&... args) {
-        tasks_.emplace_back(unit, std::move(operation), std::forward<Args>(args)...);
-        initialize_controller_ = false;
+        add_task(Task{unit, std::move(operation), std::forward<Args>(args)...});
     }
+
+    /// Report a job-level error from a running controller hook
+    void fail(std::string reason);
 
     /// Transfer controller ownership to the job before submission
     void set_controller(std::unique_ptr<JobController> controller);
@@ -767,7 +763,7 @@ class Job {
   private:
     void stop_workers();
     void spawn_workers_for_tasks();
-    void append_controller_tasks(std::vector<Task> tasks);
+    void prepare_tasks(std::size_t first_task_index);
     void complete_job();
     void complete_job_error_if_tasks_finished();
     void begin_job_error_shutdown(std::string error_message);
@@ -787,15 +783,11 @@ class Job {
     RuntimeOptions runtime_options_;
 
     // Controller configured before submission and retained for this job
-    // The task generation policy determines when the job actor calls generate_new_tasks()
-    // Returned tasks are appended to tasks_; the controller never leaves the parent process
+    // The task generation policy determines when the job actor calls callback()
+    // The controller appends tasks through this job and stays in the parent process
     std::unique_ptr<JobController> job_controller_{std::make_unique<JobController>()};
 
-    // Explicit initial tasks skip the controller's initial-generation hook
-    bool initialize_controller_{true};
-
-    // Registry retained so workers can be created when the controller returns tasks to be
-    // executed
+    // Registry retained so workers can be created for controller-added tasks
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
 
     // Runtime-local registrar shared by every subprocess-capable worker in this job
@@ -1025,7 +1017,7 @@ class Runtime {
     /**
      * @brief Submit a controller that generates its own initial tasks at job start.
      *
-     * Calls generate_initial_tasks() once in the job actor. Controller hooks are
+     * Calls initialize(Job&) once in the job actor. Controller hooks are
      * serialized, and their errors propagate through JobHandle::get().
      * @param job_controller Controller transferred to the submitted job.
      * @return Handle for retrieving the final JobRecord.
@@ -1039,12 +1031,12 @@ class Runtime {
      * The runtime takes ownership of `job_controller`. After each task execution
      * returns success or failure, the owning job actor creates its `TaskRecord`. When
      * the controller's task generation policy permits, it passes new completions to
-     * the controller and appends any returned tasks to the job.
-     * This overload skips generate_initial_tasks().
-     * An empty `tasks` vector skips task generation and calls only finalize().
+     * the controller. The controller appends further work through Job::add_task().
+     * The initialize(Job&) hook runs once before dispatch, including when the
+     * supplied task vector is empty.
      * The controller's finalize() output is retained in `JobRecord::output_`.
      *
-     * If the controller or preparation of its returned tasks fails, the job stops
+     * If the controller or preparation of its added tasks fails, the job stops
      * dispatching pending tasks and allows active tasks to finish. The returned handle
      * then throws `std::runtime_error`. No final `JobRecord` or `job_record.json` is
      * produced for this job-level error. Output failures may also be rethrown by the
@@ -1062,8 +1054,8 @@ class Runtime {
     /**
      * @brief Transfer a configured job to the runtime and create its CAF actors.
      *
-     * An initial task added to the job skips generate_initial_tasks(). Otherwise the
-     * controller generates the initial tasks when execution starts. Controller errors
+     * The controller's initialize(Job&) hook runs once before dispatch and may add
+     * work alongside caller-provided tasks. Controller errors
      * propagate through JobHandle::get().
      * @param job Job whose units, tasks, and controller are transferred to the runtime.
      * @return Handle for retrieving the completed job record.

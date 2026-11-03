@@ -32,16 +32,21 @@ class CounterController : public miaow::JobController {
     CounterController(miaow::SimulationUnitHandle a, miaow::SimulationUnitHandle b)
         : a_(a), b_(b) {}
 
-    std::vector<miaow::Task>
     // With the default asynchronous policy, this gets called every time a task completes.
-    // The first time, it generates the two increment tasks for the retained units, and
-    // subsequent calls return an empty list.
-    generate_new_tasks(std::span<const miaow::TaskRecord>) override {
+    // The first time, it adds two increment tasks for the retained units; subsequent calls
+    // leave the job unchanged.
+    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> records,
+                  std::span<const miaow::UnitFailure> failed_units) override {
+        if (!failed_units.empty()) {
+            JobController::callback(job, records, failed_units);
+            return;
+        }
         if (generated_) {
-            return {};
+            return;
         }
         generated_ = true;
-        return {miaow::Task{a_, "increment", 4}, miaow::Task{b_, "increment", 2}};
+        job.add_task(a_, "increment", 4);
+        job.add_task(b_, "increment", 2);
     }
 
   private:
