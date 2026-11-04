@@ -1,6 +1,6 @@
 {
   "exit_code": 1,
-  "max_concurrent_tasks": 1,
+  "max_workers": 1,
   "input": {"tasks": [{}, {"message": "recovered"}]},
   "tasks": [
     {"status": "failed", "message": "missing message"},

@@ -68,7 +68,7 @@ void Job::complete_job() {
 }
 
 void Job::finish_job() {
-    if (!finishing_ || !response_promise_) {
+    if (!finishing_) {
         return;
     }
     for (const std::optional<UnitBinding>& unit : units_) {
@@ -79,6 +79,12 @@ void Job::finish_job() {
                 return;
             }
         }
+    }
+
+    // Shutdown can precede the initial execution request
+    if (!response_promise_) {
+        self_->quit();
+        return;
     }
 
     if (!pending_error_message_) {
@@ -233,7 +239,7 @@ void Job::complete_task(std::size_t unit_index, std::size_t task_index,
 
 void Job::dispatch_tasks() {
     while (!pending_task_indices_.empty() &&
-           active_task_count_ < runtime_options_.max_concurrent_tasks_) {
+           active_task_count_ < runtime_options_.max_workers_) {
         const auto pending = std::find_if(
             pending_task_indices_.begin(), pending_task_indices_.end(),
             [this](std::size_t task_index) {

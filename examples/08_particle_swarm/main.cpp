@@ -179,7 +179,7 @@ class ParticleSwarmController final : public miaow::JobController {
 
     void callback(miaow::Job& job, std::span<const miaow::TaskRecord> new_records,
                   std::span<const miaow::UnitFailure> failed_units) override {
-        // Fail the job if a unit becomes unavailable
+        // If any units failed, mark the job as failed and return immediately
         if (!failed_units.empty()) {
             job.fail(failed_units.front().reason_);
             return;

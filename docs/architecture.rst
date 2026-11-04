@@ -41,7 +41,7 @@ Simulation units
 Task dispatch and executors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The job scans queued tasks in submission order and selects the first whose target unit is idle. It skips tasks for busy units so that tasks for other units can proceed. ``RuntimeOptions::max_concurrent_tasks_`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
+The job scans queued tasks in submission order and selects the first whose target unit is idle. It skips tasks for busy units so that tasks for other units can proceed. ``RuntimeOptions::max_workers_`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
 
 When dispatching a unit's first task, the job creates its actor. The unit constructs one ``TaskExecutor`` before executing that task and reuses the executor for subsequent tasks. Operations on a unit run serially in the order they are received in the actor's mailbox.
 

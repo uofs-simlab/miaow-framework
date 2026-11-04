@@ -100,8 +100,8 @@ The BMI operation regressions use a test driver with the heat models from ``03_d
      - A 2.5-second operation exceeds its 1-second deadline; the default controller fails the job with ``request_timeout`` and saves no job record. Shutdown waits for the native call to return
    * - `miaow_example_00_hello_job_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_job_timeout.json>`_
      - A 1-second job timeout marks the active 2.5-second task and a queued task failed; the queued record retains its target, has no dispatch offset, and has a zero run time
-   * - `miaow_example_00_hello_invalid_max_concurrent_tasks <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_max_concurrent_tasks.json>`_
-     - ``--max_concurrent_tasks 0`` reports ``requires a positive integer``; no job record is saved
+   * - `miaow_example_00_hello_invalid_max_workers <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_max_workers.json>`_
+     - ``--max_workers 0`` reports ``requires a positive integer``; no job record is saved
    * - `miaow_example_00_hello_invalid_task_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_task_timeout.json>`_
      - ``--task_request_timeout 0`` reports ``requires a positive integer``; no job record is saved
    * - `miaow_example_00_hello_invalid_job_timeout <https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_invalid_job_timeout.json>`_

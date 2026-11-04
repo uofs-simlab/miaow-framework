@@ -1,5 +1,5 @@
 {
   "exit_code": 0,
-  "max_concurrent_tasks": 1,
+  "max_workers": 1,
   "input": {"operation": "run"}
 }

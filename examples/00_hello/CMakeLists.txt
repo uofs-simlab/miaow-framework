@@ -31,7 +31,7 @@ if(BUILD_TESTING)
     # Each JSON case defines the failure and any subsequent recovery work
     foreach(scenario missing_message unknown_executor duplicate_feature_id
                      feature_id_slash feature_id_backslash task_timeout job_timeout
-                     invalid_max_concurrent_tasks invalid_task_timeout invalid_job_timeout)
+                     invalid_max_workers invalid_task_timeout invalid_job_timeout)
         miaow_add_example_test(
             TEST_NAME miaow_example_00_hello_${scenario}
             EXECUTABLE_TARGET miaow_hello

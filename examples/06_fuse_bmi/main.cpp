@@ -8,7 +8,7 @@
  *       -DMIAOW_EXAMPLES=06_fuse_bmi -DMIAOW_FUSE_FETCH_DATA=ON
  *   cmake --build build --target miaow_fuse_bmi
  *   cd examples/06_fuse_bmi
- *   ./miaow_fuse_bmi --max_concurrent_tasks 6 --task_request_timeout 900 \
+ *   ./miaow_fuse_bmi --max_workers 6 --task_request_timeout 900 \
  *       --job_request_timeout 14400
  *
  * CMake resolves the FUSE grid data, uses the tracked parameter sets, and
@@ -33,6 +33,7 @@ class FuseController : public miaow::JobController {
   public:
     void callback(miaow::Job& job, std::span<const miaow::TaskRecord> completed_tasks,
                   std::span<const miaow::UnitFailure> failed_units) override {
+        // If any units failed, mark the job as failed and return immediately
         if (!failed_units.empty()) {
             job.fail(failed_units.front().reason_);
             return;

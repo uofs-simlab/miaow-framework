@@ -1,6 +1,0 @@
-{
-  "exit_code": 1,
-  "max_concurrent_tasks": 0,
-  "error": "Error: --max_concurrent_tasks requires a positive integer",
-  "input": {}
-}

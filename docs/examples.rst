@@ -10,7 +10,7 @@ Examples are opt-in workflows that demonstrate MIAOW features and model integrat
    cd ../01_heat
    ./miaow_heat
    cd ../03_dynamic_bmi
-   ./miaow_dynamic_bmi --output_root ./output --max_concurrent_tasks 2
+   ./miaow_dynamic_bmi --output_root ./output --max_workers 2
    cd ../07_job_controller
    ./miaow_job_controller
 
@@ -63,7 +63,7 @@ On macOS, we can use `Homebrew <https://brew.sh/>`_ to install the required depe
 
    brew install netcdf-fortran uv
 
-``run_summa_mizuroute.py`` accepts ``--max-concurrent-tasks N`` to set the maximum number of concurrent SUMMA tasks that MIAOW will run (default: 4). To set up and run the workflow, execute the following commands from the repository root:
+``run_summa_mizuroute.py`` accepts ``--max-workers N`` to set the maximum number of concurrent SUMMA tasks that MIAOW will run (default: 4). To set up and run the workflow, execute the following commands from the repository root:
 
 .. code-block:: sh
 
@@ -127,7 +127,7 @@ To run up to six model evaluations concurrently, use these commands from the rep
        -DMIAOW_FUSE_FETCH_DATA=ON
    cmake --build build --target miaow_fuse_bmi
    cd examples/06_fuse_bmi
-   ./miaow_fuse_bmi --max_concurrent_tasks 6 --task_request_timeout 900 --job_request_timeout 14400
+   ./miaow_fuse_bmi --max_workers 6 --task_request_timeout 900 --job_request_timeout 14400
 
 The following example-specific flags control the FUSE model and data paths:
 
@@ -193,7 +193,7 @@ Examples accept the following runtime command-line options where applicable. The
    * - Option
      - Runtime default
      - Description
-   * - ``--max_concurrent_tasks``
+   * - ``--max_workers``
      - ``1``
      - Maximum occupied task slots per job; unit count is independent of this limit. Timed-out native calls retain their slots until they return.
    * - ``--task_request_timeout``

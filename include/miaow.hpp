@@ -571,7 +571,7 @@ class TaskExecutorRegistry {
  */
 struct RuntimeOptions {
     /// Maximum occupied task slots per job, including timed-out native calls still running
-    std::size_t max_concurrent_tasks_;
+    std::size_t max_workers_;
 
     /// Timeout for one task response; expiry makes the unit unavailable. Subprocess tasks
     /// are terminated; in-process calls retain capacity until execute() returns.
@@ -587,18 +587,18 @@ struct RuntimeOptions {
 
     /**
      * @brief Construct runtime options.
-     * @param concurrent_tasks Maximum active task requests for each job. Values of zero are
+     * @param workers Maximum active task requests for each job. Values of zero are
      *                clamped to one.
      * @param task_timeout Task-response timeout; terminates only subprocess tasks.
      * @param job_timeout Timeout that fails unfinished tasks and requests unit shutdown.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      */
-    RuntimeOptions(std::size_t concurrent_tasks = 1,
+    RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::minutes(1),
                    std::chrono::milliseconds job_timeout = std::chrono::minutes(5),
                    std::string output_root = "")
-        : max_concurrent_tasks_(concurrent_tasks == 0 ? 1 : concurrent_tasks),
+        : max_workers_(workers == 0 ? 1 : workers),
           task_request_timeout_(task_timeout), job_request_timeout_(job_timeout),
           output_root_(std::move(output_root)) {}
 };

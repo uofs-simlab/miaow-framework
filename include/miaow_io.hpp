@@ -37,7 +37,7 @@ bool ensure_expected_run_dir(const std::string& expected_run_dir);
  *
  * These arguments override the default `RuntimeOptions` values. The following
  * arguments are recognized:
- * - `--max_concurrent_tasks <count>`
+ * - `--max_workers <count>`
  * - `--task_request_timeout <seconds>`
  * - `--job_request_timeout <seconds>`
  * - `--output_root <path>`

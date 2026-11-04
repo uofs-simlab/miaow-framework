@@ -1,6 +1,6 @@
 {
   "exit_code": 1,
-  "max_concurrent_tasks": 1,
+  "max_workers": 1,
   "job_request_timeout": 1,
   "input": {
     "delay_ms": 2500,

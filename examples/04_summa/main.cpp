@@ -20,6 +20,7 @@ class SummaController : public miaow::JobController {
   public:
     void callback(miaow::Job& job, std::span<const miaow::TaskRecord> completed_tasks,
                   std::span<const miaow::UnitFailure> failed_units) override {
+        // If any units failed, mark the job as failed and return immediately
         if (!failed_units.empty()) {
             job.fail(failed_units.front().reason_);
             return;

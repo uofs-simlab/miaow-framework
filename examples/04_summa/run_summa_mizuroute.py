@@ -15,7 +15,7 @@ DATA_DIRECTORY = EXAMPLE / "data/bow"
 OUTPUT_DIRECTORY = EXAMPLE / "output/bow"
 DRIVER = EXAMPLE.parents[1] / "build-summa/examples/04_summa/miaow_summa"
 MIZUROUTE = DRIVER.parent / "route_runoff"
-MAX_CONCURRENT_TASKS = 4
+MAX_WORKERS = 4
 GRU_COUNT = 52
 ROUTING_START = "2002-10-01"
 ROUTING_END = "2005-09-30"
@@ -25,7 +25,7 @@ def run_model(workers):
     # SUMMA resolves fixture paths from the inherited working directory
     (OUTPUT_DIRECTORY / "miaow/summa").mkdir(parents=True, exist_ok=True)
     subprocess.run([DRIVER, "--config", "config.json",
-                    "--max_concurrent_tasks", str(workers),
+                    "--max_workers", str(workers),
                     "--output_root", OUTPUT_DIRECTORY / "miaow/jobs"],
                    cwd=DATA_DIRECTORY, check=True)
 
@@ -117,8 +117,8 @@ def prepare_runoff():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--max-concurrent-tasks", type=int, default=MAX_CONCURRENT_TASKS)
+    parser.add_argument("--max-workers", type=int, default=MAX_WORKERS)
     args = parser.parse_args()
-    run_model(args.max_concurrent_tasks)
+    run_model(args.max_workers)
     prepare_runoff()
     run_routing()

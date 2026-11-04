@@ -202,6 +202,7 @@ Job& Job::operator=(Job&&) = default;
 
 void JobController::callback(Job& job, std::span<const TaskRecord>,
                              std::span<const UnitFailure> failed_units) {
+    // If any units failed, mark the job as failed and return immediately
     if (!failed_units.empty()) {
         job.fail(failed_units.front().reason_);
     }
