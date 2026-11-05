@@ -24,7 +24,10 @@ while IFS= read -r -d '' file; do
     files+=("${file}")
 done < <(
     find "${repo_root}/include" "${repo_root}/src" "${repo_root}/examples" \
+        "${repo_root}/tests" \
         \( -path "${repo_root}/include/third_party" \
+        -o -path "${repo_root}/examples/*/.venv" \
+        -o -path "${repo_root}/examples/*/output" \
         -o -path "${repo_root}/examples/*/extern" \) -prune \
         -o -type f \
         \( -name '*.c' \

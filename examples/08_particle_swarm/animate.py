@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export a real-time particle-swarm MP4 and static worker/convergence PDFs."""
+"""Export a real-time particle-swarm MP4, unit usage PDF, and convergence PDF."""
 
 import argparse
 import json
@@ -73,7 +73,7 @@ def load_job(directory):
         "completion_times": ends[order],
         "best_values": np.minimum.accumulate(values[order]),
         "starts": starts, "ends": ends,
-        "workers": np.array([task["worker_id"] for task in tasks]),
+        "unit_indices": np.array([task["unit"]["index"] for task in tasks]),
         "duration": duration,
         # The MP4 covers the search window; PDFs also include active work finishing later.
         "animation_duration": min(duration, trace.get("wall_time_limit_seconds", duration)),
@@ -152,18 +152,21 @@ def save_animation(runs, output, fps):
         plt.close(figure)
 
 
-def save_worker_usage(runs, output):
+def save_unit_usage(runs, output):
     """Plot full dispatch-to-result intervals with synchronous and asynchronous rows."""
-    figure, axes = plt.subplots(2, 1, figsize=(5, 3), sharex=True,
+    max_unit_count = max((int(run["unit_indices"].max()) + 1 for run in runs
+                          if len(run["unit_indices"])), default=0)
+    figure, axes = plt.subplots(2, 1, figsize=(9, max(3, max_unit_count / 4)), sharex=True,
                                 layout="constrained")
     duration = max(run["duration"] for run in runs)
     for axis, run, colour in zip(axes, runs, COLOURS):
-        segments = np.stack([np.column_stack([run["starts"], run["workers"]]),
-                             np.column_stack([run["ends"], run["workers"]])], axis=1)
+        segments = np.stack([np.column_stack([run["starts"], run["unit_indices"]]),
+                             np.column_stack([run["ends"], run["unit_indices"]])], axis=1)
         axis.add_collection(LineCollection(segments, colors=colour, linewidths=5))
-        worker_count = int(run["workers"].max()) + 1 if len(run["workers"]) else 0
-        axis.set(xlim=(0, duration), ylim=(-0.7, max(worker_count - 0.3, 0.7)),
-                 yticks=np.arange(worker_count), ylabel="Worker ID")
+        unit_count = int(run["unit_indices"].max()) + 1 if len(run["unit_indices"]) else 0
+        axis.set(xlim=(0, duration), ylim=(-0.7, max(unit_count - 0.3, 0.7)),
+                 yticks=np.arange(0, unit_count, max(1, math.ceil(unit_count / 8))),
+                 ylabel="Simulation unit index")
         axis.set_title(run["policy"].capitalize(), loc="left", fontsize=11)
     axes[-1].set_xlabel("Elapsed time (s)")
     figure.savefig(output)
@@ -213,11 +216,12 @@ def main():
         parser.error("--fps must be positive")
     output = args.output_directory or args.run_directory / "figures"
     output.mkdir(parents=True, exist_ok=True)
-    runs = [load_job(args.run_directory / f"job_{index}") for index in range(2)]
-    save_worker_usage(runs, output / "worker_usage.pdf")
+    runs = [load_job(args.run_directory / f"job_{job_submission_id}")
+            for job_submission_id in range(2)]
+    save_unit_usage(runs, output / "unit_usage.pdf")
     save_convergence(runs, output / "convergence.pdf")
     save_animation(runs, output / "contours.mp4", args.fps)
-    print(f"Saved contours.mp4, worker_usage.pdf, and convergence.pdf in {output}")
+    print(f"Saved contours.mp4, unit_usage.pdf, and convergence.pdf in {output}")
 
 
 if __name__ == "__main__":

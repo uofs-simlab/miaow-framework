@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "error": "JobController error: Convergence error: maximum iteration count reached",
+  "input": {"maximum_iterations": 1}
+}

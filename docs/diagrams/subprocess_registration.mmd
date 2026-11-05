@@ -1,0 +1,44 @@
+---
+config:
+  sequence:
+    useMaxWidth: true
+    mirrorActors: false
+    width: 180
+    actorMargin: 24
+    diagramMarginX: 16
+    diagramMarginY: 12
+    messageMargin: 18
+    actorFontSize: 14
+    messageFontSize: 14
+    noteFontSize: 14
+  themeVariables:
+    actorBkg: "#edf2f6"
+    actorBorder: "#4a657d"
+    actorTextColor: "#222222"
+    signalColor: "#4a657d"
+    noteBkgColor: "#fff3df"
+    noteBorderColor: "#e8a84b"
+---
+sequenceDiagram
+    box transparent Parent process
+        participant J as job_actor
+        participant U as simulation_unit_actor
+        participant Reg as subprocess_registration_actor
+    end
+    box transparent Persistent subprocess
+        participant A as caf::scoped_actor
+        participant W as subprocess_worker_actor
+    end
+
+    J-)U: get_atom + first Task
+    U-)Reg: reserve_subprocess_launch_id_atom<br/>owner handle
+    Reg-->>U: SubprocessLaunchId
+    U->>U: posix_spawn()<br/>with registration endpoint and launch ID
+    Note over A,W: Child starts its actor system<br/>and spawns SubprocessWorker
+    A-)Reg: register_subprocess_worker_atom<br/>launch ID, worker handle
+    Reg-)U: register_subprocess_worker_atom<br/>launch ID, worker handle
+    U->>U: Monitor worker actor
+    U-)W: get_atom + retained Task
+    W->>W: task_handler_(task)
+    W-->>U: TaskResult
+    U-->>J: TaskResult

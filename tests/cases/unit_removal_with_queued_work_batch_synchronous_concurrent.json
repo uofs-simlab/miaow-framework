@@ -1,0 +1,14 @@
+{
+  "exit_code": 0,
+  "max_workers": 2,
+  "input": {
+    "scenario": "removal_with_queued_work",
+    "task_generation_policy": "batch_synchronous"
+  },
+  "expected_callbacks": [
+    {
+      "task_ids": [0, 1, 2, 3],
+      "unit_failure_count": 0
+    }
+  ]
+}

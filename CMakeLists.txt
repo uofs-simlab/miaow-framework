@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.30)
 
-project(miaow VERSION 0.2.0 LANGUAGES CXX Fortran)
+# Keep the software version in citation metadata; CMake uses its numeric base
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/CITATION.cff"
+    miaow_citation_version_line REGEX "^version:")
+string(REGEX MATCH "[0-9]+[.][0-9]+[.][0-9]+" miaow_project_version
+    "${miaow_citation_version_line}")
+project(miaow VERSION "${miaow_project_version}" LANGUAGES CXX Fortran)
+
+# Reconfigure on the next build after the citation version changes
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/CITATION.cff")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,7 +22,7 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-# Add framework tests to top-level development builds
+# Build framework and example regression tests in top-level development builds
 set(miaow_build_tests OFF)
 if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
     set(miaow_build_tests ON)
@@ -46,7 +55,7 @@ miaow_validate_provider(MIAOW_BOOST_PROVIDER)
 miaow_validate_provider(MIAOW_JSON_PROVIDER)
 miaow_validate_provider(MIAOW_CAF_PROVIDER)
 
-# Boost is required only for the framework tests
+# Boost.Test is required only for the job record checker
 if(miaow_build_tests)
     if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
         find_package(Boost CONFIG QUIET COMPONENTS unit_test_framework)
@@ -193,21 +202,29 @@ set_property(DIRECTORY "${miaow_iso_c_bmi_source_dir}"
     PROPERTY EXCLUDE_FROM_ALL TRUE)
 
 add_library(miaow STATIC
-    src/bmi/execute.cpp
+    src/bmi/task.cpp
     src/bmi/dynamic.cpp
-    src/bmi/forcing.cpp
-    src/bmi/io.cpp
-    src/bmi/pipeline.cpp
-    src/bmi/realization.cpp
-    src/bmi/variable.cpp
     src/core/actors.cpp
     src/core/process.cpp
+    src/core/record.cpp
     src/core/runtime.cpp
     src/io/cli.cpp
-    src/io/csv.cpp
     src/io/diagnostics.cpp
-    src/io/json.cpp
 )
+
+# Refresh build metadata after Git changes without rewriting an unchanged header
+find_package(Git QUIET)
+add_custom_target(miaow_build_info
+    COMMAND "${CMAKE_COMMAND}"
+        "-DMIAOW_PROJECT_VERSION=${PROJECT_VERSION}"
+        "-DMIAOW_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+        "-DMIAOW_GIT_EXECUTABLE=${GIT_EXECUTABLE}"
+        "-DMIAOW_OUTPUT_FILE=${PROJECT_BINARY_DIR}/generated/core/build_info.hpp"
+        -P "${PROJECT_SOURCE_DIR}/cmake/miaow_build_info.cmake"
+    BYPRODUCTS "${PROJECT_BINARY_DIR}/generated/core/build_info.hpp"
+    VERBATIM
+)
+add_dependencies(miaow miaow_build_info)
 
 target_include_directories(miaow
     PUBLIC
@@ -215,6 +232,7 @@ target_include_directories(miaow
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_BINARY_DIR}/generated
 )
 target_compile_features(miaow PUBLIC cxx_std_20)
 
@@ -252,18 +270,18 @@ string(CONCAT MIAOW_INSTALLED_SUBPROCESS_PATH
 string(CONCAT MIAOW_SUBPROCESS_COMPILE_DEFINITIONS
     "MIAOW_SUBPROCESS_PATH=\"${MIAOW_SUBPROCESS_PATH}\";"
     "MIAOW_INSTALLED_SUBPROCESS_PATH=\"${MIAOW_INSTALLED_SUBPROCESS_PATH}\"")
-set_source_files_properties(src/bmi/execute.cpp PROPERTIES
+set_source_files_properties(src/bmi/task.cpp PROPERTIES
     COMPILE_DEFINITIONS "${MIAOW_SUBPROCESS_COMPILE_DEFINITIONS}"
 )
 
 add_executable(miaow_subprocess
-    src/bmi/subprocess.cpp
+    src/bmi/worker_main.cpp
 )
 target_compile_features(miaow_subprocess PRIVATE cxx_std_20)
 target_include_directories(miaow_subprocess PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
-target_link_libraries(miaow_subprocess PRIVATE miaow nlohmann_json::nlohmann_json)
+target_link_libraries(miaow_subprocess PRIVATE miaow)
 set_target_properties(miaow_subprocess PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
 )
@@ -343,17 +361,32 @@ if(miaow_build_tests)
     add_subdirectory(tests)
 endif()
 
-# Add examples selected by the repository build
+# Combine regression dependencies with examples selected by the repository build
 if(PROJECT_IS_TOP_LEVEL)
-    option(BUILD_EXAMPLES "Build example programs" OFF)
+    option(BUILD_EXAMPLES "Build selected examples in addition to test dependencies" OFF)
+    set(miaow_regression_examples
+        00_hello
+        01_heat
+        03_dynamic_bmi
+        07_job_controller
+    )
     set(MIAOW_EXAMPLES
-        "00_hello;01_heat;02_soil_freeze_thaw;03_dynamic_bmi;07_job_controller"
-        CACHE STRING "Semicolon-separated list of examples to build"
+        "${miaow_regression_examples}"
+        CACHE STRING "Semicolon-separated list of examples to build with BUILD_EXAMPLES"
     )
 
+    set(miaow_examples_to_build)
+    if(miaow_build_tests)
+        list(APPEND miaow_examples_to_build ${miaow_regression_examples})
+    endif()
     if(BUILD_EXAMPLES)
+        list(APPEND miaow_examples_to_build ${MIAOW_EXAMPLES})
+    endif()
+    list(REMOVE_DUPLICATES miaow_examples_to_build)
+
+    if(miaow_examples_to_build)
         include(cmake/miaow_example.cmake)
-        foreach(miaow_example IN LISTS MIAOW_EXAMPLES)
+        foreach(miaow_example IN LISTS miaow_examples_to_build)
             add_subdirectory("examples/${miaow_example}")
         endforeach()
     endif()

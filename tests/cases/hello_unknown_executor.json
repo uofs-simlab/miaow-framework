@@ -1,0 +1,16 @@
+{
+  "exit_code": 1,
+  "max_workers": 1,
+  "input": {
+    "tasks": [
+      {
+        "task_executor_id": 999,
+        "message": "hello"
+      },
+      {
+        "message": "recovered"
+      }
+    ]
+  },
+  "error": "unknown TaskExecutorId: 999"
+}

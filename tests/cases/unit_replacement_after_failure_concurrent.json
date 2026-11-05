@@ -1,0 +1,7 @@
+{
+  "exit_code": 1,
+  "max_workers": 2,
+  "input": {
+    "scenario": "replacement_after_failure"
+  }
+}

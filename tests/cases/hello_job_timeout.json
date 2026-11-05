@@ -1,0 +1,14 @@
+{
+  "exit_code": 1,
+  "max_workers": 1,
+  "job_request_timeout": 1,
+  "input": {
+    "delay_ms": 2500,
+    "tasks": [{"message": "first"}, {"message": "queued"}]
+  },
+  "tasks": [
+    {"status": "failed", "message": "Job timeout: configured job timeout expired"},
+    {"status": "failed", "message": "Job timeout: configured job timeout expired",
+     "dispatched": false}
+  ]
+}

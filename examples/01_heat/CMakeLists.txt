@@ -26,9 +26,10 @@ target_compile_definitions(miaow_heat PRIVATE
 )
 
 if(BUILD_TESTING)
-    miaow_add_example_smoke_test(
+    miaow_add_example_test(
         TEST_NAME miaow_example_01_heat
         EXECUTABLE_TARGET miaow_heat
+        REGRESSION heat
         EXTERNAL_MODEL
     )
 endif()

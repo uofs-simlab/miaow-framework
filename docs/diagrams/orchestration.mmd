@@ -1,0 +1,54 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 320
+    subGraphTitleMargin:
+      top: 4
+      bottom: 12
+---
+flowchart TB
+    subgraph Parent["Parent process"]
+        R["Runtime"]
+        subgraph O["orchestrator_actor"]
+            OS["Orchestrator"]
+        end
+        subgraph J["job_actor"]
+            JS["Job"]
+        end
+        subgraph U["simulation_unit_actor"]
+            US["SimulationUnit"]
+        end
+        C["JobController"]
+        E["TaskExecutor"]
+        P["SubprocessState"]
+        subgraph Reg["subprocess_registration_actor"]
+            RS["SubprocessRegistration"]
+        end
+
+        R -->|spawns| O
+        R -->|spawns and publishes| Reg
+        O -->|spawns per job| J
+        J -->|owns| C
+        J -->|spawns for first task| U
+        U -->|owns| E
+        U -->|owns| P
+    end
+
+    subgraph Child["Persistent subprocess"]
+        direction LR
+        subgraph W["subprocess_worker_actor"]
+            WS["SubprocessWorker"]
+        end
+        H["task_handler_<br/>Task → TaskResult callable"]
+        W -->|owns| H
+    end
+
+    P -->|"launches and supervises<br/>only for SubprocessTaskExecutor"| Child
+
+    classDef actor fill:#edf2f6,stroke:#4a657d,stroke-width:2px,rx:12px,ry:12px
+    classDef object fill:#ffffff,stroke:#4a657d,stroke-width:1px
+    class O,J,U,Reg,W actor
+    class R,OS,JS,US,C,E,P,RS,WS,H object
+    style Reg font-size:14px
+    style Parent fill:transparent,stroke:#cbd5e1
+    style Child fill:transparent,stroke:#cbd5e1

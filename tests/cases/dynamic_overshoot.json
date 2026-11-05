@@ -1,0 +1,10 @@
+{
+  "exit_code": 1,
+  "input": {"init_config": "../../tests/cases/dynamic_overshoot.txt"},
+  "tasks": [
+    {"status": "failed", "message": "BMI error: update passed the end time (updates: 1)"},
+    {"status": "failed", "message": "BMI error: update passed the end time (updates: 1)"},
+    {"status": "failed", "message": "BMI error: update passed the end time (updates: 1)"},
+    {"status": "failed", "message": "BMI error: update passed the end time (updates: 1)"}
+  ]
+}

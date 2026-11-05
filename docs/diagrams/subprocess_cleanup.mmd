@@ -1,0 +1,49 @@
+---
+config:
+  sequence:
+    useMaxWidth: true
+    mirrorActors: false
+    width: 180
+    actorMargin: 24
+    diagramMarginX: 16
+    diagramMarginY: 12
+    messageMargin: 18
+    actorFontSize: 14
+    messageFontSize: 14
+    noteFontSize: 14
+  themeVariables:
+    actorBkg: "#edf2f6"
+    actorBorder: "#4a657d"
+    actorTextColor: "#222222"
+    signalColor: "#4a657d"
+    noteBkgColor: "#fff3df"
+    noteBorderColor: "#e8a84b"
+---
+sequenceDiagram
+    box transparent Parent process
+        participant J as job_actor
+        participant U as simulation_unit_actor
+        participant Reg as subprocess_registration_actor
+    end
+    box transparent Persistent subprocess
+        participant P as Child process
+    end
+
+    J-)U: shutdown_atom
+    U->>U: Release TaskExecutor<br/>SubprocessState::shutdown()
+    U-)Reg: release_subprocess_launch_id_atom<br/>launch ID
+    U->>P: SIGKILL (process)
+    U-)U: poll_subprocess_exit_atom
+    loop Until child is reaped
+        U->>U: waitpid(pid, WNOHANG)
+        opt Child still running
+            U-)U: poll_subprocess_exit_atom<br/>(delayed)
+        end
+    end
+    U->>U: Release child resources
+    opt Task awaiting a response
+        U-->>J: TaskResult or CAF error
+    end
+    U->>U: quit()
+    U-->>J: CAF termination notification
+    J->>J: unit_terminated()

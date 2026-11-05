@@ -24,7 +24,7 @@ MIAOW targets the [C++20 standard](https://en.cppreference.com/w/cpp/20.html), u
 
 ## Requirements
 
-MIAOW requires [CMake](https://cmake.org/) 3.30+, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See the [building and installation documentation](https://tjbmontoya.com/miaow-framework/building.html) for a description of the available provider settings.
+MIAOW requires [CMake](https://cmake.org/) 3.30+, a C++20 compiler, and a Fortran compiler. The CAF, JSON, and Boost provider options specify where CMake obtains these dependencies: from packages already installed on the system, by fetching and building them from source, or by trying the system first and fetching them if necessary. Boost is needed only when building framework tests. See the [building, testing, and installation documentation](https://tjbmontoya.com/miaow-framework/building.html) for a description of the available provider settings.
 
 On Ubuntu:
 
@@ -48,10 +48,10 @@ git clone https://github.com/uofs-simlab/miaow-framework.git
 cd miaow-framework
 ```
 
-Use the following commands to build MIAOW and run the `00_hello` example workflow:
+Use the following commands to build MIAOW and the `00_hello` example without the regression suite, then run the example workflow:
 
 ```sh
-cmake -S . -B build -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=00_hello
+cmake -S . -B build -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=00_hello
 cmake --build build
 cd examples/00_hello
 ./miaow_hello

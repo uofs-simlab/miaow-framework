@@ -189,7 +189,7 @@ if(BUILD_TESTING AND fuse_grid_data_available)
             --job_request_timeout 1200
     )
     set_tests_properties(miaow_example_06_fuse_bmi PROPERTIES
-        LABELS "example;external_model;subprocess"
+        LABELS "example;optional;external_model;subprocess"
         TIMEOUT 1200
         WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
     )

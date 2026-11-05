@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "error": "Task name error: feature_id must not contain path separators",
+  "input": {"tasks": [{"message": "hello", "feature_id": "greeting\\1"}]}
+}

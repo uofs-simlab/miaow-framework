@@ -7,11 +7,13 @@ Core runtime
 Identifiers and task status
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. doxygentypedef:: miaow::SimulationUnitId
+.. doxygentypedef:: miaow::TaskExecutorId
 
 .. doxygentypedef:: miaow::TaskId
 
-.. doxygentypedef:: miaow::JobId
+.. doxygentypedef:: miaow::JobCreationId
+
+.. doxygentypedef:: miaow::JobSubmissionId
 
 .. doxygentypedef:: miaow::TaskMetadata
 
@@ -22,10 +24,22 @@ Identifiers and task status
 Task and job data
 ~~~~~~~~~~~~~~~~~
 
+.. doxygenclass:: miaow::SimulationUnitHandle
+   :members:
+
+.. doxygenclass:: miaow::Job
+   :members:
+
+.. doxygenclass:: miaow::SimulationUnit
+   :members:
+
 .. doxygenstruct:: miaow::Task
    :members:
 
 .. doxygenstruct:: miaow::TaskResult
+   :members:
+
+.. doxygenstruct:: miaow::UnitFailure
    :members:
 
 .. doxygenstruct:: miaow::TaskRecord
@@ -39,7 +53,7 @@ Task and job data
 Runtime orchestration
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. doxygenclass:: miaow::SimulationUnit
+.. doxygenclass:: miaow::TaskExecutor
    :members:
 
 .. doxygenenum:: miaow::TaskGenerationPolicy
@@ -47,10 +61,8 @@ Runtime orchestration
 .. doxygenclass:: miaow::JobController
    :members:
 
-.. doxygenclass:: miaow::SimulationUnitRegistry
+.. doxygenclass:: miaow::TaskExecutorRegistry
    :members:
-
-.. doxygenenum:: miaow::SubprocessLifetime
 
 .. doxygenfunction:: miaow::run_subprocess_worker
 
@@ -68,15 +80,7 @@ BMI configuration
 
 .. doxygenenum:: miaow::DynamicBmiBackend
 
-.. doxygenenum:: miaow::BmiDataFormat
-
 .. doxygenvariable:: miaow::default_bmi_time_step_tolerance_seconds
-
-.. doxygenstruct:: miaow::BmiForcingConfig
-   :members:
-
-.. doxygenstruct:: miaow::BmiOutputConfig
-   :members:
 
 .. doxygenstruct:: miaow::StaticBmiConfig
    :members:
@@ -84,30 +88,20 @@ BMI configuration
 .. doxygenstruct:: miaow::DynamicBmiConfig
    :members:
 
-Simulation units
-~~~~~~~~~~~~~~~~
+Task executors
+~~~~~~~~~~~~~~
 
-.. doxygenclass:: miaow::StaticBmiSimulationUnit
+.. doxygenclass:: miaow::StaticBmiTaskExecutor
    :members:
 
-.. doxygenclass:: miaow::DynamicBmiSimulationUnit
+.. doxygenclass:: miaow::DynamicBmiTaskExecutor
    :members:
 
 .. doxygenfunction:: miaow::bmi_subprocess_executable_path
 
-.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitId, const StaticBmiConfig&)
+.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitHandle, const StaticBmiConfig&)
 
-.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitId, const DynamicBmiConfig&)
-
-.. doxygenfunction:: miaow::make_bmi_tasks(SimulationUnitId, const std::vector<BmiConfig>&)
-
-Realization workflows
----------------------
-
-.. doxygenclass:: miaow::PartitionedBmiRealization
-   :members:
-
-.. doxygenfunction:: miaow::make_bmi_tasks(SimulationUnitId, const PartitionedBmiRealization&)
+.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitHandle, const DynamicBmiConfig&)
 
 I/O and CLI helpers
 -------------------

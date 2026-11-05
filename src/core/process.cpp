@@ -48,12 +48,6 @@ constexpr std::chrono::seconds subprocess_startup_timeout{5};
 constexpr std::chrono::milliseconds subprocess_exit_poll_interval{10};
 std::atomic<unsigned long long> next_control_dir_id{0};
 
-// Registration state belongs exclusively to one Runtime-local registration actor
-struct SubprocessRegistrationState {
-    SubprocessLaunchId next_launch_id_{0};
-    std::unordered_map<SubprocessLaunchId, caf::actor> launch_owners_;
-};
-
 // CAF actor messages require core and MIAOW meta objects
 void initialize_subprocess_caf() {
     caf::core::init_global_meta_objects();
@@ -190,52 +184,43 @@ SubprocessRegistrationInfo parse_subprocess_registration_info(int argc, char* ar
 } // namespace
 
 // Allocate launch IDs before children can send their actor handles back to the parent
-caf::behavior subprocess_registration_actor(caf::event_based_actor*) {
-    const std::shared_ptr<SubprocessRegistrationState> state =
-        std::make_shared<SubprocessRegistrationState>();
+caf::behavior SubprocessRegistration::make_behavior() {
+    return {// simulation_unit_actor -> subprocess_registration_actor: reserve a launch ID
+            [this](reserve_subprocess_launch_id_atom,
+                   const caf::actor& simulation_unit_actor) -> SubprocessLaunchId {
+                const SubprocessLaunchId launch_id = next_launch_id_++;
+                launch_owner_actors_.emplace(launch_id, simulation_unit_actor);
+                return launch_id;
+            },
+            // simulation_unit_actor -> subprocess_registration_actor: release a launch ID
+            [this](release_subprocess_launch_id_atom, SubprocessLaunchId launch_id) {
+                launch_owner_actors_.erase(launch_id);
+            },
+            // subprocess_scoped_actor -> subprocess_registration_actor: register its worker
+            [this](register_subprocess_worker_atom, SubprocessLaunchId launch_id,
+                   const caf::actor& subprocess_worker_actor) {
+                const std::unordered_map<SubprocessLaunchId, caf::actor>::iterator
+                    subprocess_owner = launch_owner_actors_.find(launch_id);
+                if (subprocess_owner == launch_owner_actors_.end()) {
+                    return;
+                }
 
-    return {
-        // simulation_unit_actor -> subprocess_registration_actor: reserve a launch ID
-        [state](reserve_subprocess_launch_id_atom,
-                const caf::actor& owner) -> SubprocessLaunchId {
-            const SubprocessLaunchId launch_id = state->next_launch_id_++;
-            state->launch_owners_.emplace(launch_id, owner);
-            return launch_id;
-        },
-        // simulation_unit_actor -> subprocess_registration_actor: release a launch ID
-        [state](release_subprocess_launch_id_atom, SubprocessLaunchId launch_id) {
-            state->launch_owners_.erase(launch_id);
-        },
-        // subprocess_scoped_actor -> subprocess_registration_actor: register its worker
-        [state](register_subprocess_worker_atom, SubprocessLaunchId launch_id,
-                const caf::actor& subprocess_worker) {
-            const std::unordered_map<SubprocessLaunchId, caf::actor>::iterator
-                subprocess_owner = state->launch_owners_.find(launch_id);
-            if (subprocess_owner == state->launch_owners_.end()) {
-                return;
-            }
-
-            // subprocess_registration_actor -> simulation_unit_actor: deliver the child
-            caf::anon_mail(register_subprocess_worker_atom_v, launch_id,
-                           subprocess_worker)
-                .send(subprocess_owner->second);
-            state->launch_owners_.erase(subprocess_owner);
-        }};
+                // subprocess_registration_actor -> simulation_unit_actor: deliver the child
+                caf::anon_mail(register_subprocess_worker_atom_v, launch_id,
+                               subprocess_worker_actor)
+                    .send(subprocess_owner->second);
+                launch_owner_actors_.erase(subprocess_owner);
+            }};
 }
 
 namespace {
 // Create the diagnostic files used by one child process
-SubprocessPaths make_subprocess_paths(const Task& task, SubprocessLifetime lifetime) {
+SubprocessPaths make_subprocess_paths(const Task& task) {
     const std::filesystem::path control_dir = make_control_dir(task);
 
-    // Persistent subprocess logs use a distinct name because one child may execute
-    // multiple tasks before the worker stops and decides whether to retain diagnostics
-    const std::string task_name = task.task_name_.empty() ? "task" : task.task_name_;
-    const std::string output_name = lifetime == SubprocessLifetime::persistent
-                                        ? "persistent_" + task_name
-                                        : task_name;
+    // One child may serve multiple operations; name its logs after the first task
     const std::string control_stem =
-        std::string(subprocess_file_prefix) + "_" + output_name;
+        std::string(subprocess_file_prefix) + "_unit_" + task.task_name_;
 
     SubprocessPaths paths;
     paths.stdout_path_ = control_dir / (control_stem + "_stdout.log");
@@ -244,7 +229,7 @@ SubprocessPaths make_subprocess_paths(const Task& task, SubprocessLifetime lifet
     return paths;
 }
 
-// Remove parent-subprocess control files after a succeeded task result
+// Remove parent-subprocess control files after successful unit shutdown
 void remove_subprocess_files(const SubprocessPaths& paths) {
     std::error_code ignored_error;
     std::filesystem::remove(paths.stdout_path_, ignored_error);
@@ -378,72 +363,40 @@ void send_sigkill_to_child_process(pid_t subprocess_pid) {
                             "failed to force subprocess termination");
 }
 
-// Polymorphic simulation unit that delegates one task to actor-owned subprocess state
-class SubprocessSimulationUnit final : public SimulationUnit {
+// Task executor that delegates one task to actor-owned subprocess state
+class SubprocessTaskExecutor final : public TaskExecutor {
   public:
-    SubprocessSimulationUnit(SubprocessState& subprocess_state,
-                             std::string subprocess_executable,
-                             SubprocessLifetime lifetime)
+    SubprocessTaskExecutor(SubprocessState& subprocess_state,
+                           std::string subprocess_executable)
         : subprocess_state_(subprocess_state),
-          subprocess_executable_(std::move(subprocess_executable)),
-          lifetime_(lifetime) {}
+          subprocess_executable_(std::move(subprocess_executable)) {}
 
     caf::result<TaskResult> execute(const Task& task) override {
-        return subprocess_state_.execute(task, subprocess_executable_, lifetime_);
+        return subprocess_state_.execute(task, subprocess_executable_);
     }
 
   private:
     SubprocessState& subprocess_state_;
     std::string subprocess_executable_;
-    SubprocessLifetime lifetime_;
 };
-
-// Host the public Task-to-TaskResult handler behind the child CAF message protocol
-caf::behavior subprocess_worker_actor(
-    caf::event_based_actor*, std::function<TaskResult(const Task&)> task_handler) {
-    return {
-        // simulation_unit_actor -> subprocess_worker_actor: execute one Task;
-        // caf::get_atom matches the caf::get_atom_v value sent by simulation_unit_actor
-        [task_handler = std::move(task_handler)](caf::get_atom,
-                                                 const Task& task) -> TaskResult {
-            try {
-                return task_handler(task);
-            } catch (...) {
-                return make_failed_task_result(std::current_exception(),
-                                               "Subprocess task error");
-            }
-        }};
-}
 
 } // namespace
 
-bool SimulationUnitRegistryAccess::uses_subprocess(const SimulationUnitRegistry& registry,
-                                                   SimulationUnitId simulation_unit_id) {
-    const auto registration = registry.registrations_.find(simulation_unit_id);
-    return registration != registry.registrations_.end() &&
-           std::holds_alternative<SimulationUnitRegistry::SubprocessRegistration>(
-               registration->second);
-}
+SubprocessWorker::SubprocessWorker(std::function<TaskResult(const Task&)> task_handler)
+    : task_handler_(std::move(task_handler)) {}
 
-std::unique_ptr<SimulationUnit>
-SimulationUnitRegistryAccess::construct(const SimulationUnitRegistry& registry,
-                                        SimulationUnitId simulation_unit_id,
-                                        SubprocessState& subprocess_state) {
-    const auto registration = registry.registrations_.find(simulation_unit_id);
-    if (registration == registry.registrations_.end()) {
-        return nullptr;
-    }
-
-    if (const auto* factory = std::get_if<SimulationUnitRegistry::SimulationUnitFactory>(
-            &registration->second)) {
-        return (*factory)();
-    }
-
-    const auto& subprocess =
-        std::get<SimulationUnitRegistry::SubprocessRegistration>(registration->second);
-    return std::make_unique<SubprocessSimulationUnit>(subprocess_state,
-                                                      subprocess.executable_,
-                                                      subprocess.lifetime_);
+// Host the public Task-to-TaskResult handler behind the child CAF message protocol
+caf::behavior SubprocessWorker::make_behavior() {
+    return {// simulation_unit_actor -> subprocess_worker_actor: execute one Task;
+            // caf::get_atom matches the caf::get_atom_v value sent by simulation_unit_actor
+            [this](caf::get_atom, const Task& task) -> TaskResult {
+                try {
+                    return task_handler_(task);
+                } catch (...) {
+                    return make_failed_task_result(std::current_exception(),
+                                                   "Subprocess task error");
+                }
+            }};
 }
 
 SubprocessState::SubprocessState(caf::event_based_actor* owner,
@@ -472,38 +425,28 @@ void SubprocessState::handle_worker_termination(SubprocessLaunchId launch_id,
         return;
     }
 
-    if (phase_ == SubprocessPhase::stopping_subprocess) {
-        return;
-    }
-
-    if (phase_ == SubprocessPhase::waiting_for_task_result) {
+    if (phase_ == SubprocessPhase::waiting_for_task_result ||
+        phase_ == SubprocessPhase::idle) {
         fail_task("subprocess worker actor terminated: " + caf::to_string(reason));
-        return;
-    }
-
-    if (phase_ == SubprocessPhase::idle) {
-        keep_logs_ = paths_.has_value();
-        begin_stop();
     }
 }
 
-// Deliver one task result from the local worker to its waiting job actor
+// Deliver one operation result from the unit to its waiting job actor
 void SubprocessState::complete_task_response(TaskResult task_result) {
     // simulation_unit_actor -> job_actor: deliver the retained task response
     response_promise_.deliver(std::move(task_result));
     active_task_.reset();
-    requested_subprocess_executable_.clear();
-    requested_subprocess_lifetime_ = SubprocessLifetime::single_task;
     result_waiting_for_stop_.reset();
 }
 
-// Finish cleanup, then respond, relaunch retained work, or quit
+// Release the child, then deliver any pending failure and finish shutdown
 void SubprocessState::finish_stop(std::optional<int> wait_status) {
     // Complete failure diagnostics after the child process has been reaped
     if (result_waiting_for_stop_.has_value() && paths_.has_value() &&
         result_waiting_for_stop_->status_ == TaskStatus::failed) {
-        result_waiting_for_stop_->message_ = format_subprocess_failure(
-            result_waiting_for_stop_->message_, *paths_, wait_status);
+        result_waiting_for_stop_->message_ =
+            format_subprocess_failure(result_waiting_for_stop_->message_, *paths_,
+                                      wait_status);
     }
 
     // Remove diagnostics that no failure path requested to retain
@@ -511,45 +454,39 @@ void SubprocessState::finish_stop(std::optional<int> wait_status) {
         remove_subprocess_files(*paths_);
     }
 
-    // Clear all child resources before returning to idle without a child
+    // Release child resources before delivering the pending failure
     subprocess_pid_.reset();
-    subprocess_worker_ = caf::actor{};
-    active_subprocess_executable_.clear();
+    subprocess_worker_actor_ = caf::actor{};
     paths_.reset();
     keep_logs_ = false;
     launch_id_.reset();
     phase_ = SubprocessPhase::idle;
 
-    // Deliver a completed result only after its child process has been reaped
+    // Context loss uses the monitor path; ordinary shutdown may still settle a request
+    caf::error reason;
     if (result_waiting_for_stop_.has_value()) {
-        TaskResult task_result = std::move(*result_waiting_for_stop_);
-        complete_task_response(std::move(task_result));
-        if (shutdown_requested_) {
-            owner_->quit();
-        }
-        return;
-    }
-
-    // Relaunch a task retained while an incompatible or failed child was reaped
-    if (active_task_.has_value()) {
-        if (shutdown_requested_) {
-            complete_task_response(make_failed_task_result(
-                "worker shut down before task execution", subprocess_error_prefix));
-            owner_->quit();
+        if (context_failed_) {
+            reason = caf::make_error(caf::sec::request_receiver_down,
+                                     result_waiting_for_stop_->message_);
+            if (response_promise_.pending()) {
+                response_promise_.deliver(reason);
+            }
+            active_task_.reset();
+            result_waiting_for_stop_.reset();
         } else {
-            request_subprocess_launch_id();
+            TaskResult task_result = std::move(*result_waiting_for_stop_);
+            complete_task_response(std::move(task_result));
         }
-        return;
     }
 
-    // Quit only after every owned child process has been released
-    if (shutdown_requested_) {
-        owner_->quit();
-    }
+    // Every stop path quits after releasing the child
+    owner_->quit(std::move(reason));
 }
 
-// Convert one subprocess lifecycle error into a failed task result
+// Mark the execution context as lost and retain its failure until cleanup finishes
 void SubprocessState::fail_task(std::string message) {
+    context_failed_ = true;
+    shutdown_requested_ = true;
     keep_logs_ = paths_.has_value();
     result_waiting_for_stop_ =
         make_failed_task_result(std::move(message), subprocess_error_prefix);
@@ -575,8 +512,7 @@ void SubprocessState::begin_stop() {
         return;
     }
 
-    // Send SIGKILL to the process identified by subprocess_pid_ because cleanup starts
-    // only after task completion, failure, timeout, or cancellation
+    // Terminate only this unit's child, then reap it before reporting shutdown
     send_sigkill_to_child_process(*subprocess_pid_);
 
     // simulation_unit_actor -> simulation_unit_actor: begin non-blocking exit polling
@@ -591,18 +527,15 @@ void SubprocessState::handle_task_result(SubprocessLaunchId launch_id,
         return;
     }
 
-    const bool keep_persistent_child =
-        requested_subprocess_lifetime_ == SubprocessLifetime::persistent &&
-        task_result.status_ == TaskStatus::succeeded;
-    if (keep_persistent_child) {
-        phase_ = SubprocessPhase::idle;
-        complete_task_response(std::move(task_result));
-        return;
+    if (task_result.status_ == TaskStatus::failed) {
+        keep_logs_ = true;
+        if (paths_) {
+            task_result.message_ =
+                format_subprocess_failure(task_result.message_, *paths_, std::nullopt);
+        }
     }
-
-    keep_logs_ = task_result.status_ == TaskStatus::failed;
-    result_waiting_for_stop_ = std::move(task_result);
-    begin_stop();
+    phase_ = SubprocessPhase::idle;
+    complete_task_response(std::move(task_result));
 }
 
 // Handle an error returned by the current child actor request
@@ -613,7 +546,12 @@ void SubprocessState::handle_task_error(SubprocessLaunchId launch_id,
         return;
     }
 
-    fail_task("subprocess actor request failed: " + caf::to_string(error));
+    if (error == caf::sec::request_timeout || error == caf::sec::request_receiver_down) {
+        fail_task("subprocess actor request failed: " + caf::to_string(error));
+    } else {
+        phase_ = SubprocessPhase::idle;
+        complete_task_response(make_failed_task_result(caf::to_string(error), "CAF error"));
+    }
 }
 
 // Send the retained task to the registered child actor
@@ -628,19 +566,18 @@ void SubprocessState::request_task_result() {
 
     const SubprocessLaunchId launch_id = *launch_id_;
     phase_ = SubprocessPhase::waiting_for_task_result;
-    const std::shared_ptr<SubprocessState> state = shared_from_this();
 
     // simulation_unit_actor -> subprocess_worker_actor: request one task result
     owner_->mail(caf::get_atom_v, std::move(task_payload))
-        .request(subprocess_worker_, task_request_timeout_)
+        .request(subprocess_worker_actor_, task_request_timeout_)
         .then(
             // subprocess_worker_actor -> simulation_unit_actor: return the task result
-            [state, launch_id](TaskResult task_result) {
-                state->handle_task_result(launch_id, std::move(task_result));
+            [this, launch_id](TaskResult task_result) {
+                handle_task_result(launch_id, std::move(task_result));
             },
             // subprocess_worker_actor -> simulation_unit_actor: report a task error
-            [state, launch_id](const caf::error& error) {
-                state->handle_task_error(launch_id, error);
+            [this, launch_id](const caf::error& error) {
+                handle_task_error(launch_id, error);
             });
 }
 
@@ -660,12 +597,11 @@ void SubprocessState::start_subprocess(SubprocessLaunchId launch_id) {
     }
 
     try {
-        paths_ = make_subprocess_paths(*active_task_, requested_subprocess_lifetime_);
+        paths_ = make_subprocess_paths(*active_task_);
         keep_logs_ = false;
         subprocess_pid_ =
-            spawn_subprocess_worker(requested_subprocess_executable_,
-                                    subprocess_registration_port_, launch_id, *paths_);
-        active_subprocess_executable_ = requested_subprocess_executable_;
+            spawn_subprocess_worker(subprocess_executable_, subprocess_registration_port_,
+                                    launch_id, *paths_);
 
         // simulation_unit_actor -> simulation_unit_actor: enforce the startup deadline
         owner_->mail(subprocess_startup_timeout_atom_v, launch_id)
@@ -695,50 +631,32 @@ void SubprocessState::handle_launch_id_request_error(const caf::error& error) {
 // Reserve an ID before launching a child that can register with the parent
 void SubprocessState::request_subprocess_launch_id() {
     phase_ = SubprocessPhase::starting_subprocess;
-    const caf::actor owner = owner_;
-    const std::shared_ptr<SubprocessState> state = shared_from_this();
+    const caf::actor simulation_unit_actor = owner_;
 
     // simulation_unit_actor -> subprocess_registration_actor: reserve one launch ID
-    owner_->mail(reserve_subprocess_launch_id_atom_v, owner)
+    owner_->mail(reserve_subprocess_launch_id_atom_v, simulation_unit_actor)
         .request(subprocess_registration_actor_, caf::infinite)
         .then(
             // subprocess_registration_actor -> simulation_unit_actor: return a launch ID
-            [state](SubprocessLaunchId launch_id) { state->start_subprocess(launch_id); },
+            [this](SubprocessLaunchId launch_id) { start_subprocess(launch_id); },
             // subprocess_registration_actor -> simulation_unit_actor: report an ID error
-            [state](const caf::error& error) {
-                state->handle_launch_id_request_error(error);
-            });
+            [this](const caf::error& error) { handle_launch_id_request_error(error); });
 }
 
 caf::result<TaskResult> SubprocessState::execute(const Task& task,
-                                                 const std::string& subprocess_executable,
-                                                 SubprocessLifetime lifetime) {
-    if (response_promise_.pending()) {
-        return caf::make_error(
-            caf::sec::runtime_error,
-            "simulation unit worker already has an active subprocess task");
+                                                 const std::string& subprocess_executable) {
+    if (response_promise_.pending() || shutdown_requested_) {
+        return caf::make_error(caf::sec::runtime_error,
+                               "subprocess unit is busy or shutting down");
     }
 
     // Retain the job actor request while the asynchronous lifecycle continues
     response_promise_ = owner_->make_response_promise<TaskResult>();
     active_task_ = task;
-    requested_subprocess_executable_ = subprocess_executable;
-    requested_subprocess_lifetime_ = lifetime;
+    subprocess_executable_ = subprocess_executable;
 
-    if (phase_ == SubprocessPhase::stopping_subprocess) {
-        // Returning the promise marks the CAF request as delegated
-        return response_promise_;
-    }
-
-    // A retained actor and matching executable identify a reusable persistent child
-    const bool reusable_persistent_child =
-        requested_subprocess_lifetime_ == SubprocessLifetime::persistent &&
-        subprocess_worker_ &&
-        active_subprocess_executable_ == requested_subprocess_executable_;
-    if (reusable_persistent_child) {
+    if (subprocess_worker_actor_) {
         request_task_result();
-    } else if (subprocess_pid_.has_value()) {
-        begin_stop();
     } else {
         request_subprocess_launch_id();
     }
@@ -748,18 +666,17 @@ caf::result<TaskResult> SubprocessState::execute(const Task& task,
 }
 
 void SubprocessState::accept_registration(SubprocessLaunchId launch_id,
-                                          const caf::actor& subprocess_worker) {
+                                          const caf::actor& subprocess_worker_actor) {
     if (!launch_id_.has_value() || *launch_id_ != launch_id ||
         phase_ != SubprocessPhase::starting_subprocess) {
         return;
     }
 
-    subprocess_worker_ = subprocess_worker;
-    const std::shared_ptr<SubprocessState> state = shared_from_this();
+    subprocess_worker_actor_ = subprocess_worker_actor;
 
     // subprocess_worker_actor -> simulation_unit_actor: report actor termination
-    owner_->monitor(subprocess_worker, [state, launch_id](const caf::error& reason) {
-        state->handle_worker_termination(launch_id, reason);
+    owner_->monitor(subprocess_worker_actor, [this, launch_id](const caf::error& reason) {
+        handle_worker_termination(launch_id, reason);
     });
 
     request_task_result();
@@ -808,42 +725,57 @@ void SubprocessState::shutdown() {
 
     if (response_promise_.pending() && !result_waiting_for_stop_.has_value()) {
         keep_logs_ = paths_.has_value();
-        result_waiting_for_stop_ = make_failed_task_result(
-            "worker shut down before subprocess task completed", subprocess_error_prefix);
+        result_waiting_for_stop_ =
+            make_failed_task_result("worker shut down before subprocess task completed",
+                                    subprocess_error_prefix);
     }
 
     if (phase_ == SubprocessPhase::starting_subprocess && !launch_id_.has_value()) {
         return;
     }
 
-    if (subprocess_pid_.has_value()) {
-        begin_stop();
-        return;
-    }
-
-    if (result_waiting_for_stop_.has_value()) {
-        TaskResult task_result = std::move(*result_waiting_for_stop_);
-        complete_task_response(std::move(task_result));
-    }
-
-    owner_->quit();
+    begin_stop();
 }
 
 } // namespace miaow::core
 
 namespace miaow {
 
-SimulationUnitId SimulationUnitRegistry::add_subprocess(std::string subprocess_executable,
-                                                        SubprocessLifetime lifetime) {
+bool TaskExecutorRegistry::is_subprocess(TaskExecutorId task_executor_id) const {
+    const auto registration = registrations_.find(task_executor_id);
+    return registration != registrations_.end() &&
+           std::holds_alternative<TaskExecutorRegistry::SubprocessRegistration>(
+               registration->second);
+}
+
+std::unique_ptr<TaskExecutor>
+TaskExecutorRegistry::make_executor(TaskExecutorId task_executor_id,
+                                    core::SubprocessState& subprocess_state) const {
+    const auto registration = registrations_.find(task_executor_id);
+    if (registration == registrations_.end()) {
+        return nullptr;
+    }
+
+    if (const auto* factory =
+            std::get_if<TaskExecutorRegistry::TaskExecutorFactory>(&registration->second)) {
+        return (*factory)();
+    }
+
+    const auto& subprocess =
+        std::get<TaskExecutorRegistry::SubprocessRegistration>(registration->second);
+    return std::make_unique<core::SubprocessTaskExecutor>(subprocess_state,
+                                                          subprocess.executable_);
+}
+
+TaskExecutorId TaskExecutorRegistry::add_subprocess(std::string subprocess_executable) {
     if (subprocess_executable.empty()) {
         throw std::invalid_argument("subprocess executable must be non-empty");
     }
 
-    const SimulationUnitId simulation_unit_id = next_simulation_unit_id_++;
-    registrations_.emplace(simulation_unit_id,
-                           SubprocessRegistration{std::move(subprocess_executable),
-                                                  lifetime});
-    return simulation_unit_id;
+    const TaskExecutorId task_executor_id = next_task_executor_id_++;
+    registrations_.emplace(task_executor_id,
+                           SubprocessRegistration{std::move(subprocess_executable)});
+    return task_executor_id;
 }
 
 int run_subprocess_worker(int argc, char* argv[],
@@ -861,16 +793,18 @@ int run_subprocess_worker(int argc, char* argv[],
         caf::actor_system actor_system(config);
 
         // The worker remains local until CAF serializes its handle to the parent
-        const caf::actor worker =
-            actor_system.spawn(core::subprocess_worker_actor, std::move(task_handler));
-        caf::expected<caf::actor> parent_registration_actor =
+        const caf::actor subprocess_worker_actor =
+            actor_system.spawn(caf::actor_from_state<core::SubprocessWorker>,
+                               std::move(task_handler));
+        caf::expected<caf::actor> subprocess_registration_actor =
             actor_system.middleman().remote_actor(registration.host_, registration.port_);
-        if (!parent_registration_actor) {
+        if (!subprocess_registration_actor) {
             // subprocess_main -> subprocess_worker_actor: stop after connection failure;
             // prevent actor_system from waiting for the local worker during unwinding
-            caf::anon_send_exit(worker, caf::exit_reason::user_shutdown);
-            throw std::runtime_error("failed to connect to parent registration actor: " +
-                                     caf::to_string(parent_registration_actor.error()));
+            caf::anon_send_exit(subprocess_worker_actor, caf::exit_reason::user_shutdown);
+            throw std::runtime_error(
+                "failed to connect to parent registration actor: " +
+                caf::to_string(subprocess_registration_actor.error()));
         }
 
         // Keep the subprocess alive until the worker has returned
@@ -878,11 +812,12 @@ int run_subprocess_worker(int argc, char* argv[],
 
         // subprocess_scoped_actor -> subprocess_registration_actor: register the worker;
         // sending the local handle creates its corresponding proxy in the parent system
-        self->mail(core::register_subprocess_worker_atom_v, registration.launch_id_, worker)
-            .send(*parent_registration_actor);
+        self->mail(core::register_subprocess_worker_atom_v, registration.launch_id_,
+                   subprocess_worker_actor)
+            .send(*subprocess_registration_actor);
 
         // This blocks only the child main thread, never its CAF scheduler thread
-        self->wait_for(worker);
+        self->wait_for(subprocess_worker_actor);
         return 0;
     } catch (const std::exception& exception) {
         core::write_subprocess_error(exception.what());
