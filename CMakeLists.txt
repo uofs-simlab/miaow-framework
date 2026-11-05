@@ -299,8 +299,10 @@ elseif(UNIX)
         "\$ORIGIN/${miaow_subprocess_libdir_relative}")
 endif()
 if(miaow_subprocess_install_rpath)
+    # Keep external shared dependencies discoverable after installation
     set_target_properties(miaow_subprocess PROPERTIES
         INSTALL_RPATH "${miaow_subprocess_install_rpath}"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
     )
 endif()
 
