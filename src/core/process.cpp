@@ -42,10 +42,17 @@ namespace miaow::core {
 
 namespace {
 
+// Prefixes for subprocess-related files and directories
 constexpr const char* subprocess_file_prefix = "subprocess";
 constexpr const char* subprocess_temp_dir_prefix = "miaow_subprocess";
+
+// Allow up to 5 seconds for the subprocess to start up before timing out
 constexpr std::chrono::seconds subprocess_startup_timeout{5};
+
+// Polling interval for checking if the subprocess has exited
 constexpr std::chrono::milliseconds subprocess_exit_poll_interval{10};
+
+// Process-wide counter for temporary control directories
 std::atomic<unsigned long long> next_control_dir_id{0};
 
 // CAF actor messages require core and MIAOW meta objects
