@@ -14,7 +14,7 @@ BMI task lifecycle
 
 Models manage their own forcing and scientific output. If a BMI call fails, the runner attempts to finalize a successfully initialized model before releasing it. Results report the number of completed updates.
 
-A unit retains its executor across operations, but these BMI executors construct a fresh model for every task. Persistent unit or subprocess lifetime does not preserve BMI model state between ``run`` operations.
+A unit retains its executor across operations. Each ``run`` operation constructs a fresh model; model state does not persist between complete runs. Static BMI executors also support individual operations on a retained model, as described below.
 
 Static BMI model
 ----------------
@@ -39,6 +39,15 @@ Register the concrete C++ model type, declare a unit, and add its run operation:
    const miaow::JobRecord record = job_handle.get();
 
 For concurrent independent runs, declare one unit per configuration using the same executor registration. Repeated tasks targeting one unit execute sequentially and reuse its executor.
+
+Individual static BMI operations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``StaticBmiTaskExecutor`` accepts ``initialize`` with a configuration-path string, followed by argument-free ``update``, ``get_current_time``, and ``finalize`` tasks. Each task invokes one BMI call. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units. The executor retains the initialized model until finalization and can initialize a fresh model afterward. ``run`` and a second ``initialize`` are rejected while a model is initialized.
+
+The heat example demonstrates controller-generated operations with ``./miaow_heat --step`` from ``examples/01_heat``. It initializes one model, queries its current time, performs two updates with a query after each, and explicitly finalizes. The default invocation still performs a complete run.
+
+BMI call exceptions produce failed task results. After an update or query throws, the retained model accepts only finalization. The executor releases the model after a finalization attempt, including a failed attempt. Controllers should explicitly submit ``finalize`` to receive its result; executor destruction attempts finalization if an initialized model remains, but cannot report those cleanup errors as task results.
 
 Dynamic BMI plugin
 ------------------
