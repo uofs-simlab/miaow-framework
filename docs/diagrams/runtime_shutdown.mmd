@@ -2,9 +2,9 @@
 config:
   sequence:
     useMaxWidth: true
-    mirrorActors: false
+    mirrorActors: true
     width: 180
-    actorMargin: 24
+    actorMargin: 50
     diagramMarginX: 16
     diagramMarginY: 12
     messageMargin: 18
@@ -21,20 +21,29 @@ config:
 ---
 sequenceDiagram
     participant R as Runtime
+    participant S as CAF actor system
     participant O as orchestrator_actor
     participant Reg as subprocess_registration_actor
     participant J as job_actor
     participant U as simulation_unit_actor
 
     R-)O: shutdown_atom
+    R->>S: Wait for actors<br/>during destruction
     O-)J: shutdown_atom<br/>for each active job
     par Orchestrator shutdown
-        O-)Reg: CAF exit (user_shutdown)
-        O->>O: quit()
+        O-)Reg: CAF exit<br/>(user_shutdown)
+        destroy O
+        O-->>S: Actor terminates<br/>after quit()
+        destroy Reg
+        Reg-->>S: Actor terminates
     and Job and unit cleanup
         J-)U: shutdown_atom<br/>for each live unit
         U->>U: Release executor<br/>For SubprocessTaskExecutor:<br/>terminate child and wait for exit
-        U-->>J: CAF termination notification
+        destroy U
+        U-->>J: CAF termination<br/>notification
         Note over J: Wait for all unit actors to terminate
-        J->>J: Return Runtime shutdown error<br/>then quit()
+        J->>J: Return Runtime shutdown error
+        destroy J
+        J-->>S: Actor terminates<br/>after quit()
     end
+    S-->>R: All actors terminated

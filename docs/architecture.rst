@@ -194,6 +194,8 @@ Runtime shutdown
 
 Destroying ``Runtime`` ends execution of its active jobs. Runtime tells the orchestrator to shut down; the orchestrator forwards that request to each job actor and exits. Each job actor tells its unit actors to shut down and waits for them to terminate. Actor-system destruction waits for the remaining actors. Jobs interrupted this way produce no final ``JobRecord``.
 
+Termination arrows to the CAF actor system below represent lifecycle events. The system waits for all actors to terminate before its destruction completes.
+
 .. mermaid:: diagrams/runtime_shutdown.mmd
    :alt: Concurrent orchestrator shutdown and job cleanup
    :align: center

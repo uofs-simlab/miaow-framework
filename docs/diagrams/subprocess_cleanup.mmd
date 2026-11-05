@@ -2,7 +2,7 @@
 config:
   sequence:
     useMaxWidth: true
-    mirrorActors: false
+    mirrorActors: true
     width: 180
     actorMargin: 50
     diagramMarginX: 50
@@ -40,10 +40,13 @@ sequenceDiagram
             U-)U: poll_subprocess_exit_atom<br/>(delayed)
         end
     end
+    destroy P
+    P-->>U: Child exit status<br/>collected by waitpid()
     U->>U: Release child resources
     opt Task awaiting a response
         U-->>J: TaskResult or CAF error
     end
     U->>U: quit()
-    U-->>J: CAF termination notification
+    destroy U
+    U-->>J: CAF termination<br/>notification
     J->>J: unit_terminated()

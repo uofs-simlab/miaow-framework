@@ -2,7 +2,7 @@
 config:
   sequence:
     useMaxWidth: true
-    mirrorActors: false
+    mirrorActors: true
     width: 180
     actorMargin: 24
     diagramMarginX: 16
@@ -42,7 +42,9 @@ sequenceDiagram
 
     J-)U: shutdown_atom
     U->>U: Release executor<br/>For SubprocessTaskExecutor:<br/>terminate child and wait for exit
-    U-->>J: CAF termination notification
+    destroy U
+    U-->>J: CAF termination<br/>notification
     J->>J: JobController::finalize()
-    J-->>O: JobRecord
+    destroy J
+    J-->>O: JobRecord<br/>then quit()
     O->>O: Fulfil JobHandle promise
