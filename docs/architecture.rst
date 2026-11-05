@@ -63,7 +63,7 @@ A unit's ``TaskExecutorId`` selects an executor registered through ``TaskExecuto
 
 The executor object remains in the parent process in both cases. ``SubprocessTaskExecutor`` forwards tasks to a child process, as described under :ref:`subprocess-execution`.
 
-Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Individual BMI operations are not supported yet, so the BMI model does not persist across tasks. See :doc:`bmi` for the model lifecycle.
+Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Static BMI executors also support individual operations on a model retained between tasks. Dynamic BMI executors support complete runs. See :doc:`bmi` for the model lifecycle.
 
 Job lifecycle
 ^^^^^^^^^^^^^

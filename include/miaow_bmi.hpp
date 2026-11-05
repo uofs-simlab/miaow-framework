@@ -104,7 +104,8 @@ TaskResult execute_task(const Task& task, std::unique_ptr<bmi_api::Bmi> model);
 /**
  * @brief Task executor for a statically typed BMI model.
  *
- * A fresh model is constructed for every task and run in the parent process.
+ * `run` constructs a fresh model for a complete run in the parent process.
+ * Individual operations retain an initialized model until `finalize`.
  *
  * @tparam BmiModelType BMI model type derived from `bmi_api::Bmi`.
  */
@@ -115,13 +116,12 @@ class StaticBmiTaskExecutor : public TaskExecutor {
     /**
      * @brief Construct a BMI task executor.
      *
-     * Default-constructible model types store a factory for fresh
-     * per-task model instances.
+     * Default-constructible model types store a factory for fresh model instances.
      */
     StaticBmiTaskExecutor()
         requires(std::default_initializable<BmiModelType>)
     {
-        // Default-constructible models use the simplest per-task factory
+        // Construct a fresh model for initialization or a complete run
         model_factory_ = []() -> std::unique_ptr<BmiModelType> {
             return std::make_unique<BmiModelType>();
         };
@@ -131,7 +131,7 @@ class StaticBmiTaskExecutor : public TaskExecutor {
      * @brief Construct a model task executor from model constructor arguments.
      *
      * MIAOW stores these arguments and reuses them to construct a fresh model
-     * instance for each task.
+     * instance for each initialization or complete run.
      *
      * @tparam ModelConstructorArgs Constructor argument types for `BmiModelType`.
      * @param model_constructor_args Arguments forwarded to the BMI model constructor.
@@ -144,23 +144,96 @@ class StaticBmiTaskExecutor : public TaskExecutor {
         model_factory_ = make_model_factory(std::move(model_constructor_args)...);
     }
 
+    /// Attempt finalization when an initialized model remains at unit shutdown
+    ~StaticBmiTaskExecutor() override {
+        if (model_) {
+            try {
+                model_->Finalize();
+            } catch (...) {
+                // Explicit finalize tasks report errors; destruction only releases state
+            }
+        }
+    }
+
     /**
-     * @brief Execute a BMI model instance for a single task.
-     * @param task `Task` built from `StaticBmiConfig`.
+     * @brief Execute a complete run or one operation on the retained model.
+     * @param task `run` from `StaticBmiConfig`, `initialize` with a config-path string,
+     * or an argument-free `update`, `get_current_time`, or `finalize` operation.
      * @return Immediate result for this BMI task execution.
      */
     caf::result<TaskResult> execute(const Task& task) override {
         try {
-            // Pass one fresh static model through the internal execution bridge
-            return bmi::execute_task(task, model_factory_());
+            if (task.operation_ == "run") {
+                if (model_) {
+                    return make_failed_task_result("model is already initialized",
+                                                   "BMI error");
+                }
+                return bmi::execute_task(task, model_factory_());
+            }
+
+            if (task.operation_ == "initialize") {
+                if (model_) {
+                    return make_failed_task_result("model is already initialized",
+                                                   "BMI error");
+                }
+                const std::string* init_config = task.string_arg(0);
+                if (init_config == nullptr) {
+                    return make_failed_task_result(
+                        "initialize requires a configuration-path string", "BMI error");
+                }
+                std::unique_ptr<BmiModelType> model = model_factory_();
+                model->Initialize(*init_config);
+                model_ = std::move(model);
+                return TaskResult{TaskStatus::succeeded, "BMI initialize complete"};
+            }
+
+            if (task.operation_ == "update") {
+                if (!model_) {
+                    return make_failed_task_result("model is not initialized", "BMI error");
+                }
+                if (model_failed_) {
+                    return make_failed_task_result(
+                        "model must be finalized after a failed BMI call", "BMI error");
+                }
+                model_->Update();
+                return TaskResult{TaskStatus::succeeded, "BMI update complete"};
+            }
+
+            if (task.operation_ == "get_current_time") {
+                if (!model_) {
+                    return make_failed_task_result("model is not initialized", "BMI error");
+                }
+                if (model_failed_) {
+                    return make_failed_task_result(
+                        "model must be finalized after a failed BMI call", "BMI error");
+                }
+                return TaskResult{TaskStatus::succeeded, "BMI current time",
+                                  caf::config_value{model_->GetCurrentTime()}};
+            }
+
+            if (task.operation_ == "finalize") {
+                if (!model_) {
+                    return make_failed_task_result("model is not initialized", "BMI error");
+                }
+                // Release ownership before calling Finalize so failure is not retried
+                std::unique_ptr<BmiModelType> model = std::move(model_);
+                model_failed_ = false;
+                model->Finalize();
+                return TaskResult{TaskStatus::succeeded, "BMI finalize complete"};
+            }
+
+            return make_failed_task_result("unsupported operation '" + task.operation_ +
+                                               "'",
+                                           "BMI error");
         } catch (...) {
-            // Exceptions become failed task results so the job can keep running
+            // A failed model call permits cleanup but no further updates or queries
+            model_failed_ = model_ != nullptr;
             return make_failed_task_result(std::current_exception(), "BMI error");
         }
     }
 
   private:
-    // Static model executors create one BMI model object per task
+    // Reuse the constructor arguments for each fresh model instance
     using ModelFactory = std::function<std::unique_ptr<BmiModelType>()>;
 
     template <class... ModelConstructorArgs>
@@ -182,6 +255,8 @@ class StaticBmiTaskExecutor : public TaskExecutor {
     }
 
     ModelFactory model_factory_;
+    std::unique_ptr<BmiModelType> model_;
+    bool model_failed_{false};
 };
 
 /**
