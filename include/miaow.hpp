@@ -391,9 +391,7 @@ struct JobRecord {
      */
     JobRecord(std::uint64_t run_id, JobSubmissionId job_submission_id,
               std::vector<TaskRecord> tasks = {},
-              std::chrono::duration<double> run_time = {}, caf::config_value output = {})
-        : run_id_{run_id}, job_submission_id_{job_submission_id}, tasks_{std::move(tasks)},
-          run_time_{run_time}, output_{std::move(output)} {}
+              std::chrono::duration<double> run_time = {}, caf::config_value output = {});
 
     /// Runtime identifier for this `Runtime` instance
     std::uint64_t run_id_{0};
@@ -409,6 +407,9 @@ struct JobRecord {
 
     /// Structured output returned by JobController::finalize(); null by default
     caf::config_value output_;
+
+    /// Git description captured at build time, or the configured version without Git
+    std::string miaow_version_;
 };
 
 /**
@@ -880,6 +881,8 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
         .fields(
             inspector.field("run_id", job_record.run_id_),
             inspector.field("job_submission_id", job_record.job_submission_id_),
+            inspector.field("miaow_version", job_record.miaow_version_)
+                .fallback(std::string{}),
             inspector.field("tasks", job_record.tasks_),
             inspector.field("run_time", job_record.run_time_),
             inspector.field("output", job_record.output_).fallback(caf::config_value{}));

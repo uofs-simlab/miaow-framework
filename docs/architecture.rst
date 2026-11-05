@@ -228,6 +228,10 @@ Structured output
 
 When ``RuntimeOptions::output_root_`` is configured, Runtime writes the completed ``JobRecord``, including task and job output, to ``job_record.json``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
 
+Each completed record includes ``miaow_version``, captured when the library is built. This uses Git's description relative to a reachable version tag, such as ``v0.3.0-5-gabc1234-dirty``: the tag, number of additional commits, abbreviated commit hash, and ``-dirty`` for tracked edits. An exact clean tag reports only the tag; a history without a matching tag reports an abbreviated hash.
+
+Builds without usable Git metadata retain the configured numeric version. Rebuilding refreshes the version without requiring a new CMake configuration.
+
 .. note::
 
    CAF has a binary-deserialization limitation for null entries in ``caf::config_value`` lists and dictionaries, which also applies to structured task and job output. A null value for the entire output (``caf::config_value{}``) is supported.

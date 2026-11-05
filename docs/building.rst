@@ -29,6 +29,8 @@ The repository can be configured and built with the following commands:
    cmake -S . -B build
    cmake --build build
 
+``CITATION.cff`` is the single source for the software version. Use ``version: "0.3.0-dev"`` during development and ``version: "0.3.0"`` for a release; CMake extracts ``0.3.0`` and automatically reconfigures when the citation file changes.
+
 With ``BUILD_TESTING=ON`` (the default), CMake builds the ``miaow_job_record_checks`` checker, the lifecycle and BMI dispatch test drivers, and the four examples required by the standard regression suite: ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, and ``07_job_controller``. Their tests are registered even with ``BUILD_EXAMPLES=OFF``. See :ref:`build-options` for the components built in each configuration, and :ref:`building-examples` to select additional examples.
 
 Run the tests enabled in the current build with the following command:

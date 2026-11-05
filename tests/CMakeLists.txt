@@ -5,6 +5,9 @@ add_executable(miaow_job_record_checks job_record_checks.cpp)
 target_compile_features(miaow_job_record_checks PRIVATE cxx_std_20)
 target_link_libraries(miaow_job_record_checks PRIVATE
     nlohmann_json::nlohmann_json Boost::unit_test_framework)
+target_include_directories(miaow_job_record_checks PRIVATE
+    "${PROJECT_BINARY_DIR}/generated")
+add_dependencies(miaow_job_record_checks miaow_build_info)
 
 # Exercise unit lifetimes through the same driver and saved-record workflow
 add_executable(miaow_simulation_unit_lifecycle_driver simulation_unit_lifecycle_driver.cpp)

@@ -1,0 +1,9 @@
+#pragma once
+
+// Provides the build version for the MIAOW library
+namespace miaow::core {
+
+// Git description when available; otherwise, the configured numeric version
+inline constexpr char build_version[] = "@MIAOW_BUILD_VERSION@";
+
+} // namespace miaow::core

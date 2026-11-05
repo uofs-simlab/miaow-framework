@@ -1,4 +1,5 @@
 #include "internal.hpp"
+#include "core/build_info.hpp"
 
 #include <caf/json_array.hpp>
 #include <caf/json_builder.hpp>
@@ -7,6 +8,17 @@
 
 #include <fstream>
 #include <stdexcept>
+
+namespace miaow {
+
+JobRecord::JobRecord(std::uint64_t run_id, JobSubmissionId job_submission_id,
+                     std::vector<TaskRecord> tasks, std::chrono::duration<double> run_time,
+                     caf::config_value output)
+    : run_id_{run_id}, job_submission_id_{job_submission_id}, tasks_{std::move(tasks)},
+      run_time_{run_time}, output_{std::move(output)}, miaow_version_{core::build_version} {
+}
+
+} // namespace miaow
 
 namespace miaow::core {
 namespace {

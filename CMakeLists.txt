@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.30)
 
-project(miaow VERSION 0.2.0 LANGUAGES CXX Fortran)
+# Keep the software version in citation metadata; CMake uses its numeric base
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/CITATION.cff"
+    miaow_citation_version_line REGEX "^version:")
+string(REGEX MATCH "[0-9]+[.][0-9]+[.][0-9]+" miaow_project_version
+    "${miaow_citation_version_line}")
+project(miaow VERSION "${miaow_project_version}" LANGUAGES CXX Fortran)
+
+# Reconfigure on the next build after the citation version changes
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/CITATION.cff")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -203,12 +212,27 @@ add_library(miaow STATIC
     src/io/diagnostics.cpp
 )
 
+# Refresh build metadata after Git changes without rewriting an unchanged header
+find_package(Git QUIET)
+add_custom_target(miaow_build_info
+    COMMAND "${CMAKE_COMMAND}"
+        "-DMIAOW_PROJECT_VERSION=${PROJECT_VERSION}"
+        "-DMIAOW_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+        "-DMIAOW_GIT_EXECUTABLE=${GIT_EXECUTABLE}"
+        "-DMIAOW_OUTPUT_FILE=${PROJECT_BINARY_DIR}/generated/core/build_info.hpp"
+        -P "${PROJECT_SOURCE_DIR}/cmake/miaow_build_info.cmake"
+    BYPRODUCTS "${PROJECT_BINARY_DIR}/generated/core/build_info.hpp"
+    VERBATIM
+)
+add_dependencies(miaow miaow_build_info)
+
 target_include_directories(miaow
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_BINARY_DIR}/generated
 )
 target_compile_features(miaow PUBLIC cxx_std_20)
 

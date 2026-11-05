@@ -12,6 +12,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "core/build_info.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -36,6 +38,10 @@ struct JobRecordChecker {
         std::ifstream job_record_input{arguments.argv[1]};
         job_record = nlohmann::json::parse(job_record_input);
         BOOST_TEST(job_record.at("job_submission_id").is_number_unsigned());
+
+        // Records identify the library build that produced them
+        BOOST_TEST(job_record.at("miaow_version").get<std::string>() ==
+                   miaow::core::build_version);
         BOOST_REQUIRE(job_record.at("tasks").is_array());
 
         // Compare task identities independently of parallel completion order
