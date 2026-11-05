@@ -53,13 +53,13 @@ function(miaow_add_example_test)
         add_test(NAME ${MIAOW_TEST_TEST_NAME}
             COMMAND ${CMAKE_COMMAND}
                 "-DEXECUTABLE=$<TARGET_FILE:${MIAOW_TEST_EXECUTABLE_TARGET}>"
-                "-DTEST_EXECUTABLE=$<TARGET_FILE:miaow_example_tests>"
+                "-DTEST_EXECUTABLE=$<TARGET_FILE:miaow_job_record_checks>"
                 "-DWORKFLOW=${MIAOW_TEST_REGRESSION}"
                 "-DCASE_FILE=${MIAOW_TEST_CASE_FILE}"
                 "-DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/regression-output/${MIAOW_TEST_TEST_NAME}"
                 -P "${PROJECT_SOURCE_DIR}/tests/run_example.cmake"
         )
-        add_dependencies(${MIAOW_TEST_EXECUTABLE_TARGET} miaow_example_tests)
+        add_dependencies(${MIAOW_TEST_EXECUTABLE_TARGET} miaow_job_record_checks)
         list(APPEND test_labels regression)
         set(timeout 40)
     else()

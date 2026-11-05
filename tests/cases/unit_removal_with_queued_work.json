@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "max_workers": 1,
+  "input": {"scenario": "removal_with_queued_work"}
+}

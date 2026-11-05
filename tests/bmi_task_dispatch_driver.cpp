@@ -39,8 +39,9 @@ int main(int argc, char* argv[]) {
         };
 
         const miaow::SimulationUnitHandle static_unit = job.add_unit("static", static_bmi);
-        add_operation_pair(miaow::make_bmi_task(
-            static_unit, miaow::StaticBmiConfig{.init_config_ = init_config}));
+        add_operation_pair(
+            miaow::make_bmi_task(static_unit,
+                                 miaow::StaticBmiConfig{.init_config_ = init_config}));
 
         // Exercise both plugins in-process and in their unit-owned subprocesses
         const std::vector<miaow::DynamicBmiConfig> configs{

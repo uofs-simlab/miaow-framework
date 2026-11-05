@@ -1,16 +1,18 @@
-// This file defines the Boost regression checks used by the miaow_example_tests executable.
+// This file defines the Boost regression checks used by the miaow_job_record_checks
+// executable.
 //
 // tests/CMakeLists.txt builds it with:
-//   add_executable(miaow_example_tests example_regression_checks.cpp)
+//   add_executable(miaow_job_record_checks job_record_checks.cpp)
 //
 // Default-build invocation from the repository root:
-//   build/tests/miaow_example_tests --run_test=<test> -- <job_record.json> [case.json]
+//   build/tests/miaow_job_record_checks --run_test=<test> -- <job_record.json> [case.json]
 
-#define BOOST_TEST_MODULE miaow_examples
+#define BOOST_TEST_MODULE miaow_job_record_checks
 #include <boost/test/unit_test.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -20,37 +22,48 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
-// Shared fixture that loads and checks saved job records from successful example runs.
+// Shared saved-record data and checks for successful and failed tasks
 struct JobRecordChecker {
+    // Load the record, index tasks by ID, and validate job and unit identities
     JobRecordChecker() {
         const auto& arguments = boost::unit_test::framework::master_test_suite();
-        // Successful cases may also pass the JSON used to configure the example
+        // Cases may also pass the JSON used to configure the driver
         BOOST_REQUIRE(arguments.argc == 2 || arguments.argc == 3);
         std::ifstream job_record_input{arguments.argv[1]};
-        const nlohmann::json job_record = nlohmann::json::parse(job_record_input);
+        job_record = nlohmann::json::parse(job_record_input);
         BOOST_TEST(job_record.at("job_submission_id").is_number_unsigned());
+        BOOST_REQUIRE(job_record.at("tasks").is_array());
 
         // Compare task identities independently of parallel completion order
         for (const auto& task : job_record.at("tasks")) {
+            BOOST_REQUIRE(task.at("task_id").is_number_unsigned());
             const std::size_t id = task.at("task_id").get<std::size_t>();
             // Task IDs must be unique so no task record is lost when building the lookup
             BOOST_REQUIRE_MESSAGE(tasks.emplace(id, task).second, "duplicate task result");
 
-            // This fixture checks successful runs, so every recorded task must succeed
-            BOOST_TEST(task.at("result").at("status").get<std::string>() == "succeeded");
-
             // Targets retain the job's creation identity and their declaration index
+            BOOST_REQUIRE(task.at("unit").at("job_creation_id").is_number_unsigned());
             BOOST_TEST(task.at("unit").at("job_creation_id").get<std::uint64_t>() > 0);
             BOOST_TEST(task.at("unit").at("index").is_number_unsigned());
-
-            // Executed tasks must include their dispatch offset from the job start
-            BOOST_TEST(!task.at("dispatch_offset_from_job_start").is_null());
         }
     }
 
+    // Require every saved task to have succeeded and include its dispatch offset
+    void check_successful_tasks() const {
+        for (const auto& [id, task] : tasks) {
+            BOOST_TEST_CONTEXT("task " << id) {
+                BOOST_TEST(task.at("result").at("status").get<std::string>() ==
+                           "succeeded");
+                BOOST_TEST(!task.at("dispatch_offset_from_job_start").is_null());
+            }
+        }
+    }
+
+    // Require each BMI result message to report the expected number of updates
     void check_updates(std::size_t expected) const {
         for (std::size_t id = 0; id < tasks.size(); ++id) {
             BOOST_TEST_CONTEXT("task " << id) {
@@ -68,8 +81,56 @@ struct JobRecordChecker {
         }
     }
 
+    nlohmann::json job_record;
     std::map<std::size_t, nlohmann::json> tasks;
 };
+
+// Check old-handle rejection, exactly-once delivery, and total callback unit failures
+void check_lifecycle_observations(const nlohmann::json& job_record,
+                                  std::int64_t expected_unit_failure_count) {
+    const auto& tasks = job_record.at("tasks");
+    const auto& output = job_record.at("output");
+    BOOST_TEST(output.at("rejected_old_handle").at("value").get<bool>());
+
+    // Retain callback order but ignore completion order within each callback
+    std::vector<std::size_t> reported_ids;
+    std::int64_t unit_failure_count{0};
+    nlohmann::json callbacks = nlohmann::json::array();
+    for (const auto& callback : output.at("callbacks").at("value")) {
+        const auto& observation = callback.at("value");
+        std::vector<std::size_t> task_ids;
+        for (const auto& id : observation.at("task_ids").at("value")) {
+            task_ids.push_back(id.at("value").get<std::size_t>());
+        }
+        std::sort(task_ids.begin(), task_ids.end());
+        reported_ids.insert(reported_ids.end(), task_ids.begin(), task_ids.end());
+        unit_failure_count +=
+            observation.at("unit_failure_count").at("value").get<std::int64_t>();
+        callbacks.push_back(
+            {{"task_ids", task_ids},
+             {"unit_failure_count", observation.at("unit_failure_count").at("value")}});
+    }
+    BOOST_TEST(unit_failure_count == expected_unit_failure_count);
+
+    // Every task must reach the controller exactly once, regardless of callback order
+    std::sort(reported_ids.begin(), reported_ids.end());
+    BOOST_REQUIRE_EQUAL(reported_ids.size(), tasks.size());
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        BOOST_TEST(reported_ids.at(id) == id);
+        BOOST_TEST(tasks.at(id).at("task_id").get<std::size_t>() == id);
+    }
+
+    // Batch cases require complete groups, with unit loss deferred to the batch boundary
+    const auto& arguments = boost::unit_test::framework::master_test_suite();
+    if (arguments.argc == 3) {
+        std::ifstream case_input{arguments.argv[2]};
+        const nlohmann::json test_case = nlohmann::json::parse(case_input);
+        if (test_case.at("input").value("task_generation_policy", "asynchronous") ==
+            "batch_synchronous") {
+            BOOST_TEST(callbacks == test_case.at("expected_callbacks"));
+        }
+    }
+}
 
 } // namespace
 
@@ -78,6 +139,7 @@ struct JobRecordChecker {
 
 // Registered in examples/00_hello/CMakeLists.txt using default example inputs
 BOOST_FIXTURE_TEST_CASE(hello, JobRecordChecker) {
+    check_successful_tasks();
     // Both submitted greetings must have a saved task record
     BOOST_REQUIRE_EQUAL(tasks.size(), 2);
 
@@ -96,11 +158,13 @@ BOOST_FIXTURE_TEST_CASE(hello, JobRecordChecker) {
 
 // An empty submission must still produce a successful, empty job record
 BOOST_FIXTURE_TEST_CASE(hello_empty, JobRecordChecker) {
+    check_successful_tasks();
     BOOST_TEST(tasks.empty());
 }
 
 // Registered in examples/01_heat/CMakeLists.txt using default example inputs
 BOOST_FIXTURE_TEST_CASE(heat, JobRecordChecker) {
+    check_successful_tasks();
     // The single statically linked BMI task must have a saved task record
     BOOST_REQUIRE_EQUAL(tasks.size(), 1);
 
@@ -110,6 +174,7 @@ BOOST_FIXTURE_TEST_CASE(heat, JobRecordChecker) {
 
 // Registered in examples/03_dynamic_bmi/CMakeLists.txt using default example inputs
 BOOST_FIXTURE_TEST_CASE(dynamic_bmi, JobRecordChecker) {
+    check_successful_tasks();
     // Each of the C++ and Fortran plugins runs in-process and in a subprocess
     BOOST_REQUIRE_EQUAL(tasks.size(), 4);
 
@@ -127,12 +192,14 @@ BOOST_FIXTURE_TEST_CASE(dynamic_bmi, JobRecordChecker) {
 
 // Both plugin languages and execution modes must accept a model already at its end time
 BOOST_FIXTURE_TEST_CASE(dynamic_bmi_zero_duration, JobRecordChecker) {
+    check_successful_tasks();
     BOOST_REQUIRE_EQUAL(tasks.size(), 4);
     check_updates(0);
 }
 
 // Each BMI execution path must complete two fresh model runs on the same unit
 BOOST_FIXTURE_TEST_CASE(bmi_repeated_run, JobRecordChecker) {
+    check_successful_tasks();
     BOOST_REQUIRE_EQUAL(tasks.size(), 10);
     check_updates(40);
 
@@ -143,8 +210,71 @@ BOOST_FIXTURE_TEST_CASE(bmi_repeated_run, JobRecordChecker) {
     }
 }
 
+// Removing a unit before dispatch must drain its queue and reject subsequent tasks
+BOOST_FIXTURE_TEST_CASE(simulation_unit_removal_with_queued_work, JobRecordChecker) {
+    check_successful_tasks();
+    check_lifecycle_observations(job_record, 0);
+    BOOST_REQUIRE_EQUAL(tasks.size(), 4);
+    const std::array expected_counts{1, 2, 1, 2};
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        BOOST_TEST_CONTEXT("task " << id) {
+            BOOST_TEST(tasks.at(id).at("result").at("output").get<std::int64_t>() ==
+                       expected_counts.at(id));
+        }
+    }
+
+    // Accepted work retains the removed unit's state; the other handle remains usable
+    BOOST_TEST(tasks.at(0).at("unit") == tasks.at(1).at("unit"));
+    BOOST_TEST(tasks.at(2).at("unit") == tasks.at(3).at("unit"));
+    BOOST_TEST(tasks.at(0).at("unit") != tasks.at(2).at("unit"));
+}
+
+// Unit loss must report active and queued tasks together and permit explicit replacement
+BOOST_FIXTURE_TEST_CASE(simulation_unit_replacement_after_failure, JobRecordChecker) {
+    check_lifecycle_observations(job_record, 1);
+    const auto& output = job_record.at("output");
+    BOOST_REQUIRE_EQUAL(tasks.size(), 6);
+    for (std::size_t id = 0; id < 2; ++id) {
+        BOOST_TEST_CONTEXT("failed task " << id) {
+            BOOST_TEST(tasks.at(id).at("result").at("status").get<std::string>() ==
+                       "failed");
+            const std::string message =
+                tasks.at(id).at("result").at("message").get<std::string>();
+            BOOST_TEST(message.find("intentional executor construction failure") !=
+                       std::string::npos);
+        }
+    }
+
+    // The active request fails during activation; its queued successor never dispatches
+    BOOST_TEST(!tasks.at(0).at("dispatch_offset_from_job_start").is_null());
+    BOOST_TEST(tasks.at(1).at("dispatch_offset_from_job_start").is_null());
+    BOOST_TEST(tasks.at(1).at("run_time").get<std::string>() == "0s");
+    BOOST_TEST(output.at("failed_unit_matches_target").at("value").get<bool>());
+    BOOST_TEST(output.at("failed_tasks_reported_with_unit_failure").at("value") == 2);
+
+    // Replacement state starts fresh and persists; the other unit keeps its own state
+    const std::array expected_counts{1, 1, 2, 2};
+    for (std::size_t id = 2; id < tasks.size(); ++id) {
+        BOOST_TEST_CONTEXT("successful task " << id) {
+            BOOST_TEST(tasks.at(id).at("result").at("status").get<std::string>() ==
+                       "succeeded");
+            BOOST_TEST(tasks.at(id).at("result").at("output").get<std::int64_t>() ==
+                       expected_counts.at(id - 2));
+        }
+    }
+    BOOST_TEST(tasks.at(0).at("unit") == tasks.at(1).at("unit"));
+    BOOST_TEST(tasks.at(2).at("unit") == tasks.at(5).at("unit"));
+    BOOST_TEST(tasks.at(3).at("unit") == tasks.at(4).at("unit"));
+    BOOST_TEST(tasks.at(0).at("unit") != tasks.at(3).at("unit"));
+    BOOST_TEST(tasks.at(2).at("unit") != tasks.at(3).at("unit"));
+    BOOST_TEST(tasks.at(0).at("metadata").at("feature_id") ==
+               tasks.at(3).at("metadata").at("feature_id"));
+    BOOST_TEST(output.at("replacement_has_new_handle").at("value").get<bool>());
+}
+
 // Registered in examples/07_job_controller/CMakeLists.txt using default example inputs
 BOOST_FIXTURE_TEST_CASE(controller, JobRecordChecker) {
+    check_successful_tasks();
     // Heron iteration x_(n+1) = (x_n + 2 / x_n) / 2, starting at x_0 = 1
     const std::array estimates{1.5, 17.0 / 12.0, 577.0 / 408.0};
 
@@ -182,7 +312,8 @@ BOOST_FIXTURE_TEST_CASE(controller, JobRecordChecker) {
 //      (case file: tests/cases/controller_non_convergence.json)
 BOOST_AUTO_TEST_CASE(expected_failure) {
     const auto& arguments = boost::unit_test::framework::master_test_suite();
-    // Arguments: miaow_example_tests executable path, job-record path, and case-file path
+    // Arguments: miaow_job_record_checks executable path, job-record path, and case-file
+    // path
     BOOST_REQUIRE_EQUAL(arguments.argc, 3);
     std::ifstream case_input{arguments.argv[2]};
     const nlohmann::json expected = nlohmann::json::parse(case_input);
@@ -193,10 +324,8 @@ BOOST_AUTO_TEST_CASE(expected_failure) {
         return;
     }
 
-    std::ifstream job_record_input{record_path};
-    const nlohmann::json job_record = nlohmann::json::parse(job_record_input);
-    BOOST_TEST(job_record.at("job_submission_id").is_number_unsigned());
-    const auto& tasks = job_record.at("tasks");
+    const JobRecordChecker checker;
+    const auto& tasks = checker.job_record.at("tasks");
     const auto& expected_tasks = expected.at("tasks");
 
     // Every expected task, including failed tasks, must have exactly one saved task record
@@ -220,10 +349,6 @@ BOOST_AUTO_TEST_CASE(expected_failure) {
                        std::string::npos);
             const bool dispatched = reference.value("dispatched", true);
 
-            // Accepted tasks retain their target even when they never dispatch
-            BOOST_TEST(task.at("unit").at("job_creation_id").get<std::uint64_t>() > 0);
-            BOOST_TEST(task.at("unit").at("index").is_number_unsigned());
-
             // Dispatch timing must be present for dispatched tasks and null otherwise
             BOOST_TEST(task.at("dispatch_offset_from_job_start").is_null() == !dispatched);
             if (!dispatched) {
@@ -240,6 +365,7 @@ BOOST_AUTO_TEST_CASE(expected_failure) {
 // The example computes sqrt(2e-16); this checker verifies that small estimates and
 // residuals retain their precision in the saved job record.
 BOOST_FIXTURE_TEST_CASE(controller_small_values, JobRecordChecker) {
+    check_successful_tasks();
     // With radicand S = 2e-16 and x_0 = 1e-8, the expected sqrt(2) iterates are
     // scaled by 1e-8
     const std::array estimates{1.5e-8, (17.0 / 12.0) * 1e-8, (577.0 / 408.0) * 1e-8};

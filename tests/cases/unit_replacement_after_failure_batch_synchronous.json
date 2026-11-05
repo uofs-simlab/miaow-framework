@@ -1,0 +1,18 @@
+{
+  "exit_code": 1,
+  "max_workers": 1,
+  "input": {
+    "scenario": "replacement_after_failure",
+    "task_generation_policy": "batch_synchronous"
+  },
+  "expected_callbacks": [
+    {
+      "task_ids": [0, 1, 2],
+      "unit_failure_count": 1
+    },
+    {
+      "task_ids": [3, 4, 5],
+      "unit_failure_count": 0
+    }
+  ]
+}

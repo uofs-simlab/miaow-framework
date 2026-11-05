@@ -67,7 +67,7 @@ if(CASE_FILE)
     endif()
 endif()
 
-# Second process: run a specific test (${WORKFLOW}) in example_regression_checks.cpp
+# Second process: run a specific test (${WORKFLOW}) in job_record_checks.cpp
 # Boost.Test consumes --run_test; arguments after -- are the job-record path and optional
 # case-file path
 # Fixture-based tests construct JobRecordChecker before their test-specific assertions

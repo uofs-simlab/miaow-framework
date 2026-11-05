@@ -48,10 +48,10 @@ git clone https://github.com/uofs-simlab/miaow-framework.git
 cd miaow-framework
 ```
 
-Use the following commands to build MIAOW and run the `00_hello` example workflow:
+Use the following commands to build MIAOW and the `00_hello` example without the regression suite, then run the example workflow:
 
 ```sh
-cmake -S . -B build -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=00_hello
+cmake -S . -B build -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=00_hello
 cmake --build build
 cd examples/00_hello
 ./miaow_hello

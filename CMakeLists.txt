@@ -13,7 +13,7 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-# Build the example regression checker in top-level development builds
+# Build framework and example regression tests in top-level development builds
 set(miaow_build_tests OFF)
 if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
     set(miaow_build_tests ON)
@@ -46,7 +46,7 @@ miaow_validate_provider(MIAOW_BOOST_PROVIDER)
 miaow_validate_provider(MIAOW_JSON_PROVIDER)
 miaow_validate_provider(MIAOW_CAF_PROVIDER)
 
-# Boost is required only for the example regression checker
+# Boost.Test is required only for the job record checker
 if(miaow_build_tests)
     if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
         find_package(Boost CONFIG QUIET COMPONENTS unit_test_framework)
@@ -337,17 +337,32 @@ if(miaow_build_tests)
     add_subdirectory(tests)
 endif()
 
-# Add examples selected by the repository build
+# Combine regression dependencies with examples selected by the repository build
 if(PROJECT_IS_TOP_LEVEL)
-    option(BUILD_EXAMPLES "Build example programs" OFF)
+    option(BUILD_EXAMPLES "Build selected examples in addition to test dependencies" OFF)
+    set(miaow_regression_examples
+        00_hello
+        01_heat
+        03_dynamic_bmi
+        07_job_controller
+    )
     set(MIAOW_EXAMPLES
-        "00_hello;01_heat;03_dynamic_bmi;07_job_controller"
-        CACHE STRING "Semicolon-separated list of examples to build"
+        "${miaow_regression_examples}"
+        CACHE STRING "Semicolon-separated list of examples to build with BUILD_EXAMPLES"
     )
 
+    set(miaow_examples_to_build)
+    if(miaow_build_tests)
+        list(APPEND miaow_examples_to_build ${miaow_regression_examples})
+    endif()
     if(BUILD_EXAMPLES)
+        list(APPEND miaow_examples_to_build ${MIAOW_EXAMPLES})
+    endif()
+    list(REMOVE_DUPLICATES miaow_examples_to_build)
+
+    if(miaow_examples_to_build)
         include(cmake/miaow_example.cmake)
-        foreach(miaow_example IN LISTS MIAOW_EXAMPLES)
+        foreach(miaow_example IN LISTS miaow_examples_to_build)
             add_subdirectory("examples/${miaow_example}")
         endforeach()
     endif()

@@ -51,8 +51,7 @@ jobs:
           cmake -S . -B build-regression
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
-          -DBUILD_EXAMPLES=ON
-          "-DMIAOW_EXAMPLES=00_hello;01_heat;03_dynamic_bmi;07_job_controller"
+          -DBUILD_EXAMPLES=OFF
           -DCMAKE_TOOLCHAIN_FILE=build-regression/conan/conan_toolchain.cmake
           -DMIAOW_BOOST_PROVIDER=system
           -DMIAOW_JSON_PROVIDER=system
@@ -117,6 +116,7 @@ jobs:
           cmake -S . -B build-install
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=OFF
+          -DBUILD_EXAMPLES=OFF
           -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/miaow-install"
           -DCMAKE_TOOLCHAIN_FILE="$MIAOW_CONAN_TOOLCHAIN"
           -DMIAOW_BOOST_PROVIDER=system

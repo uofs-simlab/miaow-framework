@@ -9,3 +9,13 @@ table.docutils code.literal span.pre {
     white-space: normal;
     overflow-wrap: anywhere;
 }
+
+/* Align case names, workloads, and results at the top of each row */
+table.regression-tests td {
+    vertical-align: top;
+}
+
+/* Fit linked test names and source filenames into the three-column catalogue */
+table.regression-tests a.reference {
+    overflow-wrap: anywhere;
+}
