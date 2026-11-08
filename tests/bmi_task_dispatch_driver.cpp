@@ -1,4 +1,4 @@
-// Execute BMI operation pairs for validation through the saved job record
+// Execute BMI operation sequences for validation through the saved job record
 #include <cstddef>
 #include <exception>
 #include <iostream>
@@ -39,26 +39,43 @@ int main(int argc, char* argv[]) {
         };
 
         const miaow::SimulationUnitHandle static_unit = job.add_unit("static", static_bmi);
-        add_operation_pair(
-            miaow::make_bmi_task(static_unit,
-                                 miaow::StaticBmiConfig{.init_config_ = init_config}));
+        if (config.value("scenario", "dispatch") == "static_lifecycle") {
+            // Rejected operations preserve the active model; finalization permits reuse
+            job.add_task(static_unit, "update");
+            job.add_task(static_unit, "initialize", init_config);
+            job.add_task(static_unit, "update");
+            job.add_task(static_unit, "initialize", init_config);
+            job.add_task(
+                miaow::make_bmi_task(static_unit,
+                                     miaow::StaticBmiConfig{.init_config_ = init_config}));
+            job.add_task(static_unit, "get_current_time");
+            job.add_task(static_unit, "finalize");
+            job.add_task(static_unit, "update");
+            job.add_task(static_unit, "initialize", init_config);
+            job.add_task(static_unit, "get_current_time");
+            job.add_task(static_unit, "finalize");
+        } else {
+            add_operation_pair(
+                miaow::make_bmi_task(static_unit,
+                                     miaow::StaticBmiConfig{.init_config_ = init_config}));
 
-        // Exercise both plugins in-process and in their unit-owned subprocesses
-        const std::vector<miaow::DynamicBmiConfig> configs{
-            {.backend_ = miaow::DynamicBmiBackend::cpp,
-             .plugin_path_ = MIAOW_CPP_HEAT_PLUGIN_PATH,
-             .init_config_ = init_config},
-            {.backend_ = miaow::DynamicBmiBackend::fortran,
-             .plugin_path_ = MIAOW_FORTRAN_HEAT_PLUGIN_PATH,
-             .init_config_ = init_config},
-        };
-        for (const miaow::TaskExecutorId executor : {dynamic_bmi, subprocess_bmi}) {
-            const std::string mode =
-                executor == dynamic_bmi ? "in_process_" : "subprocess_";
-            for (std::size_t index = 0; index < configs.size(); ++index) {
-                const miaow::SimulationUnitHandle unit =
-                    job.add_unit(mode + std::to_string(index), executor);
-                add_operation_pair(miaow::make_bmi_task(unit, configs[index]));
+            // Exercise both plugins in-process and in their unit-owned subprocesses
+            const std::vector<miaow::DynamicBmiConfig> configs{
+                {.backend_ = miaow::DynamicBmiBackend::cpp,
+                 .plugin_path_ = MIAOW_CPP_HEAT_PLUGIN_PATH,
+                 .init_config_ = init_config},
+                {.backend_ = miaow::DynamicBmiBackend::fortran,
+                 .plugin_path_ = MIAOW_FORTRAN_HEAT_PLUGIN_PATH,
+                 .init_config_ = init_config},
+            };
+            for (const miaow::TaskExecutorId executor : {dynamic_bmi, subprocess_bmi}) {
+                const std::string mode =
+                    executor == dynamic_bmi ? "in_process_" : "subprocess_";
+                for (std::size_t index = 0; index < configs.size(); ++index) {
+                    const miaow::SimulationUnitHandle unit =
+                        job.add_unit(mode + std::to_string(index), executor);
+                    add_operation_pair(miaow::make_bmi_task(unit, configs[index]));
+                }
             }
         }
 

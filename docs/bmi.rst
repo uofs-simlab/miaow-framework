@@ -45,7 +45,7 @@ Individual static BMI operations
 
 ``StaticBmiTaskExecutor`` accepts ``initialize`` with a configuration-path string, followed by argument-free ``update``, ``get_current_time``, and ``finalize`` tasks. Each task invokes one BMI call. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units. The executor retains the initialized model until finalization and can initialize a fresh model afterward. ``run`` and a second ``initialize`` are rejected while a model is initialized.
 
-The heat example demonstrates controller-generated operations with ``./miaow_heat --step`` from ``examples/01_heat``. It initializes one model, queries its current time, performs two updates with a query after each, and explicitly finalizes. The default invocation still performs a complete run.
+The ``09_bmi_operations`` example demonstrates controller-generated operations with ``./miaow_bmi_operations`` from ``examples/09_bmi_operations``, using the heat model and configuration from ``01_heat``. It initializes one model, queries its current time, performs two updates with a query after each, and explicitly finalizes. The ``01_heat`` example performs a complete run.
 
 BMI call exceptions produce failed task results. After an update or query throws, the retained model accepts only finalization. The executor releases the model after a finalization attempt, including a failed attempt. Controllers should explicitly submit ``finalize`` to receive its result; executor destruction attempts finalization if an initialized model remains, but cannot report those cleanup errors as task results.
 

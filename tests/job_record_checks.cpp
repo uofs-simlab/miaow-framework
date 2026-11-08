@@ -178,6 +178,47 @@ BOOST_FIXTURE_TEST_CASE(heat, JobRecordChecker) {
     check_updates(120);
 }
 
+// One controller advances the same model through two individual update tasks
+BOOST_FIXTURE_TEST_CASE(bmi_operations, JobRecordChecker) {
+    check_successful_tasks();
+    const std::array operations{"initialize",       "get_current_time", "update",
+                                "get_current_time", "update",           "get_current_time",
+                                "finalize"};
+    BOOST_REQUIRE_EQUAL(tasks.size(), operations.size());
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        BOOST_TEST_CONTEXT("task " << id) {
+            BOOST_TEST(tasks.at(id).at("operation").get<std::string>() == operations[id]);
+            BOOST_TEST(tasks.at(id).at("unit") == tasks.at(0).at("unit"));
+        }
+    }
+
+    // With alpha = 1.5, each update advances the model by 1/6 second
+    const std::array times{0.0, 1.0 / 6.0, 1.0 / 3.0};
+    for (std::size_t index = 0; index < times.size(); ++index) {
+        const double time = tasks.at(2 * index + 1).at("result").at("output").get<double>();
+        BOOST_TEST(std::abs(time - times[index]) < 1e-14);
+    }
+}
+
+// Invalid lifecycle operations leave the model usable, and reinitialization starts fresh
+BOOST_FIXTURE_TEST_CASE(bmi_static_lifecycle, JobRecordChecker) {
+    BOOST_REQUIRE_EQUAL(tasks.size(), 11);
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        BOOST_TEST_CONTEXT("task " << id) {
+            const bool failed = id == 0 || id == 3 || id == 4 || id == 7;
+            BOOST_TEST(tasks.at(id).at("result").at("status").get<std::string>() ==
+                       (failed ? "failed" : "succeeded"));
+            BOOST_TEST(!tasks.at(id).at("dispatch_offset_from_job_start").is_null());
+            BOOST_TEST(tasks.at(id).at("unit") == tasks.at(0).at("unit"));
+        }
+    }
+
+    // Alpha = 1 gives dt = 0.25; rejected initialization and run must preserve that time
+    BOOST_TEST(std::abs(tasks.at(5).at("result").at("output").get<double>() - 0.25) <
+               1e-14);
+    BOOST_TEST(tasks.at(9).at("result").at("output").get<double>() == 0.0);
+}
+
 // Registered in examples/03_dynamic_bmi/CMakeLists.txt using default example inputs
 BOOST_FIXTURE_TEST_CASE(dynamic_bmi, JobRecordChecker) {
     check_successful_tasks();
