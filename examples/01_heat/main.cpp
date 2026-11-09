@@ -24,9 +24,8 @@ int main(int argc, char* argv[]) {
         miaow::parse_runtime_cli_options(argc, argv, runtime_options);
 
         // Select the model initialization file
-        const miaow::StaticBmiConfig heat_config{
-            .init_config_ = "./data/configs/config_400x400.txt",
-        };
+        caf::config_value::dictionary heat_config;
+        heat_config.insert("init_config", "./data/configs/config_400x400.txt");
 
         // Register the statically linked heat model and create the runtime
         miaow::TaskExecutorRegistry registry;
@@ -37,7 +36,7 @@ int main(int argc, char* argv[]) {
         // Queue one complete model run on the heat unit
         miaow::Job job;
         const miaow::SimulationUnitHandle unit = job.add_unit("heat", heat);
-        job.add_task(miaow::make_bmi_task(unit, heat_config));
+        job.add_task(unit, "run", heat_config);
 
         // Submit the job
         miaow::JobHandle job_handle = runtime.submit_job(std::move(job));

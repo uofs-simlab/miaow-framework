@@ -103,17 +103,18 @@ enum class SubprocessPhase {
     // The unit is awaiting the child task result
     waiting_for_task_result,
 
-    // The unit is polling waitpid until its terminated child is reaped
+    // The unit is awaiting orderly or forced child exit and reaping it with waitpid
     stopping_subprocess,
 };
 
 // Process, child actor, and pending request state for one local simulation_unit_actor
 class SubprocessState {
   public:
-    // Retain the owning actor, registration endpoint, and task deadline
+    // Retain the owning actor, registration endpoint, and task and shutdown limits
     SubprocessState(caf::event_based_actor* owner, caf::actor subprocess_registration_actor,
                     std::uint16_t subprocess_registration_port,
-                    std::chrono::milliseconds task_request_timeout);
+                    std::chrono::milliseconds task_request_timeout,
+                    std::chrono::milliseconds shutdown_grace_period);
 
     // Final cleanup fallback when actor-driven termination and reaping cannot finish
     ~SubprocessState();
@@ -148,7 +149,7 @@ class SubprocessState {
     // Convert a lifecycle error into a failed task result and begin cleanup
     void fail_task(std::string message);
 
-    // Terminate the current child and begin non-blocking exit polling
+    // Request orderly child exit when possible and begin non-blocking exit polling
     void begin_stop();
 
     // Handle a task result returned by the current child actor
@@ -181,6 +182,9 @@ class SubprocessState {
     // Maximum duration of the asynchronous task request sent to the child actor
     const std::chrono::milliseconds task_request_timeout_;
 
+    // Maximum time for the active call and child cleanup before forced termination
+    const std::chrono::milliseconds shutdown_grace_period_;
+
     // Resources retained in each lifecycle phase
     // - idle: no response is pending; a reusable child may remain
     // - starting_subprocess: active request and response; child resources become
@@ -200,6 +204,9 @@ class SubprocessState {
 
     // Exact POSIX child owned and reaped only by this simulation_unit_actor
     std::optional<pid_t> subprocess_pid_;
+
+    // Fixed deadline while awaiting orderly child exit; cleared after forced termination
+    std::optional<std::chrono::steady_clock::time_point> shutdown_deadline_;
 
     // CAF proxy for the worker actor running in the child identified by subprocess_pid_
     caf::actor subprocess_worker_actor_;
@@ -268,12 +275,13 @@ class Orchestrator {
 // Child-process actor hosting the public Task-to-TaskResult handler
 class SubprocessWorker {
   public:
-    explicit SubprocessWorker(std::function<TaskResult(const Task&)> task_handler);
+    explicit SubprocessWorker(
+        std::function<caf::result<TaskResult>(const Task&)> task_handler);
 
     caf::behavior make_behavior();
 
   private:
-    std::function<TaskResult(const Task&)> task_handler_;
+    std::function<caf::result<TaskResult>(const Task&)> task_handler_;
 };
 
 } // namespace miaow::core

@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <csignal>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -178,6 +179,103 @@ BOOST_FIXTURE_TEST_CASE(heat, JobRecordChecker) {
     check_updates(120);
 }
 
+// One controller advances the same model through two individual update tasks
+BOOST_FIXTURE_TEST_CASE(bmi_operations, JobRecordChecker) {
+    check_successful_tasks();
+    const std::array operations{"initialize",       "get_current_time", "update",
+                                "get_current_time", "update",           "get_current_time",
+                                "finalize"};
+    BOOST_REQUIRE_EQUAL(tasks.size(), operations.size());
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        BOOST_TEST_CONTEXT("task " << id) {
+            BOOST_TEST(tasks.at(id).at("operation").get<std::string>() == operations[id]);
+            BOOST_TEST(tasks.at(id).at("unit") == tasks.at(0).at("unit"));
+        }
+    }
+
+    // With alpha = 1.5, each update advances the model by 1/6 second
+    const std::array times{0.0, 1.0 / 6.0, 1.0 / 3.0};
+    for (std::size_t index = 0; index < times.size(); ++index) {
+        const double time = tasks.at(2 * index + 1).at("result").at("output").get<double>();
+        BOOST_TEST(std::abs(time - times[index]) < 1e-14);
+    }
+}
+
+// Invalid lifecycle operations leave the model usable, and reinitialization starts fresh
+BOOST_FIXTURE_TEST_CASE(bmi_lifecycle, JobRecordChecker) {
+    BOOST_REQUIRE_EQUAL(tasks.size(), 11);
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        BOOST_TEST_CONTEXT("task " << id) {
+            const bool failed = id == 0 || id == 3 || id == 4 || id == 7;
+            BOOST_TEST(tasks.at(id).at("result").at("status").get<std::string>() ==
+                       (failed ? "failed" : "succeeded"));
+            BOOST_TEST(!tasks.at(id).at("dispatch_offset_from_job_start").is_null());
+            BOOST_TEST(tasks.at(id).at("unit") == tasks.at(0).at("unit"));
+        }
+    }
+
+    // Alpha = 1 gives dt = 0.25; rejected initialization and run must preserve that time
+    BOOST_TEST(std::abs(tasks.at(5).at("result").at("output").get<double>() - 0.25) <
+               1e-14);
+    BOOST_TEST(tasks.at(9).at("result").at("output").get<double>() == 0.0);
+}
+
+// Model exceptions restrict the active session until cleanup and allow a fresh session
+BOOST_FIXTURE_TEST_CASE(bmi_failure_recovery, JobRecordChecker) {
+    const auto& arguments = boost::unit_test::framework::master_test_suite();
+    BOOST_REQUIRE_EQUAL(arguments.argc, 3);
+    std::ifstream case_input{arguments.argv[2]};
+    const nlohmann::json test_case = nlohmann::json::parse(case_input);
+    const std::string operation = test_case.at("input").at("operation").get<std::string>();
+    const std::size_t failure_task = operation == "initialize" ? 0 : 1;
+    const bool model_released = operation == "initialize" || operation == "finalize";
+    BOOST_REQUIRE_EQUAL(tasks.size(), failure_task + 7);
+
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        BOOST_TEST_CONTEXT("task " << id) {
+            const bool failed =
+                id == failure_task || id == failure_task + 1 || id == failure_task + 2 ||
+                (id == failure_task + 3 && model_released);
+            BOOST_TEST(tasks.at(id).at("result").at("status").get<std::string>() ==
+                       (failed ? "failed" : "succeeded"));
+            BOOST_TEST(!tasks.at(id).at("dispatch_offset_from_job_start").is_null());
+            BOOST_TEST(tasks.at(id).at("unit") == tasks.at(0).at("unit"));
+        }
+    }
+    BOOST_TEST(tasks.at(failure_task).at("result").at("message") ==
+               test_case.at("failure_message"));
+    for (std::size_t id : {failure_task + 1, failure_task + 2}) {
+        BOOST_TEST(tasks.at(id).at("result").at("message").get<std::string>() ==
+                   (model_released ? "BMI error: model is not initialized"
+                                    : "BMI error: model must be finalized after a failed "
+                                      "BMI call"));
+    }
+    if (model_released) {
+        BOOST_TEST(tasks.at(failure_task + 3).at("result").at("message").get<std::string>() ==
+                   "BMI error: model is not initialized");
+    }
+    BOOST_TEST(tasks.at(failure_task + 6).at("result").at("output").get<double>() == 0.25);
+
+    // Counts include shutdown of the fresh model and must not include retrying the old one
+    const auto& models = job_record.at("output");
+    BOOST_REQUIRE(models.is_array());
+    BOOST_REQUIRE_EQUAL(models.size(), 2);
+    for (std::size_t index = 0; index < models.size(); ++index) {
+        BOOST_TEST_CONTEXT("model " << index) {
+            const auto& counts = models.at(index).at("value");
+            BOOST_TEST(counts.at("finalizations").at("value") ==
+                       (index == 0 && operation == "initialize" ? 0 : 1));
+            BOOST_TEST(counts.at("destructions").at("value") == 1);
+            BOOST_TEST(counts.at("exception_destroyed_before_model").at("value").get<bool>() ==
+                       (index == 0 && model_released));
+            BOOST_TEST(counts.at("updates").at("value") ==
+                       (index == 1 || operation == "update" ? 1 : 0));
+            BOOST_TEST(counts.at("queries").at("value") ==
+                       (index == 1 || operation == "get_current_time" ? 1 : 0));
+        }
+    }
+}
+
 // Registered in examples/03_dynamic_bmi/CMakeLists.txt using default example inputs
 BOOST_FIXTURE_TEST_CASE(dynamic_bmi, JobRecordChecker) {
     check_successful_tasks();
@@ -276,6 +374,54 @@ BOOST_FIXTURE_TEST_CASE(simulation_unit_replacement_after_failure, JobRecordChec
     BOOST_TEST(tasks.at(0).at("metadata").at("feature_id") ==
                tasks.at(3).at("metadata").at("feature_id"));
     BOOST_TEST(output.at("replacement_has_new_handle").at("value").get<bool>());
+}
+
+// A timed-out child must finish cleanup or be killed before its slot is reused
+BOOST_FIXTURE_TEST_CASE(subprocess_shutdown, JobRecordChecker) {
+    BOOST_REQUIRE_EQUAL(tasks.size(), 4);
+    check_lifecycle_observations(job_record, 1);
+    const auto& arguments = boost::unit_test::framework::master_test_suite();
+    BOOST_REQUIRE_EQUAL(arguments.argc, 3);
+    std::ifstream case_input{arguments.argv[2]};
+    const nlohmann::json test_case = nlohmann::json::parse(case_input);
+    const bool cleanup_finished = test_case.at("cleanup_finished").get<bool>();
+
+    // Late successful replies cannot replace the active or queued task's failure
+    for (std::size_t id : {1, 2}) {
+        BOOST_TEST_CONTEXT("timed-out unit task " << id) {
+            const auto& result = tasks.at(id).at("result");
+            BOOST_TEST(result.at("status").get<std::string>() == "failed");
+            const std::string message = result.at("message").get<std::string>();
+            BOOST_TEST(message.find("request_timeout") != std::string::npos);
+            const std::string termination =
+                cleanup_finished
+                    ? "subprocess exited with code 0"
+                    : "subprocess was terminated by signal " + std::to_string(SIGKILL);
+            BOOST_TEST(message.find(termination) != std::string::npos);
+            BOOST_TEST(tasks.at(id).at("unit") == tasks.at(0).at("unit"));
+        }
+    }
+    BOOST_TEST(!tasks.at(1).at("dispatch_offset_from_job_start").is_null());
+    BOOST_TEST(tasks.at(2).at("dispatch_offset_from_job_start").is_null());
+    BOOST_TEST(tasks.at(2).at("run_time").get<std::string>() == "0s");
+
+    // Configuration succeeds, and the independent unit runs after the child is reaped
+    BOOST_TEST(tasks.at(0).at("result").at("status").get<std::string>() == "succeeded");
+    BOOST_TEST(tasks.at(0).at("result").at("output").get<std::int64_t>() > 0);
+    BOOST_TEST(tasks.at(3).at("result").at("status").get<std::string>() == "succeeded");
+    BOOST_TEST(tasks.at(3).at("result").at("output").get<std::int64_t>() == 1);
+    BOOST_TEST(tasks.at(3).at("unit") != tasks.at(0).at("unit"));
+    const auto& output = job_record.at("output");
+    BOOST_TEST(output.at("child_reaped_before_callback").at("value").get<bool>());
+    BOOST_TEST(output.at("other_task_waited_for_shutdown").at("value").get<bool>());
+
+    // Both cases reach destruction; only cleanup within grace can finish
+    const std::filesystem::path results_directory =
+        std::filesystem::path{arguments.argv[1]}.parent_path() / "results";
+    BOOST_TEST(std::filesystem::exists(results_directory / "call_finished"));
+    BOOST_TEST(std::filesystem::exists(results_directory / "cleanup_started"));
+    BOOST_TEST(std::filesystem::exists(results_directory / "cleanup_finished") ==
+               cleanup_finished);
 }
 
 // Registered in examples/07_job_controller/CMakeLists.txt using default example inputs

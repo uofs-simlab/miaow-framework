@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
         const std::string fortran_heat_plugin_path =
             config.value("fortran_plugin", MIAOW_FORTRAN_HEAT_PLUGIN_PATH);
 
-        // Select the shared initialization file and model-time tolerance
+        // Select the shared initialization file and clock tolerance
         const std::string heat_config =
             config.value("init_config", "./data/configs/config_dynamic_heat.txt");
         const double tolerance_seconds =
@@ -50,16 +50,15 @@ int main(int argc, char* argv[]) {
         miaow::Runtime runtime(registry, runtime_options);
 
         // Pair each plugin with the shared model settings
-        const std::vector<miaow::DynamicBmiConfig> configs{
-            {.backend_ = miaow::DynamicBmiBackend::cpp,
-             .plugin_path_ = cpp_heat_plugin_path,
-             .init_config_ = heat_config,
-             .time_step_tolerance_seconds_ = tolerance_seconds},
-            {.backend_ = miaow::DynamicBmiBackend::fortran,
-             .plugin_path_ = fortran_heat_plugin_path,
-             .init_config_ = heat_config,
-             .time_step_tolerance_seconds_ = tolerance_seconds},
-        };
+        std::vector<caf::config_value::dictionary> configs(2);
+        configs[0].insert("backend", "cpp");
+        configs[0].insert("plugin_path", cpp_heat_plugin_path);
+        configs[1].insert("backend", "fortran");
+        configs[1].insert("plugin_path", fortran_heat_plugin_path);
+        for (auto& model_config : configs) {
+            model_config.insert("init_config", heat_config);
+            model_config.insert("time_step_tolerance_seconds", tolerance_seconds);
+        }
 
         // Each configuration runs once in-process and once in its own subprocess
         // Each SimulationUnit owns its own executor instance
@@ -70,7 +69,7 @@ int main(int argc, char* argv[]) {
             for (std::size_t index = 0; index < configs.size(); ++index) {
                 const miaow::SimulationUnitHandle unit =
                     job.add_unit(mode + std::to_string(index), executor);
-                job.add_task(miaow::make_bmi_task(unit, configs[index]));
+                job.add_task(unit, "run", configs[index]);
             }
         }
 

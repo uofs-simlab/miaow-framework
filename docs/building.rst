@@ -31,7 +31,7 @@ The repository can be configured and built with the following commands:
 
 ``CITATION.cff`` is the single source for the software version. Use ``version: "0.3.0-dev"`` during development and ``version: "0.3.0"`` for a release; CMake extracts ``0.3.0`` and automatically reconfigures when the citation file changes.
 
-With ``BUILD_TESTING=ON`` (the default), CMake builds the ``miaow_job_record_checks`` checker, the lifecycle and BMI dispatch test drivers, and the four examples required by the standard regression suite: ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, and ``07_job_controller``. Their tests are registered even with ``BUILD_EXAMPLES=OFF``. See :ref:`build-options` for the components built in each configuration, and :ref:`building-examples` to select additional examples.
+With ``BUILD_TESTING=ON`` (the default), CMake builds the ``miaow_job_record_checks`` checker, the lifecycle and BMI dispatch test drivers, and the five examples required by the standard regression suite: ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``07_job_controller``, and ``09_bmi_operations``. Their tests are registered even with ``BUILD_EXAMPLES=OFF``. See :ref:`build-options` for the components built in each configuration, and :ref:`building-examples` to select additional examples.
 
 Run the tests enabled in the current build with the following command:
 
@@ -50,7 +50,7 @@ A single test can be selected by name with the following command:
 Building examples
 -----------------
 
-``BUILD_TESTING=ON`` always includes the four regression examples. ``BUILD_EXAMPLES=ON`` adds the examples selected by ``MIAOW_EXAMPLES``; overlapping selections are built once. To build the selected examples without the regression suite:
+``BUILD_TESTING=ON`` always includes the five regression examples. ``BUILD_EXAMPLES=ON`` adds the examples selected by ``MIAOW_EXAMPLES``; overlapping selections are built once. To build the selected examples without the regression suite:
 
 .. code-block:: sh
 
@@ -109,6 +109,11 @@ Examples run with their default inputs.
 
        Requests Heron iterations until convergence or the iteration limit.
      - Starting from 1, three Heron estimates match 1.5, 17/12, and 577/408 within ``1e-14``; the final residual ``|x^2 - 2|`` is at most ``1e-5``
+   * - `miaow_example_09_bmi_operations`_
+     - `09_bmi_operations/main.cpp`_
+
+       Submits initialization, time queries, two updates, and finalization on one heat unit.
+     - Seven tasks succeed on the same unit; model times match 0, 1/6, and 1/3 seconds within ``1e-14``
 
 
 Alternative example regression tests
@@ -254,6 +259,8 @@ BMI task dispatch driver
 
 These cases use ``tests/bmi_task_dispatch_driver.cpp``. The five execution paths are a statically linked C++ model, C++ and Fortran plugins in-process, and C++ and Fortran plugins in subprocesses.
 
+The initialization and finalization failure cases use a custom exception in the static test model. Its destructor records whether the model is still alive, and the saved-record checker requires exception destruction before model destruction. This checks the lifetime ordering needed to keep plugin exception code available.
+
 .. list-table::
    :header-rows: 1
    :widths: 34 28 38
@@ -267,6 +274,51 @@ These cases use ``tests/bmi_task_dispatch_driver.cpp``. The five execution paths
 
        Submits an unsupported operation, then a valid run, on each of five BMI execution paths.
      - Five execution paths each reject an unknown operation and then complete a valid run after 40 updates
+   * - `miaow_bmi_static_lifecycle`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Rejects invalid lifecycle operations on one static heat model, then finalizes and reinitializes it.
+     - Updates outside an initialized session, duplicate initialization, and a complete run during a session fail; the active clock is preserved, and a fresh session starts at zero
+   * - `miaow_bmi_dynamic_cpp_lifecycle`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Runs the lifecycle sequence with an in-process C++ plugin.
+     - The same lifecycle guards hold; rejected operations preserve time 0.25 seconds, and reinitialization starts at zero
+   * - `miaow_bmi_dynamic_fortran_lifecycle`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Runs the lifecycle sequence with an in-process Fortran plugin.
+     - The same lifecycle guards hold; rejected operations preserve time 0.25 seconds, and reinitialization starts at zero
+   * - `miaow_bmi_subprocess_cpp_lifecycle`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Runs the lifecycle sequence with a C++ plugin in a persistent subprocess.
+     - Model time persists between tasks; rejected operations preserve time 0.25 seconds, and reinitialization starts at zero
+   * - `miaow_bmi_subprocess_fortran_lifecycle`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Runs the lifecycle sequence with a Fortran plugin in a persistent subprocess.
+     - Model time persists between tasks; rejected operations preserve time 0.25 seconds, and reinitialization starts at zero
+   * - `miaow_bmi_initialize_failure`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Makes the first instance of a controllable static heat model throw from ``Initialize()``.
+     - The failed initialization destroys the exception before releasing the model, without finalization. Updates, queries, and finalization report no initialized model; a fresh session works and is finalized and destroyed once.
+   * - `miaow_bmi_update_failure`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Makes the first instance of a controllable static heat model throw from ``Update()``.
+     - Updates and queries remain blocked until finalization, a fresh session works, and each model is finalized and destroyed once. The existing job record checker verifies the task results and per-model counts collected after unit shutdown.
+   * - `miaow_bmi_get_current_time_failure`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Makes the first instance of the same test model throw from ``GetCurrentTime()``.
+     - Both updates and time queries remain blocked until finalization, with no additional model calls. A fresh model updates and reports time 0.25 seconds, and both instances are finalized and destroyed once.
+   * - `miaow_bmi_finalize_failure`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Makes the first instance of the same test model throw from ``Finalize()``.
+     - The failed finalization destroys the exception before releasing the model; subsequent operations report no initialized model. Reinitialization succeeds, the failed instance is never finalized again, and unit shutdown finalizes only the second instance.
    * - `miaow_bmi_repeated_run`_
      - `bmi_task_dispatch_driver.cpp`_
 
@@ -332,6 +384,16 @@ These cases use ``tests/simulation_unit_lifecycle_driver.cpp``.
 
        Injects executor-construction failure, replaces the unit, and continues work.
      - With two worker slots, the first batch callback reports two failed tasks, one successful task, and one unit failure; the second reports three successful tasks and no unit failures.
+   * - `miaow_subprocess_shutdown_within_grace`_
+     - `simulation_unit_lifecycle_driver.cpp`_ and `subprocess_shutdown_worker.cpp`_
+
+       Times out a child task that subsequently returns and completes destructor cleanup within the shutdown grace period.
+     - The child exits normally and writes its cleanup marker. The active and queued tasks fail once with one unit-failure report, the queued task never dispatches, new work on the failed unit is rejected, and the worker slot becomes available only after the child is reaped.
+   * - `miaow_subprocess_shutdown_grace_expired`_
+     - `simulation_unit_lifecycle_driver.cpp`_ and `subprocess_shutdown_worker.cpp`_
+
+       Times out a child task whose destructor cleanup exceeds the configured grace period.
+     - The child starts cleanup but is terminated by SIGKILL before finishing it. The timeout remains the failure cause, the child is reaped, queued work never dispatches, and the independent unit can then use the worker slot.
 
 
 .. _miaow_example_00_hello: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/00_hello/CMakeLists.txt
@@ -342,6 +404,8 @@ These cases use ``tests/simulation_unit_lifecycle_driver.cpp``.
 .. _03_dynamic_bmi/main.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/03_dynamic_bmi/main.cpp
 .. _miaow_example_07_job_controller: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/CMakeLists.txt
 .. _07_job_controller/main.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/main.cpp
+.. _miaow_example_09_bmi_operations: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/09_bmi_operations/CMakeLists.txt
+.. _09_bmi_operations/main.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/09_bmi_operations/main.cpp
 .. _miaow_example_00_hello_empty: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_empty.json
 .. _miaow_example_03_dynamic_bmi_zero_tolerance: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_zero_tolerance.json
 .. _miaow_example_03_dynamic_bmi_zero_duration: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_zero_duration.json
@@ -364,11 +428,23 @@ These cases use ``tests/simulation_unit_lifecycle_driver.cpp``.
 .. _miaow_example_03_dynamic_bmi_overshoot: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_overshoot.json
 .. _miaow_example_07_job_controller_non_convergence: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_non_convergence.json
 .. _miaow_bmi_task_dispatch: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_unknown_operation.json
+.. _miaow_bmi_static_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_static_lifecycle.json
+.. _miaow_bmi_initialize_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_initialize_failure.json
+.. _miaow_bmi_update_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_update_failure.json
+.. _miaow_bmi_get_current_time_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_get_current_time_failure.json
+.. _miaow_bmi_finalize_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_finalize_failure.json
+.. _miaow_bmi_dynamic_cpp_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_dynamic_cpp_lifecycle.json
+.. _miaow_bmi_dynamic_fortran_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_dynamic_fortran_lifecycle.json
+.. _miaow_bmi_subprocess_cpp_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_subprocess_cpp_lifecycle.json
+.. _miaow_bmi_subprocess_fortran_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_subprocess_fortran_lifecycle.json
 .. _bmi_task_dispatch_driver.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/bmi_task_dispatch_driver.cpp
 .. _miaow_bmi_repeated_run: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_repeated_run.json
 .. _miaow_bmi_repeated_run_concurrent: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_repeated_run_concurrent.json
 .. _miaow_simulation_unit_removal_with_queued_work: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_removal_with_queued_work.json
 .. _simulation_unit_lifecycle_driver.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/simulation_unit_lifecycle_driver.cpp
+.. _subprocess_shutdown_worker.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/subprocess_shutdown_worker.cpp
+.. _miaow_subprocess_shutdown_within_grace: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/subprocess_shutdown_within_grace.json
+.. _miaow_subprocess_shutdown_grace_expired: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/subprocess_shutdown_grace_expired.json
 .. _miaow_simulation_unit_removal_with_queued_work_concurrent: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_removal_with_queued_work_concurrent.json
 .. _miaow_simulation_unit_removal_with_queued_work_batch_synchronous: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_removal_with_queued_work_batch_synchronous.json
 .. _miaow_simulation_unit_removal_with_queued_work_batch_synchronous_concurrent: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_removal_with_queued_work_batch_synchronous_concurrent.json
@@ -450,7 +526,7 @@ The standard regression suite is enabled when ``BUILD_TESTING`` is ``ON``, and b
 * ``miaow_job_record_checks``: the Boost.Test executable that checks saved job records and controller observations.
 * ``miaow_simulation_unit_lifecycle_driver``: the model-free workload driver for removal, failure recovery, and callback delivery.
 * ``miaow_bmi_dispatch_driver``: the heat-model workload driver for operation failures and repeated runs across the five BMI execution paths.
-* The ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, and ``07_job_controller`` example programs, including the heat-model libraries and C++ and Fortran plugins needed by their tests.
+* The ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``07_job_controller``, and ``09_bmi_operations`` example programs, including the heat-model libraries and C++ and Fortran plugins needed by their tests.
 
 The following top-level CMake options are available when building MIAOW:
 
@@ -470,7 +546,8 @@ The following top-level CMake options are available when building MIAOW:
    * - ``-DMIAOW_EXAMPLES``
      - | ``00_hello;01_heat;``
        | ``03_dynamic_bmi;``
-       | ``07_job_controller``
+       | ``07_job_controller;``
+       | ``09_bmi_operations``
      - Semicolon-separated list of examples selected by ``BUILD_EXAMPLES``; testing includes its required examples independently
    * - ``-DMIAOW_BOOST_PROVIDER``
      - ``auto``

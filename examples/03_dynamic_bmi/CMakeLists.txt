@@ -73,6 +73,38 @@ if(BUILD_TESTING)
     )
     add_dependencies(miaow_bmi_dispatch_driver miaow_subprocess)
     miaow_add_example_test(
+        TEST_NAME miaow_bmi_static_lifecycle
+        EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+        REGRESSION bmi_lifecycle
+        CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/bmi_static_lifecycle.json"
+        EXTERNAL_MODEL
+    )
+    foreach(backend cpp fortran)
+        miaow_add_example_test(
+            TEST_NAME miaow_bmi_dynamic_${backend}_lifecycle
+            EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+            REGRESSION bmi_lifecycle
+            CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/bmi_dynamic_${backend}_lifecycle.json"
+            EXTERNAL_MODEL
+        )
+        miaow_add_example_test(
+            TEST_NAME miaow_bmi_subprocess_${backend}_lifecycle
+            EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+            REGRESSION bmi_lifecycle
+            CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/bmi_subprocess_${backend}_lifecycle.json"
+            EXTERNAL_MODEL
+        )
+    endforeach()
+    foreach(operation initialize update get_current_time finalize)
+        miaow_add_example_test(
+            TEST_NAME miaow_bmi_${operation}_failure
+            EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+            REGRESSION bmi_failure_recovery
+            CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/bmi_${operation}_failure.json"
+            EXTERNAL_MODEL
+        )
+    endforeach()
+    miaow_add_example_test(
         TEST_NAME miaow_bmi_task_dispatch
         EXECUTABLE_TARGET miaow_bmi_dispatch_driver
         REGRESSION expected_failure

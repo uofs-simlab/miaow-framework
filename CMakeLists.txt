@@ -371,6 +371,7 @@ if(PROJECT_IS_TOP_LEVEL)
         01_heat
         03_dynamic_bmi
         07_job_controller
+        09_bmi_operations
     )
     set(MIAOW_EXAMPLES
         "${miaow_regression_examples}"

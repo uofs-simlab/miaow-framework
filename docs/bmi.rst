@@ -6,15 +6,44 @@ MIAOW runs models implementing the Basic Model Interface (BMI) either in the par
 BMI task lifecycle
 ------------------
 
-``make_bmi_task(unit, config)`` creates a task targeting the given unit. It stores ``"run"`` in ``Task::operation_`` and the model configuration in ``Task::args_``. Add the task to its owning job with ``job.add_task(...)``. Each execution performs one complete model run:
+``job.add_task(unit, "run", config)`` adds a complete-run task targeting the given unit. The configuration is a ``caf::config_value::dictionary``, stored as one argument in ``Task::args_``. Standalone tasks can be constructed with ``Task{unit, "run", config}``. Each execution performs one complete model run:
 
-1. Construct or load a fresh BMI model and call ``Initialize(init_config_)``.
+1. Construct or load a fresh BMI model and call ``Initialize(init_config)``.
 2. Call ``Update()`` until the model reaches its end time.
 3. Call ``Finalize()`` and release the model before reporting success.
 
 Models manage their own forcing and scientific output. If a BMI call fails, the runner attempts to finalize a successfully initialized model before releasing it. Results report the number of completed updates.
 
-A unit retains its executor across operations, but these BMI executors construct a fresh model for every task. Persistent unit or subprocess lifetime does not preserve BMI model state between ``run`` operations.
+A unit retains its executor across operations. Each ``run`` operation constructs a fresh model; model state does not persist between complete runs. Static and dynamic BMI executors, including the bundled subprocess worker, also support individual operations on a retained model, as described below.
+
+Configuration dictionaries use these fields. Fields with defaults may be omitted; supplied values must have the expected type and satisfy the model's requirements.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 25 15 30
+
+   * - Field
+     - Used by
+     - Default
+     - Value
+   * - ``init_config``
+     - ``initialize`` and ``run``
+     - Empty string
+     - Model initialization-file path string
+   * - ``time_step_tolerance_seconds``
+     - ``run``
+     - ``1e-4``
+     - Absolute clock tolerance as a double, in seconds
+   * - ``backend``
+     - Dynamic ``initialize`` and ``run``
+     - ``"cpp"``
+     - ``"cpp"`` or ``"fortran"``
+   * - ``plugin_path``
+     - Dynamic ``initialize`` and ``run``
+     - Required
+     - Plugin library path string
+
+When ``init_config`` is omitted from the configuration dictionary, the model receives an empty initialization path. Models that require an initialization file must still be given its path. Dynamic ``initialize`` and ``run`` tasks require the addition of ``plugin_path`` to specify what plugin library to load.
 
 Static BMI model
 ----------------
@@ -29,8 +58,9 @@ Register the concrete C++ model type, declare a unit, and add its run operation:
    miaow::Runtime runtime(registry);
    miaow::Job job;
    const miaow::SimulationUnitHandle unit = job.add_unit("heat", heat);
-   const miaow::StaticBmiConfig config{.init_config_ = heat_config};
-   job.add_task(miaow::make_bmi_task(unit, config));
+   caf::config_value::dictionary config;
+   config.insert("init_config", heat_config);
+   job.add_task(unit, "run", config);
 
    // Submit the job
    miaow::JobHandle job_handle = runtime.submit_job(std::move(job));
@@ -39,6 +69,21 @@ Register the concrete C++ model type, declare a unit, and add its run operation:
    const miaow::JobRecord record = job_handle.get();
 
 For concurrent independent runs, declare one unit per configuration using the same executor registration. Repeated tasks targeting one unit execute sequentially and reuse its executor.
+
+Individual BMI operations
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``StaticBmiTaskExecutor`` and ``DynamicBmiTaskExecutor`` inherit their operation handling and model ownership from ``BmiTaskExecutor``. Use ``job.add_task(unit, "initialize", config)`` with a configuration dictionary to initialize a retained model, followed by argument-free ``job.add_task(unit, "update")``, ``get_current_time``, and ``finalize`` tasks. The same dictionary can be used for initialization or a complete run when it includes the required fields. Direct static initialization with ``job.add_task(unit, "initialize", path)`` is also supported.
+
+The bundled subprocess worker retains one ``DynamicBmiTaskExecutor`` in each unit's child process and supports the same operations and task payloads.
+
+The exposed individual operations are ``initialize``, ``update``, ``get_current_time``, and ``finalize``. Other BMI methods, including value access and grid queries, are not exposed as task operations. Each successful individual operation invokes its corresponding BMI call. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units.
+
+The executor retains the initialized model until finalization and can initialize a fresh model afterward. Dynamic models retain their backend object and loaded plugin for that lifetime. ``update``, ``get_current_time``, and ``finalize`` fail when no model is initialized. ``run`` and a second ``initialize`` are rejected while a model is initialized, preserving the active model. Clock tolerance applies only to complete runs.
+
+The ``09_bmi_operations`` example demonstrates controller-generated operations with ``./miaow_bmi_operations`` from ``examples/09_bmi_operations``, using the heat model and configuration from ``01_heat``. It initializes one model, queries its current time, performs two updates with a query after each, and explicitly finalizes. The ``01_heat`` example performs a complete run.
+
+BMI call exceptions produce failed task results. A failed initialization releases the newly constructed model without retaining it. After an update or query throws, the retained model accepts only finalization. The executor releases the model after a finalization attempt, including a failed attempt. Controllers should explicitly submit ``finalize`` to receive its result; executor destruction attempts finalization if an initialized model remains, but cannot report those cleanup errors as task results.
 
 Dynamic BMI plugin
 ------------------
@@ -53,12 +98,11 @@ Register ``DynamicBmiTaskExecutor`` for in-process plugin execution, or register
    miaow::Runtime runtime(registry);
    miaow::Job job;
    const miaow::SimulationUnitHandle unit = job.add_unit("model", executor);
-   const miaow::DynamicBmiConfig config{
-       .backend_ = miaow::DynamicBmiBackend::fortran,
-       .plugin_path_ = plugin_path,
-       .init_config_ = init_config,
-   };
-   job.add_task(miaow::make_bmi_task(unit, config));
+   caf::config_value::dictionary config;
+   config.insert("backend", "fortran");
+   config.insert("plugin_path", plugin_path);
+   config.insert("init_config", init_config);
+   job.add_task(unit, "run", config);
 
    // Submit the job
    miaow::JobHandle job_handle = runtime.submit_job(std::move(job));
@@ -66,7 +110,11 @@ Register ``DynamicBmiTaskExecutor`` for in-process plugin execution, or register
    // Wait for completion and retrieve the job record
    const miaow::JobRecord record = job_handle.get();
 
-A subprocess-backed unit keeps its child alive between operations until removal or job completion. Each BMI operation still creates and finalizes its own model. The Julia/Trixi example places one simulation in a dedicated unit subprocess.
+A subprocess-backed unit keeps its child and dynamic executor alive between operations until removal or job completion. Individual operations retain an initialized model and its plugin; complete ``run`` tasks each create and finalize a fresh model. The Julia/Trixi example places one simulation in a dedicated unit subprocess.
+
+Schedule ``finalize`` before normal unit removal or job completion to receive the model's cleanup result. On unit removal, job completion, task or job timeout, and Runtime destruction, subprocess shutdown requests orderly worker exit. After the active call returns, the bundled worker releases its executor, which attempts finalization if a model remains.
+
+``RuntimeOptions::subprocess_shutdown_grace_period_`` allows 5 seconds by default for the active call, finalization, and process exit; expiry forcibly terminates the child. Finalization is best effort and cannot run after forced termination or a process crash. Unexpected child termination also loses the retained model; MIAOW reports a unit failure rather than recreating its state.
 
 Custom executables can implement the same :ref:`task contract <custom-subprocess-executables>`.
 
@@ -75,7 +123,7 @@ Dynamic C++ plugins must export the ``bmi_model_create()`` and ``bmi_model_destr
 Model timekeeping
 -----------------
 
-``time_step_tolerance_seconds_`` defines the absolute tolerance for the final-time comparison, with a default of ``1e-4`` seconds. It must be finite, non-negative, and less than half the model time step. MIAOW converts the tolerance to the units reported by ``GetTimeUnits()``, supporting seconds, minutes, hours, and days with common abbreviations and singular or plural names.
+``time_step_tolerance_seconds`` defines the absolute tolerance for the final-time comparison. When omitted, it uses ``miaow::default_bmi_time_step_tolerance_seconds`` (``1e-4`` seconds). An explicit value overrides the default. It must be finite, non-negative, and less than half the model time step. MIAOW converts the tolerance to the units reported by ``GetTimeUnits()``, supporting seconds, minutes, hours, and days with common abbreviations and singular or plural names.
 
 The runner calls ``Update()`` repeatedly and fails the task if an update passes the end time beyond this tolerance. A model already at its end time receives initialization and finalization with no updates.
 

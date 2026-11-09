@@ -9,11 +9,19 @@ target_include_directories(miaow_job_record_checks PRIVATE
     "${PROJECT_BINARY_DIR}/generated")
 add_dependencies(miaow_job_record_checks miaow_build_info)
 
+# Host controlled task and cleanup delays in a real child process
+add_executable(miaow_subprocess_shutdown_worker subprocess_shutdown_worker.cpp)
+target_compile_features(miaow_subprocess_shutdown_worker PRIVATE cxx_std_20)
+target_link_libraries(miaow_subprocess_shutdown_worker PRIVATE miaow)
+
 # Exercise unit lifetimes through the same driver and saved-record workflow
 add_executable(miaow_simulation_unit_lifecycle_driver simulation_unit_lifecycle_driver.cpp)
 target_compile_features(miaow_simulation_unit_lifecycle_driver PRIVATE cxx_std_20)
 target_link_libraries(miaow_simulation_unit_lifecycle_driver PRIVATE
     miaow nlohmann_json::nlohmann_json)
+target_compile_definitions(miaow_simulation_unit_lifecycle_driver PRIVATE
+    MIAOW_SUBPROCESS_SHUTDOWN_WORKER_PATH="$<TARGET_FILE:miaow_subprocess_shutdown_worker>")
+add_dependencies(miaow_simulation_unit_lifecycle_driver miaow_subprocess_shutdown_worker)
 
 include("${PROJECT_SOURCE_DIR}/cmake/miaow_example.cmake")
 foreach(scenario removal_with_queued_work replacement_after_failure)
@@ -26,4 +34,13 @@ foreach(scenario removal_with_queued_work replacement_after_failure)
             CASE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cases/unit_${scenario}${variant}.json"
         )
     endforeach()
+endforeach()
+
+foreach(scenario within_grace grace_expired)
+    miaow_add_example_test(
+        TEST_NAME miaow_subprocess_shutdown_${scenario}
+        EXECUTABLE_TARGET miaow_simulation_unit_lifecycle_driver
+        REGRESSION subprocess_shutdown
+        CASE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cases/subprocess_shutdown_${scenario}.json"
+    )
 endforeach()

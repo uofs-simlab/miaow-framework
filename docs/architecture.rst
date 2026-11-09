@@ -43,7 +43,9 @@ Task dispatch and executors
 
 The job scans queued tasks in submission order and selects the first whose target unit is idle. It skips tasks for busy units so that tasks for other units can proceed. ``RuntimeOptions::max_workers_`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
 
-When dispatching a unit's first task, the job creates its actor. The unit constructs one ``TaskExecutor`` before executing that task and reuses the executor for subsequent tasks. Operations on a unit run serially in the order they are received in the actor's mailbox.
+The workload determines how many units and retained model instances are needed. Choose the concurrent-task limit to suit the available CPUs and the threads used by each model. Idle units retain their executor and model state, so all resident models must fit in memory; the concurrent-task limit does not limit their number.
+
+When dispatching a unit's first task, the job creates its actor. The unit constructs one ``TaskExecutor`` before executing that task and reuses the executor for subsequent tasks. Declaring a unit does not create its actor or initialize a BMI model. BMI initialization occurs when the executor handles an ``initialize`` or ``run`` task. The job allows at most one active task per unit, and operations on that unit execute serially.
 
 A unit's ``TaskExecutorId`` selects an executor registered through ``TaskExecutorRegistry``. The registration determines where its task code runs:
 
@@ -61,9 +63,9 @@ A unit's ``TaskExecutorId`` selects an executor registered through ``TaskExecuto
      - ``SubprocessTaskExecutor``
      - Child process
 
-The executor object remains in the parent process in both cases. ``SubprocessTaskExecutor`` forwards tasks to a child process, as described under :ref:`subprocess-execution`.
+The unit's executor object remains in the parent process in both cases. ``SubprocessTaskExecutor`` forwards tasks to a child process, as described under :ref:`subprocess-execution`.
 
-Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Individual BMI operations are not supported yet, so the BMI model does not persist across tasks. See :doc:`bmi` for the model lifecycle.
+Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Static and dynamic BMI executors also support individual operations on a model retained between tasks, using their common ``BmiTaskExecutor`` base. The bundled BMI subprocess worker retains a ``DynamicBmiTaskExecutor`` in the child and supports the same operations. See :doc:`bmi` for the model lifecycle.
 
 Job lifecycle
 ^^^^^^^^^^^^^
@@ -143,7 +145,7 @@ An executable supplies the computation that runs in the child. MIAOW provides a 
    const miaow::SimulationUnitHandle unit = job.add_unit("custom", custom_executor_id);
    job.add_task(unit, "run", "input");
 
-The executable links against MIAOW and supplies a synchronous callable accepting ``const Task&`` and returning ``TaskResult``. ``run_subprocess_worker()`` registers the worker with the parent and invokes this callable for each task it receives:
+The executable links against MIAOW and supplies a callable accepting ``const Task&`` and returning ``TaskResult`` or ``caf::result<TaskResult>``. Plain ``TaskResult`` callbacks convert implicitly to the worker's result type. ``run_subprocess_worker()`` registers the worker with the parent and invokes this callable serially for each task it receives:
 
 .. code-block:: cpp
 
@@ -164,10 +166,12 @@ Cleanup
 
 When the child returns a failed ``TaskResult``, the unit keeps the child available for later tasks and retains its diagnostic files. If child startup fails, the child terminates unexpectedly, or a task times out, the unit stops and reports ``UnitFailure``. Unit removal and job completion also stop the child.
 
-The sequence shows shutdown of a ``SubprocessTaskExecutor`` unit that has launched a child. ``SubprocessState`` terminates the child and collects its exit status before the unit actor quits. A task timeout or unexpected child termination follows the same cleanup steps.
+``SubprocessState`` requests orderly CAF worker exit, allowing the active synchronous handler to return before ``run_subprocess_worker()`` returns and child-owned resources are destroyed. ``RuntimeOptions::subprocess_shutdown_grace_period_`` defaults to 5 seconds and covers the active call, resource cleanup, and process exit. Set it to a non-positive duration for immediate forced termination. A child without a registered worker is forcibly terminated because it cannot receive the exit request.
+
+The sequence shows shutdown of a ``SubprocessTaskExecutor`` unit that has launched a child. ``SubprocessState`` polls for process exit without blocking a scheduler thread. If the fixed grace deadline expires, it sends ``SIGKILL`` and continues polling. Repeated shutdown requests do not extend the deadline. The unit actor quits only after the child is reaped. A task timeout or unexpected child termination follows the same cleanup steps.
 
 .. mermaid:: diagrams/subprocess_cleanup.mmd
-   :alt: Child termination, non-blocking reaping, and unit termination
+   :alt: Orderly child shutdown, forced termination after a grace period, and non-blocking reaping
    :align: center
 
 Failures and shutdown
@@ -187,7 +191,7 @@ Timeouts
 
 A task timeout makes its unit unavailable and is reported to the controller as a ``UnitFailure``. At a job timeout, the job actor marks all unfinished tasks as failed and tells each simulation-unit actor to shut down. The controller cannot extend this deadline. Task records created because of the job timeout are not passed to ``callback()``; ``finalize()`` can return output based on earlier callbacks.
 
-For a ``SubprocessTaskExecutor``, a task timeout terminates the child and waits for it to exit before reporting ``UnitFailure``. Tasks executing in the parent process cannot be interrupted by a task or job timeout. Their actors stop after ``execute()`` returns, so the job result may arrive after the configured deadline.
+For a ``SubprocessTaskExecutor``, a task timeout starts child shutdown and waits for process exit and reaping before reporting ``UnitFailure``. Finishing during the shutdown grace period does not change the task's failure. Job results can arrive after their configured deadline while subprocess cleanup completes. Tasks executing in the parent process cannot be interrupted by a task or job timeout. Their actors stop after ``execute()`` returns, so their cleanup has no enforced time limit.
 
 Runtime shutdown
 ^^^^^^^^^^^^^^^^
@@ -229,6 +233,8 @@ Structured output
 ``JobController::finalize()`` returns optional structured output in the same format, with null as the default. Runtime retains this value in ``JobRecord::output_``.
 
 When ``RuntimeOptions::output_root_`` is configured, Runtime writes the completed ``JobRecord``, including task and job output, to ``job_record.json``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
+
+State retained between tasks lives in the unit's executor or child process. Job records describe execution results; MIAOW does not checkpoint or restore live model state from them. A replacement unit starts with a new executor and must initialize its own model.
 
 Each completed record includes ``miaow_version``, captured when the library is built. This uses Git's description relative to a reachable version tag, such as ``v0.3.0-5-gabc1234-dirty``: the tag, number of additional commits, abbreviated commit hash, and ``-dirty`` for tracked edits. An exact clean tag reports only the tag; a history without a matching tag reports an abbreviated hash.
 

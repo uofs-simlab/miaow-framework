@@ -51,6 +51,8 @@ int main(int argc, char* argv[]) {
                 runtime_arguments.push_back(argv[index]);
             }
         }
+
+        // Parse the remaining runtime CLI options
         miaow::parse_runtime_cli_options(static_cast<int>(runtime_arguments.size()),
                                          runtime_arguments.data(), runtime_options);
         if (config_path.empty()) {
@@ -74,14 +76,14 @@ int main(int argc, char* argv[]) {
         miaow::Job job;
         for (const auto& feature : manifest.at("grus")) {
             const std::string gru_id = feature.at("id").get<std::string>();
-            miaow::DynamicBmiConfig config;
-            config.backend_ = miaow::DynamicBmiBackend::fortran;
-            config.plugin_path_ = MIAOW_SUMMA_PLUGIN_PATH;
-            config.init_config_ = feature.at("init_config").get<std::string>();
+            caf::config_value::dictionary config;
+            config.insert("backend", "fortran");
+            config.insert("plugin_path", MIAOW_SUMMA_PLUGIN_PATH);
+            config.insert("init_config", feature.at("init_config").get<std::string>());
 
             // SUMMA handles its own forcing, daily accumulation, and NetCDF output
             const miaow::SimulationUnitHandle gru = job.add_unit(gru_id, summa_executor);
-            miaow::Task task = miaow::make_bmi_task(gru, config);
+            miaow::Task task{gru, "run", config};
             task.metadata_["feature_type"] = "gru";
             job.add_task(std::move(task));
         }

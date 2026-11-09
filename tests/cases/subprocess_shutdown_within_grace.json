@@ -1,0 +1,14 @@
+{
+  "exit_code": 1,
+  "max_workers": 1,
+  "task_request_timeout": 1,
+  "job_request_timeout": 20,
+  "input": {
+    "scenario": "subprocess_shutdown",
+    "task_generation_policy": "asynchronous",
+    "execution_delay_ms": 1500,
+    "cleanup_delay_ms": 100,
+    "shutdown_grace_period_ms": 5000
+  },
+  "cleanup_finished": true
+}

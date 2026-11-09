@@ -13,6 +13,8 @@ Examples are opt-in workflows that demonstrate MIAOW features and model integrat
    ./miaow_dynamic_bmi --output_root ./output --max_workers 2
    cd ../07_job_controller
    ./miaow_job_controller
+   cd ../09_bmi_operations
+   ./miaow_bmi_operations
 
 Default examples
 ----------------
@@ -21,6 +23,7 @@ Default examples
 - `examples/01_heat <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/01_heat>`_: BMI integration using the `CSDMS heat example <https://github.com/csdms/bmi-example-cxx>`_
 - `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: C++ and Fortran heat plugins, each run in-process and in its own unit subprocess
 - `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: computes a square root using Heron's method, with the executor retaining its estimate across tasks and the job controller requesting iterations until the residual meets the convergence tolerance
+- `examples/09_bmi_operations <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/09_bmi_operations>`_: a controller submits initialization, time queries, two updates, and finalization as separate tasks on one static heat model
 
 The hello, dynamic BMI, and job-controller examples accept an optional ``--config <file.json>`` alongside the common runtime options. Omitted fields retain the default inputs. This allows tests for successful and failing workflows to use the same programs.
 

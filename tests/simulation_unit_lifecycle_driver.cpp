@@ -4,14 +4,19 @@
 // Callback groups distinguish asynchronous delivery from complete batch delivery
 // JSON cases select the scenario, callback policy, and one or two worker slots
 // job_record_checks.cpp checks the observations saved by this driver
+#include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
+
+#include <sys/wait.h>
 
 #include "miaow.hpp"
 #include "miaow_io.hpp"
@@ -193,6 +198,80 @@ class ReplacementController final : public miaow::JobController {
     bool replacement_has_new_handle_{false};
 };
 
+// Preserve a timeout while the child finishes or exceeds its cleanup grace period
+class SubprocessShutdownController final : public miaow::JobController {
+  public:
+    SubprocessShutdownController(miaow::TaskExecutorId subprocess_executor,
+                                 miaow::TaskExecutorId counter_executor,
+                                 miaow::TaskGenerationPolicy policy,
+                                 caf::config_value::dictionary worker_config)
+        : JobController(policy), subprocess_executor_(subprocess_executor),
+          counter_executor_(counter_executor), worker_config_(std::move(worker_config)) {}
+
+    void initialize(miaow::Job& job) override {
+        target_ = job.add_unit("subprocess", subprocess_executor_);
+        other_ = job.add_unit("other", counter_executor_);
+        job.add_task(target_, "configure", worker_config_);
+    }
+
+    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> completed_tasks,
+                  std::span<const miaow::UnitFailure> failed_units) override {
+        callbacks_.push_back(describe_callback(completed_tasks, failed_units));
+        for (const miaow::TaskRecord& record : completed_tasks) {
+            if (record.task_id_ == 0 &&
+                record.result_.status_ == miaow::TaskStatus::succeeded) {
+                child_pid_ =
+                    static_cast<pid_t>(caf::get<std::int64_t>(record.result_.output_));
+                job.add_task(target_, "delay");
+                job.add_task(target_, "queued");
+                job.add_task(other_, "increment");
+            }
+            if (record.task_id_ == 1 && record.dispatch_offset_from_job_start_) {
+                timeout_settled_offset_ =
+                    *record.dispatch_offset_from_job_start_ + record.run_time_;
+            }
+            if (record.task_id_ == 3) {
+                other_task_waited_for_shutdown_ =
+                    timeout_settled_offset_ && record.dispatch_offset_from_job_start_ &&
+                    *record.dispatch_offset_from_job_start_ >= *timeout_settled_offset_;
+            }
+        }
+        if (!failed_units.empty()) {
+            rejected_old_handle_ = rejects_new_task(job, target_);
+
+            // Only the owning parent can verify that the child was already reaped
+            int wait_status = 0;
+            child_reaped_before_callback_ =
+                child_pid_ > 0 && ::waitpid(child_pid_, &wait_status, WNOHANG) == -1 &&
+                errno == ECHILD;
+        }
+    }
+
+    caf::config_value finalize() override {
+        caf::config_value::dictionary output{
+            {"rejected_old_handle", caf::config_value{rejected_old_handle_}},
+            {"child_reaped_before_callback",
+             caf::config_value{child_reaped_before_callback_}},
+            {"other_task_waited_for_shutdown",
+             caf::config_value{other_task_waited_for_shutdown_}},
+            {"callbacks", caf::config_value{std::move(callbacks_)}}};
+        return caf::config_value{std::move(output)};
+    }
+
+  private:
+    miaow::TaskExecutorId subprocess_executor_;
+    miaow::TaskExecutorId counter_executor_;
+    caf::config_value::dictionary worker_config_;
+    miaow::SimulationUnitHandle target_;
+    miaow::SimulationUnitHandle other_;
+    caf::config_value::list callbacks_;
+    pid_t child_pid_{0};
+    std::optional<std::chrono::duration<double>> timeout_settled_offset_;
+    bool rejected_old_handle_{false};
+    bool child_reaped_before_callback_{false};
+    bool other_task_waited_for_shutdown_{false};
+};
+
 } // namespace
 
 // Run the configured workload and save records for the separate Boost.Test checker
@@ -222,6 +301,20 @@ int main(int argc, char* argv[]) {
             const miaow::TaskExecutorId failing = registry.add<CounterTaskExecutor>(true);
             job.set_controller(
                 std::make_unique<ReplacementController>(counter, failing, policy));
+        } else if (scenario_name == "subprocess_shutdown") {
+            runtime_options.subprocess_shutdown_grace_period_ = std::chrono::milliseconds{
+                config.value("shutdown_grace_period_ms",
+                             runtime_options.subprocess_shutdown_grace_period_.count())};
+            caf::config_value::dictionary worker_config{
+                {"execution_delay_ms",
+                 caf::config_value{config.value<std::int64_t>("execution_delay_ms", 1500)}},
+                {"cleanup_delay_ms",
+                 caf::config_value{config.value<std::int64_t>("cleanup_delay_ms", 100)}}};
+            const miaow::TaskExecutorId subprocess =
+                registry.add_subprocess(MIAOW_SUBPROCESS_SHUTDOWN_WORKER_PATH);
+            job.set_controller(
+                std::make_unique<SubprocessShutdownController>(subprocess, counter, policy,
+                                                               std::move(worker_config)));
         } else {
             throw std::invalid_argument("unknown unit lifecycle scenario: " +
                                         scenario_name);
@@ -232,7 +325,7 @@ int main(int argc, char* argv[]) {
         const miaow::JobRecord record = runtime.submit_job(std::move(job)).get();
         miaow::print_job_summary(record);
 
-        // Replacement retains the two original failures, so its expected exit code is 1
+        // Failure scenarios retain failed task records alongside successful work
         return miaow::all_tasks_succeeded(record) ? 0 : 1;
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << '\n';

@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "input": {"scenario": "failure_recovery", "operation": "update"},
+  "failure_message": "BMI error: intentional update failure"
+}

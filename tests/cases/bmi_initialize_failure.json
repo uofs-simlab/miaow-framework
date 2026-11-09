@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "input": {"scenario": "failure_recovery", "operation": "initialize"},
+  "failure_message": "BMI error: intentional initialization failure"
+}
