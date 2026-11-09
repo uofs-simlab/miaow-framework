@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "input": {"scenario": "failure_recovery", "operation": "get_current_time"},
+  "failure_message": "BMI error: intentional time query failure"
+}

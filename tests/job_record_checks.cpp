@@ -220,6 +220,56 @@ BOOST_FIXTURE_TEST_CASE(bmi_lifecycle, JobRecordChecker) {
     BOOST_TEST(tasks.at(9).at("result").at("output").get<double>() == 0.0);
 }
 
+// Model exceptions restrict the active session until cleanup and allow a fresh session
+BOOST_FIXTURE_TEST_CASE(bmi_failure_recovery, JobRecordChecker) {
+    BOOST_REQUIRE_EQUAL(tasks.size(), 8);
+    const auto& arguments = boost::unit_test::framework::master_test_suite();
+    BOOST_REQUIRE_EQUAL(arguments.argc, 3);
+    std::ifstream case_input{arguments.argv[2]};
+    const nlohmann::json test_case = nlohmann::json::parse(case_input);
+    const std::string operation = test_case.at("input").at("operation").get<std::string>();
+    const bool finalize_failed = operation == "finalize";
+
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        BOOST_TEST_CONTEXT("task " << id) {
+            const bool failed =
+                id == 1 || id == 2 || id == 3 || (id == 4 && finalize_failed);
+            BOOST_TEST(tasks.at(id).at("result").at("status").get<std::string>() ==
+                       (failed ? "failed" : "succeeded"));
+            BOOST_TEST(!tasks.at(id).at("dispatch_offset_from_job_start").is_null());
+            BOOST_TEST(tasks.at(id).at("unit") == tasks.at(0).at("unit"));
+        }
+    }
+    BOOST_TEST(tasks.at(1).at("result").at("message") == test_case.at("failure_message"));
+    for (std::size_t id : {2, 3}) {
+        BOOST_TEST(tasks.at(id).at("result").at("message").get<std::string>() ==
+                   (finalize_failed ? "BMI error: model is not initialized"
+                                    : "BMI error: model must be finalized after a failed "
+                                      "BMI call"));
+    }
+    if (finalize_failed) {
+        BOOST_TEST(tasks.at(4).at("result").at("message").get<std::string>() ==
+                   "BMI error: model is not initialized");
+    }
+    BOOST_TEST(tasks.at(7).at("result").at("output").get<double>() == 0.25);
+
+    // Counts include shutdown of the fresh model and must not include retrying the old one
+    const auto& models = job_record.at("output");
+    BOOST_REQUIRE(models.is_array());
+    BOOST_REQUIRE_EQUAL(models.size(), 2);
+    for (std::size_t index = 0; index < models.size(); ++index) {
+        BOOST_TEST_CONTEXT("model " << index) {
+            const auto& counts = models.at(index).at("value");
+            BOOST_TEST(counts.at("finalizations").at("value") == 1);
+            BOOST_TEST(counts.at("destructions").at("value") == 1);
+            BOOST_TEST(counts.at("updates").at("value") ==
+                       (index == 1 || operation == "update" ? 1 : 0));
+            BOOST_TEST(counts.at("queries").at("value") ==
+                       (index == 1 || operation == "get_current_time" ? 1 : 0));
+        }
+    }
+}
+
 // Registered in examples/03_dynamic_bmi/CMakeLists.txt using default example inputs
 BOOST_FIXTURE_TEST_CASE(dynamic_bmi, JobRecordChecker) {
     check_successful_tasks();

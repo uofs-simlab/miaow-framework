@@ -95,6 +95,15 @@ if(BUILD_TESTING)
             EXTERNAL_MODEL
         )
     endforeach()
+    foreach(operation update get_current_time finalize)
+        miaow_add_example_test(
+            TEST_NAME miaow_bmi_${operation}_failure
+            EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+            REGRESSION bmi_failure_recovery
+            CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/bmi_${operation}_failure.json"
+            EXTERNAL_MODEL
+        )
+    endforeach()
     miaow_add_example_test(
         TEST_NAME miaow_bmi_task_dispatch
         EXECUTABLE_TARGET miaow_bmi_dispatch_driver

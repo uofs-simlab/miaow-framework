@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "input": {"scenario": "failure_recovery", "operation": "finalize"},
+  "failure_message": "BMI error: intentional finalization failure"
+}

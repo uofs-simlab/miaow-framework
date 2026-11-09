@@ -297,6 +297,21 @@ These cases use ``tests/bmi_task_dispatch_driver.cpp``. The five execution paths
 
        Runs the lifecycle sequence with a Fortran plugin in a persistent subprocess.
      - Model time persists between tasks; rejected operations preserve time 0.25 seconds, and reinitialization starts at zero
+   * - `miaow_bmi_update_failure`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Makes the first instance of a controllable static heat model throw from ``Update()``.
+     - Updates and queries remain blocked until finalization, a fresh session works, and each model is finalized and destroyed once. The existing job record checker verifies the task results and per-model counts collected after unit shutdown.
+   * - `miaow_bmi_get_current_time_failure`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Makes the first instance of the same test model throw from ``GetCurrentTime()``.
+     - Both updates and time queries remain blocked until finalization, with no additional model calls. A fresh model updates and reports time 0.25 seconds, and both instances are finalized and destroyed once.
+   * - `miaow_bmi_finalize_failure`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Makes the first instance of the same test model throw from ``Finalize()``.
+     - The failed finalization releases the session; subsequent operations report no initialized model. Reinitialization succeeds, the failed instance is never finalized again, and unit shutdown finalizes only the second instance.
    * - `miaow_bmi_repeated_run`_
      - `bmi_task_dispatch_driver.cpp`_
 
@@ -407,6 +422,9 @@ These cases use ``tests/simulation_unit_lifecycle_driver.cpp``.
 .. _miaow_example_07_job_controller_non_convergence: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_non_convergence.json
 .. _miaow_bmi_task_dispatch: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_unknown_operation.json
 .. _miaow_bmi_static_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_static_lifecycle.json
+.. _miaow_bmi_update_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_update_failure.json
+.. _miaow_bmi_get_current_time_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_get_current_time_failure.json
+.. _miaow_bmi_finalize_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_finalize_failure.json
 .. _miaow_bmi_dynamic_cpp_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_dynamic_cpp_lifecycle.json
 .. _miaow_bmi_dynamic_fortran_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_dynamic_fortran_lifecycle.json
 .. _miaow_bmi_subprocess_cpp_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_subprocess_cpp_lifecycle.json
