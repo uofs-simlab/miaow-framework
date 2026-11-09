@@ -226,12 +226,12 @@ struct TaskResult {
  *
  * @param argc Command-line argument count supplied to the subprocess executable.
  * @param argv Command-line arguments supplied to the subprocess executable.
- * @param task_handler Callable that executes one received `Task` and returns its
- * `TaskResult`.
+ * @param task_handler Callable that executes one received `Task` and returns a
+ * `TaskResult` or `caf::result<TaskResult>`.
  * @return Zero after orderly worker shutdown or one after setup failure.
  */
 int run_subprocess_worker(int argc, char* argv[],
-                          std::function<TaskResult(const Task&)> task_handler);
+                          std::function<caf::result<TaskResult>(const Task&)> task_handler);
 
 /**
  * @brief Runtime `TaskRecord` for one completed task.

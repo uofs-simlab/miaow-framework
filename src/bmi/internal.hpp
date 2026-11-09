@@ -10,7 +10,7 @@ namespace miaow {
 // Load and release one plugin model; its caller owns initialization and finalization
 class DynamicBmiModel : public bmi_api::Bmi {
   public:
-    explicit DynamicBmiModel(const DynamicBmiConfig& config);
+    explicit DynamicBmiModel(DynamicBmiBackend backend, const std::string& plugin_path);
 
     DynamicBmiModel(const DynamicBmiModel&) = delete;
     DynamicBmiModel& operator=(const DynamicBmiModel&) = delete;
@@ -65,9 +65,8 @@ class DynamicBmiModel : public bmi_api::Bmi {
     using RegisterBmiFunction = int (*)(void**);
     using UnregisterBmiFunction = int (*)(void**);
 
-    void open_cpp_plugin(const DynamicBmiConfig& config);
-    void open_fortran_plugin(const DynamicBmiConfig& config);
-    void unregister_fortran_model();
+    void open_cpp_plugin(const std::string& plugin_path);
+    void open_fortran_plugin(const std::string& plugin_path);
     void cleanup_model();
 
     DynamicBmiBackend backend_;
@@ -80,10 +79,3 @@ class DynamicBmiModel : public bmi_api::Bmi {
 };
 
 } // namespace miaow
-
-namespace miaow::bmi {
-
-// Load and execute one complete dynamic BMI task in the calling process
-TaskResult execute_task(const Task& task);
-
-} // namespace miaow::bmi

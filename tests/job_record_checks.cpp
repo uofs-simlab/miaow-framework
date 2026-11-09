@@ -201,7 +201,7 @@ BOOST_FIXTURE_TEST_CASE(bmi_operations, JobRecordChecker) {
 }
 
 // Invalid lifecycle operations leave the model usable, and reinitialization starts fresh
-BOOST_FIXTURE_TEST_CASE(bmi_static_lifecycle, JobRecordChecker) {
+BOOST_FIXTURE_TEST_CASE(bmi_lifecycle, JobRecordChecker) {
     BOOST_REQUIRE_EQUAL(tasks.size(), 11);
     for (std::size_t id = 0; id < tasks.size(); ++id) {
         BOOST_TEST_CONTEXT("task " << id) {

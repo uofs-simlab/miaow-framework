@@ -1,10 +1,9 @@
-#include "bmi/internal.hpp"
+#include "miaow_bmi.hpp"
 
-// Execute subprocess BMI tasks with miaow::bmi::execute_task from src/bmi/task.cpp.
-// DynamicBmiTaskExecutor::execute calls the same function for in-process tasks.
-// Both paths initialize the model, advance it to its end time, and finalize it.
+// Retain one dynamic BMI executor across the subprocess's tasks
 int main(int argc, char* argv[]) {
-    return miaow::run_subprocess_worker(argc, argv, [](const miaow::Task& task) {
-        return miaow::bmi::execute_task(task);
+    miaow::DynamicBmiTaskExecutor executor;
+    return miaow::run_subprocess_worker(argc, argv, [&executor](const miaow::Task& task) {
+        return executor.execute(task);
     });
 }

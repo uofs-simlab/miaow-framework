@@ -61,9 +61,9 @@ A unit's ``TaskExecutorId`` selects an executor registered through ``TaskExecuto
      - ``SubprocessTaskExecutor``
      - Child process
 
-The executor object remains in the parent process in both cases. ``SubprocessTaskExecutor`` forwards tasks to a child process, as described under :ref:`subprocess-execution`.
+The unit's executor object remains in the parent process in both cases. ``SubprocessTaskExecutor`` forwards tasks to a child process, as described under :ref:`subprocess-execution`.
 
-Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Static BMI executors also support individual operations on a model retained between tasks. Dynamic BMI executors support complete runs. See :doc:`bmi` for the model lifecycle.
+Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Static and dynamic BMI executors also support individual operations on a model retained between tasks, using their common ``BmiTaskExecutor`` base. The bundled BMI subprocess worker retains a ``DynamicBmiTaskExecutor`` in the child and supports the same operations. See :doc:`bmi` for the model lifecycle.
 
 Job lifecycle
 ^^^^^^^^^^^^^
@@ -143,7 +143,7 @@ An executable supplies the computation that runs in the child. MIAOW provides a 
    const miaow::SimulationUnitHandle unit = job.add_unit("custom", custom_executor_id);
    job.add_task(unit, "run", "input");
 
-The executable links against MIAOW and supplies a synchronous callable accepting ``const Task&`` and returning ``TaskResult``. ``run_subprocess_worker()`` registers the worker with the parent and invokes this callable for each task it receives:
+The executable links against MIAOW and supplies a callable accepting ``const Task&`` and returning ``TaskResult`` or ``caf::result<TaskResult>``. Plain ``TaskResult`` callbacks convert implicitly to the worker's result type. ``run_subprocess_worker()`` registers the worker with the parent and invokes this callable serially for each task it receives:
 
 .. code-block:: cpp
 

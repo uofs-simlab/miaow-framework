@@ -268,12 +268,13 @@ class Orchestrator {
 // Child-process actor hosting the public Task-to-TaskResult handler
 class SubprocessWorker {
   public:
-    explicit SubprocessWorker(std::function<TaskResult(const Task&)> task_handler);
+    explicit SubprocessWorker(
+        std::function<caf::result<TaskResult>(const Task&)> task_handler);
 
     caf::behavior make_behavior();
 
   private:
-    std::function<TaskResult(const Task&)> task_handler_;
+    std::function<caf::result<TaskResult>(const Task&)> task_handler_;
 };
 
 } // namespace miaow::core

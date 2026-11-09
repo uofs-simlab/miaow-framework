@@ -78,18 +78,17 @@ BMI integration
 BMI configuration
 ~~~~~~~~~~~~~~~~~
 
+Pass BMI configuration as a ``caf::config_value::dictionary`` argument to ``Job::add_task()`` or the ``Task`` constructor. See :doc:`bmi` for dictionary fields and examples.
+
 .. doxygenenum:: miaow::DynamicBmiBackend
 
 .. doxygenvariable:: miaow::default_bmi_time_step_tolerance_seconds
 
-.. doxygenstruct:: miaow::StaticBmiConfig
-   :members:
-
-.. doxygenstruct:: miaow::DynamicBmiConfig
-   :members:
-
 Task executors
 ~~~~~~~~~~~~~~
+
+.. doxygenclass:: miaow::BmiTaskExecutor
+   :members:
 
 .. doxygenclass:: miaow::StaticBmiTaskExecutor
    :members:
@@ -98,10 +97,6 @@ Task executors
    :members:
 
 .. doxygenfunction:: miaow::bmi_subprocess_executable_path
-
-.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitHandle, const StaticBmiConfig&)
-
-.. doxygenfunction:: miaow::make_bmi_task(SimulationUnitHandle, const DynamicBmiConfig&)
 
 I/O and CLI helpers
 -------------------

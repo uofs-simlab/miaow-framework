@@ -14,49 +14,7 @@
 
 namespace miaow {
 
-Task make_bmi_task(SimulationUnitHandle unit, const StaticBmiConfig& config) {
-    caf::config_value::dictionary values;
-    values.insert("init_config", config.init_config_);
-    values.insert("time_step_tolerance_seconds", config.time_step_tolerance_seconds_);
-    return Task{unit, "run", caf::config_value{std::move(values)}};
-}
-
-Task make_bmi_task(SimulationUnitHandle unit, const DynamicBmiConfig& config) {
-    caf::config_value::dictionary values;
-    values.insert("backend", config.backend_ == DynamicBmiBackend::cpp ? "cpp" : "fortran");
-    values.insert("plugin_path", config.plugin_path_);
-    values.insert("init_config", config.init_config_);
-    values.insert("time_step_tolerance_seconds", config.time_step_tolerance_seconds_);
-    return Task{unit, "run", caf::config_value{std::move(values)}};
-}
-
 namespace {
-
-// Decode the single-model configuration carried by a BMI task
-StaticBmiConfig read_static_config(const Task& task) {
-    const auto& values = caf::get<caf::config_value::dictionary>(task.args_.at(0));
-    return StaticBmiConfig{
-        .init_config_ = caf::get<std::string>(values, "init_config"),
-        .time_step_tolerance_seconds_ =
-            caf::get<double>(values, "time_step_tolerance_seconds"),
-    };
-}
-
-DynamicBmiConfig read_dynamic_config(const Task& task) {
-    const auto& values = caf::get<caf::config_value::dictionary>(task.args_.at(0));
-    const auto& backend = caf::get<std::string>(values, "backend");
-    if (backend != "cpp" && backend != "fortran") {
-        throw std::runtime_error("BMI config error: unsupported dynamic backend '" +
-                                 backend + "'");
-    }
-    return DynamicBmiConfig{
-        .backend_ = backend == "cpp" ? DynamicBmiBackend::cpp : DynamicBmiBackend::fortran,
-        .plugin_path_ = caf::get<std::string>(values, "plugin_path"),
-        .init_config_ = caf::get<std::string>(values, "init_config"),
-        .time_step_tolerance_seconds_ =
-            caf::get<double>(values, "time_step_tolerance_seconds"),
-    };
-}
 
 // Seconds per unit reported by the model clock
 double seconds_per_time_unit(std::string_view raw_units) {
@@ -156,17 +114,6 @@ TaskResult run_model(bmi_api::Bmi& model, const std::string& init_config,
                                                  std::to_string(completed_updates) + ")"};
 }
 
-// Route each supported BMI operation to its implementation
-TaskResult execute_model_operation(const Task& task, bmi_api::Bmi& model,
-                                   const std::string& init_config,
-                                   double tolerance_seconds) {
-    if (task.operation_ == "run") {
-        return run_model(model, init_config, tolerance_seconds);
-    }
-    return make_failed_task_result("unsupported operation '" + task.operation_ + "'",
-                                   "BMI error");
-}
-
 } // namespace
 
 // Resolve the worker in a source-tree build or an installed package
@@ -182,36 +129,114 @@ std::string bmi_subprocess_executable_path() {
     throw std::runtime_error("bundled BMI subprocess executable was not found");
 }
 
-namespace bmi {
+BmiTaskExecutor::BmiTaskExecutor(ModelFactory model_factory)
+    : model_factory_{std::move(model_factory)} {}
 
-// Load the task's plugin and execute its operation on a fresh model.
-// Shared by DynamicBmiTaskExecutor in the parent and SubprocessWorker in the child.
-// Setup exceptions become failed TaskResult values.
-TaskResult execute_task(const Task& task) {
+BmiTaskExecutor::~BmiTaskExecutor() {
+    if (model_) {
+        try {
+            model_->Finalize();
+        } catch (...) {
+            // Explicit finalize tasks report errors; destruction only releases state
+        }
+    }
+}
+
+caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
     try {
-        const DynamicBmiConfig config = read_dynamic_config(task);
-        DynamicBmiModel model(config);
-        return execute_model_operation(task, model, config.init_config_,
-                                       config.time_step_tolerance_seconds_);
+        if (task.operation_ == "run") {
+            if (model_) {
+                return make_failed_task_result("model is already initialized", "BMI error");
+            }
+            std::unique_ptr<bmi_api::Bmi> model = model_factory_(task);
+            const auto& values = caf::get<caf::config_value::dictionary>(task.args_.at(0));
+            const caf::config_value* init_config = caf::get_if(&values, "init_config");
+            const caf::config_value* tolerance =
+                caf::get_if(&values, "time_step_tolerance_seconds");
+            return run_model(*model,
+                             init_config ? caf::get<std::string>(*init_config)
+                                         : std::string{},
+                             tolerance ? caf::get<double>(*tolerance)
+                                       : default_bmi_time_step_tolerance_seconds);
+        }
+
+        if (task.operation_ == "initialize") {
+            if (model_) {
+                return make_failed_task_result("model is already initialized", "BMI error");
+            }
+            std::string init_config;
+            if (const std::string* path = task.string_arg(0)) {
+                init_config = *path;
+            } else {
+                const auto& values =
+                    caf::get<caf::config_value::dictionary>(task.args_.at(0));
+                if (const caf::config_value* path = caf::get_if(&values, "init_config")) {
+                    init_config = caf::get<std::string>(*path);
+                }
+            }
+            std::unique_ptr<bmi_api::Bmi> model = model_factory_(task);
+            model->Initialize(init_config);
+            model_ = std::move(model);
+            return TaskResult{TaskStatus::succeeded, "BMI initialize complete"};
+        }
+
+        if (task.operation_ == "update") {
+            if (!model_) {
+                return make_failed_task_result("model is not initialized", "BMI error");
+            }
+            if (model_failed_) {
+                return make_failed_task_result(
+                    "model must be finalized after a failed BMI call", "BMI error");
+            }
+            model_->Update();
+            return TaskResult{TaskStatus::succeeded, "BMI update complete"};
+        }
+
+        if (task.operation_ == "get_current_time") {
+            if (!model_) {
+                return make_failed_task_result("model is not initialized", "BMI error");
+            }
+            if (model_failed_) {
+                return make_failed_task_result(
+                    "model must be finalized after a failed BMI call", "BMI error");
+            }
+            return TaskResult{TaskStatus::succeeded, "BMI current time",
+                              caf::config_value{model_->GetCurrentTime()}};
+        }
+
+        if (task.operation_ == "finalize") {
+            if (!model_) {
+                return make_failed_task_result("model is not initialized", "BMI error");
+            }
+            // Release ownership before calling Finalize so failure is not retried
+            std::unique_ptr<bmi_api::Bmi> model = std::move(model_);
+            model_failed_ = false;
+            model->Finalize();
+            return TaskResult{TaskStatus::succeeded, "BMI finalize complete"};
+        }
+
+        return make_failed_task_result("unsupported operation '" + task.operation_ + "'",
+                                       "BMI error");
     } catch (...) {
+        // A failed model call permits cleanup but no further updates or queries
+        model_failed_ = model_ != nullptr;
         return make_failed_task_result(std::current_exception(), "BMI error");
     }
 }
 
-// Execute the task's operation on a fresh model supplied by StaticBmiTaskExecutor.
-// Configuration exceptions propagate to the executor, which returns a failed result.
-TaskResult execute_task(const Task& task, std::unique_ptr<bmi_api::Bmi> model) {
-    const StaticBmiConfig config = read_static_config(task);
-    return execute_model_operation(task, *model, config.init_config_,
-                                   config.time_step_tolerance_seconds_);
-}
-
-} // namespace bmi
-
-// Implement TaskExecutor::execute for in-process dynamic BMI execution.
-// Adapt the shared handler's TaskResult to the interface's caf::result<TaskResult>.
-caf::result<TaskResult> DynamicBmiTaskExecutor::execute(const Task& task) {
-    return bmi::execute_task(task);
-}
+DynamicBmiTaskExecutor::DynamicBmiTaskExecutor()
+    : BmiTaskExecutor{[](const Task& task) -> std::unique_ptr<bmi_api::Bmi> {
+          const auto& values = caf::get<caf::config_value::dictionary>(task.args_.at(0));
+          const caf::config_value* backend_value = caf::get_if(&values, "backend");
+          const std::string backend =
+              backend_value ? caf::get<std::string>(*backend_value) : "cpp";
+          if (backend != "cpp" && backend != "fortran") {
+              throw std::runtime_error("BMI config error: unsupported dynamic backend '" +
+                                       backend + "'");
+          }
+          return std::make_unique<DynamicBmiModel>(
+              backend == "cpp" ? DynamicBmiBackend::cpp : DynamicBmiBackend::fortran,
+              caf::get<std::string>(values.container().at("plugin_path")));
+      }} {}
 
 } // namespace miaow

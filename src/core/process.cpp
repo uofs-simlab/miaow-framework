@@ -389,14 +389,15 @@ class SubprocessTaskExecutor final : public TaskExecutor {
 
 } // namespace
 
-SubprocessWorker::SubprocessWorker(std::function<TaskResult(const Task&)> task_handler)
+SubprocessWorker::SubprocessWorker(
+    std::function<caf::result<TaskResult>(const Task&)> task_handler)
     : task_handler_(std::move(task_handler)) {}
 
 // Host the public Task-to-TaskResult handler behind the child CAF message protocol
 caf::behavior SubprocessWorker::make_behavior() {
     return {// simulation_unit_actor -> subprocess_worker_actor: execute one Task;
             // caf::get_atom matches the caf::get_atom_v value sent by simulation_unit_actor
-            [this](caf::get_atom, const Task& task) -> TaskResult {
+            [this](caf::get_atom, const Task& task) -> caf::result<TaskResult> {
                 try {
                     return task_handler_(task);
                 } catch (...) {
@@ -785,8 +786,9 @@ TaskExecutorId TaskExecutorRegistry::add_subprocess(std::string subprocess_execu
     return task_executor_id;
 }
 
-int run_subprocess_worker(int argc, char* argv[],
-                          std::function<TaskResult(const Task&)> task_handler) {
+int run_subprocess_worker(
+    int argc, char* argv[],
+    std::function<caf::result<TaskResult>(const Task&)> task_handler) {
     try {
         // argv carries IPC settings; task data arrives over CAF
         core::initialize_subprocess_caf();

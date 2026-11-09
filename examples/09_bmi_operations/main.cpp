@@ -23,12 +23,13 @@ namespace {
 // Advance one heat model through two updates, querying time between operations
 class HeatStepController final : public miaow::JobController {
   public:
-    HeatStepController(miaow::SimulationUnitHandle unit, std::string init_config)
-        : unit_{unit}, init_config_{std::move(init_config)} {}
+    HeatStepController(miaow::SimulationUnitHandle unit,
+                       caf::config_value::dictionary config)
+        : unit_{unit}, config_{std::move(config)} {}
 
     // Initializing the controller initializes the simulation unit
     void initialize(miaow::Job& job) override {
-        job.add_task(unit_, "initialize", init_config_);
+        job.add_task(unit_, "initialize", config_);
     }
 
     void callback(miaow::Job& job, std::span<const miaow::TaskRecord> completed_tasks,
@@ -52,7 +53,7 @@ class HeatStepController final : public miaow::JobController {
 
   private:
     miaow::SimulationUnitHandle unit_;
-    std::string init_config_;
+    caf::config_value::dictionary config_;
     std::size_t next_operation_{0};
 };
 
@@ -74,8 +75,9 @@ int main(int argc, char* argv[]) {
         miaow::Runtime runtime(registry, runtime_options);
         miaow::Job job;
         const miaow::SimulationUnitHandle unit = job.add_unit("heat", heat);
-        job.set_controller(std::make_unique<HeatStepController>(
-            unit, "../01_heat/data/configs/config_400x400.txt"));
+        caf::config_value::dictionary config;
+        config.insert("init_config", "../01_heat/data/configs/config_400x400.txt");
+        job.set_controller(std::make_unique<HeatStepController>(unit, std::move(config)));
 
         // The controller submits the next operation after each successful completion
         miaow::JobHandle job_handle = runtime.submit_job(std::move(job));

@@ -170,14 +170,14 @@ void* resolve_required_dynamic_symbol(void* library_handle, const std::string& s
 
 } // namespace
 
-DynamicBmiModel::DynamicBmiModel(const DynamicBmiConfig& config)
-    : backend_(config.backend_) {
+DynamicBmiModel::DynamicBmiModel(DynamicBmiBackend backend, const std::string& plugin_path)
+    : backend_(backend) {
     switch (backend_) {
     case DynamicBmiBackend::cpp:
-        open_cpp_plugin(config);
+        open_cpp_plugin(plugin_path);
         break;
     case DynamicBmiBackend::fortran:
-        open_fortran_plugin(config);
+        open_fortran_plugin(plugin_path);
         break;
     }
 }
@@ -188,8 +188,8 @@ DynamicBmiModel::~DynamicBmiModel() {
 }
 
 // Open a C++ plugin and construct its BMI model instance
-void DynamicBmiModel::open_cpp_plugin(const DynamicBmiConfig& config) {
-    library_handle_ = open_dynamic_library(config.plugin_path_, cpp_plugin_error_prefix);
+void DynamicBmiModel::open_cpp_plugin(const std::string& plugin_path) {
+    library_handle_ = open_dynamic_library(plugin_path, cpp_plugin_error_prefix);
 
     try {
         void* create_symbol =
@@ -216,9 +216,8 @@ void DynamicBmiModel::open_cpp_plugin(const DynamicBmiConfig& config) {
 }
 
 // Open a Fortran plugin and resolve the procedural BMI bridge symbols
-void DynamicBmiModel::open_fortran_plugin(const DynamicBmiConfig& config) {
-    library_handle_ =
-        open_dynamic_library(config.plugin_path_, fortran_plugin_error_prefix);
+void DynamicBmiModel::open_fortran_plugin(const std::string& plugin_path) {
+    library_handle_ = open_dynamic_library(plugin_path, fortran_plugin_error_prefix);
     try {
         void* register_symbol =
             resolve_required_dynamic_symbol(library_handle_, "register_bmi",
@@ -235,16 +234,6 @@ void DynamicBmiModel::open_fortran_plugin(const DynamicBmiConfig& config) {
     }
 }
 
-void DynamicBmiModel::unregister_fortran_model() {
-    if (fortran_model_handle_ == nullptr) {
-        return;
-    }
-    if (unregister_bmi_ != nullptr) {
-        (void)unregister_bmi_(&fortran_model_handle_);
-    }
-    fortran_model_handle_ = nullptr;
-}
-
 // Release the backend model before its dynamic library is closed
 void DynamicBmiModel::cleanup_model() {
     if (backend_ == DynamicBmiBackend::cpp) {
@@ -256,7 +245,13 @@ void DynamicBmiModel::cleanup_model() {
         return;
     }
 
-    unregister_fortran_model();
+    if (fortran_model_handle_ == nullptr) {
+        return;
+    }
+    if (unregister_bmi_ != nullptr) {
+        (void)unregister_bmi_(&fortran_model_handle_);
+    }
+    fortran_model_handle_ = nullptr;
 }
 
 void DynamicBmiModel::Initialize(std::string config_file) {

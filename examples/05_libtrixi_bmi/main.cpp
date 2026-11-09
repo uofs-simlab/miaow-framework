@@ -35,10 +35,9 @@ int main(int argc, char* argv[]) {
 
         const std::string plugin_path = LIBTRIXI_BMI_PLUGIN_PATH;
         // Select the plugin and Julia simulation setup
-        const miaow::DynamicBmiConfig bmi_config{
-            .plugin_path_ = plugin_path,
-            .init_config_ = "./advection_basic_1d.jl",
-        };
+        caf::config_value::dictionary bmi_config;
+        bmi_config.insert("plugin_path", plugin_path);
+        bmi_config.insert("init_config", "./advection_basic_1d.jl");
         std::cout << "libtrixi BMI plugin: " << plugin_path << "\n";
 
         // Keep the embedded Julia runtime inside the unit's dedicated child process
@@ -50,7 +49,7 @@ int main(int argc, char* argv[]) {
         // Prepare one advection unit and one complete simulation
         miaow::Job job;
         const miaow::SimulationUnitHandle unit = job.add_unit("advection", bmi_subprocess);
-        job.add_task(miaow::make_bmi_task(unit, bmi_config));
+        job.add_task(unit, "run", bmi_config);
 
         // Submit the job
         miaow::JobHandle job_handle = runtime.submit_job(std::move(job));

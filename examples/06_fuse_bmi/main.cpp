@@ -91,15 +91,14 @@ int main(int argc, char* argv[]) {
         // Prepare one unit and one complete model run per parameter set
         miaow::Job job;
         for (const std::string& config_file : config_files) {
-            const miaow::DynamicBmiConfig config{
-                .backend_ = miaow::DynamicBmiBackend::fortran,
-                .plugin_path_ = fuse_plugin_path,
-                .init_config_ = config_file,
-            };
+            caf::config_value::dictionary config;
+            config.insert("backend", "fortran");
+            config.insert("plugin_path", fuse_plugin_path);
+            config.insert("init_config", config_file);
             const miaow::SimulationUnitHandle unit =
                 job.add_unit(std::filesystem::path(config_file).stem().string(),
                              bmi_subprocess);
-            job.add_task(miaow::make_bmi_task(unit, config));
+            job.add_task(unit, "run", config);
         }
         job.set_controller(std::make_unique<FuseController>());
 
