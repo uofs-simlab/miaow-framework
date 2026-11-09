@@ -175,7 +175,12 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
                 }
             }
             std::unique_ptr<bmi_api::Bmi> model = model_factory_(task);
-            model->Initialize(init_config);
+            // Convert and destroy plugin exceptions before releasing the model
+            try {
+                model->Initialize(init_config);
+            } catch (...) {
+                return make_failed_task_result(std::current_exception(), "BMI error");
+            }
             model_ = std::move(model);
             return TaskResult{TaskStatus::succeeded, "BMI initialize complete"};
         }
@@ -211,7 +216,12 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
             // Release ownership before calling Finalize so failure is not retried
             std::unique_ptr<bmi_api::Bmi> model = std::move(model_);
             model_failed_ = false;
-            model->Finalize();
+            // Convert and destroy plugin exceptions before releasing the model
+            try {
+                model->Finalize();
+            } catch (...) {
+                return make_failed_task_result(std::current_exception(), "BMI error");
+            }
             return TaskResult{TaskStatus::succeeded, "BMI finalize complete"};
         }
 

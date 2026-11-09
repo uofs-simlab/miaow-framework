@@ -22,6 +22,24 @@ struct ModelCalls {
     int queries{0};
     int finalizations{0};
     int destructions{0};
+    bool exception_destroyed_before_model{false};
+};
+
+// Shared state remains valid even if the model is destroyed before the exception
+class BmiCallError final : public std::runtime_error {
+  public:
+    BmiCallError(const std::string& message,
+                 std::shared_ptr<std::vector<ModelCalls>> calls, std::size_t index)
+        : std::runtime_error(message), calls_(std::move(calls)), index_(index) {}
+
+    ~BmiCallError() override {
+        ModelCalls& calls = calls_->at(index_);
+        calls.exception_destroyed_before_model = calls.destructions == 0;
+    }
+
+  private:
+    std::shared_ptr<std::vector<ModelCalls>> calls_;
+    std::size_t index_;
 };
 
 // Only the first session throws; counts remain available after executor destruction
@@ -36,6 +54,13 @@ class ThrowingBmiHeat final : public BmiHeat {
 
     ~ThrowingBmiHeat() override {
         ++calls_->at(index_).destructions;
+    }
+
+    void Initialize(std::string config_file) override {
+        if (index_ == 0 && failure_operation_ == "initialize") {
+            throw BmiCallError("intentional initialization failure", calls_, index_);
+        }
+        BmiHeat::Initialize(config_file);
     }
 
     void Update() override {
@@ -59,7 +84,7 @@ class ThrowingBmiHeat final : public BmiHeat {
         // Report the injected error after cleanup to exercise failure on session release
         BmiHeat::Finalize();
         if (index_ == 0 && failure_operation_ == "finalize") {
-            throw std::runtime_error("intentional finalization failure");
+            throw BmiCallError("intentional finalization failure", calls_, index_);
         }
     }
 
@@ -82,7 +107,9 @@ class BmiFailureController final : public miaow::JobController {
                 {"updates", caf::config_value{calls.updates}},
                 {"queries", caf::config_value{calls.queries}},
                 {"finalizations", caf::config_value{calls.finalizations}},
-                {"destructions", caf::config_value{calls.destructions}}});
+                {"destructions", caf::config_value{calls.destructions}},
+                {"exception_destroyed_before_model",
+                 caf::config_value{calls.exception_destroyed_before_model}}});
         }
         return caf::config_value{std::move(models)};
     }
@@ -182,16 +209,18 @@ void setup_recovery(miaow::Job& job, miaow::TaskExecutorRegistry& registry,
     const miaow::SimulationUnitHandle unit = job.add_unit("throwing", throwing_bmi);
     job.set_controller(std::make_unique<BmiFailureController>(calls));
 
-    // The first instance throws from the selected BMI method after initialization
+    // The first instance throws during initialization or the selected later call
     job.add_task(unit, "initialize", model_config);
-    job.add_task(unit, operation);
+    if (operation != "initialize") {
+        job.add_task(unit, operation);
+    }
 
     // Both operations must fail without reaching the model after the exception
     job.add_task(unit, "update");
     job.add_task(unit, "get_current_time");
 
-    // Update/query failures permit cleanup. A failed finalize has already released
-    // the session, so this additional finalize must report no initialized model.
+    // Update/query failures permit cleanup. Initialize/finalize failures release
+    // the model, so this finalize must report no initialized model.
     job.add_task(unit, "finalize");
 
     // The fresh instance must work. Leave it active so executor destruction finalizes

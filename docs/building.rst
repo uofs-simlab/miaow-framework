@@ -259,6 +259,8 @@ BMI task dispatch driver
 
 These cases use ``tests/bmi_task_dispatch_driver.cpp``. The five execution paths are a statically linked C++ model, C++ and Fortran plugins in-process, and C++ and Fortran plugins in subprocesses.
 
+The initialization and finalization failure cases use a custom exception in the static test model. Its destructor records whether the model is still alive, and the saved-record checker requires exception destruction before model destruction. This checks the lifetime ordering needed to keep plugin exception code available.
+
 .. list-table::
    :header-rows: 1
    :widths: 34 28 38
@@ -297,6 +299,11 @@ These cases use ``tests/bmi_task_dispatch_driver.cpp``. The five execution paths
 
        Runs the lifecycle sequence with a Fortran plugin in a persistent subprocess.
      - Model time persists between tasks; rejected operations preserve time 0.25 seconds, and reinitialization starts at zero
+   * - `miaow_bmi_initialize_failure`_
+     - `bmi_task_dispatch_driver.cpp`_
+
+       Makes the first instance of a controllable static heat model throw from ``Initialize()``.
+     - The failed initialization destroys the exception before releasing the model, without finalization. Updates, queries, and finalization report no initialized model; a fresh session works and is finalized and destroyed once.
    * - `miaow_bmi_update_failure`_
      - `bmi_task_dispatch_driver.cpp`_
 
@@ -311,7 +318,7 @@ These cases use ``tests/bmi_task_dispatch_driver.cpp``. The five execution paths
      - `bmi_task_dispatch_driver.cpp`_
 
        Makes the first instance of the same test model throw from ``Finalize()``.
-     - The failed finalization releases the session; subsequent operations report no initialized model. Reinitialization succeeds, the failed instance is never finalized again, and unit shutdown finalizes only the second instance.
+     - The failed finalization destroys the exception before releasing the model; subsequent operations report no initialized model. Reinitialization succeeds, the failed instance is never finalized again, and unit shutdown finalizes only the second instance.
    * - `miaow_bmi_repeated_run`_
      - `bmi_task_dispatch_driver.cpp`_
 
@@ -422,6 +429,7 @@ These cases use ``tests/simulation_unit_lifecycle_driver.cpp``.
 .. _miaow_example_07_job_controller_non_convergence: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_non_convergence.json
 .. _miaow_bmi_task_dispatch: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_unknown_operation.json
 .. _miaow_bmi_static_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_static_lifecycle.json
+.. _miaow_bmi_initialize_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_initialize_failure.json
 .. _miaow_bmi_update_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_update_failure.json
 .. _miaow_bmi_get_current_time_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_get_current_time_failure.json
 .. _miaow_bmi_finalize_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_finalize_failure.json
