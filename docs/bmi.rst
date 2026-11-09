@@ -43,7 +43,7 @@ Configuration dictionaries use these fields. Fields with defaults may be omitted
      - Required
      - Plugin library path string
 
-When ``init_config`` is omitted, the model receives an empty initialization path. Models that require an initialization file must still be given its path. Dynamic models always require ``plugin_path``.
+When ``init_config`` is omitted from the configuration dictionary, the model receives an empty initialization path. Models that require an initialization file must still be given its path. Dynamic ``initialize`` and ``run`` tasks require the addition of ``plugin_path`` to specify what plugin library to load.
 
 Static BMI model
 ----------------
@@ -77,11 +77,13 @@ Individual BMI operations
 
 The bundled subprocess worker retains one ``DynamicBmiTaskExecutor`` in each unit's child process and supports the same operations and task payloads.
 
-Each task invokes one BMI call. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units. The executor retains the initialized model until finalization and can initialize a fresh model afterward. Dynamic models retain their backend object and loaded plugin for that lifetime. ``run`` and a second ``initialize`` are rejected while a model is initialized. Clock tolerance applies only to complete runs.
+The exposed individual operations are ``initialize``, ``update``, ``get_current_time``, and ``finalize``. Other BMI methods, including value access and grid queries, are not exposed as task operations. Each successful individual operation invokes its corresponding BMI call. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units.
+
+The executor retains the initialized model until finalization and can initialize a fresh model afterward. Dynamic models retain their backend object and loaded plugin for that lifetime. ``update``, ``get_current_time``, and ``finalize`` fail when no model is initialized. ``run`` and a second ``initialize`` are rejected while a model is initialized, preserving the active model. Clock tolerance applies only to complete runs.
 
 The ``09_bmi_operations`` example demonstrates controller-generated operations with ``./miaow_bmi_operations`` from ``examples/09_bmi_operations``, using the heat model and configuration from ``01_heat``. It initializes one model, queries its current time, performs two updates with a query after each, and explicitly finalizes. The ``01_heat`` example performs a complete run.
 
-BMI call exceptions produce failed task results. After an update or query throws, the retained model accepts only finalization. The executor releases the model after a finalization attempt, including a failed attempt. Controllers should explicitly submit ``finalize`` to receive its result; executor destruction attempts finalization if an initialized model remains, but cannot report those cleanup errors as task results.
+BMI call exceptions produce failed task results. A failed initialization releases the newly constructed model without retaining it. After an update or query throws, the retained model accepts only finalization. The executor releases the model after a finalization attempt, including a failed attempt. Controllers should explicitly submit ``finalize`` to receive its result; executor destruction attempts finalization if an initialized model remains, but cannot report those cleanup errors as task results.
 
 Dynamic BMI plugin
 ------------------
@@ -110,7 +112,7 @@ Register ``DynamicBmiTaskExecutor`` for in-process plugin execution, or register
 
 A subprocess-backed unit keeps its child and dynamic executor alive between operations until removal or job completion. Individual operations retain an initialized model and its plugin; complete ``run`` tasks each create and finalize a fresh model. The Julia/Trixi example places one simulation in a dedicated unit subprocess.
 
-Schedule ``finalize`` before normal unit removal or job completion to receive the model's cleanup result. Subprocess shutdown forcibly terminates the child, including on task timeout, so executor destruction cannot guarantee finalization during shutdown.
+Schedule ``finalize`` before normal unit removal or job completion to receive the model's cleanup result. Subprocess shutdown forcibly terminates the child on unit removal, job completion, task or job timeout, and Runtime destruction. Child-side executor destruction cannot guarantee finalization during shutdown. Unexpected child termination also loses the retained model; MIAOW reports a unit failure rather than recreating its state.
 
 Custom executables can implement the same :ref:`task contract <custom-subprocess-executables>`.
 

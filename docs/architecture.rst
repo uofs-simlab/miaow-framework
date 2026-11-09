@@ -43,7 +43,9 @@ Task dispatch and executors
 
 The job scans queued tasks in submission order and selects the first whose target unit is idle. It skips tasks for busy units so that tasks for other units can proceed. ``RuntimeOptions::max_workers_`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
 
-When dispatching a unit's first task, the job creates its actor. The unit constructs one ``TaskExecutor`` before executing that task and reuses the executor for subsequent tasks. Operations on a unit run serially in the order they are received in the actor's mailbox.
+The workload determines how many units and retained model instances are needed. Choose the concurrent-task limit to suit the available CPUs and the threads used by each model. Idle units retain their executor and model state, so all resident models must fit in memory; the concurrent-task limit does not limit their number.
+
+When dispatching a unit's first task, the job creates its actor. The unit constructs one ``TaskExecutor`` before executing that task and reuses the executor for subsequent tasks. Declaring a unit does not create its actor or initialize a BMI model. BMI initialization occurs when the executor handles an ``initialize`` or ``run`` task. The job allows at most one active task per unit, and operations on that unit execute serially.
 
 A unit's ``TaskExecutorId`` selects an executor registered through ``TaskExecutorRegistry``. The registration determines where its task code runs:
 
@@ -229,6 +231,8 @@ Structured output
 ``JobController::finalize()`` returns optional structured output in the same format, with null as the default. Runtime retains this value in ``JobRecord::output_``.
 
 When ``RuntimeOptions::output_root_`` is configured, Runtime writes the completed ``JobRecord``, including task and job output, to ``job_record.json``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
+
+State retained between tasks lives in the unit's executor or child process. Job records describe execution results; MIAOW does not checkpoint or restore live model state from them. A replacement unit starts with a new executor and must initialize its own model.
 
 Each completed record includes ``miaow_version``, captured when the library is built. This uses Git's description relative to a reachable version tag, such as ``v0.3.0-5-gabc1234-dirty``: the tag, number of additional commits, abbreviated commit hash, and ``-dirty`` for tracked edits. An exact clean tag reports only the tag; a history without a matching tag reports an abbreviated hash.
 
