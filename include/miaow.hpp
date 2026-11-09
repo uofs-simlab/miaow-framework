@@ -586,6 +586,10 @@ struct RuntimeOptions {
     /// all output directories and files.
     std::string output_root_;
 
+    /// Time allowed for subprocess shutdown before forced termination; non-positive
+    /// values force immediate termination. Includes the active call and child cleanup.
+    std::chrono::milliseconds subprocess_shutdown_grace_period_;
+
     /**
      * @brief Construct runtime options.
      * @param workers Maximum active task requests for each job. Values of zero are
@@ -594,14 +598,17 @@ struct RuntimeOptions {
      * @param job_timeout Timeout that fails unfinished tasks and requests unit shutdown.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
+     * @param subprocess_shutdown_grace_period Time allowed for orderly child shutdown.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::minutes(1),
                    std::chrono::milliseconds job_timeout = std::chrono::minutes(5),
-                   std::string output_root = "")
-        : max_workers_(workers == 0 ? 1 : workers),
-          task_request_timeout_(task_timeout), job_request_timeout_(job_timeout),
-          output_root_(std::move(output_root)) {}
+                   std::string output_root = "",
+                   std::chrono::milliseconds subprocess_shutdown_grace_period =
+                       std::chrono::seconds(5))
+        : max_workers_(workers == 0 ? 1 : workers), task_request_timeout_(task_timeout),
+          job_request_timeout_(job_timeout), output_root_(std::move(output_root)),
+          subprocess_shutdown_grace_period_(subprocess_shutdown_grace_period) {}
 };
 
 /**
@@ -633,7 +640,8 @@ class SimulationUnit {
                    std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
                    caf::actor subprocess_registration_actor,
                    std::uint16_t subprocess_registration_port,
-                   std::chrono::milliseconds task_request_timeout);
+                   std::chrono::milliseconds task_request_timeout,
+                   std::chrono::milliseconds subprocess_shutdown_grace_period);
     caf::behavior make_behavior();
     /// @endcond
 

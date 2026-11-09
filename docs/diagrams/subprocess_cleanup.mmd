@@ -32,11 +32,19 @@ sequenceDiagram
     J-)U: shutdown_atom
     U->>U: Release TaskExecutor<br/>SubprocessState::shutdown()
     U-)Reg: release_subprocess_launch_id_atom<br/>launch ID
-    U->>P: SIGKILL (process)
+    alt Registered worker and positive grace period
+        U->>P: CAF worker exit request
+        Note over P: Finish active handler,<br/>return from run_subprocess_worker(),<br/>and destroy child-owned resources
+    else No registered worker or no grace period
+        U->>P: SIGKILL (process)
+    end
     U-)U: poll_subprocess_exit_atom
     loop Until child is reaped
         U->>U: waitpid(pid, WNOHANG)
         opt Child still running
+            opt Shutdown grace deadline expires
+                U->>P: SIGKILL (process)
+            end
             U-)U: poll_subprocess_exit_atom<br/>(delayed)
         end
     end

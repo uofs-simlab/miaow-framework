@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <csignal>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -317,6 +318,54 @@ BOOST_FIXTURE_TEST_CASE(simulation_unit_replacement_after_failure, JobRecordChec
     BOOST_TEST(tasks.at(0).at("metadata").at("feature_id") ==
                tasks.at(3).at("metadata").at("feature_id"));
     BOOST_TEST(output.at("replacement_has_new_handle").at("value").get<bool>());
+}
+
+// A timed-out child must finish cleanup or be killed before its slot is reused
+BOOST_FIXTURE_TEST_CASE(subprocess_shutdown, JobRecordChecker) {
+    BOOST_REQUIRE_EQUAL(tasks.size(), 4);
+    check_lifecycle_observations(job_record, 1);
+    const auto& arguments = boost::unit_test::framework::master_test_suite();
+    BOOST_REQUIRE_EQUAL(arguments.argc, 3);
+    std::ifstream case_input{arguments.argv[2]};
+    const nlohmann::json test_case = nlohmann::json::parse(case_input);
+    const bool cleanup_finished = test_case.at("cleanup_finished").get<bool>();
+
+    // Late successful replies cannot replace the active or queued task's failure
+    for (std::size_t id : {1, 2}) {
+        BOOST_TEST_CONTEXT("timed-out unit task " << id) {
+            const auto& result = tasks.at(id).at("result");
+            BOOST_TEST(result.at("status").get<std::string>() == "failed");
+            const std::string message = result.at("message").get<std::string>();
+            BOOST_TEST(message.find("request_timeout") != std::string::npos);
+            const std::string termination =
+                cleanup_finished
+                    ? "subprocess exited with code 0"
+                    : "subprocess was terminated by signal " + std::to_string(SIGKILL);
+            BOOST_TEST(message.find(termination) != std::string::npos);
+            BOOST_TEST(tasks.at(id).at("unit") == tasks.at(0).at("unit"));
+        }
+    }
+    BOOST_TEST(!tasks.at(1).at("dispatch_offset_from_job_start").is_null());
+    BOOST_TEST(tasks.at(2).at("dispatch_offset_from_job_start").is_null());
+    BOOST_TEST(tasks.at(2).at("run_time").get<std::string>() == "0s");
+
+    // Configuration succeeds, and the independent unit runs after the child is reaped
+    BOOST_TEST(tasks.at(0).at("result").at("status").get<std::string>() == "succeeded");
+    BOOST_TEST(tasks.at(0).at("result").at("output").get<std::int64_t>() > 0);
+    BOOST_TEST(tasks.at(3).at("result").at("status").get<std::string>() == "succeeded");
+    BOOST_TEST(tasks.at(3).at("result").at("output").get<std::int64_t>() == 1);
+    BOOST_TEST(tasks.at(3).at("unit") != tasks.at(0).at("unit"));
+    const auto& output = job_record.at("output");
+    BOOST_TEST(output.at("child_reaped_before_callback").at("value").get<bool>());
+    BOOST_TEST(output.at("other_task_waited_for_shutdown").at("value").get<bool>());
+
+    // Both cases reach destruction; only cleanup within grace can finish
+    const std::filesystem::path results_directory =
+        std::filesystem::path{arguments.argv[1]}.parent_path() / "results";
+    BOOST_TEST(std::filesystem::exists(results_directory / "call_finished"));
+    BOOST_TEST(std::filesystem::exists(results_directory / "cleanup_started"));
+    BOOST_TEST(std::filesystem::exists(results_directory / "cleanup_finished") ==
+               cleanup_finished);
 }
 
 // Registered in examples/07_job_controller/CMakeLists.txt using default example inputs

@@ -362,6 +362,16 @@ These cases use ``tests/simulation_unit_lifecycle_driver.cpp``.
 
        Injects executor-construction failure, replaces the unit, and continues work.
      - With two worker slots, the first batch callback reports two failed tasks, one successful task, and one unit failure; the second reports three successful tasks and no unit failures.
+   * - `miaow_subprocess_shutdown_within_grace`_
+     - `simulation_unit_lifecycle_driver.cpp`_ and `subprocess_shutdown_worker.cpp`_
+
+       Times out a child task that subsequently returns and completes destructor cleanup within the shutdown grace period.
+     - The child exits normally and writes its cleanup marker. The active and queued tasks fail once with one unit-failure report, the queued task never dispatches, new work on the failed unit is rejected, and the worker slot becomes available only after the child is reaped.
+   * - `miaow_subprocess_shutdown_grace_expired`_
+     - `simulation_unit_lifecycle_driver.cpp`_ and `subprocess_shutdown_worker.cpp`_
+
+       Times out a child task whose destructor cleanup exceeds the configured grace period.
+     - The child starts cleanup but is terminated by SIGKILL before finishing it. The timeout remains the failure cause, the child is reaped, queued work never dispatches, and the independent unit can then use the worker slot.
 
 
 .. _miaow_example_00_hello: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/00_hello/CMakeLists.txt
@@ -406,6 +416,9 @@ These cases use ``tests/simulation_unit_lifecycle_driver.cpp``.
 .. _miaow_bmi_repeated_run_concurrent: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_repeated_run_concurrent.json
 .. _miaow_simulation_unit_removal_with_queued_work: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_removal_with_queued_work.json
 .. _simulation_unit_lifecycle_driver.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/simulation_unit_lifecycle_driver.cpp
+.. _subprocess_shutdown_worker.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/subprocess_shutdown_worker.cpp
+.. _miaow_subprocess_shutdown_within_grace: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/subprocess_shutdown_within_grace.json
+.. _miaow_subprocess_shutdown_grace_expired: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/subprocess_shutdown_grace_expired.json
 .. _miaow_simulation_unit_removal_with_queued_work_concurrent: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_removal_with_queued_work_concurrent.json
 .. _miaow_simulation_unit_removal_with_queued_work_batch_synchronous: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_removal_with_queued_work_batch_synchronous.json
 .. _miaow_simulation_unit_removal_with_queued_work_batch_synchronous_concurrent: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_removal_with_queued_work_batch_synchronous_concurrent.json

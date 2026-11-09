@@ -410,11 +410,13 @@ caf::behavior SubprocessWorker::make_behavior() {
 SubprocessState::SubprocessState(caf::event_based_actor* owner,
                                  caf::actor subprocess_registration_actor,
                                  std::uint16_t subprocess_registration_port,
-                                 std::chrono::milliseconds task_request_timeout)
+                                 std::chrono::milliseconds task_request_timeout,
+                                 std::chrono::milliseconds shutdown_grace_period)
     : owner_(owner),
       subprocess_registration_actor_(std::move(subprocess_registration_actor)),
       subprocess_registration_port_(subprocess_registration_port),
-      task_request_timeout_(task_request_timeout) {}
+      task_request_timeout_(task_request_timeout),
+      shutdown_grace_period_(shutdown_grace_period) {}
 
 SubprocessState::~SubprocessState() {
     if (!subprocess_pid_.has_value()) {
@@ -465,6 +467,7 @@ void SubprocessState::finish_stop(std::optional<int> wait_status) {
     // Release child resources before delivering the pending failure
     subprocess_pid_.reset();
     subprocess_worker_actor_ = caf::actor{};
+    shutdown_deadline_.reset();
     paths_.reset();
     keep_logs_ = false;
     launch_id_.reset();
@@ -501,7 +504,7 @@ void SubprocessState::fail_task(std::string message) {
     begin_stop();
 }
 
-// Request child termination, then poll its process identifier without blocking
+// Allow orderly child shutdown before forcing termination, then reap without blocking
 void SubprocessState::begin_stop() {
     if (phase_ == SubprocessPhase::stopping_subprocess) {
         return;
@@ -520,8 +523,13 @@ void SubprocessState::begin_stop() {
         return;
     }
 
-    // Terminate only this unit's child, then reap it before reporting shutdown
-    send_sigkill_to_child_process(*subprocess_pid_);
+    // Worker exit lets child-owned executors clean up before the process returns
+    if (subprocess_worker_actor_ && shutdown_grace_period_.count() > 0) {
+        shutdown_deadline_ = std::chrono::steady_clock::now() + shutdown_grace_period_;
+        caf::anon_send_exit(subprocess_worker_actor_, caf::exit_reason::user_shutdown);
+    } else {
+        send_sigkill_to_child_process(*subprocess_pid_);
+    }
 
     // simulation_unit_actor -> simulation_unit_actor: begin non-blocking exit polling
     owner_->mail(poll_subprocess_exit_atom_v, *launch_id_).send(owner_);
@@ -714,8 +722,13 @@ void SubprocessState::poll_for_subprocess_exit(SubprocessLaunchId launch_id) {
             return;
         }
 
-        // simulation_unit_actor -> simulation_unit_actor: poll the same child again; a
-        // zero waitpid result means the child is still running after SIGKILL
+        // One deadline covers the active call, executor destruction, and process exit
+        if (shutdown_deadline_ && std::chrono::steady_clock::now() >= *shutdown_deadline_) {
+            send_sigkill_to_child_process(*subprocess_pid_);
+            shutdown_deadline_.reset();
+        }
+
+        // simulation_unit_actor -> simulation_unit_actor: poll the same child again
         owner_->mail(poll_subprocess_exit_atom_v, launch_id)
             .delay(subprocess_exit_poll_interval)
             .send(owner_);

@@ -259,7 +259,8 @@ void Job::dispatch_tasks() {
                 self_->spawn(caf::actor_from_state<SimulationUnit>, std::move(*prepared),
                              task_executor_registry_, subprocess_registration_actor_,
                              subprocess_registration_port_,
-                             runtime_options_.task_request_timeout_);
+                             runtime_options_.task_request_timeout_,
+                             runtime_options_.subprocess_shutdown_grace_period_);
             self_->monitor(simulation_unit_actor,
                            [this, unit_index](const caf::error& reason) {
                                unit_terminated(unit_index, reason);
@@ -315,14 +316,13 @@ SimulationUnit::SimulationUnit(
     caf::event_based_actor* self, SimulationUnit&& unit,
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
     caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
-    std::chrono::milliseconds task_request_timeout)
+    std::chrono::milliseconds task_request_timeout,
+    std::chrono::milliseconds subprocess_shutdown_grace_period)
     : SimulationUnit(std::move(unit)) {
     task_executor_registry_ = std::move(task_executor_registry);
-    subprocess_state_ =
-        std::make_unique<core::SubprocessState>(self,
-                                                std::move(subprocess_registration_actor),
-                                                subprocess_registration_port,
-                                                task_request_timeout);
+    subprocess_state_ = std::make_unique<core::SubprocessState>(
+        self, std::move(subprocess_registration_actor), subprocess_registration_port,
+        task_request_timeout, subprocess_shutdown_grace_period);
 }
 
 caf::behavior SimulationUnit::make_behavior() {

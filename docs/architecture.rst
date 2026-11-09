@@ -166,10 +166,12 @@ Cleanup
 
 When the child returns a failed ``TaskResult``, the unit keeps the child available for later tasks and retains its diagnostic files. If child startup fails, the child terminates unexpectedly, or a task times out, the unit stops and reports ``UnitFailure``. Unit removal and job completion also stop the child.
 
-The sequence shows shutdown of a ``SubprocessTaskExecutor`` unit that has launched a child. ``SubprocessState`` terminates the child and collects its exit status before the unit actor quits. A task timeout or unexpected child termination follows the same cleanup steps.
+``SubprocessState`` requests orderly CAF worker exit, allowing the active synchronous handler to return before ``run_subprocess_worker()`` returns and child-owned resources are destroyed. ``RuntimeOptions::subprocess_shutdown_grace_period_`` defaults to 5 seconds and covers the active call, resource cleanup, and process exit. Set it to a non-positive duration for immediate forced termination. A child without a registered worker is forcibly terminated because it cannot receive the exit request.
+
+The sequence shows shutdown of a ``SubprocessTaskExecutor`` unit that has launched a child. ``SubprocessState`` polls for process exit without blocking a scheduler thread. If the fixed grace deadline expires, it sends ``SIGKILL`` and continues polling. Repeated shutdown requests do not extend the deadline. The unit actor quits only after the child is reaped. A task timeout or unexpected child termination follows the same cleanup steps.
 
 .. mermaid:: diagrams/subprocess_cleanup.mmd
-   :alt: Child termination, non-blocking reaping, and unit termination
+   :alt: Orderly child shutdown, forced termination after a grace period, and non-blocking reaping
    :align: center
 
 Failures and shutdown
@@ -189,7 +191,7 @@ Timeouts
 
 A task timeout makes its unit unavailable and is reported to the controller as a ``UnitFailure``. At a job timeout, the job actor marks all unfinished tasks as failed and tells each simulation-unit actor to shut down. The controller cannot extend this deadline. Task records created because of the job timeout are not passed to ``callback()``; ``finalize()`` can return output based on earlier callbacks.
 
-For a ``SubprocessTaskExecutor``, a task timeout terminates the child and waits for it to exit before reporting ``UnitFailure``. Tasks executing in the parent process cannot be interrupted by a task or job timeout. Their actors stop after ``execute()`` returns, so the job result may arrive after the configured deadline.
+For a ``SubprocessTaskExecutor``, a task timeout starts child shutdown and waits for process exit and reaping before reporting ``UnitFailure``. Finishing during the shutdown grace period does not change the task's failure. Job results can arrive after their configured deadline while subprocess cleanup completes. Tasks executing in the parent process cannot be interrupted by a task or job timeout. Their actors stop after ``execute()`` returns, so their cleanup has no enforced time limit.
 
 Runtime shutdown
 ^^^^^^^^^^^^^^^^

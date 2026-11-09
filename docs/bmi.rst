@@ -112,7 +112,9 @@ Register ``DynamicBmiTaskExecutor`` for in-process plugin execution, or register
 
 A subprocess-backed unit keeps its child and dynamic executor alive between operations until removal or job completion. Individual operations retain an initialized model and its plugin; complete ``run`` tasks each create and finalize a fresh model. The Julia/Trixi example places one simulation in a dedicated unit subprocess.
 
-Schedule ``finalize`` before normal unit removal or job completion to receive the model's cleanup result. Subprocess shutdown forcibly terminates the child on unit removal, job completion, task or job timeout, and Runtime destruction. Child-side executor destruction cannot guarantee finalization during shutdown. Unexpected child termination also loses the retained model; MIAOW reports a unit failure rather than recreating its state.
+Schedule ``finalize`` before normal unit removal or job completion to receive the model's cleanup result. On unit removal, job completion, task or job timeout, and Runtime destruction, subprocess shutdown requests orderly worker exit. After the active call returns, the bundled worker releases its executor, which attempts finalization if a model remains.
+
+``RuntimeOptions::subprocess_shutdown_grace_period_`` allows 5 seconds by default for the active call, finalization, and process exit; expiry forcibly terminates the child. Finalization is best effort and cannot run after forced termination or a process crash. Unexpected child termination also loses the retained model; MIAOW reports a unit failure rather than recreating its state.
 
 Custom executables can implement the same :ref:`task contract <custom-subprocess-executables>`.
 
