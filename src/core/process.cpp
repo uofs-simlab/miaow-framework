@@ -473,7 +473,7 @@ void SubprocessState::finish_stop(std::optional<int> wait_status) {
     launch_id_.reset();
     phase_ = SubprocessPhase::idle;
 
-    // Context loss uses the monitor path; ordinary shutdown may still settle a request
+    // On context loss, notify the job through the unit monitor; otherwise deliver the result
     caf::error reason;
     if (result_waiting_for_stop_.has_value()) {
         if (context_failed_) {

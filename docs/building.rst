@@ -31,7 +31,7 @@ The repository can be configured and built with the following commands:
 
 ``CITATION.cff`` is the single source for the software version. Use ``version: "0.3.0-dev"`` during development and ``version: "0.3.0"`` for a release; CMake extracts ``0.3.0`` and automatically reconfigures when the citation file changes.
 
-With ``BUILD_TESTING=ON`` (the default), CMake builds the ``miaow_job_record_checks`` checker, the lifecycle and BMI dispatch test drivers, and the five examples required by the standard regression suite: ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``07_job_controller``, and ``09_bmi_operations``. Their tests are registered even with ``BUILD_EXAMPLES=OFF``. See :ref:`build-options` for the components built in each configuration, and :ref:`building-examples` to select additional examples.
+With ``BUILD_TESTING=ON`` (the default), CMake builds the ``miaow_job_record_checks`` checker, the lifecycle and BMI dispatch test drivers, and the six examples required by the standard regression suite: ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``07_job_controller``, ``09_bmi_operations``, and ``10_model_coupling``. Their tests are registered even with ``BUILD_EXAMPLES=OFF``. See :ref:`build-options` for the components built in each configuration, and :ref:`building-examples` to select additional examples.
 
 Run the tests enabled in the current build with the following command:
 
@@ -114,6 +114,11 @@ Examples run with their default inputs.
 
        Submits initialization, time queries, two updates, and finalization on one heat unit.
      - Seven tasks succeed on the same unit; model times match 0, 1/6, and 1/3 seconds within ``1e-14``
+   * - `miaow_example_10_model_coupling`_
+     - `10_model_coupling/main.cpp`_
+
+       Transfers complete temperature snapshots between two retained heat models using explicit task dependencies.
+     - All 22 tasks succeed, temperature fields match the heat stencil at each exchange, and both model clocks reach 0.75 seconds
 
 
 Alternative example regression tests
@@ -406,6 +411,8 @@ These cases use ``tests/simulation_unit_lifecycle_driver.cpp``.
 .. _07_job_controller/main.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/main.cpp
 .. _miaow_example_09_bmi_operations: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/09_bmi_operations/CMakeLists.txt
 .. _09_bmi_operations/main.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/09_bmi_operations/main.cpp
+.. _miaow_example_10_model_coupling: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/10_model_coupling/CMakeLists.txt
+.. _10_model_coupling/main.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/10_model_coupling/main.cpp
 .. _miaow_example_00_hello_empty: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/hello_empty.json
 .. _miaow_example_03_dynamic_bmi_zero_tolerance: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_zero_tolerance.json
 .. _miaow_example_03_dynamic_bmi_zero_duration: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_zero_duration.json
@@ -524,9 +531,9 @@ All top-level repository configurations build the following runtime components, 
 The standard regression suite is enabled when ``BUILD_TESTING`` is ``ON``, and builds the following additional programs:
 
 * ``miaow_job_record_checks``: the Boost.Test executable that checks saved job records and controller observations.
-* ``miaow_simulation_unit_lifecycle_driver``: the model-free workload driver for removal, failure recovery, and callback delivery.
-* ``miaow_bmi_dispatch_driver``: the heat-model workload driver for operation failures and repeated runs across the five BMI execution paths.
-* The ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``07_job_controller``, and ``09_bmi_operations`` example programs, including the heat-model libraries and C++ and Fortran plugins needed by their tests.
+* ``miaow_simulation_unit_lifecycle_driver``: the model-free workload driver for removal, failure recovery, callback delivery, and task dependencies.
+* ``miaow_bmi_dispatch_driver``: the heat-model workload driver for operation failures, value transfers, and repeated runs across the five BMI execution paths.
+* The ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``07_job_controller``, ``09_bmi_operations``, and ``10_model_coupling`` example programs, including the heat-model libraries and C++ and Fortran plugins needed by their tests.
 
 The following top-level CMake options are available when building MIAOW:
 
@@ -547,7 +554,8 @@ The following top-level CMake options are available when building MIAOW:
      - | ``00_hello;01_heat;``
        | ``03_dynamic_bmi;``
        | ``07_job_controller;``
-       | ``09_bmi_operations``
+       | ``09_bmi_operations;``
+       | ``10_model_coupling``
      - Semicolon-separated list of examples selected by ``BUILD_EXAMPLES``; testing includes its required examples independently
    * - ``-DMIAOW_BOOST_PROVIDER``
      - ``auto``

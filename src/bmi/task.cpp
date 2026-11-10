@@ -5,16 +5,78 @@
 #include <cmath>
 #include <exception>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <vector>
 
 #include <caf/settings.hpp>
 
 namespace miaow {
 
 namespace {
+
+// Read a complete variable into a copied list using its native BMI type
+template <class Value> TaskResult get_value(bmi_api::Bmi& model, const std::string& name) {
+    const int item_size = model.GetVarItemsize(name);
+    const int byte_count = model.GetVarNbytes(name);
+    if (item_size != sizeof(Value) || byte_count < 0 || byte_count % item_size != 0) {
+        throw std::runtime_error("variable metadata does not match its native type");
+    }
+    std::vector<Value> values(static_cast<std::size_t>(byte_count / item_size));
+    model.GetValue(name, values.data());
+    caf::config_value::list output;
+    output.reserve(values.size());
+    for (Value value : values) {
+        if constexpr (std::is_integral_v<Value>) {
+            output.emplace_back(static_cast<caf::config_value::integer>(value));
+        } else {
+            output.emplace_back(static_cast<double>(value));
+        }
+    }
+    return TaskResult{TaskStatus::succeeded, "BMI get value complete",
+                      caf::config_value{std::move(output)}};
+}
+
+// Write a complete variable after checking the input against its native BMI type
+template <class Value>
+TaskResult set_value(bmi_api::Bmi& model, const std::string& name,
+                     const caf::config_value::list& input) {
+    const int item_size = model.GetVarItemsize(name);
+    const int byte_count = model.GetVarNbytes(name);
+    if (item_size != sizeof(Value) || byte_count < 0 || byte_count % item_size != 0) {
+        throw std::runtime_error("variable metadata does not match its native type");
+    }
+    std::vector<Value> values(static_cast<std::size_t>(byte_count / item_size));
+    if (input.size() != values.size()) {
+        throw std::runtime_error("value count does not match the variable size");
+    }
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if constexpr (std::is_integral_v<Value>) {
+            const caf::config_value::integer value =
+                caf::get<caf::config_value::integer>(input[index]);
+            if (value < std::numeric_limits<Value>::lowest() ||
+                value > std::numeric_limits<Value>::max()) {
+                throw std::runtime_error("integer value is outside the native type range");
+            }
+            values[index] = static_cast<Value>(value);
+        } else {
+            const double value = caf::get<double>(input[index]);
+            if constexpr (std::same_as<Value, float>) {
+                if (std::isfinite(value) && (value < std::numeric_limits<float>::lowest() ||
+                                             value > std::numeric_limits<float>::max())) {
+                    throw std::runtime_error("real value is outside the native type range");
+                }
+            }
+            values[index] = static_cast<Value>(value);
+        }
+    }
+    model.SetValue(name, values.data());
+    return TaskResult{TaskStatus::succeeded, "BMI set value complete"};
+}
 
 // Seconds per unit reported by the model clock
 double seconds_per_time_unit(std::string_view raw_units) {
@@ -144,10 +206,32 @@ BmiTaskExecutor::~BmiTaskExecutor() {
 
 caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
     try {
+        // Validate model state before dispatching the selected operation
+        const bool creates_model =
+            task.operation_ == "run" || task.operation_ == "initialize";
+        const bool uses_retained_model =
+            task.operation_ == "update" || task.operation_ == "get_current_time" ||
+            task.operation_ == "get_value" || task.operation_ == "set_value" ||
+            task.operation_ == "finalize";
+
+        // if the operation creates a model, ensure no model is already retained
+        if (creates_model && model_) {
+            return make_failed_task_result("model is already initialized", "BMI error");
+        }
+
+        // If the operation uses a retained model, ensure a model is already retained
+        if (uses_retained_model && !model_) {
+            return make_failed_task_result("model is not initialized", "BMI error");
+        }
+
+        // If the model failed, it can be used only for finalization
+        if (uses_retained_model && task.operation_ != "finalize" && model_failed_) {
+            return make_failed_task_result(
+                "model must be finalized after a failed BMI call", "BMI error");
+        }
+
+        // Full model run operation
         if (task.operation_ == "run") {
-            if (model_) {
-                return make_failed_task_result("model is already initialized", "BMI error");
-            }
             std::unique_ptr<bmi_api::Bmi> model = model_factory_(task);
             const auto& values = caf::get<caf::config_value::dictionary>(task.args_.at(0));
             const caf::config_value* init_config = caf::get_if(&values, "init_config");
@@ -160,10 +244,8 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
                                        : default_bmi_time_step_tolerance_seconds);
         }
 
+        // Model initialization operation
         if (task.operation_ == "initialize") {
-            if (model_) {
-                return make_failed_task_result("model is already initialized", "BMI error");
-            }
             std::string init_config;
             if (const std::string* path = task.string_arg(0)) {
                 init_config = *path;
@@ -185,34 +267,53 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
             return TaskResult{TaskStatus::succeeded, "BMI initialize complete"};
         }
 
+        // Model update operation
         if (task.operation_ == "update") {
-            if (!model_) {
-                return make_failed_task_result("model is not initialized", "BMI error");
-            }
-            if (model_failed_) {
-                return make_failed_task_result(
-                    "model must be finalized after a failed BMI call", "BMI error");
-            }
             model_->Update();
             return TaskResult{TaskStatus::succeeded, "BMI update complete"};
         }
 
+        // Get current model time operation
         if (task.operation_ == "get_current_time") {
-            if (!model_) {
-                return make_failed_task_result("model is not initialized", "BMI error");
-            }
-            if (model_failed_) {
-                return make_failed_task_result(
-                    "model must be finalized after a failed BMI call", "BMI error");
-            }
             return TaskResult{TaskStatus::succeeded, "BMI current time",
                               caf::config_value{model_->GetCurrentTime()}};
         }
 
-        if (task.operation_ == "finalize") {
-            if (!model_) {
-                return make_failed_task_result("model is not initialized", "BMI error");
+        // Get model variable value operation
+        if (task.operation_ == "get_value") {
+            const std::string& name = caf::get<std::string>(task.args_.at(0));
+            const std::string type = model_->GetVarType(name);
+            if (type == "double") {
+                return get_value<double>(*model_, name);
             }
+            if (type == "float") {
+                return get_value<float>(*model_, name);
+            }
+            if (type == "int") {
+                return get_value<int>(*model_, name);
+            }
+            throw std::runtime_error("unsupported BMI variable type '" + type + "'");
+        }
+
+        // Set model variable value operation
+        if (task.operation_ == "set_value") {
+            const std::string& name = caf::get<std::string>(task.args_.at(0));
+            const std::string type = model_->GetVarType(name);
+            const auto& input = caf::get<caf::config_value::list>(task.args_.at(1));
+            if (type == "double") {
+                return set_value<double>(*model_, name, input);
+            }
+            if (type == "float") {
+                return set_value<float>(*model_, name, input);
+            }
+            if (type == "int") {
+                return set_value<int>(*model_, name, input);
+            }
+            throw std::runtime_error("unsupported BMI variable type '" + type + "'");
+        }
+
+        // Model finalization operation
+        if (task.operation_ == "finalize") {
             // Release ownership before calling Finalize so failure is not retried
             std::unique_ptr<bmi_api::Bmi> model = std::move(model_);
             model_failed_ = false;
@@ -225,6 +326,7 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
             return TaskResult{TaskStatus::succeeded, "BMI finalize complete"};
         }
 
+        // Unsupported operation handling
         return make_failed_task_result("unsupported operation '" + task.operation_ + "'",
                                        "BMI error");
     } catch (...) {

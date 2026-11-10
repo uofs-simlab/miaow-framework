@@ -20,7 +20,6 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <span>
 #include <utility>
 #include <string>
 #include <vector>
@@ -28,23 +27,6 @@
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
-
-class FuseController : public miaow::JobController {
-  public:
-    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> completed_tasks,
-                  std::span<const miaow::UnitFailure> failed_units) override {
-        // If any units failed, mark the job as failed and return immediately
-        if (!failed_units.empty()) {
-            job.fail(failed_units.front().reason_);
-            return;
-        }
-
-        // Each parameter set has one task; release its subprocess after completion
-        for (const miaow::TaskRecord& record : completed_tasks) {
-            job.remove_unit(record.unit_);
-        }
-    }
-};
 
 int main(int argc, char* argv[]) {
     try {
@@ -100,7 +82,7 @@ int main(int argc, char* argv[]) {
                              bmi_subprocess);
             job.add_task(unit, "run", config);
         }
-        job.set_controller(std::make_unique<FuseController>());
+        job.set_controller(std::make_unique<miaow::SingleTaskPerUnitController>());
 
         // Report the number of model runs
         std::cout << "Submitting " << config_files.size() << " FUSE tasks to MIAOW...\n\n";

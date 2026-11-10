@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -93,6 +94,34 @@ class SimulationUnitHandle {
 };
 
 /**
+ * @brief Job-scoped task identity retained across job moves and task insertion.
+ */
+class TaskHandle {
+  public:
+    TaskHandle() = default;
+    bool operator==(const TaskHandle&) const = default;
+
+    /// Match the task against records delivered to its job's controller
+    TaskId task_id() const {
+        return task_id_;
+    }
+
+  private:
+    TaskHandle(JobCreationId job_creation_id, TaskId task_id)
+        : job_creation_id_(job_creation_id), task_id_(task_id) {}
+
+    JobCreationId job_creation_id_{0};
+    TaskId task_id_{0};
+
+    friend class Job;
+};
+
+/// Reference an output whose producer must also be explicitly listed as a dependency
+inline TaskHandle output_of(TaskHandle producer) {
+    return producer;
+}
+
+/**
  * @brief Input payload routed to one registered task executor.
  *
  * Arguments in `args_` are positional and interpreted by the concrete `TaskExecutor`
@@ -107,6 +136,10 @@ struct Task {
 
     /// Generic arguments for this task to pass into `TaskExecutor::execute()`
     std::vector<caf::config_value> args_;
+
+    /// Parent-job scheduling data; only resolved arguments are sent to executors
+    std::vector<TaskHandle> dependencies_;
+    std::map<std::size_t, TaskHandle> output_references_;
 
     /// Directory injected by `Runtime` where the executing `TaskExecutor` writes
     /// task artifacts
@@ -129,8 +162,32 @@ struct Task {
     /// Convert positional operation arguments into config values
     template <class... Args>
     Task(SimulationUnitHandle unit, std::string operation, Args... args)
-        : Task(unit, std::move(operation),
-               std::vector<caf::config_value>{caf::config_value{std::move(args)}...}) {}
+        : Task(unit, std::move(operation)) {
+        const auto append_argument = [this](auto value) {
+            if constexpr (std::same_as<decltype(value), TaskHandle>) {
+                output_references_.emplace(args_.size(), value);
+                args_.emplace_back();
+            } else {
+                args_.emplace_back(std::move(value));
+            }
+        };
+        (append_argument(std::move(args)), ...);
+    }
+
+    /// Construct an operation with explicit success prerequisites
+    template <class... Args>
+    Task(SimulationUnitHandle unit, std::vector<TaskHandle> dependencies,
+         std::string operation, Args... args)
+        : Task(unit, std::move(operation), std::move(args)...) {
+        dependencies_ = std::move(dependencies);
+    }
+
+    /// Construct an operation with one success prerequisite
+    template <class... Args>
+    Task(SimulationUnitHandle unit, TaskHandle dependency, std::string operation,
+         Args... args)
+        : Task(unit, std::vector<TaskHandle>{dependency}, std::move(operation),
+               std::move(args)...) {}
 
     /**
      * @brief Return a pointer to a string at a given positional argument index.
@@ -375,6 +432,21 @@ class JobController {
 };
 
 /**
+ * @brief Release each simulation unit after its single task completes.
+ *
+ * Use for jobs with one task per unit. Successful and failed task completions both
+ * remove their units; loss of a unit's execution context fails the job.
+ */
+class SingleTaskPerUnitController : public JobController {
+  public:
+    using JobController::JobController;
+
+    /// Remove completed tasks' units, or fail the job if a unit became unavailable
+    void callback(Job& job, std::span<const TaskRecord> completed_tasks,
+                  std::span<const UnitFailure> failed_units) override;
+};
+
+/**
  * @brief Runtime `JobRecord` returned for one submitted job.
  */
 struct JobRecord {
@@ -572,7 +644,18 @@ class TaskExecutorRegistry {
  */
 struct RuntimeOptions {
     /// Maximum occupied task slots per job, including timed-out native calls still running
-    std::size_t max_workers_;
+    std::size_t max_workers() const {
+        return max_workers_;
+    }
+
+    /// Set the positive limit on occupied task slots per job
+    /// @throws std::invalid_argument if workers is zero.
+    void set_max_workers(std::size_t workers) {
+        if (workers == 0) {
+            throw std::invalid_argument("max_workers must be positive");
+        }
+        max_workers_ = workers;
+    }
 
     /// Timeout for one task response; expiry makes the unit unavailable. Subprocess tasks
     /// are terminated; in-process calls retain capacity until execute() returns.
@@ -592,13 +675,13 @@ struct RuntimeOptions {
 
     /**
      * @brief Construct runtime options.
-     * @param workers Maximum active task requests for each job. Values of zero are
-     *                clamped to one.
+     * @param workers Positive maximum active task requests for each job.
      * @param task_timeout Task-response timeout; terminates only subprocess tasks.
      * @param job_timeout Timeout that fails unfinished tasks and requests unit shutdown.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      * @param subprocess_shutdown_grace_period Time allowed for orderly child shutdown.
+     * @throws std::invalid_argument if workers is zero.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::minutes(1),
@@ -606,9 +689,14 @@ struct RuntimeOptions {
                    std::string output_root = "",
                    std::chrono::milliseconds subprocess_shutdown_grace_period =
                        std::chrono::seconds(5))
-        : max_workers_(workers == 0 ? 1 : workers), task_request_timeout_(task_timeout),
+        : task_request_timeout_(task_timeout),
           job_request_timeout_(job_timeout), output_root_(std::move(output_root)),
-          subprocess_shutdown_grace_period_(subprocess_shutdown_grace_period) {}
+          subprocess_shutdown_grace_period_(subprocess_shutdown_grace_period) {
+        set_max_workers(workers);
+    }
+
+  private:
+    std::size_t max_workers_{1};
 };
 
 /**
@@ -675,12 +763,18 @@ class Job {
     void remove_unit(SimulationUnitHandle unit);
 
     /// Append a task before submission or during a controller hook
-    void add_task(Task task);
+    /// Prerequisites must already be added to this job but need not have finished.
+    /// Dispatch waits until all prerequisites succeed.
+    /// Ready tasks may overtake blocked tasks on the same unit; ordering requires
+    /// explicit dependencies. Each unit executes at most one task at a time.
+    /// @throws std::invalid_argument if a dependency is not an earlier task in this job.
+    TaskHandle add_task(Task task);
 
     /// Append an operation using the Task argument constructors
+    /// Prerequisites follow the same submission and success rules as add_task(Task).
     template <class... Args>
-    void add_task(SimulationUnitHandle unit, std::string operation, Args&&... args) {
-        add_task(Task{unit, std::move(operation), std::forward<Args>(args)...});
+    TaskHandle add_task(SimulationUnitHandle unit, Args&&... args) {
+        return add_task(Task{unit, std::forward<Args>(args)...});
     }
 
     /// Report a job-level error from a running controller hook
@@ -711,6 +805,7 @@ class Job {
     void fail_unit(std::size_t unit_index, std::string reason);
     void unit_terminated(std::size_t unit_index, const caf::error& reason);
     void record_task(std::size_t task_index, TaskResult task_result);
+    bool record_dependency_failure(std::size_t task_index);
     void complete_task(std::size_t unit_index, std::size_t task_index,
                        TaskResult task_result);
     void dispatch_tasks();
@@ -772,15 +867,18 @@ class Job {
     // Boundary between records already delivered to the controller and new completions
     std::size_t reported_task_count_{0};
 
-    // Pending task indices remain in submission order; busy targets may be skipped
+    // Submission order prioritizes ready tasks; blocked tasks and busy targets are skipped
     std::deque<std::size_t> pending_task_indices_;
 
     // Occupied task slots; timed-out native calls hold their slot until actor termination
     std::size_t active_task_count_{0};
 
-    // Settlement is independent of actor cleanup, so late replies cannot record twice
-    std::vector<bool> task_completed_;
+    // Completion-order indices locate prerequisite results and prevent duplicate task records
+    std::vector<std::optional<std::size_t>> task_record_indices_;
     std::vector<UnitFailure> pending_unit_failures_;
+
+    // Failed task records may invalidate dependencies of queued tasks
+    bool needs_dependency_failure_check_{false};
 
     // Final delivery waits until every activated unit has terminated
     bool finishing_{false};

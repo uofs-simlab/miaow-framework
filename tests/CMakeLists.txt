@@ -24,7 +24,7 @@ target_compile_definitions(miaow_simulation_unit_lifecycle_driver PRIVATE
 add_dependencies(miaow_simulation_unit_lifecycle_driver miaow_subprocess_shutdown_worker)
 
 include("${PROJECT_SOURCE_DIR}/cmake/miaow_example.cmake")
-foreach(scenario removal_with_queued_work replacement_after_failure)
+foreach(scenario removal_with_queued_work replacement_after_failure task_dependencies)
     foreach(variant IN ITEMS "" "_concurrent" "_batch_synchronous"
             "_batch_synchronous_concurrent")
         miaow_add_example_test(

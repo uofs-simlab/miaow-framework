@@ -27,6 +27,11 @@ Task and job data
 .. doxygenclass:: miaow::SimulationUnitHandle
    :members:
 
+.. doxygenclass:: miaow::TaskHandle
+   :members:
+
+.. doxygenfunction:: miaow::output_of
+
 .. doxygenclass:: miaow::Job
    :members:
 
@@ -59,6 +64,9 @@ Runtime orchestration
 .. doxygenenum:: miaow::TaskGenerationPolicy
 
 .. doxygenclass:: miaow::JobController
+   :members:
+
+.. doxygenclass:: miaow::SingleTaskPerUnitController
    :members:
 
 .. doxygenclass:: miaow::TaskExecutorRegistry

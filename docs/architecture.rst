@@ -41,7 +41,9 @@ Simulation units
 Task dispatch and executors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The job scans queued tasks in submission order and selects the first whose target unit is idle. It skips tasks for busy units so that tasks for other units can proceed. ``RuntimeOptions::max_workers_`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
+The job scans queued tasks in submission order and selects the first whose prerequisites have succeeded and whose target unit is idle. A ready task can overtake an earlier blocked task, including on the same unit. Submission order gives ready tasks priority; required ordering must be expressed through explicit dependencies. ``RuntimeOptions::max_workers()`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
+
+Set the worker limit through the ``RuntimeOptions`` constructor or ``set_max_workers()``; both reject zero with ``std::invalid_argument``. Read it through ``max_workers()``. The default limit is one.
 
 The workload determines how many units and retained model instances are needed. Choose the concurrent-task limit to suit the available CPUs and the threads used by each model. Idle units retain their executor and model state, so all resident models must fit in memory; the concurrent-task limit does not limit their number.
 
@@ -67,12 +69,52 @@ The unit's executor object remains in the parent process in both cases. ``Subpro
 
 Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Static and dynamic BMI executors also support individual operations on a model retained between tasks, using their common ``BmiTaskExecutor`` base. The bundled BMI subprocess worker retains a ``DynamicBmiTaskExecutor`` in the child and supports the same operations. See :doc:`bmi` for the model lifecycle.
 
+Task dependencies and output references
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``Job::add_task()`` returns a copyable ``TaskHandle``. Its ``task_id()`` matches ``TaskRecord::task_id_`` in controller callbacks. Handles remain valid when the job moves or tasks are appended.
+
+``Task`` and ``job.add_task()`` accept no dependencies, one ``TaskHandle``, or a ``std::vector<TaskHandle>`` before the operation name:
+
+.. code-block:: cpp
+
+   // No dependencies
+   const miaow::TaskHandle source_update = job.add_task(source, "update");
+
+   // One dependency: the source update
+   const miaow::TaskHandle source_get_value =
+       job.add_task(source, source_update, "get_value", source_variable);
+
+   // Two dependencies: the preceding receiver task and the source read
+   job.add_task(receiver,
+                std::vector<miaow::TaskHandle>{previous_receiver_task, source_get_value},
+                "set_value", receiver_variable, miaow::output_of(source_get_value));
+
+Prerequisites must already belong to the same job and must succeed before the dependent task dispatches. ``Job::add_task()`` rejects invalid or foreign handles with ``std::invalid_argument``. Requiring prerequisites to be added first prevents cycles.
+
+Sharing a unit adds no implicit dependencies. For example, if an earlier ``update`` task is waiting on another unit, a later ``get_current_time`` task without dependencies can run first on the same model. To query the time after that update, declare the update's handle as the query's prerequisite. Each unit still executes only one task at a time.
+
+A ``TaskHandle`` used as an operation argument supplies the producer's complete ``TaskResult::output_``. ``output_of(handle)`` returns that handle to make its purpose clear. The producer must also appear in the dependency list; ``add_task()`` rejects undeclared producers and invalid argument positions.
+
+The job copies referenced outputs into task arguments before dispatch. Executors and subprocess workers receive resolved values. Outputs remain available for the job lifetime, including to consumers added later; retaining field snapshots increases memory use and saved-record size with each step.
+
+A failed prerequisite causes its dependents to fail without dispatch, propagating through the branch. Controllers receive these records under their callback policy and can add recovery or finalization tasks without the failed prerequisite. A blocked finalizer has not attempted model cleanup.
+
+Build a fixed directed acyclic graph (DAG) before submission or in a controller's ``initialize()``. Adaptive controllers can add tasks from ``callback()`` based on completed results. Arguments and dependencies are fixed when each task is added; forward references and graph rewiring are unsupported.
+
+The flowchart below shows execution events and task dispatch in the job actor:
+
+.. mermaid:: diagrams/task_dependencies.mmd
+   :name: task-dispatch-diagram
+   :alt: Job actor event handling, dependency checks, task dispatch, and completion
+   :align: center
+
 Job lifecycle
 ^^^^^^^^^^^^^
 
 After submission, the job actor calls the controller's ``initialize()`` hook and begins dispatching tasks. Each executor returns a ``TaskResult``. The job actor adds the task's identity and timing to create a ``TaskRecord``, then passes new records to the controller according to its callback policy. The controller can use those results to add more tasks.
 
-The sequence below shows one job with one unit. Open arrowheads are asynchronous CAF messages; dashed arrows are replies or termination notifications; filled arrowheads are local calls, actor creation, or labelled OS signals.
+The sequence below shows one job with one unit. Open arrowheads are asynchronous CAF messages; dashed arrows are replies or termination notifications; filled arrowheads are local calls, actor creation, or labelled OS signals:
 
 .. mermaid:: diagrams/job_execution.mmd
    :alt: Job submission, lazy unit creation, repeated tasks, and completion

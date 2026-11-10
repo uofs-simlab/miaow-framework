@@ -1,0 +1,69 @@
+---
+config:
+  layout: elk
+  theme: base
+  themeVariables:
+    fontFamily: "Arial, Helvetica, sans-serif"
+    fontSize: "14px"
+    lineColor: "#858b94"
+    edgeLabelBackground: "#ffffff"
+    clusterBkg: "#f9f9fd"
+    clusterBorder: "#dce2ed"
+  themeCSS: |
+    .edgeLabel p {
+      padding: 3px 9px;
+      border: 1px solid #8cbcff;
+      border-radius: 999px;
+      background: #ffffff;
+      color: #1686ff;
+    }
+  flowchart:
+    curve: linear
+    wrappingWidth: 240
+    subGraphTitleMargin:
+      top: 4
+      bottom: 12
+---
+flowchart TB
+    subgraph job_actor["job_actor · CAF event loop"]
+        direction TB
+
+        E["Received event"]
+        E -->|"Execution request"| I["Initialize controller<br/>and prepare initial tasks"]
+        E -->|"Task result"| R["Record result<br/>and release capacity"]
+        E -->|"Request error"| ER["Handle request error"]
+        E -->|"Unit termination"| U["Handle unit loss<br/>and release capacity"]
+
+        I --> P
+        R --> P
+        ER --> P
+        U --> P
+
+        P["Propagate dependency failures"] --> H["Run controller callbacks<br/>according to policy"]
+        H --> HP["Prepare controller-added tasks"]
+        HP --> A
+
+        A["Worker slot available?"]
+        A -->|Yes| AU["Idle unit available?"]
+        AU -->|Yes| B["More queued tasks<br/>to inspect?"]
+        B -->|Yes| C["Dependencies succeeded?"]
+        C -->|No| B
+        C -->|Yes| CU["Target unit idle<br/>and eligible?"]
+        CU -->|No| B
+        CU -->|Yes| D["Resolve referenced outputs<br/>and dispatch task"]
+        D --> A
+
+        A -->|No| Q["Active tasks remain?"]
+        AU -->|No| Q
+        B -->|"Scan exhausted"| Q
+        Q -->|Yes| W["Return to event loop"]
+        W --> E
+    end
+
+    Q -->|No| F["Begin job completion<br/>and shut down units"]
+
+    classDef action fill:#ffffff,stroke:#97aabe,color:#163042,stroke-width:1px,rx:12,ry:12
+    classDef decision fill:#edf2f6,stroke:#97aabe,color:#163042,stroke-width:1px,stroke-dasharray:2 2,rx:12,ry:12
+    class I,R,ER,U,P,H,HP,D,W,F action
+    class E,A,AU,B,C,CU,Q decision
+    style job_actor fill:#f9f9fd,stroke:#dce2ed

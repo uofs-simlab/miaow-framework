@@ -72,8 +72,8 @@ void parse_runtime_cli_options(int argc, char* argv[], RuntimeOptions& runtime_o
         if (option_name == "--max_workers") {
             const std::string_view option_value =
                 read_option_value(argc, argv, index, option_name);
-            runtime_options.max_workers_ =
-                parse_positive_integer_option(option_value, option_name);
+            runtime_options.set_max_workers(
+                parse_positive_integer_option(option_value, option_name));
             continue;
         }
 

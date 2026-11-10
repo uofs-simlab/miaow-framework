@@ -75,15 +75,38 @@ Individual BMI operations
 
 ``StaticBmiTaskExecutor`` and ``DynamicBmiTaskExecutor`` inherit their operation handling and model ownership from ``BmiTaskExecutor``. Use ``job.add_task(unit, "initialize", config)`` with a configuration dictionary to initialize a retained model, followed by argument-free ``job.add_task(unit, "update")``, ``get_current_time``, and ``finalize`` tasks. The same dictionary can be used for initialization or a complete run when it includes the required fields. Direct static initialization with ``job.add_task(unit, "initialize", path)`` is also supported.
 
+Express required operation order with explicit dependencies, or submit each operation from a controller callback after its predecessor succeeds. A later ready operation can overtake an earlier operation waiting on a dependency, even on the same unit:
+
+.. code-block:: cpp
+
+   const miaow::TaskHandle initialized = job.add_task(unit, "initialize", config);
+   const miaow::TaskHandle updated = job.add_task(unit, initialized, "update");
+   const miaow::TaskHandle queried =
+       job.add_task(unit, updated, "get_current_time");
+   job.add_task(unit, queried, "finalize");
+
+These dependencies require successful predecessors. If an operation fails, its dependent finalizer also fails without dispatch. A controller can submit a separate finalization task after receiving the failure record to attempt cleanup.
+
 The bundled subprocess worker retains one ``DynamicBmiTaskExecutor`` in each unit's child process and supports the same operations and task payloads.
 
-The exposed individual operations are ``initialize``, ``update``, ``get_current_time``, and ``finalize``. Other BMI methods, including value access and grid queries, are not exposed as task operations. Each successful individual operation invokes its corresponding BMI call. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units.
+The exposed individual operations are ``initialize``, ``update``, ``get_current_time``, ``get_value``, ``set_value``, and ``finalize``. Grid queries and indexed value access are not exposed as task operations. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units.
 
-The executor retains the initialized model until finalization and can initialize a fresh model afterward. Dynamic models retain their backend object and loaded plugin for that lifetime. ``update``, ``get_current_time``, and ``finalize`` fail when no model is initialized. ``run`` and a second ``initialize`` are rejected while a model is initialized, preserving the active model. Clock tolerance applies only to complete runs.
+The executor retains the model until finalization and can initialize a fresh model afterward. Dynamic models retain their loaded plugin for that lifetime. Updates, time queries, value access, and finalization require an initialized model. ``run`` and a second ``initialize`` are rejected while a model is retained. Clock tolerance applies only to complete runs.
 
-The ``09_bmi_operations`` example demonstrates controller-generated operations with ``./miaow_bmi_operations`` from ``examples/09_bmi_operations``, using the heat model and configuration from ``01_heat``. It initializes one model, queries its current time, performs two updates with a query after each, and explicitly finalizes. The ``01_heat`` example performs a complete run.
+A failed initialization releases the model. Exceptions during updates, queries, or value access, including argument and metadata errors, leave the retained model usable only for finalization. A finalization attempt releases the model even if it fails. Submit ``finalize`` explicitly to receive its result; executor destruction attempts cleanup but cannot report errors as task results.
 
-BMI call exceptions produce failed task results. A failed initialization releases the newly constructed model without retaining it. After an update or query throws, the retained model accepts only finalization. The executor releases the model after a finalization attempt, including a failed attempt. Controllers should explicitly submit ``finalize`` to receive its result; executor destruction attempts finalization if an initialized model remains, but cannot report those cleanup errors as task results.
+The ``09_bmi_operations`` example initializes one heat model, queries its time, performs two updates with a query after each, and finalizes. The ``01_heat`` example performs a complete run.
+
+Complete-variable value access
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``job.add_task(unit, "get_value", variable_name)`` returns the complete variable as a flat ``caf::config_value::list`` in ``TaskResult::output_``. ``job.add_task(unit, "set_value", variable_name, values)`` copies a flat list into the variable and returns success without output. Scalars use one-element lists. Values follow the model's flattened ordering; no spatial mapping or unit conversion is performed.
+
+BMI metadata selects a native ``float``, ``double``, or ``int`` buffer. Setters require CAF real elements for floating-point variables and CAF integer elements for integers. Reads represent floats exactly as doubles; writes to float variables apply normal rounding. Finite values outside the float range and integers outside the native int range are rejected. NaN and infinity are preserved.
+
+Item sizes must match the native type, byte counts must be non-negative multiples of the item size, and setter lists must match the element count. Unsupported types or inconsistent metadata fail the task. The Fortran bridge translates ``real``/``float`` to ``float``, ``integer``/``int`` to ``int``, and ``double``/``float64``/``double precision`` to ``double``.
+
+Use dependencies and ``output_of()`` to transfer values between models, as shown in :doc:`architecture`. Source and destination variable names may differ. The workflow must ensure compatible units and grid layouts; the executor checks the destination type and size.
 
 Dynamic BMI plugin
 ------------------
