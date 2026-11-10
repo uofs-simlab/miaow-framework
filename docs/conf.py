@@ -13,6 +13,8 @@ html_copy_source = False
 
 extensions = ["breathe", "sphinxcontrib.mermaid"]
 mermaid_version = "11.12.1"
+mermaid_include_elk = True
+mermaid_elk_version = "0.2.0"
 
 source_suffix = {
     ".rst": "restructuredtext",

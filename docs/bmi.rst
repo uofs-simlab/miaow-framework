@@ -75,6 +75,18 @@ Individual BMI operations
 
 ``StaticBmiTaskExecutor`` and ``DynamicBmiTaskExecutor`` inherit their operation handling and model ownership from ``BmiTaskExecutor``. Use ``job.add_task(unit, "initialize", config)`` with a configuration dictionary to initialize a retained model, followed by argument-free ``job.add_task(unit, "update")``, ``get_current_time``, and ``finalize`` tasks. The same dictionary can be used for initialization or a complete run when it includes the required fields. Direct static initialization with ``job.add_task(unit, "initialize", path)`` is also supported.
 
+Express required operation order with explicit dependencies, or submit each operation from a controller callback after its predecessor succeeds. A later ready operation can overtake an earlier operation waiting on a dependency, even on the same unit:
+
+.. code-block:: cpp
+
+   const miaow::TaskHandle initialized = job.add_task(unit, "initialize", config);
+   const miaow::TaskHandle updated = job.add_task(unit, initialized, "update");
+   const miaow::TaskHandle queried =
+       job.add_task(unit, updated, "get_current_time");
+   job.add_task(unit, queried, "finalize");
+
+These dependencies require successful predecessors. If an operation fails, its dependent finalizer also fails without dispatch. A controller can submit a separate finalization task after receiving the failure record to attempt cleanup.
+
 The bundled subprocess worker retains one ``DynamicBmiTaskExecutor`` in each unit's child process and supports the same operations and task payloads.
 
 The exposed individual operations are ``initialize``, ``update``, ``get_current_time``, ``get_value``, ``set_value``, and ``finalize``. Grid queries and indexed value access are not exposed as task operations. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units.

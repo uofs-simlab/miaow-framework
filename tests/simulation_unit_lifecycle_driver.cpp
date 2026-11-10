@@ -78,7 +78,7 @@ caf::config_value describe_callback(std::span<const miaow::TaskRecord> completed
     return caf::config_value{std::move(observation)};
 }
 
-// Join results, preserve unit order, and append recovery work after dependency failure
+// Join results, overtake blocked work, and recover after dependency failure
 class DependencyController final : public miaow::JobController {
   public:
     DependencyController(miaow::TaskExecutorId executor, miaow::TaskGenerationPolicy policy)
@@ -123,7 +123,8 @@ class DependencyController final : public miaow::JobController {
         const miaow::TaskHandle failure = job.add_task(first_, join_, "fail");
         const miaow::TaskHandle blocked = job.add_task(second_, failure, "increment");
         terminal_ = job.add_task(first_, blocked, "increment");
-        job.add_task(independent, "increment");
+        // Leave capacity for overtaking when the root enables the other unit's work
+        job.add_task(independent, root, "increment");
     }
 
     void callback(miaow::Job& job, std::span<const miaow::TaskRecord> records,
@@ -365,6 +366,31 @@ class SubprocessShutdownController final : public miaow::JobController {
 // Run the configured workload and save records for the separate Boost.Test checker
 int main(int argc, char* argv[]) {
     try {
+        // Check C++ worker-limit validation independently of CLI parsing
+        bool rejected_zero_workers = false;
+        try {
+            const miaow::RuntimeOptions invalid_options{0};
+        } catch (const std::invalid_argument&) {
+            rejected_zero_workers = true;
+        }
+        if (!rejected_zero_workers) {
+            throw std::runtime_error("RuntimeOptions constructor accepted zero workers");
+        }
+
+        miaow::RuntimeOptions checked_options{2};
+        rejected_zero_workers = false;
+        try {
+            checked_options.set_max_workers(0);
+        } catch (const std::invalid_argument&) {
+            rejected_zero_workers = true;
+        }
+        if (!rejected_zero_workers) {
+            throw std::runtime_error("RuntimeOptions setter accepted zero workers");
+        }
+        if (checked_options.max_workers() != 2) {
+            throw std::runtime_error("rejected worker limit changed RuntimeOptions");
+        }
+
         miaow::RuntimeOptions runtime_options;
         const nlohmann::json config = read_example_config(argc, argv, runtime_options);
         const std::string scenario_name = config.at("scenario").get<std::string>();

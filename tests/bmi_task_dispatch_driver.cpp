@@ -1,9 +1,11 @@
 // Execute BMI operation sequences for validation through the saved job record
+#include <algorithm>
 #include <cstddef>
 #include <exception>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -231,6 +233,32 @@ void setup_recovery(miaow::Job& job, miaow::TaskExecutorRegistry& registry,
     job.add_task(unit, "get_current_time");
 }
 
+// Finalize each model after its last value task is recorded, including failed tasks
+class BmiValuesController final : public miaow::JobController {
+  public:
+    explicit BmiValuesController(std::vector<miaow::TaskHandle> terminal_tasks)
+        : terminal_tasks_(std::move(terminal_tasks)) {}
+
+    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> completed_tasks,
+                  std::span<const miaow::UnitFailure> failed_units) override {
+        if (!failed_units.empty()) {
+            job.fail(failed_units.front().reason_);
+            return;
+        }
+        for (const miaow::TaskRecord& record : completed_tasks) {
+            if (std::any_of(terminal_tasks_.begin(), terminal_tasks_.end(),
+                            [&record](miaow::TaskHandle task) {
+                                return task.task_id() == record.task_id_;
+                            })) {
+                job.add_task(record.unit_, "finalize");
+            }
+        }
+    }
+
+  private:
+    std::vector<miaow::TaskHandle> terminal_tasks_;
+};
+
 // Transfer double snapshots into C++ and Fortran models through every execution path
 void setup_values(miaow::Job& job, miaow::TaskExecutorRegistry& registry,
                   caf::config_value::dictionary model_config) {
@@ -255,8 +283,8 @@ void setup_values(miaow::Job& job, miaow::TaskExecutorRegistry& registry,
     const miaow::TaskHandle wrong_size =
         job.add_task(source, snapshot, "set_value", temperature,
                      caf::config_value::list{caf::config_value{1.0}});
-    job.add_task(source, wrong_size, "get_value", temperature);
-    job.add_task(source, "finalize");
+    std::vector<miaow::TaskHandle> terminal_tasks{
+        job.add_task(source, wrong_size, "get_value", temperature)};
 
     for (miaow::TaskExecutorId executor : {dynamic_bmi, subprocess_bmi}) {
         for (const std::string backend : {"cpp", "fortran"}) {
@@ -282,11 +310,12 @@ void setup_values(miaow::Job& job, miaow::TaskExecutorRegistry& registry,
                     unit, last, "set_value", identification,
                     caf::config_value::list{caf::config_value{
                         static_cast<std::int64_t>(std::numeric_limits<int>::max()) + 1}});
-                job.add_task(unit, last, "get_value", identification);
+                last = job.add_task(unit, last, "get_value", identification);
             }
-            job.add_task(unit, "finalize");
+            terminal_tasks.push_back(last);
         }
     }
+    job.set_controller(std::make_unique<BmiValuesController>(std::move(terminal_tasks)));
 }
 
 } // namespace

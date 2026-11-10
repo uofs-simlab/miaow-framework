@@ -41,7 +41,9 @@ Simulation units
 Task dispatch and executors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The job scans queued tasks in submission order and selects the first whose prerequisites have succeeded and whose target unit is idle. Tasks on each unit retain submission order, including when the earliest queued task is waiting on a prerequisite. Ready work on other units can proceed. ``RuntimeOptions::max_workers_`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
+The job scans queued tasks in submission order and selects the first whose prerequisites have succeeded and whose target unit is idle. A ready task can overtake an earlier blocked task, including on the same unit. Submission order gives ready tasks priority; required ordering must be expressed through explicit dependencies. ``RuntimeOptions::max_workers()`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
+
+Set the worker limit through the ``RuntimeOptions`` constructor or ``set_max_workers()``; both reject zero with ``std::invalid_argument``. Read it through ``max_workers()``. The default limit is one.
 
 The workload determines how many units and retained model instances are needed. Choose the concurrent-task limit to suit the available CPUs and the threads used by each model. Idle units retain their executor and model state, so all resident models must fit in memory; the concurrent-task limit does not limit their number.
 
@@ -90,6 +92,8 @@ Task dependencies and output references
 
 Prerequisites must already belong to the same job and must succeed before the dependent task dispatches. ``Job::add_task()`` rejects invalid or foreign handles with ``std::invalid_argument``. Requiring prerequisites to be added first prevents cycles.
 
+Sharing a unit adds no implicit dependencies. For example, if an earlier ``update`` task is waiting on another unit, a later ``get_current_time`` task without dependencies can run first on the same model. To query the time after that update, declare the update's handle as the query's prerequisite. Each unit still executes only one task at a time.
+
 A ``TaskHandle`` used as an operation argument supplies the producer's complete ``TaskResult::output_``. ``output_of(handle)`` returns that handle to make its purpose clear. The producer must also appear in the dependency list; ``add_task()`` rejects undeclared producers and invalid argument positions.
 
 The job copies referenced outputs into task arguments before dispatch. Executors and subprocess workers receive resolved values. Outputs remain available for the job lifetime, including to consumers added later; retaining field snapshots increases memory use and saved-record size with each step.
@@ -98,12 +102,19 @@ A failed prerequisite causes its dependents to fail without dispatch, propagatin
 
 Build a fixed directed acyclic graph (DAG) before submission or in a controller's ``initialize()``. Adaptive controllers can add tasks from ``callback()`` based on completed results. Arguments and dependencies are fixed when each task is added; forward references and graph rewiring are unsupported.
 
+The flowchart below shows execution events and task dispatch in the job actor:
+
+.. mermaid:: diagrams/task_dependencies.mmd
+   :name: task-dispatch-diagram
+   :alt: Job actor event handling, dependency checks, task dispatch, and completion
+   :align: center
+
 Job lifecycle
 ^^^^^^^^^^^^^
 
 After submission, the job actor calls the controller's ``initialize()`` hook and begins dispatching tasks. Each executor returns a ``TaskResult``. The job actor adds the task's identity and timing to create a ``TaskRecord``, then passes new records to the controller according to its callback policy. The controller can use those results to add more tasks.
 
-The sequence below shows one job with one unit. Open arrowheads are asynchronous CAF messages; dashed arrows are replies or termination notifications; filled arrowheads are local calls, actor creation, or labelled OS signals.
+The sequence below shows one job with one unit. Open arrowheads are asynchronous CAF messages; dashed arrows are replies or termination notifications; filled arrowheads are local calls, actor creation, or labelled OS signals:
 
 .. mermaid:: diagrams/job_execution.mmd
    :alt: Job submission, lazy unit creation, repeated tasks, and completion

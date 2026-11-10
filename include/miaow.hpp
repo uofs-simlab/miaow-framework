@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -643,7 +644,18 @@ class TaskExecutorRegistry {
  */
 struct RuntimeOptions {
     /// Maximum occupied task slots per job, including timed-out native calls still running
-    std::size_t max_workers_;
+    std::size_t max_workers() const {
+        return max_workers_;
+    }
+
+    /// Set the positive limit on occupied task slots per job
+    /// @throws std::invalid_argument if workers is zero.
+    void set_max_workers(std::size_t workers) {
+        if (workers == 0) {
+            throw std::invalid_argument("max_workers must be positive");
+        }
+        max_workers_ = workers;
+    }
 
     /// Timeout for one task response; expiry makes the unit unavailable. Subprocess tasks
     /// are terminated; in-process calls retain capacity until execute() returns.
@@ -663,13 +675,13 @@ struct RuntimeOptions {
 
     /**
      * @brief Construct runtime options.
-     * @param workers Maximum active task requests for each job. Values of zero are
-     *                clamped to one.
+     * @param workers Positive maximum active task requests for each job.
      * @param task_timeout Task-response timeout; terminates only subprocess tasks.
      * @param job_timeout Timeout that fails unfinished tasks and requests unit shutdown.
      * @param output_root Root directory for runtime-managed output folders.
      *                   Empty string (default) disables all file output.
      * @param subprocess_shutdown_grace_period Time allowed for orderly child shutdown.
+     * @throws std::invalid_argument if workers is zero.
      */
     RuntimeOptions(std::size_t workers = 1,
                    std::chrono::milliseconds task_timeout = std::chrono::minutes(1),
@@ -677,9 +689,14 @@ struct RuntimeOptions {
                    std::string output_root = "",
                    std::chrono::milliseconds subprocess_shutdown_grace_period =
                        std::chrono::seconds(5))
-        : max_workers_(workers == 0 ? 1 : workers), task_request_timeout_(task_timeout),
+        : task_request_timeout_(task_timeout),
           job_request_timeout_(job_timeout), output_root_(std::move(output_root)),
-          subprocess_shutdown_grace_period_(subprocess_shutdown_grace_period) {}
+          subprocess_shutdown_grace_period_(subprocess_shutdown_grace_period) {
+        set_max_workers(workers);
+    }
+
+  private:
+    std::size_t max_workers_{1};
 };
 
 /**
@@ -748,6 +765,8 @@ class Job {
     /// Append a task before submission or during a controller hook
     /// Prerequisites must already be added to this job but need not have finished.
     /// Dispatch waits until all prerequisites succeed.
+    /// Ready tasks may overtake blocked tasks on the same unit; ordering requires
+    /// explicit dependencies. Each unit executes at most one task at a time.
     /// @throws std::invalid_argument if a dependency is not an earlier task in this job.
     TaskHandle add_task(Task task);
 
@@ -786,6 +805,7 @@ class Job {
     void fail_unit(std::size_t unit_index, std::string reason);
     void unit_terminated(std::size_t unit_index, const caf::error& reason);
     void record_task(std::size_t task_index, TaskResult task_result);
+    bool record_dependency_failure(std::size_t task_index);
     void complete_task(std::size_t unit_index, std::size_t task_index,
                        TaskResult task_result);
     void dispatch_tasks();
@@ -847,7 +867,7 @@ class Job {
     // Boundary between records already delivered to the controller and new completions
     std::size_t reported_task_count_{0};
 
-    // Pending task indices remain in submission order; busy targets may be skipped
+    // Submission order prioritizes ready tasks; blocked tasks and busy targets are skipped
     std::deque<std::size_t> pending_task_indices_;
 
     // Occupied task slots; timed-out native calls hold their slot until actor termination
@@ -856,6 +876,9 @@ class Job {
     // Completion-order indices locate prerequisite results and prevent duplicate task records
     std::vector<std::optional<std::size_t>> task_record_indices_;
     std::vector<UnitFailure> pending_unit_failures_;
+
+    // Failed task records may invalidate dependencies of queued tasks
+    bool needs_dependency_failure_check_{false};
 
     // Final delivery waits until every activated unit has terminated
     bool finishing_{false};

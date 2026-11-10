@@ -301,10 +301,17 @@ BOOST_FIXTURE_TEST_CASE(bmi_values, JobRecordChecker) {
     BOOST_TEST(finalizations == 5);
 }
 
-// Record failed prerequisites and blocked dependents, then complete controller-added recovery
+// Overtake blocked tasks, propagate dependency failures, and complete recovery
 BOOST_FIXTURE_TEST_CASE(simulation_unit_task_dependencies, JobRecordChecker) {
     BOOST_REQUIRE_EQUAL(tasks.size(), 11);
-    const std::array<std::int64_t, 11> expected{1, 10, 2, 3, 12, 0, 0, 0, 1, 4, 16};
+    const auto& arguments = boost::unit_test::framework::master_test_suite();
+    BOOST_REQUIRE_EQUAL(arguments.argc, 3);
+    std::ifstream case_input{arguments.argv[2]};
+    const nlohmann::json test_case = nlohmann::json::parse(case_input);
+    const bool concurrent = test_case.at("max_workers").get<std::size_t>() > 1;
+    const std::array<std::int64_t, 11> expected =
+        concurrent ? std::array<std::int64_t, 11>{1, 10, 3, 2, 13, 0, 0, 0, 1, 4, 17}
+                   : std::array<std::int64_t, 11>{1, 10, 2, 3, 12, 0, 0, 0, 1, 4, 16};
     for (std::size_t id = 0; id < tasks.size(); ++id) {
         const auto& task = tasks.at(id);
         const bool failed = id >= 5 && id <= 7;
@@ -327,6 +334,12 @@ BOOST_FIXTURE_TEST_CASE(simulation_unit_task_dependencies, JobRecordChecker) {
         for (const auto& id : observation.at("task_ids").at("value")) {
             reported.push_back(id.at("value").get<std::size_t>());
         }
+    }
+    if (concurrent) {
+        // Task 3 finishes before task 2 can run on the same unit
+        const auto ready_task = std::find(reported.begin(), reported.end(), 3);
+        const auto blocked_task = std::find(reported.begin(), reported.end(), 2);
+        BOOST_TEST((ready_task < blocked_task));
     }
     std::sort(reported.begin(), reported.end());
     BOOST_REQUIRE_EQUAL(reported.size(), tasks.size());

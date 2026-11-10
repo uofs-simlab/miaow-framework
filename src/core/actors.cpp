@@ -45,11 +45,17 @@ void Job::prepare_tasks(std::size_t first_task_index) {
     prepare_task_metadata(first_task_index);
     core::assign_task_runtime_fields(tasks_, first_task_index, runtime_options_, run_id_,
                                      job_submission_id_);
-    for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
-        pending_task_indices_.push_back(index);
-    }
     task_start_times_.resize(tasks_.size());
     task_record_indices_.resize(tasks_.size());
+    const bool needs_dependency_failure_check = needs_dependency_failure_check_;
+    for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
+        if (!record_dependency_failure(index)) {
+            pending_task_indices_.push_back(index);
+        }
+    }
+
+    // Earlier queued tasks cannot depend on newly appended tasks
+    needs_dependency_failure_check_ = needs_dependency_failure_check;
 }
 
 void Job::fail(std::string reason) {
@@ -68,9 +74,11 @@ void Job::complete_job() {
 }
 
 void Job::finish_job() {
+    // If the job is not in the finishing state, do not proceed with finalization
     if (!finishing_) {
         return;
     }
+    // If any unit actors are still alive, defer finalization until they terminate
     for (const std::optional<UnitBinding>& unit : units_) {
         if (unit) {
             if (const caf::actor* simulation_unit_actor =
@@ -87,6 +95,7 @@ void Job::finish_job() {
         return;
     }
 
+    // If there are no error messages, attempt to finalize the job
     if (!pending_error_message_) {
         try {
             caf::config_value output = job_controller_->finalize();
@@ -106,6 +115,7 @@ void Job::finish_job() {
             pending_error_message_ = "JobController error: unknown exception";
         }
     }
+    // Fail the job if an error message is present
     if (pending_error_message_) {
         response_promise_->deliver(
             caf::make_error(caf::sec::runtime_error, std::move(*pending_error_message_)));
@@ -137,6 +147,27 @@ void Job::record_task(std::size_t task_index, TaskResult task_result) {
     completed_task_records_.emplace_back(task, units_[task.unit_.index_]->task_executor_id_,
                                          static_cast<TaskId>(task_index),
                                          std::move(task_result), run_time, dispatch_offset);
+    if (completed_task_records_.back().result_.status_ == TaskStatus::failed) {
+        needs_dependency_failure_check_ = true;
+    }
+}
+
+// Record blocked tasks in submission order to propagate dependency failures
+bool Job::record_dependency_failure(std::size_t task_index) {
+    for (TaskHandle dependency : tasks_[task_index].dependencies_) {
+        const std::optional<std::size_t> record_index =
+            task_record_indices_[dependency.task_id_];
+        if (record_index &&
+            completed_task_records_[*record_index].result_.status_ == TaskStatus::failed) {
+            record_task(task_index,
+                        make_failed_task_result(
+                            "prerequisite task " + std::to_string(dependency.task_id_) +
+                                " failed",
+                            "Dependency error"));
+            return true;
+        }
+    }
+    return false;
 }
 
 // Fail accepted work once; hold occupied capacity until the unit actor terminates
@@ -185,24 +216,13 @@ void Job::advance() {
         return;
     }
     for (;;) {
-        // Prerequisites precede dependents, so one queue pass records all dependency failures
-        std::erase_if(pending_task_indices_, [this](std::size_t task_index) {
-            for (TaskHandle dependency : tasks_[task_index].dependencies_) {
-                const std::optional<std::size_t> record_index =
-                    task_record_indices_[dependency.task_id_];
-                if (record_index &&
-                    completed_task_records_[*record_index].result_.status_ ==
-                        TaskStatus::failed) {
-                    record_task(task_index,
-                                make_failed_task_result(
-                                    "prerequisite task " +
-                                        std::to_string(dependency.task_id_) + " failed",
-                                    "Dependency error"));
-                    return true;
-                }
-            }
-            return false;
-        });
+        if (needs_dependency_failure_check_) {
+            // Prerequisites precede dependents, so one pass propagates all failures
+            std::erase_if(pending_task_indices_, [this](std::size_t task_index) {
+                return record_dependency_failure(task_index);
+            });
+            needs_dependency_failure_check_ = false;
+        }
 
         const bool batch_finished =
             pending_task_indices_.empty() && active_task_count_ == 0;
@@ -261,20 +281,25 @@ void Job::complete_task(std::size_t unit_index, std::size_t task_index,
 }
 
 void Job::dispatch_tasks() {
+    // Stop scanning the task queue once every eligible unit is occupied
+    std::size_t idle_unit_count = 0;
+    for (const std::optional<UnitBinding>& unit : units_) {
+        if (unit && !unit->active_task_index_ &&
+            (unit->state_ == UnitState::accepting_tasks ||
+             unit->state_ == UnitState::removal_requested)) {
+            ++idle_unit_count;
+        }
+    }
+
+    // If there are pending tasks, available workers, and idle units,
+    // attempt to dispatch them
     while (!pending_task_indices_.empty() &&
-           active_task_count_ < runtime_options_.max_workers_) {
-        // Find the first ready task while preserving submission order within each unit
-        std::vector<bool> seen_units(units_.size(), false);
+           active_task_count_ < runtime_options_.max_workers() && idle_unit_count > 0) {
+        // Select the first ready task, allowing it to overtake blocked tasks
         auto pending = pending_task_indices_.begin();
         for (; pending != pending_task_indices_.end(); ++pending) {
             const Task& task = tasks_[*pending];
             const std::size_t unit_index = task.unit_.index_;
-
-            // An earlier waiting task also prevents this unit's later tasks from running
-            if (seen_units[unit_index]) {
-                continue;
-            }
-            seen_units[unit_index] = true;
 
             const UnitBinding& unit = *units_[unit_index];
             if (unit.active_task_index_) {
@@ -333,6 +358,7 @@ void Job::dispatch_tasks() {
         unit.active_task_index_ = task_index;
         pending_task_indices_.erase(pending);
         ++active_task_count_;
+        --idle_unit_count;
         task_start_times_[task_index] = std::chrono::steady_clock::now();
 
         // Dispatch with the backend's timeout policy
@@ -363,8 +389,8 @@ void Job::dispatch_tasks() {
                 });
     }
 
-    // Begin unit shutdown when no tasks remain queued or active
-    if (pending_task_indices_.empty() && active_task_count_ == 0) {
+    // After dispatch, no active tasks implies no queued work remains
+    if (active_task_count_ == 0) {
         complete_job();
     }
 }

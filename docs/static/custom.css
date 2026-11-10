@@ -19,3 +19,12 @@ table.regression-tests td {
 table.regression-tests a.reference {
     overflow-wrap: anywhere;
 }
+
+/* Match Mermaid's label measurements and preserve the flowchart's proportions */
+#task-dispatch-diagram {
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+#task-dispatch-diagram > svg {
+    height: auto;
+}
