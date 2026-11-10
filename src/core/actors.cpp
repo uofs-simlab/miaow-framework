@@ -49,7 +49,7 @@ void Job::prepare_tasks(std::size_t first_task_index) {
         pending_task_indices_.push_back(index);
     }
     task_start_times_.resize(tasks_.size());
-    task_completed_.resize(tasks_.size(), false);
+    task_record_indices_.resize(tasks_.size());
 }
 
 void Job::fail(std::string reason) {
@@ -123,10 +123,10 @@ void Job::begin_job_error_shutdown(std::string error_message) {
 
 // Record each task once, including queued tasks invalidated by unit loss or a deadline
 void Job::record_task(std::size_t task_index, TaskResult task_result) {
-    if (task_completed_.at(task_index)) {
+    if (task_record_indices_.at(task_index)) {
         return;
     }
-    task_completed_[task_index] = true;
+    task_record_indices_[task_index] = completed_task_records_.size();
     const Task& task = tasks_[task_index];
     std::chrono::duration<double> run_time{};
     std::optional<std::chrono::duration<double>> dispatch_offset;
@@ -184,12 +184,35 @@ void Job::advance() {
         finish_job();
         return;
     }
-    const bool batch_finished = pending_task_indices_.empty() && active_task_count_ == 0;
-    const bool has_updates = reported_task_count_ < completed_task_records_.size() ||
-                             !pending_unit_failures_.empty();
-    if (has_updates &&
-        (job_controller_->task_generation_policy() == TaskGenerationPolicy::asynchronous ||
-         batch_finished)) {
+    for (;;) {
+        // Prerequisites precede dependents, so one queue pass records all dependency failures
+        std::erase_if(pending_task_indices_, [this](std::size_t task_index) {
+            for (TaskHandle dependency : tasks_[task_index].dependencies_) {
+                const std::optional<std::size_t> record_index =
+                    task_record_indices_[dependency.task_id_];
+                if (record_index &&
+                    completed_task_records_[*record_index].result_.status_ ==
+                        TaskStatus::failed) {
+                    record_task(task_index,
+                                make_failed_task_result(
+                                    "prerequisite task " +
+                                        std::to_string(dependency.task_id_) + " failed",
+                                    "Dependency error"));
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        const bool batch_finished =
+            pending_task_indices_.empty() && active_task_count_ == 0;
+        const bool has_updates = reported_task_count_ < completed_task_records_.size() ||
+                                 !pending_unit_failures_.empty();
+        if (!has_updates || (job_controller_->task_generation_policy() ==
+                                 TaskGenerationPolicy::batch_synchronous &&
+                             !batch_finished)) {
+            break;
+        }
         try {
             const std::span<const TaskRecord> records{completed_task_records_};
             const std::size_t first_task_index = tasks_.size();
@@ -228,7 +251,7 @@ void Job::advance() {
 void Job::complete_task(std::size_t unit_index, std::size_t task_index,
                         TaskResult task_result) {
     if (!units_[unit_index] || units_[unit_index]->active_task_index_ != task_index ||
-        task_completed_[task_index]) {
+        task_record_indices_[task_index]) {
         return;
     }
     record_task(task_index, std::move(task_result));
@@ -240,19 +263,56 @@ void Job::complete_task(std::size_t unit_index, std::size_t task_index,
 void Job::dispatch_tasks() {
     while (!pending_task_indices_.empty() &&
            active_task_count_ < runtime_options_.max_workers_) {
-        const auto pending = std::find_if(
-            pending_task_indices_.begin(), pending_task_indices_.end(),
-            [this](std::size_t task_index) {
-                const UnitBinding& unit = *units_[tasks_[task_index].unit_.index_];
-                return !unit.active_task_index_ &&
-                       (unit.state_ == UnitState::accepting_tasks ||
-                        unit.state_ == UnitState::removal_requested);
-            });
+        // Find the first ready task while preserving submission order within each unit
+        std::vector<bool> seen_units(units_.size(), false);
+        auto pending = pending_task_indices_.begin();
+        for (; pending != pending_task_indices_.end(); ++pending) {
+            const Task& task = tasks_[*pending];
+            const std::size_t unit_index = task.unit_.index_;
+
+            // An earlier waiting task also prevents this unit's later tasks from running
+            if (seen_units[unit_index]) {
+                continue;
+            }
+            seen_units[unit_index] = true;
+
+            const UnitBinding& unit = *units_[unit_index];
+            if (unit.active_task_index_) {
+                continue;
+            }
+            if (unit.state_ != UnitState::accepting_tasks &&
+                unit.state_ != UnitState::removal_requested) {
+                continue;
+            }
+
+            // advance() has already removed tasks whose prerequisites failed
+            const bool prerequisites_complete = std::all_of(
+                task.dependencies_.begin(), task.dependencies_.end(),
+                [this](TaskHandle prerequisite) {
+                    return task_record_indices_[prerequisite.task_id_].has_value();
+                });
+            if (prerequisites_complete) {
+                break;
+            }
+        }
+
         if (pending == pending_task_indices_.end()) {
             break;
         }
         const std::size_t task_index = *pending;
         const std::size_t unit_index = tasks_[task_index].unit_.index_;
+
+        // Resolve snapshots in the execution copy; scheduling data stays in this job
+        Task execution_task = tasks_[task_index];
+        for (const auto& [argument_index, producer] : execution_task.output_references_) {
+            const std::size_t record_index = *task_record_indices_[producer.task_id_];
+            execution_task.args_[argument_index] =
+                completed_task_records_[record_index].result_.output_;
+        }
+        execution_task.dependencies_.clear();
+        execution_task.output_references_.clear();
+
+        // Start the unit actor when its first task is dispatched
         UnitBinding& unit = *units_[unit_index];
         if (SimulationUnit* prepared = std::get_if<SimulationUnit>(&unit.instance_)) {
             caf::actor simulation_unit_actor =
@@ -267,38 +327,43 @@ void Job::dispatch_tasks() {
                            });
             unit.instance_ = std::move(simulation_unit_actor);
         }
+
+        // Remove the selected task from the queue and occupy one task slot
         const caf::actor& simulation_unit_actor = std::get<caf::actor>(unit.instance_);
         unit.active_task_index_ = task_index;
         pending_task_indices_.erase(pending);
         ++active_task_count_;
         task_start_times_[task_index] = std::chrono::steady_clock::now();
 
-        // SubprocessState owns its deadline and reports context loss after reaping
+        // Dispatch with the backend's timeout policy
+        // SubprocessState owns subprocess deadlines and reports context loss after reaping
         const caf::timespan timeout =
             task_executor_registry_->is_subprocess(unit.task_executor_id_)
                 ? caf::infinite
                 : runtime_options_.task_request_timeout_;
-        self_->mail(caf::get_atom_v, tasks_[task_index])
+        self_->mail(caf::get_atom_v, std::move(execution_task))
             .request(simulation_unit_actor, timeout)
             .then(
                 [this, unit_index, task_index](TaskResult result) {
                     complete_task(unit_index, task_index, std::move(result));
                 },
                 [this, unit_index, task_index](const caf::error& error) {
-                    if (finishing_ || task_completed_[task_index]) {
+                    if (finishing_ || task_record_indices_[task_index]) {
                         return;
                     }
                     if (error == caf::sec::request_timeout) {
                         fail_unit(unit_index, caf::to_string(error));
                         advance();
                     } else if (error != caf::sec::request_receiver_down) {
-                        // Actor loss is settled by its monitor with the termination reason
+                        // The monitor records failed tasks using the actor's termination reason
                         complete_task(unit_index, task_index,
                                       make_failed_task_result(caf::to_string(error),
                                                               "CAF error"));
                     }
                 });
     }
+
+    // Begin unit shutdown when no tasks remain queued or active
     if (pending_task_indices_.empty() && active_task_count_ == 0) {
         complete_job();
     }
@@ -397,7 +462,7 @@ caf::behavior Job::make_behavior() {
                 // Create a deferred CAF response for the orchestrator's pending request
                 response_promise_ = self_->make_response_promise<JobRecord>();
                 // Keep the response token even if initialization finishes an empty job
-                const auto response = *response_promise_;
+                const caf::typed_response_promise<JobRecord> response = *response_promise_;
 
                 // Schedule the hard deadline in the actor that owns the job state
                 job_timeout_ = self_->mail(core::job_timeout_atom_v)
@@ -422,7 +487,7 @@ caf::behavior Job::make_behavior() {
 
                 advance();
 
-                // Retain the request until task settlement and unit shutdown finish
+                // Defer the response until tasks are recorded and unit actors terminate
                 return response;
             },
             // A whole-job deadline is final; it does not invoke controller policy
@@ -431,7 +496,7 @@ caf::behavior Job::make_behavior() {
                     return;
                 }
                 for (std::size_t task_index = 0; task_index < tasks_.size(); ++task_index) {
-                    if (!task_completed_[task_index]) {
+                    if (!task_record_indices_[task_index]) {
                         record_task(task_index,
                                     make_failed_task_result(
                                         "configured job timeout expired", "Job timeout"));

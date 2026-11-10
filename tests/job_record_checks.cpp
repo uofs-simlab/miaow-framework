@@ -201,6 +201,140 @@ BOOST_FIXTURE_TEST_CASE(bmi_operations, JobRecordChecker) {
     }
 }
 
+// Complete snapshots follow the source and receiver chains without mixing time steps
+BOOST_FIXTURE_TEST_CASE(model_coupling, JobRecordChecker) {
+    check_successful_tasks();
+    BOOST_REQUIRE_EQUAL(tasks.size(), 22);
+
+    // For this unit-spacing fixture the pinned heat stencil has weights 1/2 and 1/8
+    std::array<std::array<double, 25>, 5> fields{};
+    fields[0][12] = 1.0;
+    for (std::size_t step = 1; step < fields.size(); ++step) {
+        for (std::size_t row = 1; row < 4; ++row) {
+            for (std::size_t column = 1; column < 4; ++column) {
+                const std::size_t index = row * 5 + column;
+                const auto& previous = fields[step - 1];
+                fields[step][index] = 0.5 * previous[index] +
+                                      0.125 * (previous[index - 1] + previous[index + 1] +
+                                               previous[index - 5] + previous[index + 5]);
+            }
+        }
+    }
+    for (std::size_t step = 0; step < 3; ++step) {
+        const std::array operations{"update", "get_value", "set_value", "update",
+                                    "get_value"};
+        for (std::size_t operation = 0; operation < operations.size(); ++operation) {
+            const auto& task = tasks.at(3 + 5 * step + operation);
+            BOOST_TEST(task.at("operation").get<std::string>() == operations[operation]);
+            BOOST_TEST(task.at("metadata").at("feature_id").get<std::string>() ==
+                       (operation < 2 ? "source" : "receiver"));
+        }
+        for (std::size_t model = 0; model < 2; ++model) {
+            const auto& values =
+                tasks.at(4 + 5 * step + 3 * model).at("result").at("output");
+            BOOST_REQUIRE_EQUAL(values.size(), 25);
+            for (std::size_t index = 0; index < values.size(); ++index) {
+                BOOST_TEST(std::abs(values[index].at("value").get<double>() -
+                                    fields[step + 1 + model][index]) < 1e-15);
+            }
+        }
+    }
+    BOOST_TEST(tasks.at(18).at("result").at("output").get<double>() == 0.75);
+    BOOST_TEST(tasks.at(20).at("result").at("output").get<double>() == 0.75);
+    BOOST_TEST(tasks.at(19).at("operation") == "finalize");
+    BOOST_TEST(tasks.at(21).at("operation") == "finalize");
+}
+
+// All five execution paths copy values; invalid writes cannot reach their consumers
+BOOST_FIXTURE_TEST_CASE(bmi_values, JobRecordChecker) {
+    BOOST_REQUIRE_EQUAL(tasks.size(), 30);
+    std::size_t field_reads = 0;
+    std::size_t integer_reads = 0;
+    std::size_t rejected_writes = 0;
+    std::size_t blocked_reads = 0;
+    std::size_t finalizations = 0;
+    for (const auto& [id, task] : tasks) {
+        const std::string operation = task.at("operation");
+        const auto& result = task.at("result");
+        if (result.at("status") == "failed") {
+            if (operation == "set_value") {
+                ++rejected_writes;
+                BOOST_TEST(!task.at("dispatch_offset_from_job_start").is_null());
+                const std::string message = result.at("message");
+                BOOST_TEST((message.find("value count") != std::string::npos ||
+                            message.find("native type range") != std::string::npos));
+            } else {
+                ++blocked_reads;
+                BOOST_TEST(operation == "get_value");
+                BOOST_TEST(task.at("dispatch_offset_from_job_start").is_null());
+                BOOST_TEST(
+                    result.at("message").get<std::string>().find("Dependency error") == 0);
+            }
+            continue;
+        }
+        if (operation == "get_value") {
+            const auto& values = result.at("output");
+            if (values.size() == 1) {
+                ++integer_reads;
+                BOOST_TEST(values[0].at("value").is_number_integer());
+                BOOST_TEST(values[0].at("value").get<int>() == 42);
+            } else {
+                ++field_reads;
+                BOOST_REQUIRE_EQUAL(values.size(), 25);
+                const std::string feature = task.at("metadata").at("feature_id");
+                const bool fortran = feature.find("fortran") != std::string::npos;
+                for (std::size_t index = 0; index < values.size(); ++index) {
+                    const double source = 0.1 * static_cast<double>(index);
+                    const double expected =
+                        fortran ? static_cast<double>(static_cast<float>(source)) : source;
+                    BOOST_TEST(values[index].at("value").get<double>() == expected);
+                }
+            }
+        } else if (operation == "finalize") {
+            ++finalizations;
+        }
+    }
+    BOOST_TEST(field_reads == 5);
+    BOOST_TEST(integer_reads == 2);
+    BOOST_TEST(rejected_writes == 3);
+    BOOST_TEST(blocked_reads == 3);
+    BOOST_TEST(finalizations == 5);
+}
+
+// Record failed prerequisites and blocked dependents, then complete controller-added recovery
+BOOST_FIXTURE_TEST_CASE(simulation_unit_task_dependencies, JobRecordChecker) {
+    BOOST_REQUIRE_EQUAL(tasks.size(), 11);
+    const std::array<std::int64_t, 11> expected{1, 10, 2, 3, 12, 0, 0, 0, 1, 4, 16};
+    for (std::size_t id = 0; id < tasks.size(); ++id) {
+        const auto& task = tasks.at(id);
+        const bool failed = id >= 5 && id <= 7;
+        BOOST_TEST(task.at("result").at("status").get<std::string>() ==
+                   (failed ? "failed" : "succeeded"));
+        BOOST_TEST(task.at("dispatch_offset_from_job_start").is_null() ==
+                   (id == 6 || id == 7));
+        if (!failed) {
+            BOOST_TEST(task.at("result").at("output").get<std::int64_t>() == expected[id]);
+        }
+    }
+    BOOST_TEST(tasks.at(6).at("result").at("message") ==
+               "Dependency error: prerequisite task 5 failed");
+    BOOST_TEST(tasks.at(7).at("result").at("message") ==
+               "Dependency error: prerequisite task 6 failed");
+    std::vector<std::size_t> reported;
+    for (const auto& callback : job_record.at("output")) {
+        const auto& observation = callback.at("value");
+        BOOST_TEST(observation.at("unit_failure_count").at("value").get<int>() == 0);
+        for (const auto& id : observation.at("task_ids").at("value")) {
+            reported.push_back(id.at("value").get<std::size_t>());
+        }
+    }
+    std::sort(reported.begin(), reported.end());
+    BOOST_REQUIRE_EQUAL(reported.size(), tasks.size());
+    for (std::size_t index = 0; index < reported.size(); ++index) {
+        BOOST_TEST(reported[index] == index);
+    }
+}
+
 // Invalid lifecycle operations leave the model usable, and reinitialization starts fresh
 BOOST_FIXTURE_TEST_CASE(bmi_lifecycle, JobRecordChecker) {
     BOOST_REQUIRE_EQUAL(tasks.size(), 11);

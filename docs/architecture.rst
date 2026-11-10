@@ -41,7 +41,7 @@ Simulation units
 Task dispatch and executors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The job scans queued tasks in submission order and selects the first whose target unit is idle. It skips tasks for busy units so that tasks for other units can proceed. ``RuntimeOptions::max_workers_`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
+The job scans queued tasks in submission order and selects the first whose prerequisites have succeeded and whose target unit is idle. Tasks on each unit retain submission order, including when the earliest queued task is waiting on a prerequisite. Ready work on other units can proceed. ``RuntimeOptions::max_workers_`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
 
 The workload determines how many units and retained model instances are needed. Choose the concurrent-task limit to suit the available CPUs and the threads used by each model. Idle units retain their executor and model state, so all resident models must fit in memory; the concurrent-task limit does not limit their number.
 
@@ -66,6 +66,37 @@ A unit's ``TaskExecutorId`` selects an executor registered through ``TaskExecuto
 The unit's executor object remains in the parent process in both cases. ``SubprocessTaskExecutor`` forwards tasks to a child process, as described under :ref:`subprocess-execution`.
 
 Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Static and dynamic BMI executors also support individual operations on a model retained between tasks, using their common ``BmiTaskExecutor`` base. The bundled BMI subprocess worker retains a ``DynamicBmiTaskExecutor`` in the child and supports the same operations. See :doc:`bmi` for the model lifecycle.
+
+Task dependencies and output references
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``Job::add_task()`` returns a copyable ``TaskHandle``. Its ``task_id()`` matches ``TaskRecord::task_id_`` in controller callbacks. Handles remain valid when the job moves or tasks are appended.
+
+``Task`` and ``job.add_task()`` accept no dependencies, one ``TaskHandle``, or a ``std::vector<TaskHandle>`` before the operation name:
+
+.. code-block:: cpp
+
+   // No dependencies
+   const miaow::TaskHandle source_update = job.add_task(source, "update");
+
+   // One dependency: the source update
+   const miaow::TaskHandle source_get_value =
+       job.add_task(source, source_update, "get_value", source_variable);
+
+   // Two dependencies: the preceding receiver task and the source read
+   job.add_task(receiver,
+                std::vector<miaow::TaskHandle>{previous_receiver_task, source_get_value},
+                "set_value", receiver_variable, miaow::output_of(source_get_value));
+
+Prerequisites must already belong to the same job and must succeed before the dependent task dispatches. ``Job::add_task()`` rejects invalid or foreign handles with ``std::invalid_argument``. Requiring prerequisites to be added first prevents cycles.
+
+A ``TaskHandle`` used as an operation argument supplies the producer's complete ``TaskResult::output_``. ``output_of(handle)`` returns that handle to make its purpose clear. The producer must also appear in the dependency list; ``add_task()`` rejects undeclared producers and invalid argument positions.
+
+The job copies referenced outputs into task arguments before dispatch. Executors and subprocess workers receive resolved values. Outputs remain available for the job lifetime, including to consumers added later; retaining field snapshots increases memory use and saved-record size with each step.
+
+A failed prerequisite causes its dependents to fail without dispatch, propagating through the branch. Controllers receive these records under their callback policy and can add recovery or finalization tasks without the failed prerequisite. A blocked finalizer has not attempted model cleanup.
+
+Build a fixed directed acyclic graph (DAG) before submission or in a controller's ``initialize()``. Adaptive controllers can add tasks from ``callback()`` based on completed results. Arguments and dependencies are fixed when each task is added; forward references and graph rewiring are unsupported.
 
 Job lifecycle
 ^^^^^^^^^^^^^

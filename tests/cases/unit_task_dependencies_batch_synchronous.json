@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "max_workers": 1,
+  "input": {"scenario": "task_dependencies", "task_generation_policy": "batch_synchronous"}
+}

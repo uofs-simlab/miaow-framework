@@ -208,7 +208,20 @@ void JobController::callback(Job& job, std::span<const TaskRecord>,
     }
 }
 
-void Job::add_task(Task task) {
+void SingleTaskPerUnitController::callback(
+    Job& job, std::span<const TaskRecord> completed_tasks,
+    std::span<const UnitFailure> failed_units) {
+    if (!failed_units.empty()) {
+        job.fail(failed_units.front().reason_);
+        return;
+    }
+
+    for (const TaskRecord& record : completed_tasks) {
+        job.remove_unit(record.unit_);
+    }
+}
+
+TaskHandle Job::add_task(Task task) {
     if (task.unit_.job_creation_id_ != job_creation_id_ ||
         task.unit_.index_ >= units_.size() || !units_[task.unit_.index_]) {
         throw std::invalid_argument("task target does not belong to this job");
@@ -216,7 +229,24 @@ void Job::add_task(Task task) {
     if (units_[task.unit_.index_]->state_ != UnitState::accepting_tasks || finishing_) {
         throw std::invalid_argument("task target is no longer accepting work");
     }
+    for (TaskHandle dependency : task.dependencies_) {
+        if (dependency.job_creation_id_ != job_creation_id_ ||
+            dependency.task_id_ >= tasks_.size()) {
+            throw std::invalid_argument(
+                "task dependency must be an earlier task in this job");
+        }
+    }
+    for (const auto& [argument_index, producer] : task.output_references_) {
+        if (argument_index >= task.args_.size() ||
+            std::find(task.dependencies_.begin(), task.dependencies_.end(), producer) ==
+                task.dependencies_.end()) {
+            throw std::invalid_argument(
+                "task output reference must name an explicit dependency and argument");
+        }
+    }
+    const TaskHandle handle{job_creation_id_, static_cast<TaskId>(tasks_.size())};
     tasks_.push_back(std::move(task));
+    return handle;
 }
 
 void Job::remove_unit(SimulationUnitHandle handle) {

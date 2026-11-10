@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -230,6 +231,64 @@ void setup_recovery(miaow::Job& job, miaow::TaskExecutorRegistry& registry,
     job.add_task(unit, "get_current_time");
 }
 
+// Transfer double snapshots into C++ and Fortran models through every execution path
+void setup_values(miaow::Job& job, miaow::TaskExecutorRegistry& registry,
+                  caf::config_value::dictionary model_config) {
+    const std::string temperature = "plate_surface__temperature";
+    const miaow::TaskExecutorId static_bmi =
+        registry.add<miaow::StaticBmiTaskExecutor<BmiHeat>>();
+    const miaow::TaskExecutorId dynamic_bmi = registry.add<miaow::DynamicBmiTaskExecutor>();
+    const miaow::TaskExecutorId subprocess_bmi =
+        registry.add_subprocess(miaow::bmi_subprocess_executable_path());
+    const miaow::SimulationUnitHandle source = job.add_unit("static", static_bmi);
+    const miaow::TaskHandle initialized = job.add_task(source, "initialize", model_config);
+    caf::config_value::list field;
+    for (std::size_t index = 0; index < 25; ++index) {
+        field.emplace_back(0.1 * static_cast<double>(index));
+    }
+    const miaow::TaskHandle written =
+        job.add_task(source, initialized, "set_value", temperature, std::move(field));
+    const miaow::TaskHandle snapshot =
+        job.add_task(source, written, "get_value", temperature);
+
+    // Reject a short buffer and block its consumer, then explicitly release the model
+    const miaow::TaskHandle wrong_size =
+        job.add_task(source, snapshot, "set_value", temperature,
+                     caf::config_value::list{caf::config_value{1.0}});
+    job.add_task(source, wrong_size, "get_value", temperature);
+    job.add_task(source, "finalize");
+
+    for (miaow::TaskExecutorId executor : {dynamic_bmi, subprocess_bmi}) {
+        for (const std::string backend : {"cpp", "fortran"}) {
+            const bool fortran = backend == "fortran";
+            const std::string mode = executor == dynamic_bmi ? "dynamic_" : "subprocess_";
+            const miaow::SimulationUnitHandle unit = job.add_unit(mode + backend, executor);
+            model_config.insert_or_assign("backend", backend);
+            model_config.insert_or_assign("plugin_path",
+                                          fortran ? MIAOW_FORTRAN_HEAT_PLUGIN_PATH
+                                                  : MIAOW_CPP_HEAT_PLUGIN_PATH);
+            const miaow::TaskHandle ready = job.add_task(unit, "initialize", model_config);
+            const miaow::TaskHandle transferred =
+                job.add_task(unit, std::vector<miaow::TaskHandle>{ready, snapshot},
+                             "set_value", temperature, miaow::output_of(snapshot));
+            miaow::TaskHandle last =
+                job.add_task(unit, transferred, "get_value", temperature);
+            if (fortran) {
+                const std::string identification = "model__identification_number";
+                last = job.add_task(unit, last, "set_value", identification,
+                                    caf::config_value::list{caf::config_value{42}});
+                last = job.add_task(unit, last, "get_value", identification);
+                last = job.add_task(
+                    unit, last, "set_value", identification,
+                    caf::config_value::list{caf::config_value{
+                        static_cast<std::int64_t>(std::numeric_limits<int>::max()) + 1}});
+                job.add_task(unit, last, "get_value", identification);
+            }
+            job.add_task(unit, "finalize");
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -247,7 +306,9 @@ int main(int argc, char* argv[]) {
 
         miaow::TaskExecutorRegistry registry;
         miaow::Job job;
-        if (scenario == "failure_recovery") {
+        if (scenario == "values") {
+            setup_values(job, registry, model_config);
+        } else if (scenario == "failure_recovery") {
             setup_recovery(job, registry, model_config, operation);
         } else if (scenario == "static_lifecycle" || scenario == "dynamic_lifecycle") {
             setup_lifecycle(job, registry, config, model_config);

@@ -73,6 +73,13 @@ if(BUILD_TESTING)
     )
     add_dependencies(miaow_bmi_dispatch_driver miaow_subprocess)
     miaow_add_example_test(
+        TEST_NAME miaow_bmi_values
+        EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+        REGRESSION bmi_values
+        CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/bmi_values.json"
+        EXTERNAL_MODEL
+    )
+    miaow_add_example_test(
         TEST_NAME miaow_bmi_static_lifecycle
         EXECUTABLE_TARGET miaow_bmi_dispatch_driver
         REGRESSION bmi_lifecycle

@@ -376,7 +376,8 @@ std::string DynamicBmiModel::GetVarType(std::string name) {
     if (normalized_type == "integer" || normalized_type == "int") {
         return "int";
     }
-    if (normalized_type == "double" || normalized_type == "float64") {
+    if (normalized_type == "double" || normalized_type == "float64" ||
+        normalized_type == "double precision") {
         return "double";
     }
     return raw_type;

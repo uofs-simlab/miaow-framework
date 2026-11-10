@@ -93,6 +93,34 @@ class SimulationUnitHandle {
 };
 
 /**
+ * @brief Job-scoped task identity retained across job moves and task insertion.
+ */
+class TaskHandle {
+  public:
+    TaskHandle() = default;
+    bool operator==(const TaskHandle&) const = default;
+
+    /// Match the task against records delivered to its job's controller
+    TaskId task_id() const {
+        return task_id_;
+    }
+
+  private:
+    TaskHandle(JobCreationId job_creation_id, TaskId task_id)
+        : job_creation_id_(job_creation_id), task_id_(task_id) {}
+
+    JobCreationId job_creation_id_{0};
+    TaskId task_id_{0};
+
+    friend class Job;
+};
+
+/// Reference an output whose producer must also be explicitly listed as a dependency
+inline TaskHandle output_of(TaskHandle producer) {
+    return producer;
+}
+
+/**
  * @brief Input payload routed to one registered task executor.
  *
  * Arguments in `args_` are positional and interpreted by the concrete `TaskExecutor`
@@ -107,6 +135,10 @@ struct Task {
 
     /// Generic arguments for this task to pass into `TaskExecutor::execute()`
     std::vector<caf::config_value> args_;
+
+    /// Parent-job scheduling data; only resolved arguments are sent to executors
+    std::vector<TaskHandle> dependencies_;
+    std::map<std::size_t, TaskHandle> output_references_;
 
     /// Directory injected by `Runtime` where the executing `TaskExecutor` writes
     /// task artifacts
@@ -129,8 +161,32 @@ struct Task {
     /// Convert positional operation arguments into config values
     template <class... Args>
     Task(SimulationUnitHandle unit, std::string operation, Args... args)
-        : Task(unit, std::move(operation),
-               std::vector<caf::config_value>{caf::config_value{std::move(args)}...}) {}
+        : Task(unit, std::move(operation)) {
+        const auto append_argument = [this](auto value) {
+            if constexpr (std::same_as<decltype(value), TaskHandle>) {
+                output_references_.emplace(args_.size(), value);
+                args_.emplace_back();
+            } else {
+                args_.emplace_back(std::move(value));
+            }
+        };
+        (append_argument(std::move(args)), ...);
+    }
+
+    /// Construct an operation with explicit success prerequisites
+    template <class... Args>
+    Task(SimulationUnitHandle unit, std::vector<TaskHandle> dependencies,
+         std::string operation, Args... args)
+        : Task(unit, std::move(operation), std::move(args)...) {
+        dependencies_ = std::move(dependencies);
+    }
+
+    /// Construct an operation with one success prerequisite
+    template <class... Args>
+    Task(SimulationUnitHandle unit, TaskHandle dependency, std::string operation,
+         Args... args)
+        : Task(unit, std::vector<TaskHandle>{dependency}, std::move(operation),
+               std::move(args)...) {}
 
     /**
      * @brief Return a pointer to a string at a given positional argument index.
@@ -372,6 +428,21 @@ class JobController {
 
   private:
     TaskGenerationPolicy task_generation_policy_;
+};
+
+/**
+ * @brief Release each simulation unit after its single task completes.
+ *
+ * Use for jobs with one task per unit. Successful and failed task completions both
+ * remove their units; loss of a unit's execution context fails the job.
+ */
+class SingleTaskPerUnitController : public JobController {
+  public:
+    using JobController::JobController;
+
+    /// Remove completed tasks' units, or fail the job if a unit became unavailable
+    void callback(Job& job, std::span<const TaskRecord> completed_tasks,
+                  std::span<const UnitFailure> failed_units) override;
 };
 
 /**
@@ -675,12 +746,16 @@ class Job {
     void remove_unit(SimulationUnitHandle unit);
 
     /// Append a task before submission or during a controller hook
-    void add_task(Task task);
+    /// Prerequisites must already be added to this job but need not have finished.
+    /// Dispatch waits until all prerequisites succeed.
+    /// @throws std::invalid_argument if a dependency is not an earlier task in this job.
+    TaskHandle add_task(Task task);
 
     /// Append an operation using the Task argument constructors
+    /// Prerequisites follow the same submission and success rules as add_task(Task).
     template <class... Args>
-    void add_task(SimulationUnitHandle unit, std::string operation, Args&&... args) {
-        add_task(Task{unit, std::move(operation), std::forward<Args>(args)...});
+    TaskHandle add_task(SimulationUnitHandle unit, Args&&... args) {
+        return add_task(Task{unit, std::forward<Args>(args)...});
     }
 
     /// Report a job-level error from a running controller hook
@@ -778,8 +853,8 @@ class Job {
     // Occupied task slots; timed-out native calls hold their slot until actor termination
     std::size_t active_task_count_{0};
 
-    // Settlement is independent of actor cleanup, so late replies cannot record twice
-    std::vector<bool> task_completed_;
+    // Completion-order indices locate prerequisite results and prevent duplicate task records
+    std::vector<std::optional<std::size_t>> task_record_indices_;
     std::vector<UnitFailure> pending_unit_failures_;
 
     // Final delivery waits until every activated unit has terminated

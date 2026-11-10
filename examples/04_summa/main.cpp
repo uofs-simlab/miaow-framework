@@ -4,7 +4,6 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -15,23 +14,6 @@
 #include "miaow.hpp"
 #include "miaow_bmi.hpp"
 #include "miaow_io.hpp"
-
-class SummaController : public miaow::JobController {
-  public:
-    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> completed_tasks,
-                  std::span<const miaow::UnitFailure> failed_units) override {
-        // If any units failed, mark the job as failed and return immediately
-        if (!failed_units.empty()) {
-            job.fail(failed_units.front().reason_);
-            return;
-        }
-
-        // Each GRU has one task; release its subprocess after that task completes
-        for (const miaow::TaskRecord& record : completed_tasks) {
-            job.remove_unit(record.unit_);
-        }
-    }
-};
 
 int main(int argc, char* argv[]) {
     try {
@@ -87,7 +69,7 @@ int main(int argc, char* argv[]) {
             task.metadata_["feature_type"] = "gru";
             job.add_task(std::move(task));
         }
-        job.set_controller(std::make_unique<SummaController>());
+        job.set_controller(std::make_unique<miaow::SingleTaskPerUnitController>());
 
         // Create the runtime using the requested concurrency and timeouts
         miaow::Runtime runtime(registry, runtime_options);

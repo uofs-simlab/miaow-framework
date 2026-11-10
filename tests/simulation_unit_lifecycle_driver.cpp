@@ -35,7 +35,16 @@ class CounterTaskExecutor final : public miaow::TaskExecutor {
     }
 
     // Each unit returns 1, 2, ...; a replacement must start its own sequence at 1
-    caf::result<miaow::TaskResult> execute(const miaow::Task&) override {
+    caf::result<miaow::TaskResult> execute(const miaow::Task& task) override {
+        if (task.operation_ == "fail") {
+            return miaow::make_failed_task_result("intentional task failure");
+        }
+        if (task.operation_ == "sum") {
+            const std::int64_t sum = caf::get<std::int64_t>(task.args_.at(0)) +
+                                     caf::get<std::int64_t>(task.args_.at(1));
+            return miaow::TaskResult{miaow::TaskStatus::succeeded, "inputs summed",
+                                     caf::config_value{sum}};
+        }
         return miaow::TaskResult{miaow::TaskStatus::succeeded, "counter incremented",
                                  caf::config_value{++value_}};
     }
@@ -68,6 +77,85 @@ caf::config_value describe_callback(std::span<const miaow::TaskRecord> completed
          caf::config_value{static_cast<std::int64_t>(failed_units.size())}}};
     return caf::config_value{std::move(observation)};
 }
+
+// Join results, preserve unit order, and append recovery work after dependency failure
+class DependencyController final : public miaow::JobController {
+  public:
+    DependencyController(miaow::TaskExecutorId executor, miaow::TaskGenerationPolicy policy)
+        : JobController(policy), executor_(executor) {}
+
+    void initialize(miaow::Job& job) override {
+        first_ = job.add_unit("first", executor_);
+        second_ = job.add_unit("second", executor_);
+        const miaow::SimulationUnitHandle independent =
+            job.add_unit("independent", executor_);
+        const miaow::TaskHandle root = job.add_task(first_, "increment");
+
+        // Invalid handles and undeclared output producers must fail before admission
+        miaow::Job foreign_job;
+        const miaow::SimulationUnitHandle foreign_unit =
+            foreign_job.add_unit("foreign", executor_);
+        const miaow::TaskHandle foreign = foreign_job.add_task(foreign_unit, "increment");
+        const auto require_rejection = [&job](miaow::Task task) {
+            try {
+                job.add_task(std::move(task));
+            } catch (const std::invalid_argument&) {
+                return;
+            }
+            throw std::runtime_error("invalid task dependency was accepted");
+        };
+        require_rejection(miaow::Task{first_, miaow::TaskHandle{}, "increment"});
+        require_rejection(miaow::Task{first_, foreign, "increment"});
+        require_rejection(miaow::Task{second_, "sum", miaow::output_of(root), 9});
+        miaow::Task invalid_argument{second_, root, "sum", miaow::output_of(root), 9};
+        invalid_argument.args_.clear();
+        require_rejection(std::move(invalid_argument));
+
+        const miaow::TaskHandle forwarded =
+            job.add_task(second_, root, "sum", miaow::output_of(root), 9);
+        const miaow::TaskHandle second_increment =
+            job.add_task(first_, forwarded, "increment");
+        third_increment_ = job.add_task(first_, "increment");
+        join_ =
+            job.add_task(second_,
+                         std::vector<miaow::TaskHandle>{forwarded, second_increment}, "sum",
+                         miaow::output_of(forwarded), miaow::output_of(second_increment));
+        const miaow::TaskHandle failure = job.add_task(first_, join_, "fail");
+        const miaow::TaskHandle blocked = job.add_task(second_, failure, "increment");
+        terminal_ = job.add_task(first_, blocked, "increment");
+        job.add_task(independent, "increment");
+    }
+
+    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> records,
+                  std::span<const miaow::UnitFailure> failed_units) override {
+        if (!failed_units.empty()) {
+            job.fail(failed_units.front().reason_);
+            return;
+        }
+        callbacks_.push_back(describe_callback(records, failed_units));
+        for (const miaow::TaskRecord& record : records) {
+            if (record.task_id_ == terminal_.task_id()) {
+                const miaow::TaskHandle recovery =
+                    job.add_task(first_, third_increment_, "increment");
+                job.add_task(second_, std::vector<miaow::TaskHandle>{join_, recovery},
+                             "sum", miaow::output_of(join_), miaow::output_of(recovery));
+            }
+        }
+    }
+
+    caf::config_value finalize() override {
+        return caf::config_value{std::move(callbacks_)};
+    }
+
+  private:
+    miaow::TaskExecutorId executor_;
+    miaow::SimulationUnitHandle first_;
+    miaow::SimulationUnitHandle second_;
+    miaow::TaskHandle third_increment_;
+    miaow::TaskHandle join_;
+    miaow::TaskHandle terminal_;
+    caf::config_value::list callbacks_;
+};
 
 // Remove a unit with accepted work still queued, and continue using the other unit
 class RemovalController final : public miaow::JobController {
@@ -295,7 +383,9 @@ int main(int argc, char* argv[]) {
         miaow::TaskExecutorRegistry registry;
         const miaow::TaskExecutorId counter = registry.add<CounterTaskExecutor>(false);
         miaow::Job job;
-        if (scenario_name == "removal_with_queued_work") {
+        if (scenario_name == "task_dependencies") {
+            job.set_controller(std::make_unique<DependencyController>(counter, policy));
+        } else if (scenario_name == "removal_with_queued_work") {
             job.set_controller(std::make_unique<RemovalController>(counter, policy));
         } else if (scenario_name == "replacement_after_failure") {
             const miaow::TaskExecutorId failing = registry.add<CounterTaskExecutor>(true);
