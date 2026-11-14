@@ -163,6 +163,8 @@ Subprocess execution gives each unit a separate address space. Models that use p
 
 Registering an executable with ``TaskExecutorRegistry::add_subprocess()`` selects ``SubprocessTaskExecutor`` for units using that registration. Each such unit launches its own child for its first task and reuses it for later tasks. The executor sends each ``Task`` to a worker actor in the child, where a handler performs the computation and returns a ``TaskResult``. The unit actor forwards that result to the job actor.
 
+Each child writes stdout and stderr to ``unit_<unit_id>_stdout.log`` and ``unit_<unit_id>_stderr.log``, using the job's unit ID. The same files capture output across all tasks executed by that child.
+
 ``SubprocessState`` manages the child's launch, communication, and termination inside the unit actor. The unit actor can process messages while waiting for the child; it does not block a parent scheduler thread for the duration of the computation.
 
 Registration and reuse
@@ -264,7 +266,7 @@ Invalid task IDs in these lookups throw ``std::out_of_range``. Borrowed task and
 
 ``Job::task(task_id).unit_id_`` identifies the target, including when the task never dispatches. ``Job::unit_label(unit_id)`` returns its label after removal. Replacements may reuse a label but receive a new unit ID. Removal rejects new work immediately, drains accepted tasks, and then releases execution resources.
 
-``Task::task_name_`` combines the unit label and task ID, such as ``A_task_0``. ``task_output_dir_`` is the job's ``results`` directory, or empty when file output is disabled. These fields are populated only in dispatched requests.
+``Task::task_output_dir_`` is the job's ``results`` directory, or empty when file output is disabled. It is populated only in dispatched requests.
 
 Task timing
 ^^^^^^^^^^^

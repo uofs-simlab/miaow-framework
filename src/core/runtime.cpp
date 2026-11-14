@@ -202,7 +202,6 @@ TaskId Job::add_task(Task task) {
         }
     }
     const TaskId task_id = static_cast<TaskId>(tasks_.size());
-    task.task_name_.clear();
     task.task_output_dir_.clear();
     tasks_.push_back(std::move(task));
     task_results_.emplace_back();

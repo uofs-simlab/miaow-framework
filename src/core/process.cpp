@@ -42,8 +42,7 @@ namespace miaow::core {
 
 namespace {
 
-// Prefixes for subprocess-related files and directories
-constexpr const char* subprocess_file_prefix = "subprocess";
+// Prefix for temporary subprocess control directories
 constexpr const char* subprocess_temp_dir_prefix = "miaow_subprocess";
 
 // Allow up to 5 seconds for the subprocess to start up before timing out
@@ -225,9 +224,8 @@ namespace {
 SubprocessPaths make_subprocess_paths(const Task& task) {
     const std::filesystem::path control_dir = make_control_dir(task);
 
-    // One child may serve multiple operations; name its logs after the first task
-    const std::string control_stem =
-        std::string(subprocess_file_prefix) + "_unit_" + task.task_name_;
+    // One log pair covers all tasks executed by this unit's child
+    const std::string control_stem = "unit_" + std::to_string(task.unit_id_);
 
     SubprocessPaths paths;
     paths.stdout_path_ = control_dir / (control_stem + "_stdout.log");

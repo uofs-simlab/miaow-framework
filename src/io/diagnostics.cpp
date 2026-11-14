@@ -48,7 +48,11 @@ void print_job_summary(const JobRecord& job_record) {
     output << "tasks:\n";
     for (std::size_t index = 0; index < job_record.task_results_.size(); ++index) {
         const TaskResult& result = *job_record.task_results_[index];
-        const TaskTiming& timing = job_record.task_timings_[index];
+        // Missing timings use -1 offsets and display as zero duration; only available
+        // timings contribute to the summed task duration used for concurrency.
+        const TaskTiming timing = index < job_record.task_timings_.size()
+                                      ? job_record.task_timings_[index]
+                                      : TaskTiming{};
         const std::chrono::duration<double> run_time =
             timing.dispatch_offset_ns_ >= 0 && timing.completion_offset_ns_ >= 0
                 ? std::chrono::nanoseconds{timing.completion_offset_ns_ -

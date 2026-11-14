@@ -100,9 +100,6 @@ struct Task {
     /// Artifact directory supplied in execution requests; empty in stored definitions
     std::string task_output_dir_;
 
-    /// Artifact stem supplied at dispatch from the unit label and task ID
-    std::string task_name_;
-
     /// Construct an empty task
     Task() = default;
 
@@ -830,8 +827,7 @@ template <class Inspector> bool inspect(Inspector& inspector, Task& task) {
     return inspector.object(task).fields(
         inspector.field("operation", task.operation_).fallback(std::string{}),
         inspector.field("unit_id", task.unit_id_), inspector.field("args", task.args_),
-        inspector.field("task_output_dir", task.task_output_dir_),
-        inspector.field("task_name", task.task_name_));
+        inspector.field("task_output_dir", task.task_output_dir_));
 }
 
 /**

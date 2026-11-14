@@ -46,7 +46,8 @@ void Job::write_job_record(const JobRecord& record) const {
         throw std::runtime_error("unable to open JSON file '" + path.string() + "'");
     }
     output.exceptions(std::ios::failbit | std::ios::badbit);
-    output << "{\n  \"run_id\": " << record.run_id_ << ",\n  \"job_id\": " << record.job_id_
+    output << "{\n  \"run_id\": " << nlohmann::ordered_json(record.run_id_).dump()
+           << ",\n  \"job_id\": " << nlohmann::ordered_json(record.job_id_).dump()
            << ",\n  \"miaow_version\": "
            << nlohmann::ordered_json(record.miaow_version_).dump() << ",\n  \"summary\": "
            << nlohmann::ordered_json{{"task_count", record.task_results_.size()},

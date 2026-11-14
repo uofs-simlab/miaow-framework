@@ -325,8 +325,6 @@ void Job::dispatch_tasks() {
         // Resolve snapshots in the execution copy; scheduling data stays in this job
         const Task& task = tasks_[task_index];
         Task execution_task{task.unit_id_, task.operation_, task.args_};
-        execution_task.task_name_ =
-            unit_label(task.unit_id_) + "_task_" + std::to_string(task_index);
         execution_task.task_output_dir_ = task_output_dir_;
         for (const auto& [argument_index, producer] : task.output_references_) {
             execution_task.args_[argument_index] = task_results_[producer]->output_;
