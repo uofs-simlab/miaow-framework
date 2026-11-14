@@ -1,6 +1,7 @@
 // Execute shared workloads and check numerical results before inspecting the final report
 #define BOOST_TEST_MODULE miaow_job_record_checks
 #include <boost/test/unit_test.hpp>
+#include <boost/io/ios_state.hpp>
 #include <nlohmann/json.hpp>
 
 #include "miaow.hpp"
@@ -9,10 +10,14 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <csignal>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -201,6 +206,13 @@ struct JobRecordChecker {
     std::string execution_error;
 };
 
+std::string job_summary(const miaow::JobRecord& record) {
+    std::ostringstream output;
+    boost::io::ios_rdbuf_saver restore_output{std::cout, output.rdbuf()};
+    miaow::print_job_summary(record);
+    return output.str();
+}
+
 BOOST_FIXTURE_TEST_CASE(hello, JobRecordChecker) {
     check_successful_tasks();
     BOOST_REQUIRE_EQUAL(record.task_results_.size(), 2);
@@ -208,11 +220,54 @@ BOOST_FIXTURE_TEST_CASE(hello, JobRecordChecker) {
     BOOST_TEST(result(1).message_ == "hello again");
     BOOST_TEST(unit(0).at("label") == "greeting");
     BOOST_TEST(unit(1).at("label") == "message_1");
+
+    // Check summaries with deterministic timings and both terminal statuses
+    miaow::JobRecord summary_record = record;
+    summary_record.task_timings_ = {{0, 1000000000}, {1000000000, 3000000000}};
+    summary_record.run_time_ = std::chrono::seconds{4};
+    BOOST_TEST(miaow::all_tasks_succeeded(summary_record));
+    summary_record.task_results_[1]->status_ = miaow::TaskStatus::failed;
+    summary_record.task_results_[1]->message_.clear();
+    BOOST_TEST(!miaow::all_tasks_succeeded(summary_record));
+    const std::string expected =
+        "\n=== MIAOW Job Summary "
+        "==========================================================\n"
+        "job_id: 0\n"
+        "tasks:\n"
+        "  [task_0] succeeded (1.000000 s): hello\n"
+        "  [task_1] failed (2.000000 s)\n"
+        "total_time: 4.000000\n"
+        "concurrency: 0.750000\n"
+        "================================================================================"
+        "\n";
+    BOOST_TEST(job_summary(summary_record) == expected);
+
+    // Keep successful results on both sides of the missing entry
+    summary_record.task_results_[1] = record.task_results_[1];
+    summary_record.task_results_.insert(summary_record.task_results_.begin() + 1,
+                                        std::nullopt);
+    summary_record.task_timings_.insert(summary_record.task_timings_.begin() + 1,
+                                        miaow::TaskTiming{});
+    BOOST_TEST(!miaow::all_tasks_succeeded(summary_record));
+    const std::string tasks = "tasks:\n"
+                              "  [task_0] succeeded (1.000000 s): hello\n"
+                              "  [task_1] result unavailable\n"
+                              "  [task_2] succeeded (2.000000 s): hello again\n";
+    BOOST_TEST(job_summary(summary_record).find(tasks) != std::string::npos);
 }
 
 BOOST_FIXTURE_TEST_CASE(hello_empty, JobRecordChecker) {
     check_successful_tasks();
     BOOST_TEST(record.task_results_.empty());
+    BOOST_TEST(miaow::all_tasks_succeeded(record));
+
+    // Check a copied record containing one missing result
+    miaow::JobRecord missing_record = record;
+    missing_record.task_results_.push_back(std::nullopt);
+    BOOST_TEST(!miaow::all_tasks_succeeded(missing_record));
+    BOOST_TEST(
+        job_summary(missing_record).find("tasks:\n  [task_0] result unavailable\n") !=
+        std::string::npos);
 }
 
 BOOST_FIXTURE_TEST_CASE(heat, JobRecordChecker) {

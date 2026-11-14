@@ -92,8 +92,8 @@ Examples run with their default inputs.
    * - `miaow_example_00_hello`_
      - `00_hello/hello.hpp`_
 
-       Runs configurable greeting tasks with an in-process executor.
-     - Task results 0 and 1 succeed with messages ``hello`` and ``hello again``; profile labels are ``greeting`` and ``message_1``
+       Runs configurable greeting tasks with an in-process executor and checks diagnostics on copied records.
+     - Task results 0 and 1 succeed with messages ``hello`` and ``hello again``; profile labels are ``greeting`` and ``message_1``. Fully populated summaries retain their format. Failed or missing results make ``all_tasks_succeeded()`` return false; mixed records display ``result unavailable`` for missing entries.
    * - `miaow_example_01_heat`_
      - `01_heat/heat.hpp`_
 
@@ -137,8 +137,8 @@ Successful example runs use JSON input overrides.
    * - `miaow_example_00_hello_empty`_
      - `00_hello/hello.hpp`_
 
-       Submits an empty job.
-     - Submitting a job with an empty task list succeeds and writes ``job_record.json`` with an empty ``profile.tasks`` array
+       Submits an empty job and checks diagnostics on a copy containing one missing result.
+     - Submitting a job with an empty task list succeeds and writes ``job_record.json`` with an empty ``profile.tasks`` array. The empty record satisfies ``all_tasks_succeeded()``; the copy returns false and displays ``result unavailable`` in its summary.
    * - `miaow_example_03_dynamic_bmi_zero_tolerance`_
      - `03_dynamic_bmi/dynamic_bmi.hpp`_
 

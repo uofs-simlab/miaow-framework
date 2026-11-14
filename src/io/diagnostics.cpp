@@ -47,6 +47,10 @@ void print_job_summary(const JobRecord& job_record) {
     output << std::fixed << std::setprecision(6);
     output << "tasks:\n";
     for (std::size_t index = 0; index < job_record.task_results_.size(); ++index) {
+        if (!job_record.task_results_[index]) {
+            output << "  [task_" << index << "] result unavailable\n";
+            continue;
+        }
         const TaskResult& result = *job_record.task_results_[index];
         // Missing timings use -1 offsets and display as zero duration; only available
         // timings contribute to the summed task duration used for concurrency.
@@ -73,7 +77,7 @@ void print_job_summary(const JobRecord& job_record) {
 
 bool all_tasks_succeeded(const JobRecord& job_record) {
     for (const std::optional<TaskResult>& result : job_record.task_results_) {
-        if (result->status_ != TaskStatus::succeeded) {
+        if (!result || result->status_ != TaskStatus::succeeded) {
             return false;
         }
     }
