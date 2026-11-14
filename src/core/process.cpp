@@ -42,8 +42,7 @@ namespace miaow::core {
 
 namespace {
 
-// Prefixes for subprocess-related files and directories
-constexpr const char* subprocess_file_prefix = "subprocess";
+// Prefix for temporary subprocess control directories
 constexpr const char* subprocess_temp_dir_prefix = "miaow_subprocess";
 
 // Allow up to 5 seconds for the subprocess to start up before timing out
@@ -225,9 +224,8 @@ namespace {
 SubprocessPaths make_subprocess_paths(const Task& task) {
     const std::filesystem::path control_dir = make_control_dir(task);
 
-    // One child may serve multiple operations; name its logs after the first task
-    const std::string control_stem =
-        std::string(subprocess_file_prefix) + "_unit_" + task.task_name_;
+    // One log pair covers all tasks executed by this unit's child
+    const std::string control_stem = "unit_" + std::to_string(task.unit_id_);
 
     SubprocessPaths paths;
     paths.stdout_path_ = control_dir / (control_stem + "_stdout.log");
@@ -572,13 +570,16 @@ void SubprocessState::handle_task_error(SubprocessLaunchId launch_id,
 
 // Send the retained task to the registered child actor
 void SubprocessState::request_task_result() {
-    Task task_payload = *active_task_;
-    if (!task_payload.task_output_dir_.empty()) {
-        task_payload.task_output_dir_ =
-            std::filesystem::absolute(task_payload.task_output_dir_)
+    if (!active_task_->task_output_dir_.empty()) {
+        active_task_->task_output_dir_ =
+            std::filesystem::absolute(active_task_->task_output_dir_)
                 .lexically_normal()
                 .string();
     }
+
+    // Launch paths are already resolved; only the child needs the payload from here
+    Task task_payload = std::move(*active_task_);
+    active_task_.reset();
 
     const SubprocessLaunchId launch_id = *launch_id_;
     phase_ = SubprocessPhase::waiting_for_task_result;

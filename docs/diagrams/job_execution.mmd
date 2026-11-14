@@ -36,7 +36,7 @@ sequenceDiagram
         J-)U: get_atom + Task
         U->>U: TaskExecutor::execute(task)
         U-->>J: TaskResult
-        J->>J: Create TaskRecord
+        J->>J: Store indexed result<br/>Save completed task ID<br/>for controller callback
         J->>J: JobController::callback()<br/>according to selected policy
     end
 
@@ -45,6 +45,8 @@ sequenceDiagram
     destroy U
     U-->>J: CAF termination<br/>notification
     J->>J: JobController::finalize()
+    J->>J: Record elapsed job runtime
+    J->>J: Write job_record.json<br/>if file output is enabled
     destroy J
     J-->>O: JobRecord<br/>then quit()
     O->>O: Fulfil JobHandle promise
