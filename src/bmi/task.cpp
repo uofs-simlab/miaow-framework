@@ -272,6 +272,12 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
             return TaskResult{TaskStatus::succeeded, {}};
         }
 
+        // Update model until target time operation
+        if (task.operation_ == "update_until") {
+            model_->UpdateUntil(caf::get<double>(task.args_.at(0)));
+            return TaskResult{TaskStatus::succeeded, {}};
+        }
+
         // Get current model time operation
         if (task.operation_ == "get_current_time") {
             return TaskResult{TaskStatus::succeeded,
