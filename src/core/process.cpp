@@ -572,13 +572,16 @@ void SubprocessState::handle_task_error(SubprocessLaunchId launch_id,
 
 // Send the retained task to the registered child actor
 void SubprocessState::request_task_result() {
-    Task task_payload = *active_task_;
-    if (!task_payload.task_output_dir_.empty()) {
-        task_payload.task_output_dir_ =
-            std::filesystem::absolute(task_payload.task_output_dir_)
+    if (!active_task_->task_output_dir_.empty()) {
+        active_task_->task_output_dir_ =
+            std::filesystem::absolute(active_task_->task_output_dir_)
                 .lexically_normal()
                 .string();
     }
+
+    // Launch paths are already resolved; only the child needs the payload from here
+    Task task_payload = std::move(*active_task_);
+    active_task_.reset();
 
     const SubprocessLaunchId launch_id = *launch_id_;
     phase_ = SubprocessPhase::waiting_for_task_result;

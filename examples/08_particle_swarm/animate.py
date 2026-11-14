@@ -5,7 +5,6 @@ import argparse
 import json
 import math
 from pathlib import Path
-import re
 import subprocess
 
 import matplotlib
@@ -29,40 +28,27 @@ plt.rcParams.update({
 COLOURS = ("tab:blue", "tab:orange")
 
 
-def seconds(duration):
-    """CAF durations use a numeric value followed by a selected time unit."""
-    value, unit = re.fullmatch(r"([0-9.eE+-]+)(ns|us|ms|s|min|h)", duration).groups()
-    return float(value) * {
-        "ns": 1e-9, "us": 1e-6, "ms": 1e-3, "s": 1, "min": 60, "h": 3600
-    }[unit]
-
-
-def unpack(value):
-    """Unwrap CAF config-value type annotations in structured job output."""
-    if isinstance(value, dict):
-        if "@value-type" in value:
-            return unpack(value["value"])
-        return {key: unpack(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [unpack(item) for item in value]
-    return value
-
-
 def load_job(directory):
     """Keep optimizer snapshots separate from individual evaluation completion times."""
     job = json.loads((directory / "job_record.json").read_text())
-    trace = unpack(job["output"])
+    trace = job["output"]
     updates = trace["updates"]
 
-    # Plot successful evaluations that returned an objective value
-    tasks = [task for task in job["tasks"]
-             if task["result"]["status"] == "succeeded"
-             and task["result"].get("output") is not None]
-    starts = np.array([seconds(task["dispatch_offset_from_job_start"]) for task in tasks])
-    ends = starts + np.array([seconds(task["run_time"]) for task in tasks])
+    # Join scientific observations to the profile by task ID
+    profile = job["profile"]
+    columns = {name: index for index, name in enumerate(profile["columns"])}
+    rows = {row[columns["task_id"]]: row for row in profile["tasks"]}
+    observations = {name: index for index, name in enumerate(trace["evaluation_columns"])}
+    evaluations = [(rows[item[observations["task_id"]]], item[observations["objective"]])
+                   for item in trace["evaluations"]
+                   if rows[item[observations["task_id"]]][columns["status"]] == "succeeded"]
+    starts = np.array([row[columns["dispatch_offset_ns"]] for row, _ in evaluations],
+                      dtype=float) * 1e-9
+    ends = np.array([row[columns["completion_offset_ns"]] for row, _ in evaluations],
+                    dtype=float) * 1e-9
     order = np.argsort(ends, kind="stable")
-    values = np.array([task["result"]["output"] for task in tasks], dtype=float)
-    duration = seconds(job["run_time"])
+    values = np.array([value for _, value in evaluations], dtype=float)
+    duration = job["summary"]["run_time_seconds"]
     return {
         "policy": trace["policy"], "bounds": trace["bounds"],
         "times": np.r_[0, [update["time"] for update in updates]],
@@ -73,7 +59,7 @@ def load_job(directory):
         "completion_times": ends[order],
         "best_values": np.minimum.accumulate(values[order]),
         "starts": starts, "ends": ends,
-        "unit_indices": np.array([task["unit"]["index"] for task in tasks]),
+        "unit_indices": np.array([row[columns["unit_id"]] for row, _ in evaluations]),
         "duration": duration,
         # The MP4 covers the search window; PDFs also include active work finishing later.
         "animation_duration": min(duration, trace.get("wall_time_limit_seconds", duration)),
@@ -216,8 +202,8 @@ def main():
         parser.error("--fps must be positive")
     output = args.output_directory or args.run_directory / "figures"
     output.mkdir(parents=True, exist_ok=True)
-    runs = [load_job(args.run_directory / f"job_{job_submission_id}")
-            for job_submission_id in range(2)]
+    runs = [load_job(args.run_directory / f"job_{job_id}")
+            for job_id in range(2)]
     save_unit_usage(runs, output / "unit_usage.pdf")
     save_convergence(runs, output / "convergence.pdf")
     save_animation(runs, output / "contours.mp4", args.fps)

@@ -57,7 +57,7 @@ Register the concrete C++ model type, declare a unit, and add its run operation:
        registry.add<miaow::StaticBmiTaskExecutor<BmiHeat>>();
    miaow::Runtime runtime(registry);
    miaow::Job job;
-   const miaow::SimulationUnitHandle unit = job.add_unit("heat", heat);
+   const miaow::SimulationUnitId unit = job.add_unit("heat", heat);
    caf::config_value::dictionary config;
    config.insert("init_config", heat_config);
    job.add_task(unit, "run", config);
@@ -79,9 +79,9 @@ Express required operation order with explicit dependencies, or submit each oper
 
 .. code-block:: cpp
 
-   const miaow::TaskHandle initialized = job.add_task(unit, "initialize", config);
-   const miaow::TaskHandle updated = job.add_task(unit, initialized, "update");
-   const miaow::TaskHandle queried =
+   const miaow::TaskId initialized = job.add_task(unit, "initialize", config);
+   const miaow::TaskId updated = job.add_task(unit, initialized, "update");
+   const miaow::TaskId queried =
        job.add_task(unit, updated, "get_current_time");
    job.add_task(unit, queried, "finalize");
 
@@ -106,8 +106,6 @@ BMI metadata selects a native ``float``, ``double``, or ``int`` buffer. Setters 
 
 Item sizes must match the native type, byte counts must be non-negative multiples of the item size, and setter lists must match the element count. Unsupported types or inconsistent metadata fail the task. The Fortran bridge translates ``real``/``float`` to ``float``, ``integer``/``int`` to ``int``, and ``double``/``float64``/``double precision`` to ``double``.
 
-Use dependencies and ``output_of()`` to transfer values between models, as shown in :doc:`architecture`. Source and destination variable names may differ. The workflow must ensure compatible units and grid layouts; the executor checks the destination type and size.
-
 Dynamic BMI plugin
 ------------------
 
@@ -120,7 +118,7 @@ Register ``DynamicBmiTaskExecutor`` for in-process plugin execution, or register
        registry.add_subprocess(miaow::bmi_subprocess_executable_path());
    miaow::Runtime runtime(registry);
    miaow::Job job;
-   const miaow::SimulationUnitHandle unit = job.add_unit("model", executor);
+   const miaow::SimulationUnitId unit = job.add_unit("model", executor);
    caf::config_value::dictionary config;
    config.insert("backend", "fortran");
    config.insert("plugin_path", plugin_path);
@@ -133,7 +131,7 @@ Register ``DynamicBmiTaskExecutor`` for in-process plugin execution, or register
    // Wait for completion and retrieve the job record
    const miaow::JobRecord record = job_handle.get();
 
-A subprocess-backed unit keeps its child and dynamic executor alive between operations until removal or job completion. Individual operations retain an initialized model and its plugin; complete ``run`` tasks each create and finalize a fresh model. The Julia/Trixi example places one simulation in a dedicated unit subprocess.
+A subprocess-backed unit keeps its child and dynamic executor alive between operations until removal or job completion. Individual operations retain an initialized model and its plugin; complete ``run`` tasks each create and finalize a fresh model.
 
 Schedule ``finalize`` before normal unit removal or job completion to receive the model's cleanup result. On unit removal, job completion, task or job timeout, and Runtime destruction, subprocess shutdown requests orderly worker exit. After the active call returns, the bundled worker releases its executor, which attempts finalization if a model remains.
 
@@ -153,6 +151,6 @@ The runner calls ``Update()`` repeatedly and fails the task if an update passes 
 Diagnostics and artifacts
 -------------------------
 
-When ``RuntimeOptions::output_root_`` or CLI ``--output_root`` is set, MIAOW writes a ``job_record.json`` under ``<output_root>/run_<run_id>/job_<job_submission_id>/``. Records include unit and executor identifiers, operations, status, messages, metadata, structured output, timings, and artifact paths. Subprocess stdout and stderr logs may also be retained there.
+When ``RuntimeOptions::output_root_`` or CLI ``--output_root`` is set, MIAOW writes a ``job_record.json`` under ``<output_root>/run_<run_id>/job_<job_id>/``. It contains a job summary, controller output, failure messages, artifact references, and a compact task profile with unit and operation tables. Numerical task outputs remain accessible in ``JobRecord::task_results_``. Subprocess stdout and stderr logs may also be retained there.
 
 Scientific output files and their locations are controlled by the model's initialization configuration. BMI tasks produce no additional scientific output or resolved configuration files.

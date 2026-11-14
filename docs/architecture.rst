@@ -24,13 +24,17 @@ A caller declares units, assigns tasks to them, and submits the job to ``Runtime
 Simulation units
 ^^^^^^^^^^^^^^^^
 
-``job.add_unit(feature_id, executor_id)`` declares a simulation unit and returns a ``SimulationUnitHandle`` that can be used only with that job. The feature ID labels the scientific unit; the executor ID selects its registered executor. Every task targets a unit in its owning job. For example, with an executor registered as ``executor`` that accepts an operation named ``increment`` and an integer argument, we can create a job with two units and submit tasks to them as follows:
+``job.add_unit(feature_id, executor_id)`` declares a simulation unit and returns a zero-based ``SimulationUnitId``. Task and unit IDs are local to their job; callers must use them with the job that assigned them. IDs remain valid across job moves and additions, and unit IDs are never reused within a job. The feature ID labels the scientific unit; the executor ID selects its registered executor.
+
+Unit labels must be nonempty, contain no path separators, and be unique among units accepting work. ``add_unit()`` checks these rules before admitting the unit.
+
+For example, with an executor registered as ``executor`` that accepts an operation named ``increment`` and an integer argument, we can create a job with two units and submit tasks to them as follows:
 
 .. code-block:: cpp
 
    miaow::Job job;
-   const miaow::SimulationUnitHandle a = job.add_unit("A", executor);
-   const miaow::SimulationUnitHandle b = job.add_unit("B", executor);
+   const miaow::SimulationUnitId a = job.add_unit("A", executor);
+   const miaow::SimulationUnitId b = job.add_unit("B", executor);
    job.add_task(a, "increment", 2);
    job.add_task(b, "increment", 1);
    job.add_task(a, "increment", 3);
@@ -45,7 +49,7 @@ The job scans queued tasks in submission order and selects the first whose prere
 
 Set the worker limit through the ``RuntimeOptions`` constructor or ``set_max_workers()``; both reject zero with ``std::invalid_argument``. Read it through ``max_workers()``. The default limit is one.
 
-The workload determines how many units and retained model instances are needed. Choose the concurrent-task limit to suit the available CPUs and the threads used by each model. Idle units retain their executor and model state, so all resident models must fit in memory; the concurrent-task limit does not limit their number.
+The worker limit does not limit the number of resident executors or models. Activated units retain their executors while idle.
 
 When dispatching a unit's first task, the job creates its actor. The unit constructs one ``TaskExecutor`` before executing that task and reuses the executor for subsequent tasks. Declaring a unit does not create its actor or initialize a BMI model. BMI initialization occurs when the executor handles an ``initialize`` or ``run`` task. The job allows at most one active task per unit, and operations on that unit execute serially.
 
@@ -72,37 +76,35 @@ Each BMI ``"run"`` task creates a fresh model and performs initialize, update, a
 Task dependencies and output references
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``Job::add_task()`` returns a copyable ``TaskHandle``. Its ``task_id()`` matches ``TaskRecord::task_id_`` in controller callbacks. Handles remain valid when the job moves or tasks are appended.
+``Job::add_task()`` returns a zero-based ``TaskId`` that indexes its definition, result, and timing. Controller callbacks receive these same IDs. ``JobId`` identifies a submitted job within its runtime.
 
-``Task`` and ``job.add_task()`` accept no dependencies, one ``TaskHandle``, or a ``std::vector<TaskHandle>`` before the operation name:
+``Task`` and ``job.add_task()`` accept no dependencies, one ``TaskId``, or a ``std::vector<TaskId>`` before the operation name:
 
 .. code-block:: cpp
 
    // No dependencies
-   const miaow::TaskHandle source_update = job.add_task(source, "update");
+   const miaow::TaskId source_update = job.add_task(source, "update");
 
    // One dependency: the source update
-   const miaow::TaskHandle source_get_value =
+   const miaow::TaskId source_get_value =
        job.add_task(source, source_update, "get_value", source_variable);
 
    // Two dependencies: the preceding receiver task and the source read
    job.add_task(receiver,
-                std::vector<miaow::TaskHandle>{previous_receiver_task, source_get_value},
+                std::vector<miaow::TaskId>{previous_receiver_task, source_get_value},
                 "set_value", receiver_variable, miaow::output_of(source_get_value));
 
-Prerequisites must already belong to the same job and must succeed before the dependent task dispatches. ``Job::add_task()`` rejects invalid or foreign handles with ``std::invalid_argument``. Requiring prerequisites to be added first prevents cycles.
+Prerequisites must already have been added to the job and must succeed before the dependent task dispatches. ``Job::add_task()`` rejects IDs that do not name earlier tasks with ``std::invalid_argument``. Requiring prerequisites to be added first prevents cycles. IDs carry no job identity, so callers are responsible for keeping references within their owning job.
 
-Sharing a unit adds no implicit dependencies. For example, if an earlier ``update`` task is waiting on another unit, a later ``get_current_time`` task without dependencies can run first on the same model. To query the time after that update, declare the update's handle as the query's prerequisite. Each unit still executes only one task at a time.
+Sharing a unit adds no implicit dependencies. For example, if an earlier ``update`` task is waiting on another unit, a later ``get_current_time`` task without dependencies can run first on the same model. To query the time after that update, declare the update's task ID as the query's prerequisite. Each unit still executes only one task at a time.
 
-A ``TaskHandle`` used as an operation argument supplies the producer's complete ``TaskResult::output_``. ``output_of(handle)`` returns that handle to make its purpose clear. The producer must also appear in the dependency list; ``add_task()`` rejects undeclared producers and invalid argument positions.
+``output_of(task_id)`` marks an operation argument to receive the producer's complete ``TaskResult::output_`` at dispatch. It returns a ``TaskOutputReference`` that the task constructor records as a producer ID and argument position. Plain integer arguments are literal values. The producer must also appear in the dependency list; ``add_task()`` rejects undeclared producers and invalid argument positions.
 
-The job copies referenced outputs into task arguments before dispatch. Executors and subprocess workers receive resolved values. Outputs remain available for the job lifetime, including to consumers added later; retaining field snapshots increases memory use and saved-record size with each step.
+The job copies referenced outputs into task arguments before dispatch. Executors and subprocess workers receive resolved values. Outputs remain available for consumers added later in the job.
 
-A failed prerequisite causes its dependents to fail without dispatch, propagating through the branch. Controllers receive these records under their callback policy and can add recovery or finalization tasks without the failed prerequisite. A blocked finalizer has not attempted model cleanup.
+A failed prerequisite causes its dependents to fail without dispatch, propagating through the branch. Controllers receive these completion IDs under their callback policy and can add recovery or finalization tasks without the failed prerequisite. A blocked finalizer has not attempted model cleanup.
 
-Build a fixed directed acyclic graph (DAG) before submission or in a controller's ``initialize()``. Adaptive controllers can add tasks from ``callback()`` based on completed results. Arguments and dependencies are fixed when each task is added; forward references and graph rewiring are unsupported.
-
-The flowchart below shows execution events and task dispatch in the job actor:
+Tasks may be added before submission or from ``initialize()`` and ``callback()``. Arguments and dependencies are fixed when each task is added; forward references and graph rewiring are unsupported.
 
 .. mermaid:: diagrams/task_dependencies.mmd
    :name: task-dispatch-diagram
@@ -112,7 +114,7 @@ The flowchart below shows execution events and task dispatch in the job actor:
 Job lifecycle
 ^^^^^^^^^^^^^
 
-After submission, the job actor calls the controller's ``initialize()`` hook and begins dispatching tasks. Each executor returns a ``TaskResult``. The job actor adds the task's identity and timing to create a ``TaskRecord``, then passes new records to the controller according to its callback policy. The controller can use those results to add more tasks.
+After submission, the job actor calls ``initialize()``, prepares accepted tasks, and dispatches ready work. It stores each returned ``TaskResult`` by task ID and delivers completion IDs under the controller's callback policy.
 
 The sequence below shows one job with one unit. Open arrowheads are asynchronous CAF messages; dashed arrows are replies or termination notifications; filled arrowheads are local calls, actor creation, or labelled OS signals:
 
@@ -125,18 +127,18 @@ When no tasks are queued or running and the controller adds no more tasks, the j
 Job controllers
 ---------------
 
-A ``JobController`` determines how the workflow proceeds after tasks return results. For example, an optimization controller can submit tasks for a batch of candidate parameters and use their results to choose the next batch. The job actor handles dispatch and unit lifetimes for the work the controller requests.
-
 Lifecycle hooks
 ^^^^^^^^^^^^^^^
 
 The following controller hooks run serially inside the job actor:
 
-- ``initialize(Job&)`` runs once before initial dispatch, and may declare units and add tasks alongside caller-provided work. If the job has no tasks after initialization, it calls ``finalize()`` and returns an empty task-record list.
+- ``initialize(Job&)`` runs once before initial dispatch, and may declare units and add tasks alongside caller-provided work. If the job has no tasks after initialization, it calls ``finalize()`` and returns empty result and timing vectors.
 
-- ``callback(Job&, completed_tasks, failed_units)`` receives new task records and unit failures. The controller may append tasks or declare, remove, or replace units. The job waits for the callback to return before dispatching any tasks it added.
+- ``callback(Job&, completed_task_ids, failed_units)`` receives new completion IDs and unit failures. The controller may append tasks or declare, remove, or replace units. The job waits for the callback to return before dispatching any tasks it added.
 
-- ``finalize()`` runs once when creating the final job record, after units have shut down. It returns structured job output and also runs for empty jobs and job timeouts. Hooks should return promptly.
+- ``finalize()`` runs once when creating the final job record, after units have shut down. It returns structured job output and also runs for empty jobs and job timeouts.
+
+Blocking a hook delays dispatch, result handling, and job timeouts.
 
 Calling ``Job::fail(reason)`` or throwing from a controller hook causes ``JobHandle::get()`` to throw instead of returning a ``JobRecord``. Runtime shutdown also produces no final job record.
 
@@ -146,9 +148,11 @@ Callback policies
 Each ``JobController`` selects a ``TaskGenerationPolicy`` through its constructor:
 
 - ``asynchronous`` (default): call ``callback()`` after a task succeeds or fails, or a unit fails.
-- ``batch_synchronous``: call ``callback()`` after every task in the current batch has a success or failure record and no task from that batch is still running. Caller-provided tasks and tasks added during initialization form the first batch; tasks added by each callback form the next batch.
+- ``batch_synchronous``: call ``callback()`` after every task in the current batch has a success or failure result and no task from that batch is still running. Caller-provided tasks and tasks added during initialization form the first batch; tasks added by each callback form the next batch.
 
-Both policies pass new task records in completion order through ``std::span<const TaskRecord>``. The controller must copy any records it needs after the callback returns. An asynchronous callback receives the newly completed task's record or the records for tasks affected by a unit failure; a batch callback receives all records from that batch.
+Both policies deliver each completion ID once, in completion order, through ``std::span<const TaskId> completed_task_ids``. Unit loss can deliver several IDs in one callback. The span is borrowed for the call.
+
+Lookups work as soon as tasks and units are added. Task additions can invalidate definition and result references; unit additions can invalidate label references. Whole-job timeouts finalize unfinished results without invoking another callback.
 
 .. _subprocess-execution:
 
@@ -184,7 +188,7 @@ An executable supplies the computation that runs in the child. MIAOW provides a 
        registry.add_subprocess("/path/to/my_worker");
 
    miaow::Job job;
-   const miaow::SimulationUnitHandle unit = job.add_unit("custom", custom_executor_id);
+   const miaow::SimulationUnitId unit = job.add_unit("custom", custom_executor_id);
    job.add_task(unit, "run", "input");
 
 The executable links against MIAOW and supplies a callable accepting ``const Task&`` and returning ``TaskResult`` or ``caf::result<TaskResult>``. Plain ``TaskResult`` callbacks convert implicitly to the worker's result type. ``run_subprocess_worker()`` registers the worker with the parent and invokes this callable serially for each task it receives:
@@ -224,9 +228,9 @@ Task and unit failures
 
 An operation failure produces a failed ``TaskResult``; the unit remains available for later tasks. A ``UnitFailure`` means that the unit can no longer execute tasks. Failure to construct an executor, unexpected actor termination, and task timeout can cause a unit failure. For a ``SubprocessTaskExecutor``, failure to start the child or unexpected child termination also causes a unit failure.
 
-``UnitFailure`` includes the unit handle and a message describing the cause. Its running and queued tasks each receive one failed record. An idle unit can fail without producing a task record.
+``UnitFailure`` includes ``unit_id_`` and a message describing the cause. Its running and queued tasks each receive one failed record. An idle unit can fail without producing a task record.
 
-The callback receives the affected records and the ``UnitFailure`` together. Asynchronous policy reports the failure without waiting for other tasks; batch policy waits until no tasks from the batch remain queued or running. The default controller fails the job. A custom controller may continue other units, remove the failed unit, or construct a replacement. MIAOW does not recreate failed units or retry their tasks automatically.
+The callback receives the affected records and the ``UnitFailure`` together. Asynchronous policy reports the failure without waiting for other tasks; batch policy waits until no tasks from the batch remain queued or running. The default controller fails the job. A custom controller may continue other units, remove the failed unit, or construct a replacement. MIAOW does not recreate failed units or retry their tasks automatically. Replacement BMI units start without an initialized model.
 
 Timeouts
 ^^^^^^^^
@@ -249,34 +253,42 @@ Termination arrows to the CAF actor system below represent lifecycle events. The
 Results and records
 -------------------
 
-Task records
-^^^^^^^^^^^^
+Indexed task results
+^^^^^^^^^^^^^^^^^^^^
 
-The job actor combines each ``TaskResult`` with the task's ID, operation, metadata, executor ID, and timing information to create a ``TaskRecord``. A ``TaskId`` identifies a task within its job. The final ``JobRecord`` contains these records sorted by ``TaskId``.
+A ``TaskId`` indexes a task definition and its optional result. An empty result represents unfinished work. The first accepted terminal result is retained; late responses cannot replace it. The final ``JobRecord::task_results_`` contains a result for every accepted task, in task-ID order.
 
-``TaskRecord::unit_`` identifies the task's target unit, including for tasks that never dispatch. Unit identity is independent of the concurrent-task limit. The saved ``task_executor_id`` identifies the executor registration used by that unit.
+``Job::task(task_id)``, ``Job::result(task_id)``, and ``Job::timing(task_id)`` return the definition, optional result, and timing offsets.
 
-Operations on a unit share its feature label, with unique task IDs in artifact stems such as ``A_task_0`` and ``A_task_2``.
+Invalid task IDs in these lookups throw ``std::out_of_range``. Borrowed task and result references may be invalidated by task additions.
+
+``Job::task(task_id).unit_id_`` identifies the target, including when the task never dispatches. ``Job::unit_label(unit_id)`` returns its label after removal. Replacements may reuse a label but receive a new unit ID. Removal rejects new work immediately, drains accepted tasks, and then releases execution resources.
+
+``Task::task_name_`` combines the unit label and task ID, such as ``A_task_0``. ``task_output_dir_`` is the job's ``results`` directory, or empty when file output is disabled. These fields are populated only in dispatched requests.
 
 Task timing
 ^^^^^^^^^^^
 
-``TaskRecord::dispatch_offset_from_job_start_`` stores the elapsed seconds from job start to dispatch, using the same monotonic clock as ``run_time_``. Dispatch precedes the unit actor beginning execution. A non-null offset identifies a dispatched task, independently of its scheduler thread or subprocess PID.
+``TaskTiming`` stores dispatch and first terminal-result offsets from job start in signed 64-bit nanoseconds, using ``std::chrono::steady_clock``. Timing collection is always enabled. ``Job::timing(task_id)`` returns a ``TaskTiming`` value; ``JobRecord::task_timings_`` indexes timings by task ID. An offset of ``-1`` denotes an event that has not occurred. Nanoseconds specify storage units, not measurement accuracy.
 
-``TaskRecord::run_time_`` measures the interval from dispatch until the job actor records success or failure. It includes scheduling, communication, and any subprocess startup or cleanup that occurs before the result is recorded. Adding it to the dispatch offset gives the time relative to job start when that result was recorded.
+Subtract dispatch from completion only when both offsets are available. This duration includes scheduling, communication, and subprocess startup or cleanup before the result is recorded. A task that fails before dispatch has a completion offset but no duration. A timeout can be recorded before an in-process worker finishes cleanup; that worker continues to occupy capacity until termination.
 
-Tasks that reach the job timeout before dispatch have a null dispatch offset and zero runtime. Dispatched tasks retain their offset and elapsed runtime up to the timeout. Unavailable offsets are ``std::nullopt`` (``null`` in JSON).
+The profile exports offsets as integer nanoseconds, with JSON ``null`` for unavailable events. Overall job runtime is reported in seconds and includes initialization, execution, unit cleanup, and controller finalization. Its measurement ends before file export.
 
 Structured output
 ^^^^^^^^^^^^^^^^^
 
-``TaskResult::output_`` carries optional structured output as a ``caf::config_value``. It supports scalar values and nested lists and dictionaries, and remains available through the ``TaskRecord`` values passed to the controller and retained by the final ``JobRecord``. Controllers validate the structure and value types defined by their task executors. Large time series, grids, and model state belong in files referenced by ``TaskResult::artifact_paths_``.
+``TaskResult::output_`` carries optional structured output as a ``caf::config_value``. It supports scalar values and nested lists and dictionaries, and remains available through ``Job::result(task_id)`` during execution and ``JobRecord::task_results_`` after completion.
 
-``JobController::finalize()`` returns optional structured output in the same format, with null as the default. Runtime retains this value in ``JobRecord::output_``.
+``JobController::finalize()`` supplies ``JobRecord::output_``, which is null by default.
 
-When ``RuntimeOptions::output_root_`` is configured, Runtime writes the completed ``JobRecord``, including task and job output, to ``job_record.json``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
+When ``RuntimeOptions::output_root_`` is configured, the job actor writes one ``job_record.json`` during finalization. An empty output root disables report files while retaining timing collection. A write failure propagates through ``JobHandle::get()``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
 
-State retained between tasks lives in the unit's executor or child process. Job records describe execution results; MIAOW does not checkpoint or restore live model state from them. A replacement unit starts with a new executor and must initialize its own model.
+The file contains runtime and job IDs, the library version, a summary of task counts and job runtime, controller ``output``, sparse ``failures`` and ``artifacts`` arrays, and a ``profile``. Raw task outputs remain in ``JobRecord::task_results_``. Controller output uses plain JSON values.
+
+``miaow::to_json()`` in ``miaow_io.hpp`` converts a ``caf::config_value`` to ``nlohmann::json``. Lists and dictionaries become JSON arrays and objects. Durations become strings of signed nanoseconds followed by ``ns``; URIs become strings.
+
+``profile.units`` lists each unit's ID, label, and executor ID, including removed units. ``profile.operations`` lists distinct operation names in first-occurrence order. ``profile.columns`` names the fields in each ``profile.tasks`` row: task ID, unit ID, operation ID, status, dispatch offset, and completion offset. Rows follow task-ID order. Jobs with no tasks retain the column schema and any declared units.
 
 Each completed record includes ``miaow_version``, captured when the library is built. This uses Git's description relative to a reachable version tag, such as ``v0.3.0-5-gabc1234-dirty``: the tag, number of additional commits, abbreviated commit hash, and ``-dirty`` for tracked edits. An exact clean tag reports only the tag; a history without a matching tag reports an abbreviated hash.
 

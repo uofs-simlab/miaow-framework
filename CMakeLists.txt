@@ -55,7 +55,7 @@ miaow_validate_provider(MIAOW_BOOST_PROVIDER)
 miaow_validate_provider(MIAOW_JSON_PROVIDER)
 miaow_validate_provider(MIAOW_CAF_PROVIDER)
 
-# Boost.Test is required only for the job record checker
+# Boost.Test is required only for the workload regression checkers
 if(miaow_build_tests)
     if(NOT MIAOW_BOOST_PROVIDER STREQUAL "fetch")
         find_package(Boost CONFIG QUIET COMPONENTS unit_test_framework)
@@ -84,7 +84,7 @@ if(miaow_build_tests)
     endif()
 endif()
 
-# JSON text parsing and formatting use one private, header-only dependency
+# JSON conversion, parsing, and formatting use one header-only dependency
 if(NOT MIAOW_JSON_PROVIDER STREQUAL "fetch")
     find_package(nlohmann_json ${MIAOW_JSON_VERSION} QUIET CONFIG)
 endif()
@@ -210,6 +210,7 @@ add_library(miaow STATIC
     src/core/runtime.cpp
     src/io/cli.cpp
     src/io/diagnostics.cpp
+    src/io/json.cpp
 )
 
 # Refresh build metadata after Git changes without rewriting an unchanged header
@@ -254,6 +255,7 @@ target_link_libraries(miaow
 set(miaow_interface_link_libraries
     "$<BUILD_INTERFACE:${MIAOW_CAF_CORE_TARGET}>"
     "$<BUILD_INTERFACE:${MIAOW_CAF_IO_TARGET}>"
+    "$<BUILD_INTERFACE:nlohmann_json::nlohmann_json>"
     "$<BUILD_INTERFACE:$<LINK_ONLY:iso_c_bmi>>"
 )
 if(CMAKE_DL_LIBS)

@@ -87,49 +87,8 @@ static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
 }
 
 std::filesystem::path core::job_directory_path(const RuntimeOptions& runtime_options,
-                                               std::uint64_t run_id,
-                                               JobSubmissionId job_submission_id) {
-    return run_directory_path(runtime_options, run_id) /
-           ("job_" + std::to_string(job_submission_id));
-}
-
-// Prepare unit operations without changing previously assigned runtime fields
-void core::assign_task_runtime_fields(std::vector<Task>& tasks,
-                                      std::size_t first_task_index,
-                                      const RuntimeOptions& runtime_options,
-                                      std::uint64_t run_id,
-                                      JobSubmissionId job_submission_id) {
-    for (std::size_t index = first_task_index; index < tasks.size(); ++index) {
-        Task& task = tasks[index];
-        const std::string& feature_id = task.metadata_.at("feature_id");
-        if (feature_id.find('/') != std::string::npos ||
-            feature_id.find('\\') != std::string::npos) {
-            throw std::runtime_error(
-                "Task name error: feature_id must not contain path separators");
-        }
-        task.task_name_ = feature_id + "_task_" + std::to_string(index);
-    }
-
-    // Clear output paths when artifact storage is disabled
-    if (runtime_options.output_root_.empty()) {
-        for (std::size_t task_index = first_task_index; task_index < tasks.size();
-             ++task_index) {
-            tasks.at(task_index).task_output_dir_.clear();
-        }
-        return;
-    }
-
-    // Create the job results directory before assigning task output paths
-    const std::filesystem::path job_directory =
-        job_directory_path(runtime_options, run_id, job_submission_id);
-    const std::filesystem::path results_directory = job_directory / "results";
-    std::filesystem::create_directories(results_directory);
-
-    // Store output from every selected task in the job results directory
-    for (std::size_t task_index = first_task_index; task_index < tasks.size();
-         ++task_index) {
-        tasks.at(task_index).task_output_dir_ = results_directory.string();
-    }
+                                               std::uint64_t run_id, JobId job_id) {
+    return run_directory_path(runtime_options, run_id) / ("job_" + std::to_string(job_id));
 }
 
 // Initialize CAF global meta objects exactly once in a thread-safe way
@@ -200,7 +159,7 @@ Job::~Job() = default;
 Job::Job(Job&&) = default;
 Job& Job::operator=(Job&&) = default;
 
-void JobController::callback(Job& job, std::span<const TaskRecord>,
+void JobController::callback(Job& job, std::span<const TaskId>,
                              std::span<const UnitFailure> failed_units) {
     // If any units failed, mark the job as failed and return immediately
     if (!failed_units.empty()) {
@@ -208,30 +167,28 @@ void JobController::callback(Job& job, std::span<const TaskRecord>,
     }
 }
 
-void SingleTaskPerUnitController::callback(
-    Job& job, std::span<const TaskRecord> completed_tasks,
-    std::span<const UnitFailure> failed_units) {
+void SingleTaskPerUnitController::callback(Job& job,
+                                           std::span<const TaskId> completed_task_ids,
+                                           std::span<const UnitFailure> failed_units) {
     if (!failed_units.empty()) {
         job.fail(failed_units.front().reason_);
         return;
     }
 
-    for (const TaskRecord& record : completed_tasks) {
-        job.remove_unit(record.unit_);
+    for (TaskId task_id : completed_task_ids) {
+        job.remove_unit(job.task(task_id).unit_id_);
     }
 }
 
-TaskHandle Job::add_task(Task task) {
-    if (task.unit_.job_creation_id_ != job_creation_id_ ||
-        task.unit_.index_ >= units_.size() || !units_[task.unit_.index_]) {
-        throw std::invalid_argument("task target does not belong to this job");
+TaskId Job::add_task(Task task) {
+    if (task.unit_id_ >= units_.size()) {
+        throw std::invalid_argument("task target must be an existing unit in this job");
     }
-    if (units_[task.unit_.index_]->state_ != UnitState::accepting_tasks || finishing_) {
+    if (units_[task.unit_id_].state_ != UnitState::accepting_tasks || finishing_) {
         throw std::invalid_argument("task target is no longer accepting work");
     }
-    for (TaskHandle dependency : task.dependencies_) {
-        if (dependency.job_creation_id_ != job_creation_id_ ||
-            dependency.task_id_ >= tasks_.size()) {
+    for (TaskId dependency : task.dependencies_) {
+        if (dependency >= tasks_.size()) {
             throw std::invalid_argument(
                 "task dependency must be an earlier task in this job");
         }
@@ -244,25 +201,46 @@ TaskHandle Job::add_task(Task task) {
                 "task output reference must name an explicit dependency and argument");
         }
     }
-    const TaskHandle handle{job_creation_id_, static_cast<TaskId>(tasks_.size())};
+    const TaskId task_id = static_cast<TaskId>(tasks_.size());
+    task.task_name_.clear();
+    task.task_output_dir_.clear();
     tasks_.push_back(std::move(task));
-    return handle;
+    task_results_.emplace_back();
+    task_timings_.emplace_back();
+    return task_id;
 }
 
-void Job::remove_unit(SimulationUnitHandle handle) {
+const Task& Job::task(TaskId task_id) const {
+    return tasks_.at(task_id);
+}
+
+const std::optional<TaskResult>& Job::result(TaskId task_id) const {
+    return task_results_.at(task_id);
+}
+
+TaskTiming Job::timing(TaskId task_id) const {
+    return task_timings_.at(task_id);
+}
+
+const std::string& Job::unit_label(SimulationUnitId unit_id) const {
+    if (unit_id >= units_.size()) {
+        throw std::invalid_argument("unit ID must name an existing unit in this job");
+    }
+    return units_[unit_id].feature_id_;
+}
+
+void Job::remove_unit(SimulationUnitId unit_id) {
     if (!self_) {
         throw std::logic_error("Job::remove_unit requires a running controller hook");
     }
-    if (handle.job_creation_id_ != job_creation_id_ || handle.index_ >= units_.size()) {
-        throw std::invalid_argument("unit does not belong to this job");
+    if (unit_id >= units_.size()) {
+        throw std::invalid_argument("unit ID must name an existing unit in this job");
     }
-    if (units_[handle.index_]) {
-        UnitBinding& unit = *units_[handle.index_];
-        if (unit.state_ == UnitState::accepting_tasks) {
-            unit.state_ = UnitState::removal_requested;
-        } else if (unit.state_ == UnitState::failed) {
-            shutdown_unit(handle.index_);
-        }
+    UnitBinding& unit = units_[unit_id];
+    if (unit.state_ == UnitState::accepting_tasks) {
+        unit.state_ = UnitState::removal_requested;
+    } else if (unit.state_ == UnitState::failed) {
+        shutdown_unit(unit_id);
     }
 }
 
@@ -271,33 +249,23 @@ void Job::set_controller(std::unique_ptr<JobController> controller) {
 }
 
 // Prepare unit state without constructing an executor or starting an actor
-SimulationUnitHandle Job::add_unit(std::string feature_id, TaskExecutorId executor_id) {
+SimulationUnitId Job::add_unit(std::string feature_id, TaskExecutorId executor_id) {
     if (feature_id.empty()) {
         throw std::invalid_argument("unit feature_id must not be empty");
     }
-    for (const std::optional<UnitBinding>& unit : units_) {
-        if (unit && unit->state_ == UnitState::accepting_tasks &&
-            unit->feature_id_ == feature_id) {
+    if (feature_id.find('/') != std::string::npos ||
+        feature_id.find('\\') != std::string::npos) {
+        throw std::invalid_argument("unit feature_id must not contain path separators");
+    }
+    for (const UnitBinding& unit : units_) {
+        if (unit.state_ == UnitState::accepting_tasks && unit.feature_id_ == feature_id) {
             throw std::invalid_argument("duplicate unit feature_id: " + feature_id);
         }
     }
-    const SimulationUnitHandle handle{job_creation_id_, units_.size()};
-    units_.emplace_back(UnitBinding{std::move(feature_id), executor_id,
-                                    SimulationUnit{executor_id}, std::nullopt});
-    return handle;
-}
-
-// Copy scientific feature labels from unit bindings into newly accepted tasks
-void Job::prepare_task_metadata(std::size_t first_task_index) {
-    for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
-        Task& task = tasks_[index];
-        if (task.unit_.job_creation_id_ != job_creation_id_ ||
-            task.unit_.index_ >= units_.size() || !units_[task.unit_.index_]) {
-            throw std::invalid_argument("task target does not belong to this job");
-        }
-        const UnitBinding& unit = *units_[task.unit_.index_];
-        task.metadata_["feature_id"] = unit.feature_id_;
-    }
+    const SimulationUnitId unit_id = static_cast<SimulationUnitId>(units_.size());
+    units_.emplace_back(
+        UnitBinding{std::move(feature_id), executor_id, caf::actor{}, std::nullopt});
+    return unit_id;
 }
 
 JobHandle Runtime::submit_job(Job job) const {
@@ -305,13 +273,7 @@ JobHandle Runtime::submit_job(Job job) const {
         throw std::invalid_argument("Runtime requires a non-null JobController");
     }
 
-    const JobSubmissionId job_submission_id =
-        next_job_submission_id_.fetch_add(1, std::memory_order_relaxed);
-
-    // Bind initial tasks before assigning names and output directories
-    job.prepare_task_metadata(0);
-    core::assign_task_runtime_fields(job.tasks_, 0, runtime_options_, run_id_,
-                                     job_submission_id);
+    const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
     // Create a promise/future pair for this submitted job
     std::promise<JobRecord> promise;
@@ -319,13 +281,13 @@ JobHandle Runtime::submit_job(Job job) const {
     JobHandle handle = promise.get_future();
     {
         std::lock_guard<std::mutex> lock(pending_jobs_mutex_);
-        // Register this in-progress job in the dictionary: job_submission_id -> promise
-        pending_jobs_.emplace(job_submission_id, std::move(promise));
+        // Register this in-progress job in the dictionary: job_id -> promise
+        pending_jobs_.emplace(job_id, std::move(promise));
     }
 
     // CAF may copy local messages; the receiving actor adopts the prepared Job state
     auto shared_job = std::make_shared<Job>(std::move(job));
-    caf::anon_mail(caf::get_atom_v, job_submission_id, std::move(shared_job))
+    caf::anon_mail(caf::get_atom_v, job_id, std::move(shared_job))
         .send(orchestrator_actor_);
     return handle;
 }

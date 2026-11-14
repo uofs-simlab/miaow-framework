@@ -23,6 +23,7 @@
 #include <limits>
 #include <memory>
 #include <numbers>
+#include <optional>
 #include <random>
 #include <span>
 #include <stdexcept>
@@ -158,7 +159,7 @@ class ParticleSwarmController final : public miaow::JobController {
     void initialize(miaow::Job& job) override {
         start_time_ = std::chrono::steady_clock::now();
 
-        // Give each particle a unit and queue its initial evaluation.
+        // Create units in particle order; this controller starts with an empty job.
         // The runtime limits active operations independently of the number of particles.
         for (std::size_t id = 0; id < swarm_.size(); ++id) {
             if (submitted_ == evaluation_budget_ ||
@@ -167,17 +168,14 @@ class ParticleSwarmController final : public miaow::JobController {
             }
             const Particle& particle = swarm_[id];
 
-            const miaow::SimulationUnitHandle unit =
+            const miaow::SimulationUnitId unit =
                 job.add_unit("particle_" + std::to_string(id), objective_);
-            particle_units_.push_back(unit);
-            miaow::Task task{unit, "evaluate", particle.position[0], particle.position[1]};
-            task.metadata_["particle"] = std::to_string(id);
-            job.add_task(std::move(task));
+            job.add_task(unit, "evaluate", particle.position[0], particle.position[1]);
             ++submitted_;
         }
     }
 
-    void callback(miaow::Job& job, std::span<const miaow::TaskRecord> new_records,
+    void callback(miaow::Job& job, std::span<const miaow::TaskId> completed_task_ids,
                   std::span<const miaow::UnitFailure> failed_units) override {
         // If any units failed, mark the job as failed and return immediately
         if (!failed_units.empty()) {
@@ -187,20 +185,23 @@ class ParticleSwarmController final : public miaow::JobController {
 
         // Collect the particles whose results can now update the optimizer
         std::vector<std::size_t> particles_to_update;
-        for (const miaow::TaskRecord& record : new_records) {
+        for (miaow::TaskId task_id : completed_task_ids) {
+            const miaow::TaskResult& result = *job.result(task_id);
             // A failed evaluation cannot update the optimizer; propagate it as a job error
-            if (record.result_.status_ != miaow::TaskStatus::succeeded) {
-                throw std::runtime_error("Particle evaluation failed: " +
-                                         record.result_.message_);
+            if (result.status_ != miaow::TaskStatus::succeeded) {
+                throw std::runtime_error("Particle evaluation failed: " + result.message_);
             }
 
-            // Metadata maps the runtime record back to its zero-based particle ID
-            const unsigned long id = std::stoul(record.metadata_.at("particle"));
+            // Unit IDs correspond to particle indices
+            const std::size_t id = static_cast<std::size_t>(job.task(task_id).unit_id_);
             Particle& particle = swarm_[id];
 
             // Only one evaluation per particle is outstanding, so its stored position
             // still matches this value. Retain the personal best when the result improves.
-            const double value = caf::get<caf::config_value::real>(record.result_.output_);
+            const double value = caf::get<caf::config_value::real>(result.output_);
+            evaluations_.emplace_back(caf::config_value::list{
+                caf::config_value{static_cast<std::int64_t>(task_id)},
+                caf::config_value{value}});
             if (value < particle.best_value) {
                 particle.best_value = value;
                 particle.best_position = particle.position;
@@ -230,10 +231,8 @@ class ParticleSwarmController final : public miaow::JobController {
             update_particle(id, global_best);
 
             // Evaluate the new position using the same particle unit
-            miaow::Task task{particle_units_[id], "evaluate", swarm_[id].position[0],
-                             swarm_[id].position[1]};
-            task.metadata_["particle"] = std::to_string(id);
-            job.add_task(std::move(task));
+            job.add_task(static_cast<miaow::SimulationUnitId>(id), "evaluate",
+                         swarm_[id].position[0], swarm_[id].position[1]);
             ++submitted_;
         }
 
@@ -244,9 +243,10 @@ class ParticleSwarmController final : public miaow::JobController {
         }
 
         // Timestamp the snapshot at the triggering result's completion
-        const miaow::TaskRecord& last = new_records.back();
-        const double time =
-            (*last.dispatch_offset_from_job_start_ + last.run_time_).count();
+        const miaow::TaskTiming last = job.timing(completed_task_ids.back());
+        const double time = std::chrono::duration<double>{std::chrono::nanoseconds{
+                                                              last.completion_offset_ns_}}
+                                .count();
 
         // Record the progress snapshot for animation playback
         updates_.emplace_back(caf::config_value::dictionary{
@@ -267,6 +267,9 @@ class ParticleSwarmController final : public miaow::JobController {
         output.emplace("wall_time_limit_seconds", time_limit_.count());
         output.emplace("initial_positions", std::move(initial_positions_));
         output.emplace("updates", std::move(updates_));
+        output.emplace("evaluation_columns",
+                       std::vector<std::string>{"task_id", "objective"});
+        output.emplace("evaluations", std::move(evaluations_));
         return caf::config_value{std::move(output)};
     }
 
@@ -327,12 +330,10 @@ class ParticleSwarmController final : public miaow::JobController {
     // Persistent position, velocity, and personal-best state indexed by particle ID
     std::vector<Particle> swarm_;
 
-    // Route later evaluations back to the same unit for each particle
-    std::vector<miaow::SimulationUnitHandle> particle_units_;
-
     // Initial positions and per-update snapshots for animation playback
     std::vector<std::array<double, 2>> initial_positions_;
     caf::config_value::list updates_;
+    caf::config_value::list evaluations_;
 };
 
 } // namespace
@@ -382,17 +383,18 @@ int main(int argc, char* argv[]) {
             }
 
             // Summarize convergence directly from the completed task results
-            std::cout << name << ": " << job_record.tasks_.size() << " evaluations in "
-                      << job_record.run_time_.count() << " s";
-            if (!job_record.tasks_.empty()) {
+            std::cout << name << ": " << job_record.task_results_.size()
+                      << " evaluations in " << job_record.run_time_.count() << " s";
+            if (!job_record.task_results_.empty()) {
                 const auto best = std::min_element(
-                    job_record.tasks_.begin(), job_record.tasks_.end(),
-                    [](const miaow::TaskRecord& a, const miaow::TaskRecord& b) {
-                        return caf::get<caf::config_value::real>(a.result_.output_) <
-                               caf::get<caf::config_value::real>(b.result_.output_);
+                    job_record.task_results_.begin(), job_record.task_results_.end(),
+                    [](const std::optional<miaow::TaskResult>& a,
+                       const std::optional<miaow::TaskResult>& b) {
+                        return caf::get<caf::config_value::real>(a->output_) <
+                               caf::get<caf::config_value::real>(b->output_);
                     });
                 std::cout << "; best = "
-                          << caf::get<caf::config_value::real>(best->result_.output_);
+                          << caf::get<caf::config_value::real>((*best)->output_);
             }
             std::cout << '\n';
 

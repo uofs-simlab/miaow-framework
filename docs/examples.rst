@@ -28,7 +28,7 @@ Default examples
 - `examples/09_bmi_operations <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/09_bmi_operations>`_: a controller submits initialization, time queries, two updates, and finalization as separate tasks on one static heat model
 - `examples/10_model_coupling <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/10_model_coupling>`_: a task DAG transfers temperature snapshots between two retained C++ heat models over three time steps by default
 
-The hello, dynamic BMI, job-controller, and model-coupling examples accept an optional ``--config <file.json>`` alongside the common runtime options. Omitted fields retain the default inputs. This allows tests for successful and failing workflows to use the same programs.
+The hello, dynamic BMI, job-controller, and model-coupling examples accept an optional ``--config <file.json>`` alongside the common runtime options. Omitted fields retain the default inputs.
 
 .. list-table:: Optional JSON inputs
    :header-rows: 1
@@ -50,75 +50,8 @@ For example, a job controller config containing ``{"maximum_iterations": 1}`` re
 Additional examples
 -------------------
 
-- `examples/04_summa <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_summa>`_: MIAOW `SUMMA <https://github.com/CH-Earth/summa>`_ execution for the 52-GRU Bow River fixture, with offline mizuRoute routing
-- `examples/05_libtrixi_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/05_libtrixi_bmi>`_: `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ workflow using the ``libtrixi`` dynamic BMI plugin in a dedicated unit subprocess
 - `examples/06_fuse_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/06_fuse_bmi>`_: deterministic 256-member Saltelli ensemble using the `FUSE <https://github.com/uofs-simlab/fuse>`_ dynamic Fortran BMI plugin
 - `examples/08_particle_swarm <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/08_particle_swarm>`_: compares batch-synchronous and asynchronous particle swarm optimization on Rastrigin, with randomized evaluation delays and Matplotlib playback
-
-SUMMA
-^^^^^
-
-The optional ``examples/04_summa`` example runs `SUMMA <https://github.com/CH-Earth/summa>`_ through Fortran BMI in MIAOW, with offline routing through `mizuRoute <https://github.com/ESCOMP/mizuRoute>`_, to simulate the streamflow for the ``CAN_05BB001`` gauge on the Bow River at Banff, Alberta, Canada using a spatially distributed hydrologic model consisting of 52 grouped response units (GRUs). In addition to the :doc:`MIAOW build requirements <building>`, this example requires GNU Fortran, NetCDF C/Fortran, BLAS/LAPACK, and ``uv``. On Ubuntu, these can be installed using the following commands:
-
-.. code-block:: sh
-
-   sudo apt-get install libnetcdf-dev libnetcdff-dev libopenblas-dev curl
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-
-On macOS, we can use `Homebrew <https://brew.sh/>`_ to install the required dependencies:
-
-.. code-block:: sh
-
-   brew install netcdf-fortran uv
-
-``run_summa_mizuroute.py`` accepts ``--max-workers N`` to set the maximum number of concurrent SUMMA tasks that MIAOW will run (default: 4). To set up and run the workflow, execute the following commands from the repository root:
-
-.. code-block:: sh
-
-   # 1. Set up the Python environment
-   uv sync --frozen --project examples/04_summa --python 3.12
-
-   # 2. Configure the model and routing build
-   cmake -S . -B build-summa -DCMAKE_BUILD_TYPE=Release \
-       -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=04_summa
-
-   # 3. Build the MIAOW driver, SUMMA, and mizuRoute
-   cmake --build build-summa --target miaow_summa -j 6
-
-   # 4. Run SUMMA, prepare runoff, and run mizuRoute
-   uv run --frozen --project examples/04_summa \
-       python examples/04_summa/run_summa_mizuroute.py
-
-   # 5. Calculate the modified Kling-Gupta efficiency (KGE') and plot streamflow
-   uv run --frozen --project examples/04_summa \
-       python examples/04_summa/postprocess_streamflow.py
-
-Trixi.jl
-^^^^^^^^
-
-The ``examples/05_libtrixi_bmi`` example runs `Trixi.jl <https://github.com/trixi-framework/Trixi.jl>`_ configs through MIAOW's ``libtrixi`` dynamic BMI plugin path. It is not part of the default example set, so it should be selected using ``MIAOW_EXAMPLES=05_libtrixi_bmi``. The following example-specific flags control the ``libtrixi`` paths:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 35 30 45
-
-   * - Flag
-     - Default
-     - Description
-   * - ``-DMIAOW_LIBTRIXI_BMI_ROOT``
-     - ``${MIAOW_DEFAULT_MODEL_BASE_DIR}/libtrixi-bmi``
-     - Local or fetched ``libtrixi-bmi`` checkout
-   * - ``-DLIBTRIXI_INSTALL_DIR``
-     - ``<libtrixi-bmi>/build/libtrixi-install``
-     - ``libtrixi`` installation root
-   * - ``-DLIBTRIXI_PROJECT_DIR``
-     - ``<libtrixi-bmi>/build/libtrixi-julia``
-     - Julia project directory
-   * - ``-DLIBTRIXI_DEPOT_PATH``
-     - ``<libtrixi-bmi>/build/julia-depot``
-     - Optional Julia depot passed to ``trixi_initialize``
-
-`Trixi.jl <https://github.com/trixi-framework/Trixi.jl/blob/main/LICENSE.md>`_ and `libtrixi <https://github.com/trixi-framework/libtrixi/blob/main/LICENSE.md>`_ are distributed under the MIT License.
 
 FUSE
 ^^^^
@@ -186,6 +119,8 @@ Results are saved under ``output/run_<id>``. To compare particle histories, unit
    python3 -m venv .venv
    .venv/bin/python -m pip install -r requirements.txt
    .venv/bin/python animate.py "output/run_<id>"
+
+Controller output contains particle-position snapshots and evaluation rows with task IDs and objective values. The plotting script joins these observations to the profile by task ID for dispatch and completion times and unit identity. Profile offsets use integer nanoseconds; overall runtime uses seconds.
 
 Replace ``<id>`` with the run number in the path printed by the executable (``0`` for the first run). Figures are written to its ``figures`` subdirectory; MP4 export requires FFmpeg.
 

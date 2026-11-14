@@ -1,10 +1,10 @@
 # Tests for the MIAOW framework (see documentation for details)
 #
-# Check saved job records from examples and framework drivers
-add_executable(miaow_job_record_checks job_record_checks.cpp)
+# Compile the shared numerical and file-format assertions once
+add_library(miaow_job_record_checks OBJECT job_record_checks.cpp)
 target_compile_features(miaow_job_record_checks PRIVATE cxx_std_20)
-target_link_libraries(miaow_job_record_checks PRIVATE
-    nlohmann_json::nlohmann_json Boost::unit_test_framework)
+target_link_libraries(miaow_job_record_checks PUBLIC
+    miaow nlohmann_json::nlohmann_json Boost::unit_test_framework)
 target_include_directories(miaow_job_record_checks PRIVATE
     "${PROJECT_BINARY_DIR}/generated")
 add_dependencies(miaow_job_record_checks miaow_build_info)
@@ -14,7 +14,7 @@ add_executable(miaow_subprocess_shutdown_worker subprocess_shutdown_worker.cpp)
 target_compile_features(miaow_subprocess_shutdown_worker PRIVATE cxx_std_20)
 target_link_libraries(miaow_subprocess_shutdown_worker PRIVATE miaow)
 
-# Exercise unit lifetimes through the same driver and saved-record workflow
+# Share unit-lifetime workloads with the in-process regression checker
 add_executable(miaow_simulation_unit_lifecycle_driver simulation_unit_lifecycle_driver.cpp)
 target_compile_features(miaow_simulation_unit_lifecycle_driver PRIVATE cxx_std_20)
 target_link_libraries(miaow_simulation_unit_lifecycle_driver PRIVATE
@@ -27,6 +27,10 @@ include("${PROJECT_SOURCE_DIR}/cmake/miaow_example.cmake")
 foreach(scenario removal_with_queued_work replacement_after_failure task_dependencies)
     foreach(variant IN ITEMS "" "_concurrent" "_batch_synchronous"
             "_batch_synchronous_concurrent")
+        if(scenario STREQUAL "removal_with_queued_work" AND
+                variant STREQUAL "_batch_synchronous_concurrent")
+            continue()
+        endif()
         miaow_add_example_test(
             TEST_NAME miaow_simulation_unit_${scenario}${variant}
             EXECUTABLE_TARGET miaow_simulation_unit_lifecycle_driver

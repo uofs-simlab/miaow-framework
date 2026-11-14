@@ -36,7 +36,7 @@ endfunction()
 # miaow_add_example_test(TEST_NAME <name> EXECUTABLE_TARGET <target>
 #     [REGRESSION <workflow>] [CASE_FILE <json>] [EXTERNAL_MODEL])
 #
-# Run the example and optionally check its saved results against a known outcome
+# Check shared workloads in process, or run an optional standalone example
 function(miaow_add_example_test)
     set(options EXTERNAL_MODEL)
     set(one_value_args
@@ -50,16 +50,36 @@ function(miaow_add_example_test)
 
     set(test_labels example)
     if(MIAOW_TEST_REGRESSION)
+        # Preserve each example's model linkage and plugin configuration in its checker
+        set(check_target "${MIAOW_TEST_EXECUTABLE_TARGET}_checks")
+        if(NOT TARGET ${check_target})
+            string(REGEX REPLACE "^miaow_" "" workload_name "${MIAOW_TEST_EXECUTABLE_TARGET}")
+            string(TOUPPER "${workload_name}" workload_name)
+            add_executable(${check_target} "${PROJECT_SOURCE_DIR}/tests/workload_runner.cpp")
+            target_compile_features(${check_target} PRIVATE cxx_std_20)
+            target_link_libraries(${check_target} PRIVATE
+                "$<TARGET_PROPERTY:${MIAOW_TEST_EXECUTABLE_TARGET},LINK_LIBRARIES>"
+                miaow_job_record_checks)
+            target_include_directories(${check_target} PRIVATE
+                "$<TARGET_PROPERTY:${MIAOW_TEST_EXECUTABLE_TARGET},INCLUDE_DIRECTORIES>")
+            target_compile_definitions(${check_target} PRIVATE
+                MIAOW_TEST_${workload_name}=1
+                "$<TARGET_PROPERTY:${MIAOW_TEST_EXECUTABLE_TARGET},COMPILE_DEFINITIONS>")
+            get_target_property(workload_dependencies ${MIAOW_TEST_EXECUTABLE_TARGET}
+                MANUALLY_ADDED_DEPENDENCIES)
+            if(workload_dependencies)
+                add_dependencies(${check_target} ${workload_dependencies})
+            endif()
+            add_dependencies(${MIAOW_TEST_EXECUTABLE_TARGET} ${check_target})
+        endif()
         add_test(NAME ${MIAOW_TEST_TEST_NAME}
             COMMAND ${CMAKE_COMMAND}
-                "-DEXECUTABLE=$<TARGET_FILE:${MIAOW_TEST_EXECUTABLE_TARGET}>"
-                "-DTEST_EXECUTABLE=$<TARGET_FILE:miaow_job_record_checks>"
+                "-DTEST_EXECUTABLE=$<TARGET_FILE:${check_target}>"
                 "-DWORKFLOW=${MIAOW_TEST_REGRESSION}"
                 "-DCASE_FILE=${MIAOW_TEST_CASE_FILE}"
                 "-DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/regression-output/${MIAOW_TEST_TEST_NAME}"
                 -P "${PROJECT_SOURCE_DIR}/tests/run_example.cmake"
         )
-        add_dependencies(${MIAOW_TEST_EXECUTABLE_TARGET} miaow_job_record_checks)
         list(APPEND test_labels regression)
         set(timeout 40)
     else()

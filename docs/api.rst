@@ -11,11 +11,9 @@ Identifiers and task status
 
 .. doxygentypedef:: miaow::TaskId
 
-.. doxygentypedef:: miaow::JobCreationId
+.. doxygentypedef:: miaow::SimulationUnitId
 
-.. doxygentypedef:: miaow::JobSubmissionId
-
-.. doxygentypedef:: miaow::TaskMetadata
+.. doxygentypedef:: miaow::JobId
 
 .. doxygenenum:: miaow::TaskStatus
 
@@ -24,10 +22,7 @@ Identifiers and task status
 Task and job data
 ~~~~~~~~~~~~~~~~~
 
-.. doxygenclass:: miaow::SimulationUnitHandle
-   :members:
-
-.. doxygenclass:: miaow::TaskHandle
+.. doxygenstruct:: miaow::TaskOutputReference
    :members:
 
 .. doxygenfunction:: miaow::output_of
@@ -47,7 +42,7 @@ Task and job data
 .. doxygenstruct:: miaow::UnitFailure
    :members:
 
-.. doxygenstruct:: miaow::TaskRecord
+.. doxygenstruct:: miaow::TaskTiming
    :members:
 
 .. doxygenstruct:: miaow::JobRecord
@@ -108,6 +103,8 @@ Task executors
 
 I/O and CLI helpers
 -------------------
+
+.. doxygenfunction:: miaow::to_json
 
 .. doxygenfunction:: miaow::print_job_summary
 

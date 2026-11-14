@@ -1,5 +1,8 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+find_dependency(nlohmann_json @MIAOW_JSON_VERSION@ CONFIG)
+
 # Normalize the CAF target variants supported by MIAOW
 set(MIAOW_CAF_CORE_TARGET "")
 set(MIAOW_CAF_IO_TARGET "")
@@ -45,6 +48,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/miaowTargets.cmake")
 set_property(TARGET miaow::miaow APPEND PROPERTY INTERFACE_LINK_LIBRARIES
     "${MIAOW_CAF_CORE_TARGET}"
     "${MIAOW_CAF_IO_TARGET}"
+    nlohmann_json::nlohmann_json
     "$<LINK_ONLY:${MIAOW_ISO_C_BMI_LIBRARY}>"
 )
 

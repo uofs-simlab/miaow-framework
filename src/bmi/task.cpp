@@ -37,8 +37,7 @@ template <class Value> TaskResult get_value(bmi_api::Bmi& model, const std::stri
             output.emplace_back(static_cast<double>(value));
         }
     }
-    return TaskResult{TaskStatus::succeeded, "BMI get value complete",
-                      caf::config_value{std::move(output)}};
+    return TaskResult{TaskStatus::succeeded, {}, caf::config_value{std::move(output)}};
 }
 
 // Write a complete variable after checking the input against its native BMI type
@@ -75,7 +74,7 @@ TaskResult set_value(bmi_api::Bmi& model, const std::string& name,
         }
     }
     model.SetValue(name, values.data());
-    return TaskResult{TaskStatus::succeeded, "BMI set value complete"};
+    return TaskResult{TaskStatus::succeeded, {}};
 }
 
 // Seconds per unit reported by the model clock
@@ -264,18 +263,19 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
                 return make_failed_task_result(std::current_exception(), "BMI error");
             }
             model_ = std::move(model);
-            return TaskResult{TaskStatus::succeeded, "BMI initialize complete"};
+            return TaskResult{TaskStatus::succeeded, {}};
         }
 
         // Model update operation
         if (task.operation_ == "update") {
             model_->Update();
-            return TaskResult{TaskStatus::succeeded, "BMI update complete"};
+            return TaskResult{TaskStatus::succeeded, {}};
         }
 
         // Get current model time operation
         if (task.operation_ == "get_current_time") {
-            return TaskResult{TaskStatus::succeeded, "BMI current time",
+            return TaskResult{TaskStatus::succeeded,
+                              {},
                               caf::config_value{model_->GetCurrentTime()}};
         }
 
@@ -323,7 +323,7 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
             } catch (...) {
                 return make_failed_task_result(std::current_exception(), "BMI error");
             }
-            return TaskResult{TaskStatus::succeeded, "BMI finalize complete"};
+            return TaskResult{TaskStatus::succeeded, {}};
         }
 
         // Unsupported operation handling

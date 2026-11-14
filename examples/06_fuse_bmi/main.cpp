@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
             config.insert("backend", "fortran");
             config.insert("plugin_path", fuse_plugin_path);
             config.insert("init_config", config_file);
-            const miaow::SimulationUnitHandle unit =
+            const miaow::SimulationUnitId unit =
                 job.add_unit(std::filesystem::path(config_file).stem().string(),
                              bmi_subprocess);
             job.add_task(unit, "run", config);

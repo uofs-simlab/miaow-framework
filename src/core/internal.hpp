@@ -58,23 +58,11 @@ inline constexpr const char* subprocess_registration_host = "127.0.0.1";
 inline constexpr const char* subprocess_error_prefix = "Subprocess error";
 
 // Map each submitted job to the promise fulfilled by the orchestrator
-using PendingJobs = std::unordered_map<JobSubmissionId, std::promise<JobRecord>>;
+using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
 
 // Build the output directory path for one submitted job
 std::filesystem::path job_directory_path(const RuntimeOptions& runtime_options,
-                                         std::uint64_t run_id,
-                                         JobSubmissionId job_submission_id);
-
-// Write the complete job record with full-precision numerical values
-void write_job_record(const std::filesystem::path& path, const JobRecord& record);
-
-// Assign task names from unit labels and unique task IDs; reject path separators
-// Set task_output_dir_ to the job results directory, or clear it when output is disabled
-// Runtime passes zero for initial tasks; job actors pass the first added task index
-// Throws for invalid paths or failure to create the results directory
-void assign_task_runtime_fields(std::vector<Task>& tasks, std::size_t first_task_index,
-                                const RuntimeOptions& runtime_options, std::uint64_t run_id,
-                                JobSubmissionId job_submission_id);
+                                         std::uint64_t run_id, JobId job_id);
 
 // File paths and metadata for subprocess logs
 struct SubprocessPaths {
@@ -189,9 +177,9 @@ class SubprocessState {
     // - idle: no response is pending; a reusable child may remain
     // - starting_subprocess: active request and response; child resources become
     //   available during launch
-    // - waiting_for_task_result: active request, response, and all child resources
+    // - waiting_for_task_result: response and all child resources; payload is forwarded
     // - stopping_subprocess: child cleanup and possibly a failed task result
-    // An active request retains its Task and the unit executable
+    // Requests retain their Task until forwarding; the unit executable spans the lifecycle
     // Mutated only through callbacks serialized by the owning simulation_unit_actor
     SubprocessPhase phase_{SubprocessPhase::idle};
 
@@ -214,7 +202,7 @@ class SubprocessState {
     // Deferred response to the job actor; pending() reports whether delivery remains
     caf::typed_response_promise<TaskResult> response_promise_;
 
-    // Task payload retained while the child starts and executes
+    // Task payload retained until it is forwarded to the registered child
     std::optional<Task> active_task_;
 
     // Failure response retained until child cleanup finishes
@@ -269,7 +257,7 @@ class Orchestrator {
     // Runtime owns the promises and mutex until the actor system has shut down
     std::mutex* pending_jobs_mutex_;
     PendingJobs* pending_jobs_;
-    std::unordered_map<JobSubmissionId, caf::actor> active_job_actors_;
+    std::unordered_map<JobId, caf::actor> active_job_actors_;
 };
 
 // Child-process actor hosting the public Task-to-TaskResult handler

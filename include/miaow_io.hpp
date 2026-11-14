@@ -1,10 +1,20 @@
 #pragma once
 
 #include <string>
+#include <nlohmann/json.hpp>
 
 #include "miaow.hpp"
 
 namespace miaow {
+
+/**
+ * @brief Convert structured CAF output to plain JSON.
+ *
+ * Lists and dictionaries are converted recursively. Null, integer, Boolean, real,
+ * and string values retain their JSON representations. Durations become strings
+ * of signed nanoseconds followed by `ns`; URIs become strings.
+ */
+nlohmann::json to_json(const caf::config_value& value);
 
 /**
  * @brief Print task results and aggregate job timing information to stdout.
