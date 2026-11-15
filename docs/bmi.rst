@@ -89,7 +89,7 @@ These dependencies require successful predecessors. If an operation fails, its d
 
 The bundled subprocess worker retains one ``DynamicBmiTaskExecutor`` in each unit's child process and supports the same operations and task payloads.
 
-The exposed individual operations are ``initialize``, ``update``, ``get_current_time``, ``get_value``, ``set_value``, and ``finalize``. Grid queries and indexed value access are not exposed as task operations. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units.
+The exposed individual operations are ``initialize``, ``update``, ``get_current_time``, ``get_value``, ``get_value_at_indices``, ``set_value``, and ``finalize``. Grid queries and indexed writes are not exposed as task operations. ``get_current_time`` returns a scalar double in ``TaskResult::output_``, in the model's native time units.
 
 The executor retains the model until finalization and can initialize a fresh model afterward. Dynamic models retain their loaded plugin for that lifetime. Updates, time queries, value access, and finalization require an initialized model. ``run`` and a second ``initialize`` are rejected while a model is retained. Clock tolerance applies only to complete runs.
 
@@ -97,10 +97,18 @@ A failed initialization releases the model. Exceptions during updates, queries, 
 
 The ``09_bmi_operations`` example initializes one heat model, queries its time, performs two updates with a query after each, and finalizes. The ``01_heat`` example performs a complete run.
 
-Complete-variable value access
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Variable value access
+^^^^^^^^^^^^^^^^^^^^^
 
 ``job.add_task(unit, "get_value", variable_name)`` returns the complete variable as a flat ``caf::config_value::list`` in ``TaskResult::output_``. ``job.add_task(unit, "set_value", variable_name, values)`` copies a flat list into the variable and returns success without output. Scalars use one-element lists. Values follow the model's flattened ordering; no spatial mapping or unit conversion is performed.
+
+``job.add_task(unit, "get_value_at_indices", variable_name, indices)`` returns selected elements as a flat list in ``TaskResult::output_``. Supply ``indices`` as a ``std::vector<int>`` of zero-based indices in the model's flattened ordering. Result elements follow the supplied index order, including repeated indices. The executor calls the model's ``GetValueAtIndices()``; it does not read the complete variable and slice it afterward.
+
+.. code-block:: cpp
+
+   const miaow::TaskId selected = job.add_task(
+       unit, updated, "get_value_at_indices", variable_name,
+       std::vector<int>{3, 55, 107});
 
 BMI metadata selects a native ``float``, ``double``, or ``int`` buffer. Setters require CAF real elements for floating-point variables and CAF integer elements for integers. Reads represent floats exactly as doubles; writes to float variables apply normal rounding. Finite values outside the float range and integers outside the native int range are rejected. NaN and infinity are preserved.
 

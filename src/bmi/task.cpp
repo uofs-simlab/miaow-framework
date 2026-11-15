@@ -19,15 +19,24 @@ namespace miaow {
 
 namespace {
 
-// Read a complete variable into a copied list using its native BMI type
-template <class Value> TaskResult get_value(bmi_api::Bmi& model, const std::string& name) {
+// Read a complete variable or selected indices into a copied list of its native type
+template <class Value>
+TaskResult get_value(bmi_api::Bmi& model, const std::string& name,
+                     std::vector<int>* indices = nullptr) {
     const int item_size = model.GetVarItemsize(name);
     const int byte_count = model.GetVarNbytes(name);
     if (item_size != sizeof(Value) || byte_count < 0 || byte_count % item_size != 0) {
         throw std::runtime_error("variable metadata does not match its native type");
     }
-    std::vector<Value> values(static_cast<std::size_t>(byte_count / item_size));
-    model.GetValue(name, values.data());
+    const std::size_t count =
+        indices ? indices->size() : static_cast<std::size_t>(byte_count / item_size);
+    std::vector<Value> values(count);
+    if (indices) {
+        model.GetValueAtIndices(name, values.data(), indices->data(),
+                                static_cast<int>(indices->size()));
+    } else {
+        model.GetValue(name, values.data());
+    }
     caf::config_value::list output;
     output.reserve(values.size());
     for (Value value : values) {
@@ -210,8 +219,8 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
             task.operation_ == "run" || task.operation_ == "initialize";
         const bool uses_retained_model =
             task.operation_ == "update" || task.operation_ == "get_current_time" ||
-            task.operation_ == "get_value" || task.operation_ == "set_value" ||
-            task.operation_ == "finalize";
+            task.operation_ == "get_value" || task.operation_ == "get_value_at_indices" ||
+            task.operation_ == "set_value" || task.operation_ == "finalize";
 
         // if the operation creates a model, ensure no model is already retained
         if (creates_model && model_) {
@@ -286,17 +295,28 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
         }
 
         // Get model variable value operation
-        if (task.operation_ == "get_value") {
+        if (task.operation_ == "get_value" || task.operation_ == "get_value_at_indices") {
             const std::string& name = caf::get<std::string>(task.args_.at(0));
+            std::vector<int> indices;
+            std::vector<int>* selected_indices = nullptr;
+            if (task.operation_ == "get_value_at_indices") {
+                caf::expected<std::vector<int>> converted =
+                    caf::get_as<std::vector<int>>(task.args_.at(1));
+                if (!converted) {
+                    throw std::runtime_error(caf::to_string(converted.error()));
+                }
+                indices = std::move(*converted);
+                selected_indices = &indices;
+            }
             const std::string type = model_->GetVarType(name);
             if (type == "double") {
-                return get_value<double>(*model_, name);
+                return get_value<double>(*model_, name, selected_indices);
             }
             if (type == "float") {
-                return get_value<float>(*model_, name);
+                return get_value<float>(*model_, name, selected_indices);
             }
             if (type == "int") {
-                return get_value<int>(*model_, name);
+                return get_value<int>(*model_, name, selected_indices);
             }
             throw std::runtime_error("unsupported BMI variable type '" + type + "'");
         }

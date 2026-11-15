@@ -51,7 +51,7 @@ class BmiTaskExecutor : public TaskExecutor {
     /// Attempt finalization when an initialized model remains at unit shutdown
     ~BmiTaskExecutor() override;
 
-    /// Execute `run`, lifecycle/time operations, or complete-variable get/set operations
+    /// Execute `run`, lifecycle/time operations, complete/indexed reads, or complete writes
     caf::result<TaskResult> execute(const Task& task) override;
 
   protected:
