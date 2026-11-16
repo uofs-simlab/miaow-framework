@@ -712,6 +712,13 @@ class Job {
     /// @throws std::logic_error if called outside a running job or before task completion.
     void release_task_data(TaskId task_id);
 
+    /// Release producer data after it and every listed consumer have succeeded or failed.
+    /// Call before submission or from a controller hook, using IDs from this job.
+    /// The caller declares that these consumers cover the producer's final output uses.
+    /// Releases run after callbacks and preserve release_task_data() semantics.
+    void release_after(TaskId producer, TaskId consumer);
+    void release_after(TaskId producer, std::vector<TaskId> consumers);
+
     /// Return event offsets by value, including -1 for events that have not occurred
     TaskTiming timing(TaskId task_id) const;
 
@@ -752,6 +759,7 @@ class Job {
     void unit_terminated(std::size_t unit_index, const caf::error& reason);
     void record_task(std::size_t task_index, TaskResult task_result);
     bool record_dependency_failure(std::size_t task_index);
+    void process_deferred_releases();
     void complete_task(std::size_t unit_index, std::size_t task_index,
                        TaskResult task_result);
     void dispatch_tasks();
@@ -807,6 +815,9 @@ class Job {
 
     // Parent-only release flags distinguish discarded outputs from legitimate null values
     std::vector<bool> task_data_released_;
+
+    // Producer and final consumer IDs awaiting terminal results and callback delivery
+    std::vector<std::pair<TaskId, std::vector<TaskId>>> deferred_releases_;
 
     // Completion IDs awaiting the next eligible controller callback
     std::vector<TaskId> unprocessed_finished_task_ids_;

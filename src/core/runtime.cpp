@@ -240,6 +240,14 @@ void Job::release_task_data(TaskId task_id) {
     needs_dependency_failure_check_ = true;
 }
 
+void Job::release_after(TaskId producer, TaskId consumer) {
+    release_after(producer, std::vector<TaskId>{consumer});
+}
+
+void Job::release_after(TaskId producer, std::vector<TaskId> consumers) {
+    deferred_releases_.emplace_back(producer, std::move(consumers));
+}
+
 TaskTiming Job::timing(TaskId task_id) const {
     return task_timings_.at(task_id);
 }

@@ -91,6 +91,8 @@ void Job::finish_job() {
     // If there are no error messages, attempt to finalize the job
     if (!pending_error_message_) {
         try {
+            // Job deadlines record terminal failures without a controller callback
+            process_deferred_releases();
             caf::config_value output = job_controller_->finalize();
             const std::chrono::duration<double> run_time =
                 std::chrono::steady_clock::now() - job_start_time_;
@@ -168,6 +170,27 @@ bool Job::record_dependency_failure(std::size_t task_index) {
     return false;
 }
 
+void Job::process_deferred_releases() {
+    std::erase_if(deferred_releases_, [this](const auto& release) {
+        const auto& [producer, consumers] = release;
+
+        // Release the producer's data only if it is finished and all consumers have
+        // finished processing it.
+        if (!task_results_.at(producer).has_value()) {
+            return false;
+        }
+
+        for (TaskId consumer : consumers) {
+            if (!task_results_.at(consumer).has_value()) {
+                return false;
+            }
+        }
+
+        release_task_data(producer);
+        return true;
+    });
+}
+
 // Fail accepted work once; hold occupied capacity until the unit actor terminates
 void Job::fail_unit(std::size_t unit_index, std::string reason) {
     UnitBinding& unit = units_[unit_index];
@@ -237,6 +260,7 @@ void Job::advance() {
             if (finishing_) {
                 return;
             }
+            process_deferred_releases();
             prepare_tasks(first_task_index);
         } catch (const std::exception& exception) {
             begin_job_error_shutdown("JobController error: " +
