@@ -102,7 +102,7 @@ Variable value access
 
 ``job.add_task(unit, "get_value", variable_name)`` returns the complete variable as a flat ``caf::config_value::list`` in ``TaskResult::output_``. ``job.add_task(unit, "set_value", variable_name, values)`` copies a flat list into the variable and returns success without output. Scalars use one-element lists. Values follow the model's flattened ordering; no spatial mapping or unit conversion is performed.
 
-``job.add_task(unit, "get_value_at_indices", variable_name, indices)`` returns selected elements as a flat list in ``TaskResult::output_``. Supply ``indices`` as a ``std::vector<int>`` of zero-based indices in the model's flattened ordering. Result elements follow the supplied index order, including repeated indices. The executor calls the model's ``GetValueAtIndices()``; it does not read the complete variable and slice it afterward.
+``job.add_task(unit, "get_value_at_indices", variable_name, indices)`` returns selected elements as a flat list in ``TaskResult::output_``. Supply ``indices`` as a ``std::vector<int>`` of zero-based indices in the model's flattened ordering. Result elements follow the supplied index order, including repeated indices. The executor calls the model's ``GetValueAtIndices()``; it does not read the complete variable and slice it afterward. The bundled Fortran C bridge returns BMI failure for indexed reads; complete-variable reads remain available for Fortran models.
 
 .. code-block:: cpp
 
@@ -113,6 +113,27 @@ Variable value access
 BMI metadata selects a native ``float``, ``double``, or ``int`` buffer. Setters require CAF real elements for floating-point variables and CAF integer elements for integers. Reads represent floats exactly as doubles; writes to float variables apply normal rounding. Finite values outside the float range and integers outside the native int range are rejected. NaN and infinity are preserved.
 
 Item sizes must match the native type, byte counts must be non-negative multiples of the item size, and setter lists must match the element count. Unsupported types or inconsistent metadata fail the task. The Fortran bridge translates ``real``/``float`` to ``float``, ``integer``/``int`` to ``int``, and ``double``/``float64``/``double precision`` to ``double``.
+
+Serial BMI sequences
+--------------------
+
+``BmiSequence`` groups consecutive ``set_value``, ``update``, ``get_value``, and ``get_value_at_indices`` operations into one task on an initialized unit. The executor completes each operation before starting the next, using the same native numeric conversions as individual tasks. A subprocess-backed unit receives one request for the entire sequence. Initialization, finalization, and nested sequences remain separate tasks.
+
+.. code-block:: cpp
+
+   miaow::BmiSequence operations;
+   operations.set_value_from_input("temperature", 0, 0, 1);
+   operations.update();
+   operations.get_value("runoff");
+   const miaow::TaskId advanced = job.add_task(
+       unit, std::vector<miaow::TaskId>{initialized, temperatures}, "sequence",
+       std::move(operations).instructions(), miaow::output_of(temperatures));
+
+Inputs are task arguments following the instruction program. ``set_value_from_input(name, input, offset, count)`` selects ``count`` consecutive values beginning at ``offset`` from the zero-based input slot. ``get_value_at_indices_from_input()`` uses the same selection to obtain integer indices. Literal setters accept vectors, and indexed reads can instead take a literal ``std::vector<int>``. Slice fields and array ranges are checked before access.
+
+Each read appends its flat values to ``TaskResult::output_`` in operation order. Updates and setters add no output. A failed operation stops the sequence immediately; earlier model changes remain applied, and the retained model then permits only finalization, as with an individual failed operation.
+
+``std::move(operations).instructions()`` returns one ``caf::config_value`` argument. A program can also be published once by an ordinary task executor and passed to later sequence tasks with ``miaow::output_of(program_task)``. List the program producer and every input producer as dependencies. This avoids retaining an expanded copy of repeated instructions in every task definition; arguments are resolved when each task is dispatched.
 
 Dynamic BMI plugin
 ------------------

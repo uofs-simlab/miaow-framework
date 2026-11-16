@@ -155,6 +155,16 @@ bool Job::record_dependency_failure(std::size_t task_index) {
             return true;
         }
     }
+    for (const auto& reference : tasks_[task_index].output_references_) {
+        const TaskId producer = reference.second;
+        if (task_data_released_[producer]) {
+            record_task(task_index, make_failed_task_result("output of task " +
+                                                                std::to_string(producer) +
+                                                                " was released",
+                                                            "Dependency error"));
+            return true;
+        }
+    }
     return false;
 }
 
@@ -202,7 +212,7 @@ void Job::advance() {
     }
     for (;;) {
         if (needs_dependency_failure_check_) {
-            // Prerequisites precede dependents, so one pass propagates all failures
+            // One ordered pass propagates failed prerequisites and released-output failures
             std::erase_if(pending_task_indices_, [this](std::size_t task_index) {
                 return record_dependency_failure(task_index);
             });

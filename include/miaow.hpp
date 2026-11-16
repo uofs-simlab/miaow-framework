@@ -689,6 +689,29 @@ class Job {
     /// Additions may invalidate this reference; do not retain it across hooks
     const std::optional<TaskResult>& result(TaskId task_id) const;
 
+    /// Clear a completed task's payload while retaining its task and result entries.
+    /// Call from a controller hook after the data's final use; repeated release is 
+    /// harmless.
+    ///
+    /// Cleared fields for task_id:
+    /// - Task::args_: destroy arguments and release the vector's allocated storage.
+    /// - Task::dependencies_: remove prerequisite IDs and release allocated storage.
+    /// - Task::output_references_: erase all argument-position / producer-ID map entries.
+    /// - TaskResult::output_: destroy the stored value and replace it with null.
+    ///
+    /// Retained fields:
+    /// - Task::unit_id_, Task::operation_, and Task::task_output_dir_ (already empty).
+    /// - TaskResult::status_, TaskResult::message_, and TaskResult::artifact_paths_.
+    /// - TaskTiming::dispatch_offset_ns_ and TaskTiming::completion_offset_ns_.
+    /// The task ID remains the same vector index; no task, result, or timing slot is erased.
+    ///
+    /// Released output is null in result() and the final JobRecord. New output references
+    /// are rejected; queued consumers that still need the output fail without dispatch.
+    /// Completion-only dependencies remain valid. Borrowed payload references are
+    /// invalidated.
+    /// @throws std::logic_error if called outside a running job or before task completion.
+    void release_task_data(TaskId task_id);
+
     /// Return event offsets by value, including -1 for events that have not occurred
     TaskTiming timing(TaskId task_id) const;
 
@@ -782,6 +805,9 @@ class Job {
     // Terminal results indexed by task ID; empty entries represent unfinished tasks
     std::vector<std::optional<TaskResult>> task_results_;
 
+    // Parent-only release flags distinguish discarded outputs from legitimate null values
+    std::vector<bool> task_data_released_;
+
     // Completion IDs awaiting the next eligible controller callback
     std::vector<TaskId> unprocessed_finished_task_ids_;
 
@@ -793,7 +819,7 @@ class Job {
 
     std::vector<UnitFailure> pending_unit_failures_;
 
-    // Failed results may invalidate dependencies of queued tasks
+    // Failed results or released outputs may invalidate queued tasks
     bool needs_dependency_failure_check_{false};
 
     // Final delivery waits until every activated unit has terminated

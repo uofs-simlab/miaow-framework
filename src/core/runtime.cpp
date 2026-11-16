@@ -200,11 +200,15 @@ TaskId Job::add_task(Task task) {
             throw std::invalid_argument(
                 "task output reference must name an explicit dependency and argument");
         }
+        if (task_data_released_[producer]) {
+            throw std::invalid_argument("task output reference names released data");
+        }
     }
     const TaskId task_id = static_cast<TaskId>(tasks_.size());
     task.task_output_dir_.clear();
     tasks_.push_back(std::move(task));
     task_results_.emplace_back();
+    task_data_released_.push_back(false);
     task_timings_.emplace_back();
     return task_id;
 }
@@ -215,6 +219,25 @@ const Task& Job::task(TaskId task_id) const {
 
 const std::optional<TaskResult>& Job::result(TaskId task_id) const {
     return task_results_.at(task_id);
+}
+
+void Job::release_task_data(TaskId task_id) {
+    if (!self_) {
+        throw std::logic_error("Job::release_task_data requires a running controller hook");
+    }
+    std::optional<TaskResult>& result = task_results_.at(task_id);
+    if (!result) {
+        throw std::logic_error("task data can only be released after completion");
+    }
+
+    // Keep the result present so completion and success dependencies still work
+    Task& task = tasks_[task_id];
+    std::vector<caf::config_value>{}.swap(task.args_);
+    std::vector<TaskId>{}.swap(task.dependencies_);
+    task.output_references_.clear();
+    result->output_ = caf::config_value{};
+    task_data_released_[task_id] = true;
+    needs_dependency_failure_check_ = true;
 }
 
 TaskTiming Job::timing(TaskId task_id) const {

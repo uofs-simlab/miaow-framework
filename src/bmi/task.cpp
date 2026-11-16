@@ -213,11 +213,16 @@ BmiTaskExecutor::~BmiTaskExecutor() {
 }
 
 caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
+    return execute_operation(task);
+}
+
+TaskResult BmiTaskExecutor::execute_operation(const Task& task) {
     try {
         // Validate model state before dispatching the selected operation
         const bool creates_model =
             task.operation_ == "run" || task.operation_ == "initialize";
         const bool uses_retained_model =
+            task.operation_ == "sequence" || task.operation_ == "update_until" ||
             task.operation_ == "update" || task.operation_ == "get_current_time" ||
             task.operation_ == "get_value" || task.operation_ == "get_value_at_indices" ||
             task.operation_ == "set_value" || task.operation_ == "finalize";
@@ -279,6 +284,66 @@ caf::result<TaskResult> BmiTaskExecutor::execute(const Task& task) {
         if (task.operation_ == "update") {
             model_->Update();
             return TaskResult{TaskStatus::succeeded, {}};
+        }
+
+        // Resolve slices locally and execute each BMI operation before the next.
+        if (task.operation_ == "sequence") {
+            caf::config_value::list output;
+            const auto& instructions = caf::get<caf::config_value::list>(task.args_.at(0));
+            for (const caf::config_value& encoded : instructions) {
+                const auto& instruction = caf::get<caf::config_value::list>(encoded);
+                Task operation{task.unit_id_, caf::get<std::string>(instruction.at(0))};
+                if (operation.operation_ != "update" &&
+                    operation.operation_ != "set_value" &&
+                    operation.operation_ != "get_value" &&
+                    operation.operation_ != "get_value_at_indices") {
+                    throw std::runtime_error("unsupported sequence operation '" +
+                                             operation.operation_ + "'");
+                }
+                for (std::size_t index = 1; index < instruction.size(); ++index) {
+                    const caf::config_value& argument = instruction[index];
+                    if (const auto* slice =
+                            caf::get_if<caf::config_value::dictionary>(&argument)) {
+                        const auto input = caf::get_as<std::size_t>(*slice, "input");
+                        const auto offset = caf::get_as<std::size_t>(*slice, "offset");
+                        const auto count = caf::get_as<std::size_t>(*slice, "count");
+                        if (!input || !offset || !count) {
+                            throw std::runtime_error(
+                                "sequence slice requires non-negative input, offset, "
+                                "and count");
+                        }
+                        if (*input >= task.args_.size() - 1) {
+                            throw std::out_of_range(
+                                "sequence slice input is outside the task arguments");
+                        }
+                        const auto& values =
+                            caf::get<caf::config_value::list>(task.args_.at(*input + 1));
+                        if (*offset > values.size() || *count > values.size() - *offset) {
+                            throw std::out_of_range(
+                                "sequence slice is outside its input array");
+                        }
+                        operation.args_.emplace_back(
+                            caf::config_value::list{values.begin() + *offset,
+                                                    values.begin() + *offset + *count});
+                    } else {
+                        operation.args_.push_back(argument);
+                    }
+                }
+                TaskResult result = execute_operation(operation);
+                if (result.status_ != TaskStatus::succeeded) {
+                    result.message_ =
+                        "sequence/" + operation.operation_ + ": " + result.message_;
+                    return result;
+                }
+                if (operation.operation_ == "get_value" ||
+                    operation.operation_ == "get_value_at_indices") {
+                    const auto& values = caf::get<caf::config_value::list>(result.output_);
+                    output.insert(output.end(), values.begin(), values.end());
+                }
+            }
+            return TaskResult{TaskStatus::succeeded,
+                              {},
+                              caf::config_value{std::move(output)}};
         }
 
         // Update model until target time operation

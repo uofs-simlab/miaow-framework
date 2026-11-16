@@ -100,7 +100,28 @@ Sharing a unit adds no implicit dependencies. For example, if an earlier ``updat
 
 ``output_of(task_id)`` marks an operation argument to receive the producer's complete ``TaskResult::output_`` at dispatch. It returns a ``TaskOutputReference`` that the task constructor records as a producer ID and argument position. Plain integer arguments are literal values. The producer must also appear in the dependency list; ``add_task()`` rejects undeclared producers and invalid argument positions.
 
-The job copies referenced outputs into task arguments before dispatch. Executors and subprocess workers receive resolved values. Outputs remain available for consumers added later in the job.
+The job copies referenced outputs into task arguments before dispatch. Executors and subprocess workers receive resolved values. Outputs remain available for consumers added later in the job unless the controller explicitly releases them.
+
+A controller can call ``job.release_task_data(producer)`` after a completed task's data has reached its final use. For example, after the final consumer completes, release the producer's payload:
+
+.. code-block:: cpp
+
+   if (completed_task == final_consumer) {
+       job.release_task_data(producer);
+   }
+
+For the selected task ID, release clears these fields:
+
+- ``Task::args_``: destroys all arguments and releases the vector's allocated storage.
+- ``Task::dependencies_``: removes all prerequisite IDs and releases the vector's allocated storage.
+- ``Task::output_references_``: erases every argument-position / producer-ID map entry, freeing its nodes.
+- ``TaskResult::output_``: destroys the stored output value and replaces it with null.
+
+It retains ``Task::unit_id_``, ``Task::operation_``, and ``Task::task_output_dir_`` (already empty in stored task definitions); ``TaskResult::status_``, ``TaskResult::message_``, and ``TaskResult::artifact_paths_``; and ``TaskTiming::dispatch_offset_ns_`` and ``TaskTiming::completion_offset_ns_``. The task ID remains the same vector index: no task, result, or timing slot is erased or renumbered. Per-task metadata therefore remains allocated after release.
+
+The result stays present with null output, including in the final ``JobRecord``; completion-only dependencies on that task remain valid. The controller must finish reading any borrowed payload before release. Repeated release is harmless.
+
+New ``output_of(producer)`` references are rejected after release. Already accepted consumers that have not dispatched fail if they still reference the released output. Active consumers keep their resolved copies. Release is available only during a running controller hook and requires a completed producer. Shared outputs and reusable programs must remain available until their final consumers have finished.
 
 A failed prerequisite causes its dependents to fail without dispatch, propagating through the branch. Controllers receive these completion IDs under their callback policy and can add recovery or finalization tasks without the failed prerequisite. A blocked finalizer has not attempted model cleanup.
 

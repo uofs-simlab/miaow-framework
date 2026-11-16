@@ -1,6 +1,8 @@
 #pragma once
 
 #include <concepts>
+#include <cstddef>
+#include <vector>
 #include <functional>
 #include <memory>
 #include <string>
@@ -41,6 +43,63 @@ inline constexpr double default_bmi_time_step_tolerance_seconds = 1e-4;
 std::string bmi_subprocess_executable_path();
 
 /**
+ * @brief Build consecutive BMI operations executed by one initialized unit.
+ *
+ * Read outputs are concatenated in operation order. Inputs follow the instruction
+ * argument in the sequence task and can reference outputs of other tasks.
+ */
+class BmiSequence {
+  public:
+    /// Advance the model by one BMI time step.
+    void update() {
+        append("update");
+    }
+    /// Append the complete variable to the sequence result.
+    void get_value(const std::string& name) {
+        append("get_value", name);
+    }
+    /// Append selected elements in the supplied zero-based index order.
+    void get_value_at_indices(const std::string& name, const std::vector<int>& indices) {
+        append("get_value_at_indices", name, indices);
+    }
+    /// Set a complete variable from literal values using ordinary BMI conversions.
+    template <class Value>
+    void set_value(const std::string& name, const std::vector<Value>& values) {
+        append("set_value", name, values);
+    }
+    /// Set a variable from a slice of the zero-based positional sequence input.
+    void set_value_from_input(const std::string& name, std::size_t input,
+                              std::size_t offset, std::size_t count) {
+        append("set_value", name, input_slice(input, offset, count));
+    }
+    /// Read indices from a slice of a positional integer-array input.
+    void get_value_at_indices_from_input(const std::string& name, std::size_t input,
+                                         std::size_t offset, std::size_t count) {
+        append("get_value_at_indices", name, input_slice(input, offset, count));
+    }
+    /// Move the encoded program into one task argument or a reusable task output.
+    caf::config_value instructions() && {
+        return caf::config_value{std::move(instructions_)};
+    }
+
+  private:
+    static caf::config_value::dictionary input_slice(std::size_t input, std::size_t offset,
+                                                     std::size_t count) {
+        caf::config_value::dictionary slice;
+        slice.insert("input", input);
+        slice.insert("offset", offset);
+        slice.insert("count", count);
+        return slice;
+    }
+    template <class... Args> void append(Args... args) {
+        caf::config_value::list instruction;
+        (instruction.emplace_back(std::move(args)), ...);
+        instructions_.emplace_back(std::move(instruction));
+    }
+    caf::config_value::list instructions_;
+};
+
+/**
  * @brief Common operation execution and model lifetime for BMI executors.
  *
  * Each unit retains its initialized model between operations. Complete `run` tasks
@@ -51,7 +110,7 @@ class BmiTaskExecutor : public TaskExecutor {
     /// Attempt finalization when an initialized model remains at unit shutdown
     ~BmiTaskExecutor() override;
 
-    /// Execute `run`, lifecycle/time operations, complete/indexed reads, or complete writes
+    /// Execute a serial `sequence`, `run`, or an individual BMI operation.
     caf::result<TaskResult> execute(const Task& task) override;
 
   protected:
@@ -61,6 +120,9 @@ class BmiTaskExecutor : public TaskExecutor {
     explicit BmiTaskExecutor(ModelFactory model_factory);
 
   private:
+    /// Execute one operation or a serial sequence using the retained model.
+    TaskResult execute_operation(const Task& task);
+
     // Factory captures must outlive model finalization and destruction
     ModelFactory model_factory_;
     std::unique_ptr<bmi_api::Bmi> model_;
