@@ -102,7 +102,7 @@ Variable value access
 
 ``job.add_task(unit, "get_value", variable_name)`` returns the complete variable as a flat ``caf::config_value::list`` in ``TaskResult::output_``. ``job.add_task(unit, "set_value", variable_name, values)`` copies a flat list into the variable and returns success without output. Scalars use one-element lists. Values follow the model's flattened ordering; no spatial mapping or unit conversion is performed.
 
-``job.add_task(unit, "get_value_at_indices", variable_name, indices)`` returns selected elements as a flat list in ``TaskResult::output_``. Supply ``indices`` as a ``std::vector<int>`` of zero-based indices in the model's flattened ordering. Result elements follow the supplied index order, including repeated indices. The executor calls the model's ``GetValueAtIndices()``; it does not read the complete variable and slice it afterward. The bundled Fortran C bridge returns BMI failure for indexed reads; complete-variable reads remain available for Fortran models.
+``job.add_task(unit, "get_value_at_indices", variable_name, indices)`` returns selected elements as a flat list in ``TaskResult::output_``. Supply ``indices`` as a ``std::vector<int>`` of zero-based indices in the model's flattened ordering. Result elements follow the supplied index order. The executor calls the model's ``GetValueAtIndices()``; it does not read the complete variable and slice it afterward. For models loaded through the dynamic Fortran backend, the bundled C interoperability bridge has unimplemented indexed-read entry points that return BMI failure; complete-variable reads remain available. Fortran models exposed through a C++ BMI wrapper use the C++ backend and are not subject to this bridge limitation.
 
 .. code-block:: cpp
 
