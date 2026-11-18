@@ -134,6 +134,11 @@ void Job::record_task(std::size_t task_index, TaskResult task_result) {
     if (task_results_.at(task_index)) {
         return;
     }
+
+    // Undispatched terminal tasks will never resolve their input references
+    if (task_timings_[task_index].dispatch_offset_ns_ < 0) {
+        remove_queued_output_references(task_index);
+    }
     task_timings_[task_index].completion_offset_ns_ =
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - job_start_time_)
@@ -142,6 +147,15 @@ void Job::record_task(std::size_t task_index, TaskResult task_result) {
     unprocessed_finished_task_ids_.push_back(static_cast<TaskId>(task_index));
     if (task_results_[task_index]->status_ == TaskStatus::failed) {
         needs_dependency_failure_check_ = true;
+    }
+}
+
+void Job::remove_queued_output_references(std::size_t task_index) {
+    for (const auto& reference : tasks_[task_index].output_references_) {
+        const auto found = queued_output_references_.find(reference.second);
+        if (--found->second == 0) {
+            queued_output_references_.erase(found);
+        }
     }
 }
 
@@ -305,7 +319,8 @@ void Job::dispatch_tasks() {
         }
         return;
     }
-    if (active_task_count_ >= runtime_options_.max_workers()) {
+    const std::size_t worker_limit = max_workers();
+    if (active_task_count_ >= worker_limit) {
         return;
     }
 
@@ -321,7 +336,7 @@ void Job::dispatch_tasks() {
     // If there are pending tasks, available workers, and idle units,
     // attempt to dispatch them
     while (!pending_task_indices_.empty() &&
-           active_task_count_ < runtime_options_.max_workers() && idle_unit_count > 0) {
+           active_task_count_ < worker_limit && idle_unit_count > 0) {
         // Select the first ready task, allowing it to overtake blocked tasks
         auto pending = pending_task_indices_.begin();
         // Cache end() for this read-only search; obtain it anew after each erasure.
@@ -381,6 +396,8 @@ void Job::dispatch_tasks() {
         }
 
         // Remove the selected task from the queue and occupy one task slot
+        // Its execution copy now owns the resolved input values
+        remove_queued_output_references(task_index);
         const caf::actor& simulation_unit_actor = unit.simulation_unit_actor_;
         unit.active_task_index_ = task_index;
         pending_task_indices_.erase(pending);

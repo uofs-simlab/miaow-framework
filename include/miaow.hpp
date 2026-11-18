@@ -93,8 +93,12 @@ struct Task {
     /// Generic arguments for this task to pass into `TaskExecutor::execute()`
     std::vector<caf::config_value> args_;
 
-    /// Parent-job scheduling data; only resolved arguments are sent to executors
+    /// Earlier task IDs in this job that must all succeed before dispatch
+    /// Used only by the parent job; not sent to executors
     std::vector<TaskId> dependencies_;
+
+    /// Map from indices in args_ (0 = first argument) to producer task IDs
+    /// Before dispatch, the parent job replaces args_[index] with that producer's output
     std::map<std::size_t, TaskId> output_references_;
 
     /// Artifact directory supplied in execution requests; empty in stored definitions
@@ -554,12 +558,12 @@ class TaskExecutorRegistry {
  * Solver-specific options should be passed in `Task` arguments.
  */
 struct RuntimeOptions {
-    /// Maximum occupied task slots per job, including timed-out native calls still running
+    /// Default maximum occupied task slots for jobs without an explicit limit
     std::size_t max_workers() const {
         return max_workers_;
     }
 
-    /// Set the positive limit on occupied task slots per job
+    /// Set the positive default limit on occupied task slots per job
     /// @throws std::invalid_argument if workers is zero.
     void set_max_workers(std::size_t workers) {
         if (workers == 0) {
@@ -586,7 +590,7 @@ struct RuntimeOptions {
 
     /**
      * @brief Construct runtime options.
-     * @param workers Positive maximum active task requests for each job.
+     * @param workers Positive default maximum occupied task slots per job.
      * @param task_timeout Task-response timeout; terminates only subprocess tasks.
      * @param job_timeout Timeout that fails unfinished tasks and requests unit shutdown.
      * @param output_root Root directory for runtime-managed output folders.
@@ -664,6 +668,22 @@ class Job {
     Job& operator=(Job&&);
     Job(const Job&) = delete;
     Job& operator=(const Job&) = delete;
+
+    /// Maximum occupied task slots, including timed-out native calls still running.
+    /// An unset limit reads as one before submission and takes the runtime default on
+    /// submission.
+    std::size_t max_workers() const {
+        return max_workers_.value_or(1);
+    }
+
+    /// Set this job's limit on occupied task slots.
+    /// @throws std::invalid_argument if workers is zero.
+    void set_max_workers(std::size_t workers) {
+        if (workers == 0) {
+            throw std::invalid_argument("max_workers must be positive");
+        }
+        max_workers_ = workers;
+    }
 
     /// Prepare a unit under a feature label unique among units accepting new work
     /// @throws std::invalid_argument if the label is empty, contains path separators,
@@ -758,6 +778,7 @@ class Job {
     void fail_unit(std::size_t unit_index, std::string reason);
     void unit_terminated(std::size_t unit_index, const caf::error& reason);
     void record_task(std::size_t task_index, TaskResult task_result);
+    void remove_queued_output_references(std::size_t task_index);
     bool record_dependency_failure(std::size_t task_index);
     void process_deferred_releases();
     void complete_task(std::size_t unit_index, std::size_t task_index,
@@ -775,6 +796,9 @@ class Job {
 
     // Runtime options for this job, copied from the runtime config
     RuntimeOptions runtime_options_;
+
+    // A job without an explicit limit inherits the runtime default at submission
+    std::optional<std::size_t> max_workers_;
 
     // Controller configured before submission and retained for this job
     // The task generation policy determines when the job actor calls callback()
@@ -815,6 +839,10 @@ class Job {
 
     // Parent-only release flags distinguish discarded outputs from legitimate null values
     std::vector<bool> task_data_released_;
+
+    // Count output-reference arguments in accepted, undispatched tasks. Producers
+    // without queued references have no entry; completion-only dependencies do not count.
+    std::unordered_map<TaskId, std::size_t> queued_output_references_;
 
     // Producer and final consumer IDs awaiting terminal results and callback delivery
     std::vector<std::pair<TaskId, std::vector<TaskId>>> deferred_releases_;

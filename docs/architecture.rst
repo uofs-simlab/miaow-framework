@@ -45,9 +45,9 @@ For example, with an executor registered as ``executor`` that accepts an operati
 Task dispatch and executors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The job scans queued tasks in submission order and selects the first whose prerequisites have succeeded and whose target unit is idle. A ready task can overtake an earlier blocked task, including on the same unit. Submission order gives ready tasks priority; required ordering must be expressed through explicit dependencies. ``RuntimeOptions::max_workers()`` limits concurrent tasks in each job, independently of unit count. An idle unit does not reserve a thread.
+The job scans queued tasks in submission order and selects the first whose prerequisites have succeeded and whose target unit is idle. A ready task can overtake an earlier blocked task, including on the same unit. Submission order gives ready tasks priority; required ordering must be expressed through explicit dependencies. ``Job::max_workers()`` limits concurrent tasks in that job, independently of unit count. An idle unit does not reserve a thread.
 
-Set the worker limit through the ``RuntimeOptions`` constructor or ``set_max_workers()``; both reject zero with ``std::invalid_argument``. Read it through ``max_workers()``. The default limit is one.
+Set a job's worker limit with ``Job::set_max_workers()``. A job with no explicit limit inherits ``RuntimeOptions::max_workers()`` at submission. The runtime default is one. Worker limits must be positive.
 
 The worker limit does not limit the number of resident executors or models. Activated units retain their executors while idle.
 

@@ -210,6 +210,11 @@ TaskId Job::add_task(Task task) {
     task_results_.emplace_back();
     task_data_released_.push_back(false);
     task_timings_.emplace_back();
+
+    // Include accepted inputs before controller-added tasks are prepared for dispatch
+    for (const auto& reference : tasks_.back().output_references_) {
+        ++queued_output_references_[reference.second];
+    }
     return task_id;
 }
 
@@ -237,7 +242,11 @@ void Job::release_task_data(TaskId task_id) {
     task.output_references_.clear();
     result->output_ = caf::config_value{};
     task_data_released_[task_id] = true;
-    needs_dependency_failure_check_ = true;
+
+    // Only queued output consumers can be invalidated by releasing this payload
+    if (queued_output_references_.contains(task_id)) {
+        needs_dependency_failure_check_ = true;
+    }
 }
 
 void Job::release_after(TaskId producer, TaskId consumer) {
@@ -302,6 +311,8 @@ JobHandle Runtime::submit_job(Job job) const {
     if (!job.job_controller_) {
         throw std::invalid_argument("Runtime requires a non-null JobController");
     }
+
+    job.max_workers_ = job.max_workers_.value_or(runtime_options_.max_workers());
 
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
