@@ -47,6 +47,12 @@ CAF_ADD_ATOM(miaow_internal_module, miaow::core, subprocess_startup_timeout_atom
              "substart")
 // Exit poll carrying the launch ID of the stopping child process
 CAF_ADD_ATOM(miaow_internal_module, miaow::core, poll_subprocess_exit_atom, "pollsub")
+// Request one shared worker slot for the supplied job ID
+CAF_ADD_ATOM(miaow_internal_module, miaow::core, request_worker_slot_atom, "reqslot")
+// Grant one reserved worker slot
+CAF_ADD_ATOM(miaow_internal_module, miaow::core, grant_worker_slot_atom, "grantslot")
+// Return one shared worker slot for the supplied job ID
+CAF_ADD_ATOM(miaow_internal_module, miaow::core, return_worker_slot_atom, "retslot")
 CAF_END_TYPE_ID_BLOCK(miaow_internal_module)
 
 namespace miaow::core {
@@ -247,6 +253,9 @@ class Orchestrator {
     caf::behavior make_behavior();
 
   private:
+    void grant_worker_slots();
+    void forget_job(JobId job_id);
+
     caf::event_based_actor* self_;
     RuntimeOptions runtime_options_;
     std::uint64_t run_id_;
@@ -257,7 +266,19 @@ class Orchestrator {
     // Runtime owns the promises and mutex until the actor system has shut down
     std::mutex* pending_jobs_mutex_;
     PendingJobs* pending_jobs_;
-    std::unordered_map<JobId, caf::actor> active_job_actors_;
+
+    struct ActiveJob {
+        caf::actor job_actor_;
+        // Reservations charged to this job, including grants in transit
+        std::size_t granted_worker_slots_{0};
+    };
+    std::unordered_map<JobId, ActiveJob> active_jobs_;
+
+    // One request per job at a time. Grant slots in request order.
+    std::deque<JobId> worker_slot_requests_;
+
+    // Total reservations charged to all active jobs
+    std::size_t granted_worker_slots_{0};
 };
 
 // Child-process actor hosting the public Task-to-TaskResult handler

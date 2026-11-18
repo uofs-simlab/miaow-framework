@@ -11,9 +11,10 @@
 
 // Read optional example inputs and forward the common runtime options
 inline nlohmann::json read_example_config(int argc, char* argv[],
-                                          miaow::RuntimeOptions& runtime_options) {
+                                          miaow::RuntimeOptions& runtime_options,
+                                          const std::string& default_config_path = {}) {
     // Separate the example's input file from options handled by the runtime
-    std::string config_path;
+    std::string config_path = default_config_path;
     std::vector<char*> runtime_arguments{argv[0]};
     for (int index = 1; index < argc; ++index) {
         if (std::string(argv[index]) == "--config") {

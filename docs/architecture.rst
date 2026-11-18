@@ -47,9 +47,7 @@ Task dispatch and executors
 
 The job scans queued tasks in submission order and selects the first whose prerequisites have succeeded and whose target unit is idle. A ready task can overtake an earlier blocked task, including on the same unit. Submission order gives ready tasks priority; required ordering must be expressed through explicit dependencies. ``Job::max_workers()`` limits concurrent tasks in that job, independently of unit count. An idle unit does not reserve a thread.
 
-Set a job's worker limit with ``Job::set_max_workers()``. A job with no explicit limit inherits ``RuntimeOptions::max_workers()`` at submission. The runtime default is one. Worker limits must be positive.
-
-The worker limit does not limit the number of resident executors or models. Activated units retain their executors while idle.
+A job's worker limit is set using ``Job::set_max_workers()``. A job with no explicit limit inherits ``RuntimeOptions::max_workers()`` at submission, which defaults to one. The runtime option ``RuntimeOptions::set_max_total_workers()`` is used to cap occupied task slots across all jobs in a runtime. Each job with a ready task and an idle simulation unit requests one slot at a time. The orchestrator grants slots in request order, so jobs with ready work can use capacity left idle by other jobs, up to their per-job limits. For example, with a shared limit of eight and both job limits set to eight, either job can use all eight slots while the other is idle. If this is not set, there is no global cap, and we instead rely solely on per-job limits. Note that the worker limit does not limit the number of resident executors or model instances, but rather the number of concurrently executing tasks.
 
 When dispatching a unit's first task, the job creates its actor. The unit constructs one ``TaskExecutor`` before executing that task and reuses the executor for subsequent tasks. Declaring a unit does not create its actor or initialize a BMI model. BMI initialization occurs when the executor handles an ``initialize`` or ``run`` task. The job allows at most one active task per unit, and operations on that unit execute serially.
 
@@ -70,8 +68,6 @@ A unit's ``TaskExecutorId`` selects an executor registered through ``TaskExecuto
      - Child process
 
 The unit's executor object remains in the parent process in both cases. ``SubprocessTaskExecutor`` forwards tasks to a child process, as described under :ref:`subprocess-execution`.
-
-Each BMI ``"run"`` task creates a fresh model and performs initialize, update, and finalize within that task. Static and dynamic BMI executors also support individual operations on a model retained between tasks, using their common ``BmiTaskExecutor`` base. The bundled BMI subprocess worker retains a ``DynamicBmiTaskExecutor`` in the child and supports the same operations. See :doc:`bmi` for the model lifecycle.
 
 Task dependencies and output references
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
