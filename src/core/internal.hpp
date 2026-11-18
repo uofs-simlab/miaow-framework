@@ -12,6 +12,7 @@
 #include <optional>
 #include <queue>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -56,6 +57,11 @@ CAF_ADD_ATOM(miaow_internal_module, miaow::core, return_worker_slot_atom, "retsl
 CAF_END_TYPE_ID_BLOCK(miaow_internal_module)
 
 namespace miaow::core {
+
+// Check if the given policy string is a valid CAF scheduler policy
+inline bool is_scheduler_policy(std::string_view policy) {
+    return policy == "sharing" || policy == "stealing";
+}
 
 // Address used for communication between parent and subprocesses on the same machine
 inline constexpr const char* subprocess_registration_host = "127.0.0.1";
@@ -114,8 +120,7 @@ class SubprocessState {
     ~SubprocessState();
 
     // Begin asynchronous execution of one subprocess task
-    caf::result<TaskResult> execute(const Task& task,
-                                    const std::string& subprocess_executable);
+    caf::result<TaskResult> execute(const Task& task);
 
     // Accept the child actor handle for the current launch
     void accept_registration(SubprocessLaunchId launch_id,
@@ -214,8 +219,10 @@ class SubprocessState {
     // Failure response retained until child cleanup finishes
     std::optional<TaskResult> result_waiting_for_stop_;
 
-    // Fixed executable used by this unit's subprocess executor
-    std::string subprocess_executable_;
+    // The unit retains the registry that owns this registration.
+    const TaskExecutorRegistry::SubprocessRegistration* registration_{nullptr};
+
+    friend class miaow::TaskExecutorRegistry;
 
     // Stdout and stderr files belonging to the child identified by subprocess_pid_
     std::optional<SubprocessPaths> paths_;

@@ -85,6 +85,24 @@ void parse_runtime_cli_options(int argc, char* argv[], RuntimeOptions& runtime_o
             continue;
         }
 
+        if (option_name == "--caf_scheduler_threads") {
+            const std::string_view option_value =
+                read_option_value(argc, argv, index, option_name);
+            runtime_options.caf_scheduler_threads_ =
+                parse_positive_integer_option(option_value, option_name);
+            continue;
+        }
+
+        if (option_name == "--caf_scheduler_policy") {
+            const std::string_view option_value =
+                read_option_value(argc, argv, index, option_name);
+            if (option_value != "sharing" && option_value != "stealing") {
+                throw std::runtime_error("Error: --caf_scheduler_policy requires sharing or stealing");
+            }
+            runtime_options.caf_scheduler_policy_ = option_value;
+            continue;
+        }
+
         if (option_name == "--task_request_timeout") {
             const std::string_view option_value =
                 read_option_value(argc, argv, index, option_name);
