@@ -233,9 +233,11 @@ void Job::fail_unit(std::size_t unit_index, std::string reason) {
 void Job::unit_terminated(std::size_t unit_index, const caf::error& reason) {
     UnitBinding& unit = units_[unit_index];
     fail_unit(unit_index, "simulation unit terminated: " + caf::to_string(reason));
+    // A timed-out task keeps its slot while the unit finishes shutting down.
     if (unit.active_task_index_) {
         unit.active_task_index_.reset();
         --active_task_count_;
+        return_worker_slot();
     }
     unit.simulation_unit_actor_ = caf::actor{};
     advance();
@@ -308,7 +310,17 @@ void Job::complete_task(std::size_t unit_index, std::size_t task_index,
     record_task(task_index, std::move(task_result));
     units_[unit_index].active_task_index_.reset();
     --active_task_count_;
+    // Share the freed capacity before advance() can request another slot.
+    return_worker_slot();
     advance();
+}
+
+// Return one slot after a task stops or a grant goes unused.
+void Job::return_worker_slot() {
+    if (runtime_options_.max_total_workers().has_value()) {
+        // job_actor -> orchestrator_actor: return one slot for this job
+        self_->mail(core::return_worker_slot_atom_v, job_id_).send(orchestrator_actor_);
+    }
 }
 
 void Job::dispatch_tasks() {
@@ -368,6 +380,18 @@ void Job::dispatch_tasks() {
         if (pending == pending_end) {
             break;
         }
+
+        // Leave the task queued until the grant arrives and readiness is rechecked.
+        if (runtime_options_.max_total_workers().has_value() && !worker_slot_granted_) {
+            if (!worker_slot_requested_) {
+                worker_slot_requested_ = true;
+                // job_actor -> orchestrator_actor: request one slot for a ready task
+                self_->mail(core::request_worker_slot_atom_v, job_id_)
+                    .send(orchestrator_actor_);
+            }
+            return;
+        }
+
         const std::size_t task_index = *pending;
         const std::size_t unit_index = tasks_[task_index].unit_id_;
 
@@ -401,6 +425,8 @@ void Job::dispatch_tasks() {
         const caf::actor& simulation_unit_actor = unit.simulation_unit_actor_;
         unit.active_task_index_ = task_index;
         pending_task_indices_.erase(pending);
+        // Any shared reservation now belongs to the dispatched task.
+        worker_slot_granted_ = false;
         ++active_task_count_;
         --idle_unit_count;
 
@@ -501,7 +527,7 @@ caf::behavior SimulationUnit::make_behavior() {
 Job::Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
          std::shared_ptr<Job> job, RuntimeOptions runtime_options,
          std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
-         caf::actor subprocess_registration_actor,
+         caf::actor orchestrator_actor, caf::actor subprocess_registration_actor,
          std::uint16_t subprocess_registration_port)
     : Job(std::move(*job)) {
     self_ = self;
@@ -509,6 +535,7 @@ Job::Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
     job_id_ = job_id;
     runtime_options_ = std::move(runtime_options);
     task_executor_registry_ = std::move(task_executor_registry);
+    orchestrator_actor_ = std::move(orchestrator_actor);
     subprocess_registration_actor_ = std::move(subprocess_registration_actor);
     subprocess_registration_port_ = subprocess_registration_port;
 }
@@ -554,6 +581,18 @@ caf::behavior Job::make_behavior() {
                 // Defer the response until tasks are recorded and unit actors terminate
                 return response;
             },
+            // Dispatch one ready task with the reserved slot or return it unused.
+            [this](core::grant_worker_slot_atom) {
+                worker_slot_requested_ = false;
+                worker_slot_granted_ = true;
+                if (!finishing_) {
+                    dispatch_tasks();
+                }
+                // A timeout or unit failure may have invalidated the queued work.
+                if (std::exchange(worker_slot_granted_, false)) {
+                    return_worker_slot();
+                }
+            },
             // A whole-job deadline is final; it does not invoke controller policy
             [this](core::job_timeout_atom) {
                 if (finishing_) {
@@ -588,17 +627,44 @@ Orchestrator::Orchestrator(
       subprocess_registration_port_(subprocess_registration_port),
       pending_jobs_mutex_(pending_jobs_mutex), pending_jobs_(pending_jobs) {}
 
+// Fill available capacity in request order.
+void Orchestrator::grant_worker_slots() {
+    const std::optional<std::size_t> worker_limit = runtime_options_.max_total_workers();
+    while (worker_limit && granted_worker_slots_ < *worker_limit &&
+           !worker_slot_requests_.empty()) {
+        ActiveJob& job = active_jobs_.at(worker_slot_requests_.front());
+        worker_slot_requests_.pop_front();
+        // Charge the reservation before sending it so grants in transit count too.
+        ++granted_worker_slots_;
+        ++job.granted_worker_slots_;
+        // orchestrator_actor -> job_actor: one shared worker slot is reserved
+        caf::anon_mail(grant_worker_slot_atom_v).send(job.job_actor_);
+    }
+}
+
+// Retire the job's slot accounting and give the freed capacity to waiting jobs.
+void Orchestrator::forget_job(JobId job_id) {
+    const auto job = active_jobs_.find(job_id);
+    // A job can finish with a request still queued or a grant still in transit.
+    std::erase(worker_slot_requests_, job_id);
+    granted_worker_slots_ -= job->second.granted_worker_slots_;
+    active_jobs_.erase(job);
+    grant_worker_slots();
+}
+
 caf::behavior Orchestrator::make_behavior() {
     return {
         // Runtime -> orchestrator_actor: submit one job
         [this](caf::get_atom, JobId job_id, std::shared_ptr<miaow::Job> prepared_job) {
+            const caf::actor orchestrator_actor = caf::actor_cast<caf::actor>(self_);
             // Spawn one job actor for this request
             caf::actor job_actor =
                 self_->spawn(caf::actor_from_state<miaow::Job>, run_id_, job_id,
                              std::move(prepared_job), runtime_options_,
-                             task_executor_registry_, subprocess_registration_actor_,
+                             task_executor_registry_, orchestrator_actor,
+                             subprocess_registration_actor_,
                              subprocess_registration_port_);
-            active_job_actors_.emplace(job_id, job_actor);
+            active_jobs_.emplace(job_id, ActiveJob{job_actor});
 
             // orchestrator_actor -> job_actor: request execution of one job
             self_->mail(caf::get_atom_v)
@@ -606,7 +672,7 @@ caf::behavior Orchestrator::make_behavior() {
                 .then(
                     // job_actor -> orchestrator_actor: resolve successful completion
                     [this, job_id](JobRecord job_record) {
-                        active_job_actors_.erase(job_id);
+                        forget_job(job_id);
 
                         std::promise<JobRecord> promise;
                         {
@@ -627,7 +693,7 @@ caf::behavior Orchestrator::make_behavior() {
                     [this, job_actor, job_id](const caf::error& err) {
                         // orchestrator_actor -> job_actor: stop after a request error
                         caf::anon_mail(shutdown_atom_v).send(job_actor);
-                        active_job_actors_.erase(job_id);
+                        forget_job(job_id);
 
                         // Remove the matching promise so it is resolved exactly once
                         std::promise<JobRecord> promise;
@@ -647,12 +713,28 @@ caf::behavior Orchestrator::make_behavior() {
                             std::runtime_error("Job actor error: " + caf::to_string(err))));
                     });
         },
+        // Queue requests from active jobs.
+        [this](request_worker_slot_atom, JobId job_id) {
+            if (active_jobs_.contains(job_id)) {
+                worker_slot_requests_.push_back(job_id);
+                grant_worker_slots();
+            }
+        },
+        // Make returned capacity available to waiting jobs.
+        [this](return_worker_slot_atom, JobId job_id) {
+            const auto job = active_jobs_.find(job_id);
+            // Completion may already have reclaimed this job's remaining grants.
+            if (job != active_jobs_.end()) {
+                --job->second.granted_worker_slots_;
+                --granted_worker_slots_;
+                grant_worker_slots();
+            }
+        },
         // Runtime -> orchestrator_actor: stop jobs and child registration
         [this](shutdown_atom) {
-            for (const std::pair<const JobId, caf::actor>& active_job :
-                 active_job_actors_) {
+            for (const auto& entry : active_jobs_) {
                 // orchestrator_actor -> job_actor: stop one active job
-                caf::anon_mail(shutdown_atom_v).urgent().send(active_job.second);
+                caf::anon_mail(shutdown_atom_v).urgent().send(entry.second.job_actor_);
             }
             // orchestrator_actor -> subprocess_registration_actor: stop registration
             caf::anon_send_exit(subprocess_registration_actor_,

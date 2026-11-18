@@ -1,0 +1,17 @@
+[
+  {
+    "delay_ms": 150,
+    "tasks": [
+      {"message": "hello from the short job"}
+    ]
+  },
+  {
+    "delay_ms": 300,
+    "tasks": [
+      {"message": "hello from job 1, task 0"},
+      {"message": "hello from job 1, task 1"},
+      {"message": "hello from job 1, task 2"},
+      {"message": "hello from job 1, task 3"}
+    ]
+  }
+]

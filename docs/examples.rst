@@ -47,6 +47,19 @@ The hello, dynamic BMI, job-controller, and model-coupling examples accept an op
 
 For example, a job controller config containing ``{"maximum_iterations": 1}`` reports non-convergence after the first iteration. Run it with ``./miaow_job_controller --config <file.json>`` from the example directory. Plugin and model configuration paths are also resolved from the example's working directory.
 
+Shared worker limit
+^^^^^^^^^^^^^^^^^^^
+
+From ``examples/00_hello``, the greeting example runs the bundled ``data/configs/shared_workers.json`` workload by default:
+
+.. code-block:: sh
+
+   ./miaow_hello
+
+Both jobs are submitted before the driver waits for either result. Each job can use up to two task slots, and both jobs combined can use up to two. Once the shorter job finishes, the remaining job can use both slots. Override these limits with ``--max_workers`` and ``--max_total_workers``.
+
+Use ``--config`` to supply a workload with either one configuration object or an array with one object per job.
+
 Additional examples
 -------------------
 
@@ -139,6 +152,9 @@ Examples accept the following runtime command-line options where applicable. The
    * - ``--max_workers``
      - ``1``
      - Maximum occupied task slots per job; unit count is independent of this limit. Timed-out native calls retain their slots until they return.
+   * - ``--max_total_workers``
+     - Disabled
+     - Maximum occupied task slots across all jobs sharing the runtime.
    * - ``--task_request_timeout``
      - ``60``
      - Task-response timeout, in seconds; expiry makes the unit unavailable and notifies the controller. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.

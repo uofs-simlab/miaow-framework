@@ -77,6 +77,14 @@ void parse_runtime_cli_options(int argc, char* argv[], RuntimeOptions& runtime_o
             continue;
         }
 
+        if (option_name == "--max_total_workers") {
+            const std::string_view option_value =
+                read_option_value(argc, argv, index, option_name);
+            runtime_options.set_max_total_workers(
+                parse_positive_integer_option(option_value, option_name));
+            continue;
+        }
+
         if (option_name == "--task_request_timeout") {
             const std::string_view option_value =
                 read_option_value(argc, argv, index, option_name);

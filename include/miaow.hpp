@@ -572,6 +572,21 @@ struct RuntimeOptions {
         max_workers_ = workers;
     }
 
+    /// Maximum occupied task slots across all jobs, if configured.
+    std::optional<std::size_t> max_total_workers() const {
+        return max_total_workers_;
+    }
+
+    /// Set a shared limit across jobs. Each job also has its own limit.
+    /// Pass std::nullopt to disable the shared limit.
+    /// @throws std::invalid_argument if workers is zero.
+    void set_max_total_workers(std::optional<std::size_t> workers) {
+        if (workers && *workers == 0) {
+            throw std::invalid_argument("max_total_workers must be positive");
+        }
+        max_total_workers_ = workers;
+    }
+
     /// Timeout for one task response; expiry makes the unit unavailable. Subprocess tasks
     /// are terminated; in-process calls retain capacity until execute() returns.
     std::chrono::milliseconds task_request_timeout_;
@@ -612,6 +627,7 @@ struct RuntimeOptions {
 
   private:
     std::size_t max_workers_{1};
+    std::optional<std::size_t> max_total_workers_;
 };
 
 /**
@@ -762,7 +778,7 @@ class Job {
     Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
         std::shared_ptr<Job> job, RuntimeOptions runtime_options,
         std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
-        caf::actor subprocess_registration_actor,
+        caf::actor orchestrator_actor, caf::actor subprocess_registration_actor,
         std::uint16_t subprocess_registration_port);
     caf::behavior make_behavior();
     /// @endcond
@@ -783,6 +799,7 @@ class Job {
     void process_deferred_releases();
     void complete_task(std::size_t unit_index, std::size_t task_index,
                        TaskResult task_result);
+    void return_worker_slot();
     void dispatch_tasks();
     void write_job_record(const JobRecord& record) const;
 
@@ -855,6 +872,15 @@ class Job {
 
     // Occupied task slots; timed-out native calls hold their slot until actor termination
     std::size_t active_task_count_{0};
+
+    // Handle to the orchestrator that spawned this job.
+    caf::actor orchestrator_actor_;
+
+    // At most one request awaits a grant, even when multiple tasks are running.
+    bool worker_slot_requested_{false};
+
+    // The received grant is available until one task uses it or the job returns it.
+    bool worker_slot_granted_{false};
 
     std::vector<UnitFailure> pending_unit_failures_;
 
