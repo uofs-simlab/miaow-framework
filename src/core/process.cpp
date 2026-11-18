@@ -122,6 +122,8 @@ struct SubprocessRegistrationInfo {
     std::string host_;
     std::uint16_t port_{0};
     SubprocessLaunchId launch_id_{0};
+    std::string scheduler_policy_{"sharing"};
+    std::size_t scheduler_threads_{1};
 };
 
 // Parse one unsigned command-line value without accepting suffix characters
@@ -144,8 +146,9 @@ SubprocessRegistrationInfo parse_subprocess_registration_info(int argc, char* ar
     std::string host;
     std::string port;
     std::string launch_id;
+    SubprocessRegistrationInfo registration;
 
-    // argv[0] is the executable path; the remaining pairs configure registration
+    // argv[0] is the executable path; the remaining pairs configure the child.
     for (int index = 1; index < argc; ++index) {
         const std::string argument = argv[index];
         if (index + 1 >= argc) {
@@ -159,6 +162,18 @@ SubprocessRegistrationInfo parse_subprocess_registration_info(int argc, char* ar
             port = argv[index];
         } else if (argument == "--launch-id") {
             launch_id = argv[index];
+        } else if (argument == "--caf-scheduler-policy") {
+            registration.scheduler_policy_ = argv[index];
+            if (!is_scheduler_policy(registration.scheduler_policy_)) {
+                throw std::runtime_error(argument + " requires sharing or stealing");
+            }
+        } else if (argument == "--caf-scheduler-threads") {
+            registration.scheduler_threads_ = static_cast<std::size_t>(
+                parse_unsigned_argument(argv[index], argument,
+                                        std::numeric_limits<std::size_t>::max()));
+            if (registration.scheduler_threads_ == 0) {
+                throw std::runtime_error(argument + " requires a positive integer");
+            }
         } else {
             throw std::runtime_error("unknown argument '" + argument + "'");
         }
@@ -181,10 +196,11 @@ SubprocessRegistrationInfo parse_subprocess_registration_info(int argc, char* ar
         throw std::runtime_error("invalid --parent-registration-port value '0'");
     }
 
-    return SubprocessRegistrationInfo{
-        std::move(host), static_cast<std::uint16_t>(port_value),
-        parse_unsigned_argument(launch_id, "--launch-id",
-                                std::numeric_limits<SubprocessLaunchId>::max())};
+    registration.host_ = std::move(host);
+    registration.port_ = static_cast<std::uint16_t>(port_value);
+    registration.launch_id_ = parse_unsigned_argument(
+        launch_id, "--launch-id", std::numeric_limits<SubprocessLaunchId>::max());
+    return registration;
 }
 
 } // namespace
@@ -273,7 +289,9 @@ std::string format_subprocess_failure(const std::string& message,
 pid_t spawn_subprocess_worker(const std::string& executable,
                               std::uint16_t subprocess_registration_port,
                               SubprocessLaunchId launch_id,
-                              const SubprocessPaths& subprocess_paths) {
+                              const SubprocessPaths& subprocess_paths,
+                              const std::string& scheduler_policy,
+                              std::size_t scheduler_threads) {
     // Keep the complete parent-to-child command-line contract beside its child parser
     // posix_spawn receives these strings directly as argv without invoking a shell
     std::vector<std::string> argument_storage{
@@ -284,6 +302,10 @@ pid_t spawn_subprocess_worker(const std::string& executable,
         std::to_string(subprocess_registration_port),
         "--launch-id",
         std::to_string(launch_id),
+        "--caf-scheduler-policy",
+        scheduler_policy,
+        "--caf-scheduler-threads",
+        std::to_string(scheduler_threads),
     };
 
     std::vector<char*> argument_pointers;
@@ -371,18 +393,15 @@ void send_sigkill_to_child_process(pid_t subprocess_pid) {
 // Task executor that delegates one task to actor-owned subprocess state
 class SubprocessTaskExecutor final : public TaskExecutor {
   public:
-    SubprocessTaskExecutor(SubprocessState& subprocess_state,
-                           std::string subprocess_executable)
-        : subprocess_state_(subprocess_state),
-          subprocess_executable_(std::move(subprocess_executable)) {}
+    explicit SubprocessTaskExecutor(SubprocessState& subprocess_state)
+        : subprocess_state_(subprocess_state) {}
 
     caf::result<TaskResult> execute(const Task& task) override {
-        return subprocess_state_.execute(task, subprocess_executable_);
+        return subprocess_state_.execute(task);
     }
 
   private:
     SubprocessState& subprocess_state_;
-    std::string subprocess_executable_;
 };
 
 } // namespace
@@ -617,8 +636,9 @@ void SubprocessState::start_subprocess(SubprocessLaunchId launch_id) {
         paths_ = make_subprocess_paths(*active_task_);
         keep_logs_ = false;
         subprocess_pid_ =
-            spawn_subprocess_worker(subprocess_executable_, subprocess_registration_port_,
-                                    launch_id, *paths_);
+            spawn_subprocess_worker(registration_->executable_, subprocess_registration_port_,
+                                    launch_id, *paths_, registration_->scheduler_policy_,
+                                    registration_->scheduler_threads_);
 
         // simulation_unit_actor -> simulation_unit_actor: enforce the startup deadline
         owner_->mail(subprocess_startup_timeout_atom_v, launch_id)
@@ -660,8 +680,7 @@ void SubprocessState::request_subprocess_launch_id() {
             [this](const caf::error& error) { handle_launch_id_request_error(error); });
 }
 
-caf::result<TaskResult> SubprocessState::execute(const Task& task,
-                                                 const std::string& subprocess_executable) {
+caf::result<TaskResult> SubprocessState::execute(const Task& task) {
     if (response_promise_.pending() || shutdown_requested_) {
         return caf::make_error(caf::sec::runtime_error,
                                "subprocess unit is busy or shutting down");
@@ -670,7 +689,6 @@ caf::result<TaskResult> SubprocessState::execute(const Task& task,
     // Retain the job actor request while the asynchronous lifecycle continues
     response_promise_ = owner_->make_response_promise<TaskResult>();
     active_task_ = task;
-    subprocess_executable_ = subprocess_executable;
 
     if (subprocess_worker_actor_) {
         request_task_result();
@@ -783,20 +801,29 @@ TaskExecutorRegistry::make_executor(TaskExecutorId task_executor_id,
         return (*factory)();
     }
 
-    const auto& subprocess =
-        std::get<TaskExecutorRegistry::SubprocessRegistration>(registration->second);
-    return std::make_unique<core::SubprocessTaskExecutor>(subprocess_state,
-                                                          subprocess.executable_);
+    subprocess_state.registration_ = &std::get<SubprocessRegistration>(registration->second);
+    return std::make_unique<core::SubprocessTaskExecutor>(subprocess_state);
 }
 
-TaskExecutorId TaskExecutorRegistry::add_subprocess(std::string subprocess_executable) {
+TaskExecutorId TaskExecutorRegistry::add_subprocess(std::string subprocess_executable,
+                                                    std::string scheduler_policy,
+                                                    std::size_t scheduler_threads) {
     if (subprocess_executable.empty()) {
         throw std::invalid_argument("subprocess executable must be non-empty");
     }
 
+    if (!core::is_scheduler_policy(scheduler_policy)) {
+        throw std::invalid_argument("subprocess scheduler policy must be sharing or stealing");
+    }
+    if (scheduler_threads == 0) {
+        throw std::invalid_argument("subprocess scheduler thread count must be positive");
+    }
+
     const TaskExecutorId task_executor_id = next_task_executor_id_++;
     registrations_.emplace(task_executor_id,
-                           SubprocessRegistration{std::move(subprocess_executable)});
+                           SubprocessRegistration{std::move(subprocess_executable),
+                                                  std::move(scheduler_policy),
+                                                  scheduler_threads});
     return task_executor_id;
 }
 
@@ -809,9 +836,10 @@ int run_subprocess_worker(
         const core::SubprocessRegistrationInfo registration =
             core::parse_subprocess_registration_info(argc, argv);
 
-        // Start a single-threaded subprocess actor system with CAF middleman communication
+        // Apply the child scheduler settings before starting the actor system
         caf::actor_system_config config;
-        config.set("caf.scheduler.max-threads", 1u);
+        config.set("caf.scheduler.max-threads", registration.scheduler_threads_);
+        config.set("caf.scheduler.policy", registration.scheduler_policy_);
         config.load<caf::io::middleman>();
         caf::actor_system actor_system(config);
 

@@ -49,6 +49,8 @@ bool ensure_expected_run_dir(const std::string& expected_run_dir);
  * arguments are recognized:
  * - `--max_workers <count>`
  * - `--max_total_workers <count>`
+ * - `--caf_scheduler_threads <count>`
+ * - `--caf_scheduler_policy <sharing|stealing>`
  * - `--task_request_timeout <seconds>`
  * - `--job_request_timeout <seconds>`
  * - `--output_root <path>`

@@ -155,6 +155,12 @@ Examples accept the following runtime command-line options where applicable. The
    * - ``--max_total_workers``
      - Disabled
      - Maximum occupied task slots across all jobs sharing the runtime.
+   * - ``--caf_scheduler_threads``
+     - CAF automatic
+     - Positive thread count for the parent CAF scheduler. Use ``--caf_scheduler_threads 1`` for a single parent scheduler thread.
+   * - ``--caf_scheduler_policy``
+     - ``stealing``
+     - Parent CAF scheduler policy. Use ``--caf_scheduler_policy sharing`` to select the shared queue and let idle scheduler threads sleep.
    * - ``--task_request_timeout``
      - ``60``
      - Task-response timeout, in seconds; expiry makes the unit unavailable and notifies the controller. Only subprocess tasks are terminated; running in-process evaluations are not interrupted.

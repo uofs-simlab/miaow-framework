@@ -515,10 +515,14 @@ class TaskExecutorRegistry {
      *
      * @param subprocess_executable Non-empty path to an executable whose `main()` calls
      * `run_subprocess_worker()`.
+     * @param scheduler_policy Child CAF policy: sharing or stealing.
+     * @param scheduler_threads Positive number of child CAF scheduler threads.
      * @return `TaskExecutorId` assigned to this subprocess task executor.
-     * @throws std::invalid_argument if `subprocess_executable` is empty.
+     * @throws std::invalid_argument for an empty path or invalid scheduler settings.
      */
-    TaskExecutorId add_subprocess(std::string subprocess_executable);
+    TaskExecutorId add_subprocess(std::string subprocess_executable,
+                                  std::string scheduler_policy = "sharing",
+                                  std::size_t scheduler_threads = 1);
 
     /**
      * @brief Return true when no task executors have been registered.
@@ -541,6 +545,8 @@ class TaskExecutorRegistry {
 
     struct SubprocessRegistration {
         std::string executable_;
+        std::string scheduler_policy_{"sharing"};
+        std::size_t scheduler_threads_{1};
     };
 
     using Registration = std::variant<TaskExecutorFactory, SubprocessRegistration>;
@@ -550,6 +556,7 @@ class TaskExecutorRegistry {
 
     friend class Job;
     friend class SimulationUnit;
+    friend class core::SubprocessState;
 };
 
 /**
@@ -586,6 +593,13 @@ struct RuntimeOptions {
         }
         max_total_workers_ = workers;
     }
+
+    /// Parent CAF scheduler thread override. An empty value uses CAF's default.
+    std::optional<std::size_t> caf_scheduler_threads_;
+
+    /// Parent CAF scheduler policy override (sharing or stealing).
+    /// An empty value uses CAF's default.
+    std::optional<std::string> caf_scheduler_policy_;
 
     /// Timeout for one task response; expiry makes the unit unavailable. Subprocess tasks
     /// are terminated; in-process calls retain capacity until execute() returns.

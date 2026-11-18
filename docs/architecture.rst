@@ -49,6 +49,8 @@ The job scans queued tasks in submission order and selects the first whose prere
 
 A job's worker limit is set using ``Job::set_max_workers()``. A job with no explicit limit inherits ``RuntimeOptions::max_workers()`` at submission, which defaults to one. The runtime option ``RuntimeOptions::set_max_total_workers()`` is used to cap occupied task slots across all jobs in a runtime. Each job with a ready task and an idle simulation unit requests one slot at a time. The orchestrator grants slots in request order, so jobs with ready work can use capacity left idle by other jobs, up to their per-job limits. For example, with a shared limit of eight and both job limits set to eight, either job can use all eight slots while the other is idle. If this is not set, there is no global cap, and we instead rely solely on per-job limits. Note that the worker limit does not limit the number of resident executors or model instances, but rather the number of concurrently executing tasks.
 
+The parent CAF scheduler defaults to work stealing; see `CAF's configuration documentation <https://actor-framework.readthedocs.io/en/1.1.0/core/ConfiguringActorApplications.html#configuration-files>`_. CAF 1.1.0 selects one scheduler thread per detected logical CPU, with a minimum of four threads. On Linux, an available cgroup CPU quota replaces the detected CPU count and is rounded up, still with a minimum of four threads. Set ``RuntimeOptions::caf_scheduler_policy_`` or ``RuntimeOptions::caf_scheduler_threads_`` to override either choice. These settings govern how parent actors share threads. The worker limits govern how many task requests the job or runtime can have in flight.
+
 When dispatching a unit's first task, the job creates its actor. The unit constructs one ``TaskExecutor`` before executing that task and reuses the executor for subsequent tasks. Declaring a unit does not create its actor or initialize a BMI model. BMI initialization occurs when the executor handles an ``initialize`` or ``run`` task. The job allows at most one active task per unit, and operations on that unit execute serially.
 
 A unit's ``TaskExecutorId`` selects an executor registered through ``TaskExecutorRegistry``. The registration determines where its task code runs:
@@ -180,6 +182,8 @@ Subprocess execution gives each unit a separate address space. Models that use p
 
 Registering an executable with ``TaskExecutorRegistry::add_subprocess()`` selects ``SubprocessTaskExecutor`` for units using that registration. Each such unit launches its own child for its first task and reuses it for later tasks. The executor sends each ``Task`` to a worker actor in the child, where a handler performs the computation and returns a ``TaskResult``. The unit actor forwards that result to the job actor.
 
+By default, each child's CAF actor system uses one scheduler thread with the ``sharing`` policy, which sleeps while idle. To override those settings for the children created from a registration, use ``add_subprocess(executable, "stealing", 2)`` or supply another supported policy and positive thread count. The child's model handler still executes its tasks serially.
+
 Each child writes stdout and stderr to ``unit_<unit_id>_stdout.log`` and ``unit_<unit_id>_stderr.log``, using the job's unit ID. The same files capture output across all tasks executed by that child.
 
 ``SubprocessState`` manages the child's launch, communication, and termination inside the unit actor. The unit actor can process messages while waiting for the child; it does not block a parent scheduler thread for the duration of the computation.
@@ -224,7 +228,6 @@ The executable links against MIAOW and supplies a callable accepting ``const Tas
        return miaow::run_subprocess_worker(argc, argv, execute_task);
    }
 
-Pass ``argc`` and ``argv`` unchanged to ``run_subprocess_worker()``; they carry parent-registration settings. Task data and custom configuration arrive through ``Task`` messages. The child does not receive the parent registry. An exception from the handler becomes a failed ``TaskResult``.
 
 Cleanup
 ^^^^^^^

@@ -117,10 +117,25 @@ Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry, RuntimeOpti
     if (task_executor_registry_->empty()) {
         throw std::invalid_argument("Runtime requires at least one TaskExecutor");
     }
+    if (runtime_options_.caf_scheduler_threads_ == 0) {
+        throw std::invalid_argument("caf_scheduler_threads must be positive");
+    }
+    if (runtime_options_.caf_scheduler_policy_ &&
+        !core::is_scheduler_policy(*runtime_options_.caf_scheduler_policy_)) {
+        throw std::invalid_argument("caf_scheduler_policy must be sharing or stealing");
+    }
     run_id_ = allocate_run_id(runtime_options_);
 
     // Keep one actor system and one shared orchestrator for this Runtime
     actor_system_config_ = std::make_shared<caf::actor_system_config>();
+    if (runtime_options_.caf_scheduler_threads_) {
+        actor_system_config_->set("caf.scheduler.max-threads",
+                                  *runtime_options_.caf_scheduler_threads_);
+    }
+    if (runtime_options_.caf_scheduler_policy_) {
+        actor_system_config_->set("caf.scheduler.policy",
+                                  *runtime_options_.caf_scheduler_policy_);
+    }
     actor_system_config_->load<caf::io::middleman>();
     actor_system_ = std::make_shared<caf::actor_system>(*actor_system_config_);
 
