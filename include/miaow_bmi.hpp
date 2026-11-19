@@ -2,11 +2,13 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 #include <functional>
 #include <memory>
 #include <string>
 #include <utility>
+#include <unordered_map>
 
 #include "miaow.hpp"
 #include "third_party/bmi/bmi.hxx"
@@ -110,7 +112,7 @@ class BmiTaskExecutor : public TaskExecutor {
     /// Attempt finalization when an initialized model remains at unit shutdown
     ~BmiTaskExecutor() override;
 
-    /// Execute a serial `sequence`, `run`, or an individual BMI operation.
+    /// Execute a serial `sequence`, cache its instructions, or call a BMI operation.
     caf::result<TaskResult> execute(const Task& task) override;
 
   protected:
@@ -127,6 +129,10 @@ class BmiTaskExecutor : public TaskExecutor {
     ModelFactory model_factory_;
     std::unique_ptr<bmi_api::Bmi> model_;
     bool model_failed_{false};
+
+    // Programs belong to one initialized model; IDs are not reused after finalization
+    std::unordered_map<std::int64_t, caf::config_value::list> cached_sequences_;
+    std::int64_t next_sequence_id_{0};
 };
 
 /**
