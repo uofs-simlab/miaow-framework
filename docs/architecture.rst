@@ -8,13 +8,13 @@ Orchestration model
 
 A ``Job`` groups simulation units, tasks to execute on them, and a controller that can add work in response to results. An application can submit a job directly with ``Runtime::submit_job()``.
 
-Workflows are optional layers of coordination above jobs. A ``Workflow`` can submit jobs and use their results to decide what to run next. It can also submit other workflows, so an application can nest as many layers as its study requires.
+Workflows are optional layers of coordination above jobs. A ``Workflow`` can submit jobs and use their results to decide what to run next. It can also submit other workflows, allowing multiple levels of coordination within the same runtime.
 
 A ``SimulationUnit`` is the basic unit of computation orchestrated by MIAOW, such as a whole model or a spatial subdomain. A ``Task`` requests an operation on a particular unit and supplies its arguments. Each unit owns an executor: a C++ object implementing the ``TaskExecutor`` interface that carries out those operations. The executor can retain state between tasks.
 
 The orchestrator is the root actor of each ``Runtime``. It spawns each workflow and job actor and routes each child outcome to the workflow that submitted it. Each workflow actor runs its ``WorkflowController``. Each job actor runs its ``JobController`` and dispatches tasks to its simulation-unit actors.
 
-A unit using ``SubprocessTaskExecutor`` runs its task code in a separate process on the same host. Its unit actor and executor remain in the parent process alongside ``Runtime``. The diagram illustrates two optional workflow layers, a study and a calibration. Solid arrows show spawning and object ownership. Dotted arrows show which workflow submits a child and receives its outcome through the orchestrator.
+A unit using ``SubprocessTaskExecutor`` runs its task code in a separate process on the same host. Its unit actor and executor remain in the parent process alongside ``Runtime``. The diagram illustrates two optional workflow layers. Solid arrows show spawning and object ownership. Dotted arrows show which workflow submits a child and receives its outcome through the orchestrator.
 
 .. mermaid:: diagrams/orchestration.mmd
    :alt: MIAOW actor hierarchy showing nested workflows, jobs, and simulation units
@@ -23,79 +23,17 @@ A unit using ``SubprocessTaskExecutor`` runs its task code in a separate process
 Workflow execution
 ------------------
 
-Submit a controller with ``Runtime::submit_workflow()`` and use the returned ``WorkflowHandle`` to retrieve its final ``caf::config_value`` or observe an exception. For example, a calibration controller can launch several simulation jobs, collect their objective values, and submit the next candidate as each job finishes. A controller for a regional study can launch one calibration workflow per region through the same runtime.
+Submit a controller with ``Runtime::submit_workflow()`` and use the returned ``WorkflowHandle`` to retrieve its final ``caf::config_value`` or observe an exception. The controller submits child jobs or workflows, processes their results, and can submit further children in response.
 
 The workflow actor calls these controller methods serially.
 
-- ``initialize(Workflow&)`` submits the initial children using ``submit_job()`` or ``submit_workflow()``. Each call returns a ``WorkflowChildId`` immediately, identifying a direct child job or workflow within that parent workflow. Both kinds of child share the parent's ID sequence, which is independent of the runtime-wide ``JobId`` assigned to each job. The controller can use the ID to associate the completion with application data such as parameter values or a basin name.
+- ``initialize(Workflow&)`` submits the initial children using ``submit_job()`` or ``submit_workflow()``. Each call returns a ``WorkflowChildId`` immediately, identifying a direct child job or workflow within that parent workflow. Both kinds of child share the parent's ID sequence, which is independent of the runtime-wide ``JobId`` assigned to each job. The controller can use the ID to associate each completion with its submitted child.
 - ``callback(Workflow&, WorkflowChildId, const JobResult&)`` receives a completed job. The overload taking ``const WorkflowResult&`` receives a completed workflow. The controller can submit more children from either callback. Result references are borrowed for the duration of the callback.
 - ``finalize()`` returns the workflow's structured output once all children have finished and the last call to ``initialize()`` or ``callback()`` has returned. A workflow with no children finalizes after initialization. The default returns a null ``caf::config_value``.
 
 ``JobResult`` holds either a ``JobRecord`` or an ``std::exception_ptr``. A record can contain failed tasks. Call ``all_tasks_succeeded(record)`` when the next step depends on every task succeeding. ``WorkflowResult`` holds either the child's final ``caf::config_value`` or an ``std::exception_ptr``. The default callbacks propagate exceptions. Override a callback to handle a failed child and decide what to run next. If a controller method throws, the workflow drains its accepted children before reporting a ``std::runtime_error`` with the failure message.
 
 Register the task executors before constructing ``Runtime`` and pass their IDs to job builders used in ``initialize()`` or ``callback()``. Jobs at every workflow depth share that runtime's task slots. Workflow actors wait for completion messages, leaving slots available to their children. Application code can wait on ``WorkflowHandle::get()`` outside the actor system. Keep controller methods short so the workflow actor can handle further replies and shutdown messages.
-
-For a parameter sweep, suppose a registered executor accepts ``evaluate`` with a parameter and returns a double score in the task output. The controller below uses each child ID to recover the parameter associated with the score.
-
-.. code-block:: cpp
-
-   #include <miaow.hpp>
-   #include <miaow_io.hpp>
-   #include <limits>
-
-   class SweepController final : public miaow::WorkflowController {
-     public:
-       explicit SweepController(miaow::TaskExecutorId evaluator) : evaluator_(evaluator) {}
-
-       void initialize(miaow::Workflow& workflow) override {
-           // Each candidate gets its own job and model instance.
-           for (double parameter : {0.8, 1.0, 1.2}) {
-               miaow::Job job;
-               const miaow::SimulationUnitId unit = job.add_unit("model", evaluator_);
-               job.add_task(unit, "evaluate", parameter);
-               const miaow::WorkflowChildId child = workflow.submit_job(std::move(job));
-               parameters_.emplace(child, parameter);
-           }
-       }
-
-       void callback(miaow::Workflow&, miaow::WorkflowChildId child,
-                     const miaow::JobResult& result) override {
-           // Handle job-level errors and task failures before reading the score.
-           if (const std::exception_ptr* error = std::get_if<std::exception_ptr>(&result)) {
-               std::rethrow_exception(*error);
-           }
-           const miaow::JobRecord& record = std::get<miaow::JobRecord>(result);
-           if (!miaow::all_tasks_succeeded(record)) {
-               throw std::runtime_error("A candidate evaluation failed");
-           }
-           const double score = caf::get<double>(record.task_results_.front()->output_);
-           if (score < best_score_) {
-               best_score_ = score;
-               best_parameter_ = parameters_.at(child);
-           }
-           parameters_.erase(child);
-       }
-
-       caf::config_value finalize() override {
-           return caf::config_value{caf::config_value::dictionary{
-               {"parameter", caf::config_value{best_parameter_}},
-               {"score", caf::config_value{best_score_}}}};
-       }
-
-     private:
-       miaow::TaskExecutorId evaluator_;
-       std::unordered_map<miaow::WorkflowChildId, double> parameters_;
-       double best_parameter_{0.0};
-       double best_score_{std::numeric_limits<double>::infinity()};
-   };
-
-With the runtime and executor ID available, call this code from the application thread.
-
-.. code-block:: cpp
-
-   miaow::WorkflowHandle sweep =
-       runtime.submit_workflow(std::make_unique<SweepController>(evaluator));
-   caf::config_value best = sweep.get();
 
 Job execution
 -------------
