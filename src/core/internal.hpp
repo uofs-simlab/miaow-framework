@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -24,8 +25,20 @@
 
 #include "miaow.hpp"
 
+namespace miaow::core {
+
+// Transfer the controller through a local CAF message. A root submission carries a
+// C++ promise, while a child submission uses the sending actor's CAF request.
+struct WorkflowSubmission {
+    std::unique_ptr<WorkflowController> controller_;
+    std::optional<std::promise<caf::config_value>> application_result_;
+};
+
+} // namespace miaow::core
+
 // Prepared jobs stay in the parent process and pass only through local messages
 CAF_ALLOW_UNSAFE_MESSAGE_TYPE(std::shared_ptr<miaow::Job>)
+CAF_ALLOW_UNSAFE_MESSAGE_TYPE(std::shared_ptr<miaow::core::WorkflowSubmission>)
 
 // Register the internal types and atoms carried by MIAOW actor messages
 CAF_BEGIN_TYPE_ID_BLOCK(miaow_internal_module, caf::id_block::miaow_module::end)
@@ -54,6 +67,8 @@ CAF_ADD_ATOM(miaow_internal_module, miaow::core, request_worker_slot_atom, "reqs
 CAF_ADD_ATOM(miaow_internal_module, miaow::core, grant_worker_slot_atom, "grantslot")
 // Return one shared worker slot for the supplied job ID
 CAF_ADD_ATOM(miaow_internal_module, miaow::core, return_worker_slot_atom, "retslot")
+CAF_ADD_TYPE_ID(miaow_internal_module, (std::shared_ptr<miaow::core::WorkflowSubmission>))
+CAF_ADD_ATOM(miaow_internal_module, miaow::core, submit_child_atom, "subchild")
 CAF_END_TYPE_ID_BLOCK(miaow_internal_module)
 
 namespace miaow::core {
@@ -247,19 +262,26 @@ class SubprocessRegistration {
     std::unordered_map<SubprocessLaunchId, caf::actor> launch_owner_actors_;
 };
 
-// Root actor owned by Runtime: receives jobs and resolves each pending JobHandle
+// Root actor owned by Runtime: starts jobs and workflows and delivers their results
 class Orchestrator {
   public:
     Orchestrator(caf::event_based_actor* self, RuntimeOptions runtime_options,
                  std::uint64_t run_id,
                  std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
                  caf::actor subprocess_registration_actor,
-                 std::uint16_t subprocess_registration_port, std::mutex* pending_jobs_mutex,
+                 std::uint16_t subprocess_registration_port, std::atomic<JobId>* next_job_id,
+                 std::mutex* pending_jobs_mutex,
                  PendingJobs* pending_jobs);
 
     caf::behavior make_behavior();
 
   private:
+    void start_job(JobId job_id, std::shared_ptr<Job> prepared_job,
+                   std::function<void(caf::expected<JobRecord>)> complete);
+    void finish_application_job(JobId job_id, caf::expected<JobRecord> result);
+    void start_workflow(std::shared_ptr<WorkflowSubmission> submission,
+                        caf::typed_response_promise<caf::config_value> parent_result = {});
+    void finish_workflow(caf::actor_id workflow_id, caf::expected<caf::config_value> result);
     void grant_worker_slots();
     void forget_job(JobId job_id);
 
@@ -270,7 +292,8 @@ class Orchestrator {
     caf::actor subprocess_registration_actor_;
     std::uint16_t subprocess_registration_port_;
 
-    // Runtime owns the promises and mutex until the actor system has shut down
+    // Runtime owns this shared job ID counter and the promises through actor shutdown.
+    std::atomic<JobId>* next_job_id_;
     std::mutex* pending_jobs_mutex_;
     PendingJobs* pending_jobs_;
 
@@ -280,6 +303,13 @@ class Orchestrator {
         std::size_t granted_worker_slots_{0};
     };
     std::unordered_map<JobId, ActiveJob> active_jobs_;
+
+    struct ActiveWorkflow {
+        caf::actor workflow_actor_;
+        std::optional<std::promise<caf::config_value>> application_result_;
+        caf::typed_response_promise<caf::config_value> parent_result_;
+    };
+    std::unordered_map<caf::actor_id, ActiveWorkflow> active_workflows_;
 
     // One request per job at a time. Grant slots in request order.
     std::deque<JobId> worker_slot_requests_;

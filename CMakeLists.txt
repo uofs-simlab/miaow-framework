@@ -208,6 +208,7 @@ add_library(miaow STATIC
     src/core/process.cpp
     src/core/record.cpp
     src/core/runtime.cpp
+    src/core/workflow.cpp
     src/io/cli.cpp
     src/io/diagnostics.cpp
     src/io/json.cpp

@@ -37,6 +37,7 @@ namespace miaow {
 
 class Job;
 class SimulationUnit;
+class Workflow;
 
 namespace core {
 class SubprocessState;
@@ -61,6 +62,14 @@ using SimulationUnitId = std::uint64_t;
  * @brief Runtime-local identifier assigned when a job is submitted.
  */
 using JobId = std::uint64_t;
+
+/**
+ * @brief Identifier for a direct child job or workflow, local to its parent workflow.
+ *
+ * Jobs and workflows submitted by the same parent share one ID sequence. Each parent
+ * has its own sequence, independent of the runtime-wide JobId assigned to each job.
+ */
+using WorkflowChildId = std::uint64_t;
 
 /**
  * @brief Task output to substitute for a positional operation argument.
@@ -652,6 +661,43 @@ struct RuntimeOptions {
  */
 using JobHandle = std::future<JobRecord>;
 
+/// Handle for a submitted workflow. get() returns the controller output or throws.
+using WorkflowHandle = std::future<caf::config_value>;
+
+/// A completed job record (which can contain failed tasks) or a job-level exception.
+using JobResult = std::variant<JobRecord, std::exception_ptr>;
+
+/// The completed child workflow's controller output or a workflow-level exception.
+using WorkflowResult = std::variant<caf::config_value, std::exception_ptr>;
+
+/**
+ * @brief Policy for submitting jobs and workflows and responding to their completions.
+ *
+ * The workflow actor calls `initialize()`, `callback()`, and `finalize()` serially.
+ * These methods should return promptly so CAF can run other actors. Child results
+ * are borrowed for the duration of `callback()`.
+ */
+class WorkflowController {
+  public:
+    virtual ~WorkflowController() = default;
+
+    /// Submit the initial children. An empty workflow can finalize immediately.
+    virtual void initialize(Workflow&) {}
+
+    /// Respond to a completed child job. The default propagates a job-level exception.
+    virtual void callback(Workflow& workflow, WorkflowChildId child_id,
+                          const JobResult& result);
+
+    /// Respond to a completed child workflow. The default propagates its exception.
+    virtual void callback(Workflow& workflow, WorkflowChildId child_id,
+                          const WorkflowResult& result);
+
+    /// Return the result after the last child completes and its callback returns.
+    virtual caf::config_value finalize() {
+        return {};
+    }
+};
+
 /**
  * @brief CAF-managed simulation-unit state with an executor retained across tasks.
  *
@@ -798,6 +844,7 @@ class Job {
     /// @endcond
 
   private:
+    void validate_for_submission() const;
     void shutdown_units();
     void shutdown_unit(std::size_t unit_index);
     void prepare_tasks(std::size_t first_task_index);
@@ -918,6 +965,49 @@ class Job {
     std::vector<TaskTiming> task_timings_;
 
     friend class Runtime;
+    friend class Workflow;
+};
+
+/**
+ * @brief CAF-managed scope that submits children on the same runtime.
+ *
+ * Controllers use the Workflow passed to initialize() and callback(). Each submit
+ * call returns a WorkflowChildId identifying a direct child job or workflow within
+ * this parent workflow. The callback receives that ID on completion.
+ */
+class Workflow {
+  public:
+    /// Submit a job with independent units and a runtime-wide JobId in its record.
+    WorkflowChildId submit_job(Job job);
+
+    /// Submit a child workflow with its own controller and local child IDs.
+    WorkflowChildId submit_workflow(std::unique_ptr<WorkflowController> controller);
+
+    /// @cond
+    Workflow(caf::event_based_actor* self, caf::actor orchestrator_actor,
+             std::unique_ptr<WorkflowController> controller);
+    caf::behavior make_behavior();
+    /// @endcond
+
+  private:
+    template <class Value, class Submission>
+    WorkflowChildId submit_child(std::shared_ptr<Submission> submission);
+    template <class Hook> void run_hook(Hook hook);
+    template <class Result> void complete_child(WorkflowChildId child_id, const Result& result);
+    void finish_if_idle();
+
+    caf::event_based_actor* self_;
+    caf::actor orchestrator_actor_;
+    std::unique_ptr<WorkflowController> controller_;
+
+    // Each asynchronous CAF request carries its own child ID in the continuation.
+    WorkflowChildId next_child_id_{0};
+    std::size_t pending_children_{0};
+    bool accepting_children_{false};
+
+    // A failed controller drains accepted children before reporting its error.
+    std::exception_ptr controller_error_;
+    std::optional<caf::typed_response_promise<caf::config_value>> response_promise_;
 };
 
 /**
@@ -1045,6 +1135,10 @@ class Runtime {
      */
     JobHandle submit_job(Job job) const;
 
+    /// Submit a workflow on this runtime and return a future for its controller output.
+    /// @throws std::invalid_argument if controller is null.
+    WorkflowHandle submit_workflow(std::unique_ptr<WorkflowController> controller) const;
+
   private:
     // Map each submitted job to the promise fulfilled by the orchestrator
     using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
@@ -1073,8 +1167,7 @@ class Runtime {
     // CAF actor system for this runtime instance
     std::shared_ptr<caf::actor_system> actor_system_;
 
-    // Actor that receives requests from `Runtime`, spawns one `job_actor` per request,
-    // and fulfills `Runtime` promises when jobs complete
+    // Top-level actor that launches jobs and workflows and routes results to their submitters.
     caf::actor orchestrator_actor_;
 };
 
