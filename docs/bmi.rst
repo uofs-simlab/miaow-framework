@@ -133,7 +133,17 @@ Inputs are task arguments following the instruction program. ``set_value_from_in
 
 Each read appends its flat values to ``TaskResult::output_`` in operation order. Updates and setters add no output. A failed operation stops the sequence immediately; earlier model changes remain applied, and the retained model then permits only finalization, as with an individual failed operation.
 
-``std::move(operations).instructions()`` returns one ``caf::config_value`` argument. A program can also be published once by an ordinary task executor and passed to later sequence tasks with ``miaow::output_of(program_task)``. List the program producer and every input producer as dependencies. This avoids retaining an expanded copy of repeated instructions in every task definition; arguments are resolved when each task is dispatched.
+``std::move(operations).instructions()`` returns one ``caf::config_value`` argument. To cache a program so that it can be reused without copying or transmitting its instructions on each execution, submit ``cache_sequence`` on the initialized unit. This operation stores the instructions without executing them and returns an integer program ID as its task output. Pass that output as the first argument of later ``sequence`` tasks to execute the cached program:
+
+.. code-block:: cpp
+
+   const miaow::TaskId cached = job.add_task(
+       unit, initialized, "cache_sequence", std::move(operations).instructions());
+   const miaow::TaskId advanced = job.add_task(
+       unit, std::vector<miaow::TaskId>{cached, temperatures}, "sequence",
+       miaow::output_of(cached), miaow::output_of(temperatures));
+
+List the cache task and every input producer as dependencies, along with any preceding model task that must finish first. Input slots and read outputs are identical for cached and inline programs. Each program ID belongs to the unit that cached it; register the program separately on every unit that uses it. Finalization clears the cached programs, including when the BMI finalization call fails. IDs are not reused after reinitialization, and a missing ID fails the sequence task. Static, dynamic, and subprocess executors support the same operations.
 
 Dynamic BMI plugin
 ------------------

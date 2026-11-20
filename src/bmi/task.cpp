@@ -222,7 +222,8 @@ TaskResult BmiTaskExecutor::execute_operation(const Task& task) {
         const bool creates_model =
             task.operation_ == "run" || task.operation_ == "initialize";
         const bool uses_retained_model =
-            task.operation_ == "sequence" || task.operation_ == "update_until" ||
+            task.operation_ == "cache_sequence" || task.operation_ == "sequence" ||
+            task.operation_ == "update_until" ||
             task.operation_ == "update" || task.operation_ == "get_current_time" ||
             task.operation_ == "get_value" || task.operation_ == "get_value_at_indices" ||
             task.operation_ == "set_value" || task.operation_ == "finalize";
@@ -286,11 +287,24 @@ TaskResult BmiTaskExecutor::execute_operation(const Task& task) {
             return TaskResult{TaskStatus::succeeded, {}};
         }
 
+        // Retain one program for subsequent sequence tasks on this unit
+        if (task.operation_ == "cache_sequence") {
+            const std::int64_t sequence_id = next_sequence_id_;
+            cached_sequences_.emplace(
+                sequence_id, caf::get<caf::config_value::list>(task.args_.at(0)));
+            ++next_sequence_id_;
+            return TaskResult{TaskStatus::succeeded, {}, caf::config_value{sequence_id}};
+        }
+
         // Resolve slices locally and execute each BMI operation before the next.
         if (task.operation_ == "sequence") {
             caf::config_value::list output;
-            const auto& instructions = caf::get<caf::config_value::list>(task.args_.at(0));
-            for (const caf::config_value& encoded : instructions) {
+            const caf::config_value& program = task.args_.at(0);
+            const auto* instructions = caf::get_if<caf::config_value::list>(&program);
+            if (!instructions) {
+                instructions = &cached_sequences_.at(caf::get<std::int64_t>(program));
+            }
+            for (const caf::config_value& encoded : *instructions) {
                 const auto& instruction = caf::get<caf::config_value::list>(encoded);
                 Task operation{task.unit_id_, caf::get<std::string>(instruction.at(0))};
                 if (operation.operation_ != "update" &&
@@ -408,6 +422,7 @@ TaskResult BmiTaskExecutor::execute_operation(const Task& task) {
             // Release ownership before calling Finalize so failure is not retried
             std::unique_ptr<bmi_api::Bmi> model = std::move(model_);
             model_failed_ = false;
+            cached_sequences_.clear();
             // Convert and destroy plugin exceptions before releasing the model
             try {
                 model->Finalize();

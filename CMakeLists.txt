@@ -139,6 +139,8 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
 
     include(FetchContent)
     # Keep CAF fetch/build lean in CI and local fallback builds.
+    set(CAF_ENABLE_NET_MODULE OFF CACHE BOOL "Build CAF networking module")
+    set(CAF_ENABLE_OPENSSL_MODULE OFF CACHE BOOL "Build CAF OpenSSL module")
     set(CAF_BUILD_EXAMPLES OFF CACHE BOOL "Disable CAF examples" FORCE)
     set(CAF_ENABLE_EXAMPLES OFF CACHE BOOL "Disable CAF examples" FORCE)
     set(CAF_BUILD_TESTS OFF CACHE BOOL "Disable CAF tests" FORCE)
