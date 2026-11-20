@@ -534,6 +534,8 @@ Job::Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
     run_id_ = run_id;
     job_id_ = job_id;
     runtime_options_ = std::move(runtime_options);
+    // Standalone jobs and workflow children inherit the same runtime default.
+    max_workers_ = max_workers_.value_or(runtime_options_.max_workers());
     task_executor_registry_ = std::move(task_executor_registry);
     orchestrator_actor_ = std::move(orchestrator_actor);
     subprocess_registration_actor_ = std::move(subprocess_registration_actor);
@@ -620,11 +622,13 @@ Orchestrator::Orchestrator(
     caf::event_based_actor* self, RuntimeOptions runtime_options, std::uint64_t run_id,
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
     caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
-    std::mutex* pending_jobs_mutex, PendingJobs* pending_jobs)
+    std::atomic<JobId>* next_job_id, std::mutex* pending_jobs_mutex,
+    PendingJobs* pending_jobs)
     : self_(self), runtime_options_(std::move(runtime_options)), run_id_(run_id),
       task_executor_registry_(std::move(task_executor_registry)),
       subprocess_registration_actor_(std::move(subprocess_registration_actor)),
       subprocess_registration_port_(subprocess_registration_port),
+      next_job_id_(next_job_id),
       pending_jobs_mutex_(pending_jobs_mutex), pending_jobs_(pending_jobs) {}
 
 // Fill available capacity in request order.
@@ -652,66 +656,129 @@ void Orchestrator::forget_job(JobId job_id) {
     grant_worker_slots();
 }
 
+// Standalone jobs and workflow children use one launch and completion path. The
+// completion callback selects the recipient after the orchestrator retires the job.
+void Orchestrator::start_job(JobId job_id, std::shared_ptr<Job> prepared_job,
+                             std::function<void(caf::expected<JobRecord>)> complete) {
+    const caf::actor orchestrator_actor = caf::actor_cast<caf::actor>(self_);
+    const caf::actor job_actor =
+        self_->spawn(caf::actor_from_state<Job>, run_id_, job_id, std::move(prepared_job),
+                     runtime_options_, task_executor_registry_, orchestrator_actor,
+                     subprocess_registration_actor_, subprocess_registration_port_);
+    active_jobs_.emplace(job_id, ActiveJob{job_actor});
+
+    // orchestrator_actor -> job_actor: run until the job has drained its units
+    self_->mail(caf::get_atom_v)
+        .request(job_actor, caf::infinite)
+        .then(
+            [this, job_id, complete](JobRecord record) {
+                forget_job(job_id);
+                complete(std::move(record));
+            },
+            [this, job_id, job_actor, complete](const caf::error& error) {
+                // orchestrator_actor -> job_actor: stop after a request error
+                caf::anon_mail(shutdown_atom_v).send(job_actor);
+                forget_job(job_id);
+                complete(error);
+            });
+}
+
+void Orchestrator::finish_application_job(JobId job_id, caf::expected<JobRecord> result) {
+    // Take the caller's promise under the mutex, then deliver outside the lock.
+    std::promise<JobRecord> promise;
+    {
+        std::lock_guard<std::mutex> lock(*pending_jobs_mutex_);
+        const auto pending = pending_jobs_->find(job_id);
+        if (pending == pending_jobs_->end()) {
+            return;
+        }
+        promise = std::move(pending->second);
+        pending_jobs_->erase(pending);
+    }
+
+    if (result) {
+        promise.set_value(std::move(*result));
+    } else {
+        promise.set_exception(std::make_exception_ptr(
+            std::runtime_error("Job actor error: " + caf::to_string(result.error()))));
+    }
+}
+
+void Orchestrator::start_workflow(
+    std::shared_ptr<WorkflowSubmission> submission,
+    caf::typed_response_promise<caf::config_value> parent_result) {
+    // Every workflow uses the same orchestrator, regardless of who submitted it.
+    const caf::actor workflow_actor =
+        self_->spawn(caf::actor_from_state<Workflow>, caf::actor_cast<caf::actor>(self_),
+                     std::move(submission->controller_));
+    const caf::actor_id workflow_id = workflow_actor.id();
+    active_workflows_.emplace(workflow_id,
+                              ActiveWorkflow{workflow_actor,
+                                             std::move(submission->application_result_),
+                                             std::move(parent_result)});
+
+    // orchestrator_actor -> workflow_actor: start policy and await its final result
+    self_->mail(caf::get_atom_v)
+        .request(workflow_actor, caf::infinite)
+        .then(
+            [this, workflow_id](caf::config_value output) {
+                finish_workflow(workflow_id, std::move(output));
+            },
+            [this, workflow_id](const caf::error& error) {
+                finish_workflow(workflow_id, error);
+            });
+}
+
+void Orchestrator::finish_workflow(caf::actor_id workflow_id,
+                                   caf::expected<caf::config_value> result) {
+    // Remove the finished workflow before waking its parent or application caller.
+    auto entry = active_workflows_.extract(workflow_id);
+    ActiveWorkflow& workflow = entry.mapped();
+    if (workflow.application_result_) {
+        if (result) {
+            workflow.application_result_->set_value(std::move(*result));
+        } else {
+            workflow.application_result_->set_exception(
+                std::make_exception_ptr(std::runtime_error(
+                    "Workflow actor error: " + caf::to_string(result.error()))));
+        }
+    } else {
+        // orchestrator_actor -> workflow_actor: deliver the child workflow's result
+        workflow.parent_result_.deliver(std::move(result));
+    }
+}
+
 caf::behavior Orchestrator::make_behavior() {
     return {
         // Runtime -> orchestrator_actor: submit one job
         [this](caf::get_atom, JobId job_id, std::shared_ptr<miaow::Job> prepared_job) {
-            const caf::actor orchestrator_actor = caf::actor_cast<caf::actor>(self_);
-            // Spawn one job actor for this request
-            caf::actor job_actor =
-                self_->spawn(caf::actor_from_state<miaow::Job>, run_id_, job_id,
-                             std::move(prepared_job), runtime_options_,
-                             task_executor_registry_, orchestrator_actor,
-                             subprocess_registration_actor_,
-                             subprocess_registration_port_);
-            active_jobs_.emplace(job_id, ActiveJob{job_actor});
-
-            // orchestrator_actor -> job_actor: request execution of one job
-            self_->mail(caf::get_atom_v)
-                .request(job_actor, caf::infinite)
-                .then(
-                    // job_actor -> orchestrator_actor: resolve successful completion
-                    [this, job_id](JobRecord job_record) {
-                        forget_job(job_id);
-
-                        std::promise<JobRecord> promise;
-                        {
-                            std::lock_guard<std::mutex> lock(*pending_jobs_mutex_);
-                            PendingJobs::iterator pending_job_entry =
-                                pending_jobs_->find(job_id);
-                            if (pending_job_entry == pending_jobs_->end()) {
-                                return;
-                            }
-                            promise = std::move(pending_job_entry->second);
-                            pending_jobs_->erase(pending_job_entry);
-                        } // mutex unlocks automatically here
-
-                        // Fulfil the public JobHandle returned by Runtime::submit_job
-                        promise.set_value(std::move(job_record));
-                    },
-                    // job_actor -> orchestrator_actor: report the job error
-                    [this, job_actor, job_id](const caf::error& err) {
-                        // orchestrator_actor -> job_actor: stop after a request error
-                        caf::anon_mail(shutdown_atom_v).send(job_actor);
-                        forget_job(job_id);
-
-                        // Remove the matching promise so it is resolved exactly once
-                        std::promise<JobRecord> promise;
-                        {
-                            std::lock_guard<std::mutex> lock(*pending_jobs_mutex_);
-                            PendingJobs::iterator pending_job_entry =
-                                pending_jobs_->find(job_id);
-                            if (pending_job_entry == pending_jobs_->end()) {
-                                return;
-                            }
-                            promise = std::move(pending_job_entry->second);
-                            pending_jobs_->erase(pending_job_entry);
-                        }
-
-                        // Actor errors are job-level failures and have no JobRecord
-                        promise.set_exception(std::make_exception_ptr(
-                            std::runtime_error("Job actor error: " + caf::to_string(err))));
-                    });
+            start_job(job_id, std::move(prepared_job),
+                      [this, job_id](caf::expected<JobRecord> result) {
+                          finish_application_job(job_id, std::move(result));
+                      });
+        },
+        // Runtime -> orchestrator_actor: submit a workflow with an application future
+        [this](caf::get_atom, std::shared_ptr<WorkflowSubmission> submission) {
+            start_workflow(std::move(submission));
+        },
+        // Save the parent request while the child job runs. Its JobId comes from
+        // the same counter as standalone jobs, independent of the parent's child ID.
+        [this](submit_child_atom, std::shared_ptr<Job> prepared_job) -> caf::result<JobRecord> {
+            const JobId job_id = next_job_id_->fetch_add(1, std::memory_order_relaxed);
+            auto response = self_->make_response_promise<JobRecord>();
+            start_job(job_id, std::move(prepared_job),
+                      [response](caf::expected<JobRecord> result) mutable {
+                          // orchestrator_actor -> workflow_actor: deliver the child job result
+                          response.deliver(std::move(result));
+                      });
+            return response;
+        },
+        // A child workflow can itself submit either kind of child through this actor.
+        [this](submit_child_atom, std::shared_ptr<WorkflowSubmission> submission)
+            -> caf::result<caf::config_value> {
+            auto response = self_->make_response_promise<caf::config_value>();
+            start_workflow(std::move(submission), response);
+            return response;
         },
         // Queue requests from active jobs.
         [this](request_worker_slot_atom, JobId job_id) {
@@ -730,8 +797,19 @@ caf::behavior Orchestrator::make_behavior() {
                 grant_worker_slots();
             }
         },
-        // Runtime -> orchestrator_actor: stop jobs and child registration
+        // Runtime -> orchestrator_actor: stop workflows, jobs, and child registration
         [this](shutdown_atom) {
+            // Stop policy at every depth. Child completions need not travel back
+            // through this actor once runtime shutdown begins.
+            for (auto& entry : active_workflows_) {
+                ActiveWorkflow& workflow = entry.second;
+                // orchestrator_actor -> workflow_actor: stop this controller
+                caf::anon_mail(shutdown_atom_v).urgent().send(workflow.workflow_actor_);
+                if (workflow.application_result_) {
+                    workflow.application_result_->set_exception(
+                        std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
+                }
+            }
             for (const auto& entry : active_jobs_) {
                 // orchestrator_actor -> job_actor: stop one active job
                 caf::anon_mail(shutdown_atom_v).urgent().send(entry.second.job_actor_);

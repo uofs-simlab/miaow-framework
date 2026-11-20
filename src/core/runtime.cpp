@@ -153,18 +153,18 @@ Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry, RuntimeOpti
                                  caf::to_string(subprocess_registration_port.error()));
     }
 
-    // Spawn the shared orchestrator actor to handle job requests and job completion
+    // Spawn the shared orchestrator for job and workflow submission and completion
     orchestrator_actor_ =
         actor_system_->spawn(caf::actor_from_state<core::Orchestrator>, runtime_options_,
                              run_id_, task_executor_registry_,
                              subprocess_registration_actor, *subprocess_registration_port,
-                             &pending_jobs_mutex_, &pending_jobs_);
+                             &next_job_id_, &pending_jobs_mutex_, &pending_jobs_);
 }
 
 // Request actor shutdown before releasing the shared actor system
 Runtime::~Runtime() {
     if (orchestrator_actor_) {
-        // Runtime -> orchestrator_actor: stop active jobs and child registration
+        // Runtime -> orchestrator_actor: stop workflows, jobs, and child registration
         caf::anon_mail(core::shutdown_atom_v).urgent().send(orchestrator_actor_);
     }
 }
@@ -322,13 +322,14 @@ SimulationUnitId Job::add_unit(std::string feature_id, TaskExecutorId executor_i
     return unit_id;
 }
 
-JobHandle Runtime::submit_job(Job job) const {
-    if (!job.job_controller_) {
+void Job::validate_for_submission() const {
+    if (!job_controller_) {
         throw std::invalid_argument("Runtime requires a non-null JobController");
     }
+}
 
-    job.max_workers_ = job.max_workers_.value_or(runtime_options_.max_workers());
-
+JobHandle Runtime::submit_job(Job job) const {
+    job.validate_for_submission();
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
     // Create a promise/future pair for this submitted job
@@ -345,6 +346,21 @@ JobHandle Runtime::submit_job(Job job) const {
     auto shared_job = std::make_shared<Job>(std::move(job));
     caf::anon_mail(caf::get_atom_v, job_id, std::move(shared_job))
         .send(orchestrator_actor_);
+    return handle;
+}
+
+WorkflowHandle Runtime::submit_workflow(std::unique_ptr<WorkflowController> controller) const {
+    if (!controller) {
+        throw std::invalid_argument("Runtime requires a non-null WorkflowController");
+    }
+
+    // The orchestrator will adopt the controller and resolve this promise when the
+    // workflow finishes. The application can wait on the future outside the actors.
+    auto submission = std::make_shared<core::WorkflowSubmission>(
+        core::WorkflowSubmission{std::move(controller), std::promise<caf::config_value>{}});
+    WorkflowHandle handle = submission->application_result_->get_future();
+    // Runtime -> orchestrator_actor: start a top-level workflow
+    caf::anon_mail(caf::get_atom_v, std::move(submission)).send(orchestrator_actor_);
     return handle;
 }
 
