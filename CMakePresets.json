@@ -11,7 +11,7 @@
         "MIAOW_BOOST_PROVIDER": "auto",
         "MIAOW_JSON_PROVIDER": "auto",
         "MIAOW_CAF_PROVIDER": "auto",
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     }
   ],

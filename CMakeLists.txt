@@ -7,6 +7,11 @@ string(REGEX MATCH "[0-9]+[.][0-9]+[.][0-9]+" miaow_project_version
     "${miaow_citation_version_line}")
 project(miaow VERSION "${miaow_project_version}" LANGUAGES CXX Fortran)
 
+# Default standalone single-configuration builds to Release
+if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 # Reconfigure on the next build after the citation version changes
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/CITATION.cff")
@@ -78,7 +83,7 @@ if(miaow_build_tests)
         string(CONCAT miaow_boost_url
             "https://github.com/boostorg/boost/releases/download/boost-"
             "${MIAOW_BOOST_VERSION}/boost-${MIAOW_BOOST_VERSION}-cmake.tar.gz")
-        message(STATUS "Boost.Test not found. Fetching Boost ${MIAOW_BOOST_VERSION}...")
+        message(STATUS "Using FetchContent for Boost.Test ${MIAOW_BOOST_VERSION}")
         FetchContent_Declare(boost URL ${miaow_boost_url})
         FetchContent_MakeAvailable(boost)
     endif()
@@ -97,7 +102,7 @@ if(NOT TARGET nlohmann_json::nlohmann_json)
     include(FetchContent)
     set(JSON_BuildTests OFF CACHE BOOL "Disable nlohmann/json tests" FORCE)
     set(JSON_Install OFF CACHE BOOL "Disable nlohmann/json installation" FORCE)
-    message(STATUS "nlohmann/json not found. Fetching ${MIAOW_JSON_VERSION}...")
+    message(STATUS "Using FetchContent for nlohmann/json ${MIAOW_JSON_VERSION}")
     FetchContent_Declare(
         nlohmann_json
         URL https://github.com/nlohmann/json/releases/download/v${MIAOW_JSON_VERSION}/json.tar.xz
@@ -149,7 +154,7 @@ if(NOT MIAOW_CAF_CORE_TARGET OR NOT MIAOW_CAF_IO_TARGET)
     set(CAF_BUILD_BENCHMARKS OFF CACHE BOOL "Disable CAF benchmarks" FORCE)
     set(CAF_ENABLE_BENCHMARKS OFF CACHE BOOL "Disable CAF benchmarks" FORCE)
     set(CAF_BUILD_TOOLS OFF CACHE BOOL "Disable CAF tools" FORCE)
-    message(STATUS "CAF not found. Fetching CAF ${MIAOW_CAF_VERSION}...")
+    message(STATUS "Using FetchContent for CAF ${MIAOW_CAF_VERSION}")
     FetchContent_Declare(
         caf
         GIT_REPOSITORY https://github.com/actor-framework/actor-framework.git

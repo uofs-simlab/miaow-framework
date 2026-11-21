@@ -190,6 +190,6 @@ The runner calls ``Update()`` repeatedly and fails the task if an update passes 
 Diagnostics and artifacts
 -------------------------
 
-When ``RuntimeOptions::output_root_`` or CLI ``--output_root`` is set, MIAOW writes a ``job_record.json`` under ``<output_root>/run_<run_id>/job_<job_id>/``. It contains a job summary, controller output, failure messages, artifact references, and a compact task profile with unit and operation tables. Numerical task outputs remain accessible in ``JobRecord::task_results_``. Subprocess stdout and stderr logs may also be retained there.
+When ``RuntimeOptions::output_root_`` or CLI ``--output_root`` is set, MIAOW writes ``<output_root>/run_<run_id>/job_<job_id>.json``. It contains a job summary, controller output, failure messages, artifact references, and a compact task profile with unit and operation tables. Numerical task outputs remain accessible in ``JobRecord::task_results_``. Failed subprocess logs are retained under ``<output_root>/run_<run_id>/logs/job_<job_id>/``. Model-output paths are controlled by the application or executor.
 
 Scientific output files and their locations are controlled by the model's initialization configuration. BMI tasks produce no additional scientific output or resolved configuration files.

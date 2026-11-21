@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <span>
@@ -357,7 +358,8 @@ class SubprocessShutdownController final : public miaow::JobController {
 };
 
 inline miaow::Job make_job(miaow::TaskExecutorRegistry& registry,
-                           const nlohmann::json& config) {
+                           const nlohmann::json& config,
+                           const std::filesystem::path& output_root) {
     const std::string scenario_name = config.at("scenario").get<std::string>();
 
     // Select delivery policy without changing the scenario's workload
@@ -382,6 +384,7 @@ inline miaow::Job make_job(miaow::TaskExecutorRegistry& registry,
             std::make_unique<ReplacementController>(counter, failing, policy));
     } else if (scenario_name == "subprocess_shutdown") {
         caf::config_value::dictionary worker_config{
+            {"output_directory", caf::config_value{(output_root / "shutdown").string()}},
             {"execution_delay_ms",
              caf::config_value{config.value<std::int64_t>("execution_delay_ms", 1500)}},
             {"cleanup_delay_ms",

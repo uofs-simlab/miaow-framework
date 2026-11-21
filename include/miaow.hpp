@@ -110,7 +110,7 @@ struct Task {
     /// Before dispatch, the parent job replaces args_[index] with that producer's output
     std::map<std::size_t, TaskId> output_references_;
 
-    /// Artifact directory supplied in execution requests; empty in stored definitions
+    /// Optional application-supplied artifact directory; MIAOW does not create it
     std::string task_output_dir_;
 
     /// Construct an empty task
@@ -202,7 +202,7 @@ struct TaskResult {
      * @brief Construct a `TaskResult` from status, message, and artifact paths.
      * @param status Terminal status for this task execution.
      * @param message Human-readable completion or failure detail.
-     * @param artifact_paths Relative paths to artifacts under the job directory.
+     * @param artifact_paths Application-defined paths to task artifacts.
      */
     TaskResult(TaskStatus status, std::string message,
                std::vector<std::string> artifact_paths = {})
@@ -214,7 +214,7 @@ struct TaskResult {
      * @param status Terminal status for this task execution.
      * @param message Human-readable completion or failure detail.
      * @param output Structured output for controllers and callers.
-     * @param artifact_paths Relative paths to artifacts under the job directory.
+     * @param artifact_paths Application-defined paths to task artifacts.
      */
     TaskResult(TaskStatus status, std::string message, caf::config_value output,
                std::vector<std::string> artifact_paths = {})
@@ -230,7 +230,7 @@ struct TaskResult {
     /// Structured output available to the JobController and runtime caller
     caf::config_value output_;
 
-    /// Relative paths to task artifacts produced under the job directory
+    /// Application-defined paths to task artifacts
     std::vector<std::string> artifact_paths_;
 };
 
@@ -374,20 +374,15 @@ struct JobRecord {
 
     /**
      * @brief Construct a final `JobRecord` from indexed results, timings, and runtime.
-     * @param run_id Runtime identifier for this `Runtime` instance.
      * @param job_id `JobId` assigned to this submitted job.
      * @param task_results Terminal results indexed by task ID.
      * @param task_timings Event offsets indexed by task ID.
      * @param run_time Job duration through controller finalization, excluding export.
      * @param output Structured output returned by the job controller.
      */
-    JobRecord(std::uint64_t run_id, JobId job_id,
-              std::vector<std::optional<TaskResult>> task_results = {},
+    JobRecord(JobId job_id, std::vector<std::optional<TaskResult>> task_results = {},
               std::vector<TaskTiming> task_timings = {},
               std::chrono::duration<double> run_time = {}, caf::config_value output = {});
-
-    /// Runtime identifier for this `Runtime` instance
-    std::uint64_t run_id_{0};
 
     /// `JobId` assigned to this submitted job
     JobId job_id_{0};
@@ -618,8 +613,8 @@ struct RuntimeOptions {
     /// Delivery waits for cleanup; in-process calls are not interrupted.
     std::chrono::milliseconds job_request_timeout_;
 
-    /// Root output directory for run and job artifact folders; an empty value disables
-    /// all output directories and files.
+    /// Root for run directories containing job records and subprocess diagnostics.
+    /// An empty value disables records and uses temporary subprocess log directories.
     std::string output_root_;
 
     /// Time allowed for subprocess shutdown before forced termination; non-positive
@@ -661,14 +656,23 @@ struct RuntimeOptions {
  */
 using JobHandle = std::future<JobRecord>;
 
-/// Handle for a submitted workflow. get() returns the controller output or throws.
-using WorkflowHandle = std::future<caf::config_value>;
+/// Final output and elapsed time of one submitted workflow.
+struct WorkflowRecord {
+    /// Workflow duration from actor startup through controller finalization
+    std::chrono::duration<double> run_time_{};
+
+    /// Structured output returned by WorkflowController::finalize(); null by default
+    caf::config_value output_;
+};
+
+/// Handle for a submitted workflow. get() returns its WorkflowRecord or throws.
+using WorkflowHandle = std::future<WorkflowRecord>;
 
 /// A completed job record (which can contain failed tasks) or a job-level exception.
 using JobResult = std::variant<JobRecord, std::exception_ptr>;
 
-/// The completed child workflow's controller output or a workflow-level exception.
-using WorkflowResult = std::variant<caf::config_value, std::exception_ptr>;
+/// A completed child workflow record or a workflow-level exception.
+using WorkflowResult = std::variant<WorkflowRecord, std::exception_ptr>;
 
 /**
  * @brief Policy for submitting jobs and workflows and responding to their completions.
@@ -719,7 +723,8 @@ class SimulationUnit {
                    caf::actor subprocess_registration_actor,
                    std::uint16_t subprocess_registration_port,
                    std::chrono::milliseconds task_request_timeout,
-                   std::chrono::milliseconds subprocess_shutdown_grace_period);
+                   std::chrono::milliseconds subprocess_shutdown_grace_period,
+                   std::string log_directory);
     caf::behavior make_behavior();
     /// @endcond
 
@@ -796,7 +801,7 @@ class Job {
     /// - TaskResult::output_: destroy the stored value and replace it with null.
     ///
     /// Retained fields:
-    /// - Task::unit_id_, Task::operation_, and Task::task_output_dir_ (already empty).
+    /// - Task::unit_id_, Task::operation_, and Task::task_output_dir_.
     /// - TaskResult::status_, TaskResult::message_, and TaskResult::artifact_paths_.
     /// - TaskTiming::dispatch_offset_ns_ and TaskTiming::completion_offset_ns_.
     /// The task ID remains the same vector index; no task, result, or timing slot is erased.
@@ -835,7 +840,7 @@ class Job {
 
     /// @cond
     // CAF supplies actor context while adopting the prepared job state
-    Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
+    Job(caf::event_based_actor* self, std::string run_directory, JobId job_id,
         std::shared_ptr<Job> job, RuntimeOptions runtime_options,
         std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
         caf::actor orchestrator_actor, caf::actor subprocess_registration_actor,
@@ -866,8 +871,8 @@ class Job {
 
     caf::event_based_actor* self_{nullptr};
 
-    // Runtime identifier copied into the final job record
-    std::uint64_t run_id_{0};
+    // Resolved run directory for records and diagnostics; empty disables file output
+    std::string run_directory_;
 
     // Runtime-assigned submission identifier copied into the final job record
     JobId job_id_{0};
@@ -904,9 +909,6 @@ class Job {
 
     // Bindings retain identity after execution resources are released
     std::vector<UnitBinding> units_;
-
-    // Shared artifact directory, resolved once when preparing the first tasks
-    std::string task_output_dir_;
 
     // Initial and controller-generated task payloads owned by this job actor
     // Task IDs are the index of the task in this vector
@@ -1007,7 +1009,10 @@ class Workflow {
 
     // A failed controller drains accepted children before reporting its error.
     std::exception_ptr controller_error_;
-    std::optional<caf::typed_response_promise<caf::config_value>> response_promise_;
+    std::optional<caf::typed_response_promise<WorkflowRecord>> response_promise_;
+
+    // Monotonic origin for elapsed workflow time through controller finalization
+    std::chrono::steady_clock::time_point workflow_start_time_;
 };
 
 /**
@@ -1085,7 +1090,6 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
     // Defines how CAF serializes/deserializes `JobRecord` for actor messaging
     return inspector.object(job_record)
         .fields(
-            inspector.field("run_id", job_record.run_id_),
             inspector.field("job_id", job_record.job_id_),
             inspector.field("miaow_version", job_record.miaow_version_)
                 .fallback(std::string{}),
@@ -1093,6 +1097,12 @@ template <class Inspector> bool inspect(Inspector& inspector, JobRecord& job_rec
             inspector.field("task_timings", job_record.task_timings_),
             inspector.field("run_time", job_record.run_time_),
             inspector.field("output", job_record.output_).fallback(caf::config_value{}));
+}
+
+/// Serialize or deserialize workflow output and elapsed time for CAF actor messaging.
+template <class Inspector> bool inspect(Inspector& inspector, WorkflowRecord& record) {
+    return inspector.object(record).fields(inspector.field("run_time", record.run_time_),
+                                           inspector.field("output", record.output_));
 }
 
 /**
@@ -1135,9 +1145,14 @@ class Runtime {
      */
     JobHandle submit_job(Job job) const;
 
-    /// Submit a workflow on this runtime and return a future for its controller output.
+    /// Submit a workflow and return a future for its output and elapsed time.
     /// @throws std::invalid_argument if controller is null.
     WorkflowHandle submit_workflow(std::unique_ptr<WorkflowController> controller) const;
+
+    /// Resolved run output directory; empty when output_root_ is not configured.
+    const std::string& run_directory() const {
+        return run_directory_;
+    }
 
   private:
     // Map each submitted job to the promise fulfilled by the orchestrator
@@ -1149,8 +1164,8 @@ class Runtime {
     // Runtime options copied into each job actor's Job
     RuntimeOptions runtime_options_;
 
-    // Monotonic run ID used to create deterministic output directory layouts
-    std::uint64_t run_id_{0};
+    // Unique output directory allocated for this runtime when file output is enabled
+    std::string run_directory_;
 
     // Monotonic counter for generating unique `JobId`s for each submitted job
     mutable std::atomic<JobId> next_job_id_{0};
@@ -1182,4 +1197,5 @@ CAF_ADD_TYPE_ID(miaow_module, (std::vector<miaow::TaskTiming>))
 CAF_ADD_TYPE_ID(miaow_module, (std::vector<std::optional<miaow::TaskResult>>))
 CAF_ADD_TYPE_ID(miaow_module, (std::vector<miaow::Task>))
 CAF_ADD_TYPE_ID(miaow_module, (miaow::JobRecord))
+CAF_ADD_TYPE_ID(miaow_module, (miaow::WorkflowRecord))
 CAF_END_TYPE_ID_BLOCK(miaow_module)

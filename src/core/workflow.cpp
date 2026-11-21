@@ -59,7 +59,7 @@ WorkflowChildId Workflow::submit_workflow(std::unique_ptr<WorkflowController> co
     }
     auto submission = std::make_shared<core::WorkflowSubmission>(
         core::WorkflowSubmission{std::move(controller), std::nullopt});
-    return submit_child<caf::config_value>(std::move(submission));
+    return submit_child<WorkflowRecord>(std::move(submission));
 }
 
 // Run controller policy on the workflow actor and stop invoking it after an error.
@@ -90,12 +90,15 @@ void Workflow::finish_if_idle() {
     }
 
     // The orchestrator receives one terminal reply. Only a successful workflow
-    // runs finalization and returns its controller's output.
+    // runs finalization and returns its output and elapsed time.
     try {
         if (controller_error_) {
             std::rethrow_exception(controller_error_);
         }
-        response_promise_->deliver(controller_->finalize());
+        caf::config_value output = controller_->finalize();
+        const std::chrono::duration<double> run_time =
+            std::chrono::steady_clock::now() - workflow_start_time_;
+        response_promise_->deliver(WorkflowRecord{run_time, std::move(output)});
     } catch (const std::exception& error) {
         response_promise_->deliver(
             caf::make_error(caf::sec::runtime_error,
@@ -109,11 +112,12 @@ void Workflow::finish_if_idle() {
 }
 
 caf::behavior Workflow::make_behavior() {
+    workflow_start_time_ = std::chrono::steady_clock::now();
     return {// Capture the start request before invoking the first hook. An empty workflow
             // can complete during initialization and deliver the response immediately.
-            [this](caf::get_atom) -> caf::result<caf::config_value> {
-                response_promise_ = self_->make_response_promise<caf::config_value>();
-                const caf::typed_response_promise<caf::config_value> response =
+            [this](caf::get_atom) -> caf::result<WorkflowRecord> {
+                response_promise_ = self_->make_response_promise<WorkflowRecord>();
+                const caf::typed_response_promise<WorkflowRecord> response =
                     *response_promise_;
                 run_hook([this] { controller_->initialize(*this); });
                 return response;

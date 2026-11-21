@@ -29,6 +29,8 @@ The repository can be configured and built with the following commands:
    cmake -S . -B build
    cmake --build build
 
+Standalone single-configuration builds default to ``Release``. Select another build type with, for example, ``-DCMAKE_BUILD_TYPE=Debug``; existing non-empty cached choices are preserved. The default CMake preset also selects ``Release``. With a multi-configuration generator, select the configuration when building, for example with ``cmake --build build --config Release``.
+
 ``CITATION.cff`` is the single source for the software version. Use ``version: "0.3.0-dev"`` during development and ``version: "0.3.0"`` for a release; CMake extracts ``0.3.0`` and automatically reconfigures when the citation file changes.
 
 With ``BUILD_TESTING=ON`` (the default), CMake builds a Boost.Test checker for each regression workload, the lifecycle and BMI dispatch test drivers, and the six examples required by the standard regression suite: ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``07_job_controller``, ``09_bmi_operations``, and ``10_model_coupling``. Their tests are registered even with ``BUILD_EXAMPLES=OFF``. See :ref:`build-options` for the components built in each configuration, and :ref:`building-examples` to select additional examples.
@@ -72,7 +74,7 @@ CI runs the simulation-unit lifecycle cases and the regression tests for the def
    cmake --build build
    ctest --test-dir build -L regression --output-on-failure
 
-CTest runs Boost.Test checkers using the example and driver job builders. Numerical assertions inspect ``JobRecord``; report assertions inspect ``job_record.json``. JSON cases in ``tests/cases`` define inputs, expected failures, and runtime options.
+CTest runs Boost.Test checkers using the example and driver job builders. Numerical assertions inspect ``JobRecord``; report assertions inspect ``job_<job_id>.json``. JSON cases in ``tests/cases`` define inputs, expected failures, and runtime options.
 
 Tests cover BMI execution, unit removal and replacement, and callback delivery. Lifecycle coverage includes both callback policies and execution with one or two workers.
 
@@ -138,7 +140,7 @@ Successful example runs use JSON input overrides.
      - `00_hello/hello.hpp`_
 
        Submits an empty job and checks diagnostics on a copy containing one missing result.
-     - Submitting a job with an empty task list succeeds and writes ``job_record.json`` with an empty ``profile.tasks`` array. The empty record satisfies ``all_tasks_succeeded()``; the copy returns false and displays ``result unavailable`` in its summary.
+     - Submitting a job with an empty task list succeeds and writes ``job_0.json`` with an empty ``profile.tasks`` array. The empty record satisfies ``all_tasks_succeeded()``; the copy returns false and displays ``result unavailable`` in its summary.
    * - `miaow_example_03_dynamic_bmi_zero_tolerance`_
      - `03_dynamic_bmi/dynamic_bmi.hpp`_
 

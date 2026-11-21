@@ -11,19 +11,16 @@
 
 namespace miaow {
 
-JobRecord::JobRecord(std::uint64_t run_id, JobId job_id,
-                     std::vector<std::optional<TaskResult>> task_results,
+JobRecord::JobRecord(JobId job_id, std::vector<std::optional<TaskResult>> task_results,
                      std::vector<TaskTiming> task_timings,
                      std::chrono::duration<double> run_time, caf::config_value output)
-    : run_id_{run_id}, job_id_{job_id}, task_results_{std::move(task_results)},
+    : job_id_{job_id}, task_results_{std::move(task_results)},
       task_timings_{std::move(task_timings)}, run_time_{run_time},
       output_{std::move(output)}, miaow_version_{core::build_version} {}
 
 void Job::write_job_record(const JobRecord& record) const {
-    const std::filesystem::path directory =
-        core::job_directory_path(runtime_options_, run_id_, job_id_);
-    std::filesystem::create_directories(directory);
-    const std::filesystem::path path = directory / "job_record.json";
+    const std::filesystem::path path =
+        std::filesystem::path(run_directory_) / ("job_" + std::to_string(job_id_) + ".json");
 
     // Index operation names locally while task definitions remain available
     std::vector<std::string_view> operations;
@@ -46,8 +43,7 @@ void Job::write_job_record(const JobRecord& record) const {
         throw std::runtime_error("unable to open JSON file '" + path.string() + "'");
     }
     output.exceptions(std::ios::failbit | std::ios::badbit);
-    output << "{\n  \"run_id\": " << nlohmann::ordered_json(record.run_id_).dump()
-           << ",\n  \"job_id\": " << nlohmann::ordered_json(record.job_id_).dump()
+    output << "{\n  \"job_id\": " << nlohmann::ordered_json(record.job_id_).dump()
            << ",\n  \"miaow_version\": "
            << nlohmann::ordered_json(record.miaow_version_).dump() << ",\n  \"summary\": "
            << nlohmann::ordered_json{{"task_count", record.task_results_.size()},

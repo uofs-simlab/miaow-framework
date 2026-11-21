@@ -49,7 +49,8 @@ miaow::JobRecord run_workload(const nlohmann::json& config, miaow::RuntimeOption
     options.subprocess_shutdown_grace_period_ = std::chrono::milliseconds{
         config.value("shutdown_grace_period_ms",
                      options.subprocess_shutdown_grace_period_.count())};
-    miaow::Job job = miaow::tests::unit_lifecycle::make_job(registry, config);
+    miaow::Job job =
+        miaow::tests::unit_lifecycle::make_job(registry, config, options.output_root_);
 #endif
     miaow::Runtime runtime(registry, options);
     miaow::JobHandle job_handle = runtime.submit_job(std::move(job));

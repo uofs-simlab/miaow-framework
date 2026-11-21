@@ -23,7 +23,9 @@ A unit using ``SubprocessTaskExecutor`` runs its task code in a separate process
 Workflow execution
 ------------------
 
-Submit a controller with ``Runtime::submit_workflow()`` and use the returned ``WorkflowHandle`` to retrieve its final ``caf::config_value`` or observe an exception. The controller submits child jobs or workflows, processes their results, and can submit further children in response.
+Submit a controller with ``Runtime::submit_workflow()`` and use the returned ``WorkflowHandle`` to retrieve a ``WorkflowRecord`` or observe an exception. The record contains the controller's final ``caf::config_value`` in ``output_`` and elapsed seconds in ``run_time_``. The controller submits child jobs or workflows, processes their results, and can submit further children in response.
+
+Workflow timing uses ``std::chrono::steady_clock`` from workflow actor startup through controller finalization, including child execution, resource waits, and callbacks. It excludes delivery of the final record to the submitter.
 
 The workflow actor calls these controller methods serially.
 
@@ -31,7 +33,7 @@ The workflow actor calls these controller methods serially.
 - ``callback(Workflow&, WorkflowChildId, const JobResult&)`` receives a completed job. The overload taking ``const WorkflowResult&`` receives a completed workflow. The controller can submit more children from either callback. Result references are borrowed for the duration of the callback.
 - ``finalize()`` returns the workflow's structured output once all children have finished and the last call to ``initialize()`` or ``callback()`` has returned. A workflow with no children finalizes after initialization. The default returns a null ``caf::config_value``.
 
-``JobResult`` holds either a ``JobRecord`` or an ``std::exception_ptr``. A record can contain failed tasks. Call ``all_tasks_succeeded(record)`` when the next step depends on every task succeeding. ``WorkflowResult`` holds either the child's final ``caf::config_value`` or an ``std::exception_ptr``. The default callbacks propagate exceptions. Override a callback to handle a failed child and decide what to run next. If a controller method throws, the workflow drains its accepted children before reporting a ``std::runtime_error`` with the failure message.
+``JobResult`` holds either a ``JobRecord`` or an ``std::exception_ptr``. A job record can contain failed tasks. Call ``all_tasks_succeeded(record)`` when the next step depends on every task succeeding. ``WorkflowResult`` holds either the child's ``WorkflowRecord`` or an ``std::exception_ptr``. The default callbacks propagate exceptions. Override a callback to handle a failed child and decide what to run next. If a controller method throws, the workflow drains its accepted children before reporting a ``std::runtime_error`` with the failure message. Failed workflows and runtime shutdown produce no final workflow record.
 
 Register the task executors before constructing ``Runtime`` and pass their IDs to job builders used in ``initialize()`` or ``callback()``. Jobs at every workflow depth share that runtime's task slots. Workflow actors wait for completion messages, leaving slots available to their children. Application code can wait on ``WorkflowHandle::get()`` outside the actor system. Keep controller methods short so the workflow actor can handle further replies and shutdown messages.
 
@@ -134,7 +136,7 @@ For the selected task ID, release clears these fields:
 - ``Task::output_references_``: erases every argument-position / producer-ID map entry, freeing its nodes.
 - ``TaskResult::output_``: destroys the stored output value and replaces it with null.
 
-It retains ``Task::unit_id_``, ``Task::operation_``, and ``Task::task_output_dir_`` (already empty in stored task definitions); ``TaskResult::status_``, ``TaskResult::message_``, and ``TaskResult::artifact_paths_``; and ``TaskTiming::dispatch_offset_ns_`` and ``TaskTiming::completion_offset_ns_``. The task ID remains the same vector index: no task, result, or timing slot is erased or renumbered. Per-task metadata therefore remains allocated after release.
+It retains ``Task::unit_id_``, ``Task::operation_``, and ``Task::task_output_dir_``; ``TaskResult::status_``, ``TaskResult::message_``, and ``TaskResult::artifact_paths_``; and ``TaskTiming::dispatch_offset_ns_`` and ``TaskTiming::completion_offset_ns_``. The task ID remains the same vector index: no task, result, or timing slot is erased or renumbered. Per-task metadata therefore remains allocated after release.
 
 The result stays present with null output, including in the final ``JobRecord``; completion-only dependencies on that task remain valid. The controller must finish reading any borrowed payload before release. Repeated release is harmless.
 
@@ -305,7 +307,7 @@ Invalid task IDs in these lookups throw ``std::out_of_range``. Borrowed task and
 
 ``Job::task(task_id).unit_id_`` identifies the target, including when the task never dispatches. ``Job::unit_label(unit_id)`` returns its label after removal. Replacements may reuse a label but receive a new unit ID. Removal rejects new work immediately, drains accepted tasks, and then releases execution resources.
 
-``Task::task_output_dir_`` is the job's ``results`` directory, or empty when file output is disabled. It is populated only in dispatched requests.
+``Task::task_output_dir_`` is an optional application-supplied artifact directory. MIAOW preserves it when accepting and dispatching tasks but does not create it. Executors control model-output paths and create any directories they need. Artifact paths returned in ``TaskResult::artifact_paths_`` are recorded without modification.
 
 Task timing
 ^^^^^^^^^^^
@@ -323,9 +325,11 @@ Structured output
 
 ``JobController::finalize()`` supplies ``JobRecord::output_``, which is null by default.
 
-When ``RuntimeOptions::output_root_`` is configured, the job actor writes one ``job_record.json`` during finalization. An empty output root disables report files while retaining timing collection. A write failure propagates through ``JobHandle::get()``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
+When ``RuntimeOptions::output_root_`` is configured, the runtime claims an unused ``run_<run_id>`` directory. Each job writes ``job_<job_id>.json`` directly in that directory during finalization. ``Runtime::run_directory()`` returns the resolved directory, or an empty string when file output is disabled. Timing collection remains enabled in either case. A write failure propagates through ``JobHandle::get()``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
 
-The file contains runtime and job IDs, the library version, a summary of task counts and job runtime, controller ``output``, sparse ``failures`` and ``artifacts`` arrays, and a ``profile``. Raw task outputs remain in ``JobRecord::task_results_``. Controller output uses plain JSON values.
+Subprocess stdout and stderr files use ``logs/job_<job_id>/unit_<unit_id>_stdout.log`` and ``unit_<unit_id>_stderr.log`` within the run directory. Log directories are created only when a subprocess launches. Successful subprocess shutdown removes its logs; failed subprocess logs are retained and their paths are included in the error message. Empty job log directories are removed after all their units terminate, and the empty ``logs`` root is removed at runtime shutdown. Without an output root, diagnostics use temporary directories instead.
+
+The record contains the job ID, the library version, a summary of task counts and job runtime, controller ``output``, sparse ``failures`` and ``artifacts`` arrays, and a ``profile``. Raw task outputs remain in ``JobRecord::task_results_``. Controller output uses plain JSON values.
 
 ``miaow::to_json()`` in ``miaow_io.hpp`` converts a ``caf::config_value`` to ``nlohmann::json``. Lists and dictionaries become JSON arrays and objects. Durations become strings of signed nanoseconds followed by ``ns``; URIs become strings.
 

@@ -67,14 +67,13 @@ void write_subprocess_error(const std::string& message) {
     std::cerr << subprocess_error_prefix << ": subprocess setup error: " << message << "\n";
 }
 
-// Reuse the job directory when the runtime has assigned result output
-std::filesystem::path make_control_dir(const Task& task) {
-    if (!task.task_output_dir_.empty()) {
-        const std::filesystem::path results_directory =
-            std::filesystem::absolute(task.task_output_dir_).lexically_normal();
-        const std::filesystem::path job_directory = results_directory.parent_path();
-        std::filesystem::create_directories(job_directory);
-        return job_directory;
+// Create diagnostics separately from application-owned model output
+std::filesystem::path make_control_dir(const std::filesystem::path& log_directory) {
+    if (!log_directory.empty()) {
+        const std::filesystem::path directory =
+            std::filesystem::absolute(log_directory).lexically_normal();
+        std::filesystem::create_directories(directory);
+        return directory;
     }
 
     // Generate a unique temporary control directory when no output directory exists
@@ -237,16 +236,17 @@ caf::behavior SubprocessRegistration::make_behavior() {
 
 namespace {
 // Create the diagnostic files used by one child process
-SubprocessPaths make_subprocess_paths(const Task& task) {
-    const std::filesystem::path control_dir = make_control_dir(task);
+SubprocessPaths make_subprocess_paths(const std::filesystem::path& log_directory,
+                                      SimulationUnitId unit_id) {
+    const std::filesystem::path control_dir = make_control_dir(log_directory);
 
     // One log pair covers all tasks executed by this unit's child
-    const std::string control_stem = "unit_" + std::to_string(task.unit_id_);
+    const std::string control_stem = "unit_" + std::to_string(unit_id);
 
     SubprocessPaths paths;
     paths.stdout_path_ = control_dir / (control_stem + "_stdout.log");
     paths.stderr_path_ = control_dir / (control_stem + "_stderr.log");
-    paths.temporary_control_dir_ = task.task_output_dir_.empty();
+    paths.temporary_control_dir_ = log_directory.empty();
     return paths;
 }
 
@@ -428,12 +428,14 @@ SubprocessState::SubprocessState(caf::event_based_actor* owner,
                                  caf::actor subprocess_registration_actor,
                                  std::uint16_t subprocess_registration_port,
                                  std::chrono::milliseconds task_request_timeout,
-                                 std::chrono::milliseconds shutdown_grace_period)
+                                 std::chrono::milliseconds shutdown_grace_period,
+                                 std::string log_directory)
     : owner_(owner),
       subprocess_registration_actor_(std::move(subprocess_registration_actor)),
       subprocess_registration_port_(subprocess_registration_port),
       task_request_timeout_(task_request_timeout),
-      shutdown_grace_period_(shutdown_grace_period) {}
+      shutdown_grace_period_(shutdown_grace_period),
+      log_directory_(std::move(log_directory)) {}
 
 SubprocessState::~SubprocessState() {
     if (!subprocess_pid_.has_value()) {
@@ -633,7 +635,7 @@ void SubprocessState::start_subprocess(SubprocessLaunchId launch_id) {
     }
 
     try {
-        paths_ = make_subprocess_paths(*active_task_);
+        paths_ = make_subprocess_paths(log_directory_, active_task_->unit_id_);
         keep_logs_ = false;
         subprocess_pid_ =
             spawn_subprocess_worker(registration_->executable_, subprocess_registration_port_,

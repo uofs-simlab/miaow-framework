@@ -63,8 +63,22 @@ Use ``--config`` to supply a workload with either one configuration object or an
 Additional examples
 -------------------
 
+- ``examples/04_workflow``: one workflow submits two jobs, each with six sequential in-process tasks. Tasks print start and end events and sleep for seeded random durations of 100 to 500 milliseconds.
 - `examples/06_fuse_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/06_fuse_bmi>`_: deterministic 256-member Saltelli ensemble using the `FUSE <https://github.com/uofs-simlab/fuse>`_ dynamic Fortran BMI plugin
 - `examples/08_particle_swarm <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/08_particle_swarm>`_: compares batch-synchronous and asynchronous particle swarm optimization on Rastrigin, with randomized evaluation delays and Matplotlib playback
+
+Two-job workflow
+^^^^^^^^^^^^^^^^
+
+Build and run the workflow example with one shared task slot, then two to see overlapping execution:
+
+.. code-block:: sh
+
+   cmake -S . -B build -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=04_workflow
+   cmake --build build --target miaow_workflow
+   cd examples/04_workflow
+   ./miaow_workflow
+   ./miaow_workflow --max_total_workers 2
 
 FUSE
 ^^^^

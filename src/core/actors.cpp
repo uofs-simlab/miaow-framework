@@ -9,6 +9,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -36,14 +37,6 @@ void Job::prepare_tasks(std::size_t first_task_index) {
     if (first_task_index >= tasks_.size()) {
         return;
     }
-    // Resolve and create the shared results directory once per job
-    if (task_output_dir_.empty() && !runtime_options_.output_root_.empty()) {
-        const std::filesystem::path results_directory =
-            core::job_directory_path(runtime_options_, run_id_, job_id_) / "results";
-        std::filesystem::create_directories(results_directory);
-        task_output_dir_ = results_directory.string();
-    }
-
     const bool needs_dependency_failure_check = needs_dependency_failure_check_;
     for (std::size_t index = first_task_index; index < tasks_.size(); ++index) {
         if (!record_dependency_failure(index)) {
@@ -82,6 +75,14 @@ void Job::finish_job() {
         }
     }
 
+    // All units have stopped, so this job's empty log directory can be removed safely
+    if (!run_directory_.empty()) {
+        std::error_code ignored_error;
+        std::filesystem::remove(std::filesystem::path(run_directory_) / "logs" /
+                                    ("job_" + std::to_string(job_id_)),
+                                ignored_error);
+    }
+
     // Shutdown can precede the initial execution request
     if (!response_promise_) {
         self_->quit();
@@ -96,13 +97,9 @@ void Job::finish_job() {
             caf::config_value output = job_controller_->finalize();
             const std::chrono::duration<double> run_time =
                 std::chrono::steady_clock::now() - job_start_time_;
-            JobRecord record{run_id_,
-                             job_id_,
-                             std::move(task_results_),
-                             std::move(task_timings_),
-                             run_time,
-                             std::move(output)};
-            if (!runtime_options_.output_root_.empty()) {
+            JobRecord record{job_id_, std::move(task_results_), std::move(task_timings_),
+                             run_time, std::move(output)};
+            if (!run_directory_.empty()) {
                 write_job_record(record);
             }
             response_promise_->deliver(std::move(record));
@@ -398,7 +395,7 @@ void Job::dispatch_tasks() {
         // Resolve snapshots in the execution copy; scheduling data stays in this job
         const Task& task = tasks_[task_index];
         Task execution_task{task.unit_id_, task.operation_, task.args_};
-        execution_task.task_output_dir_ = task_output_dir_;
+        execution_task.task_output_dir_ = task.task_output_dir_;
         for (const auto& [argument_index, producer] : task.output_references_) {
             execution_task.args_[argument_index] = task_results_[producer]->output_;
         }
@@ -406,12 +403,19 @@ void Job::dispatch_tasks() {
         // Start the unit actor when its first task is dispatched
         UnitBinding& unit = units_[unit_index];
         if (!unit.simulation_unit_actor_) {
+            const std::string log_directory =
+                run_directory_.empty()
+                    ? std::string{}
+                    : (std::filesystem::path(run_directory_) / "logs" /
+                       ("job_" + std::to_string(job_id_)))
+                          .string();
             caf::actor simulation_unit_actor =
                 self_->spawn(caf::actor_from_state<SimulationUnit>, unit.task_executor_id_,
                              task_executor_registry_, subprocess_registration_actor_,
                              subprocess_registration_port_,
                              runtime_options_.task_request_timeout_,
-                             runtime_options_.subprocess_shutdown_grace_period_);
+                             runtime_options_.subprocess_shutdown_grace_period_,
+                             log_directory);
             self_->monitor(simulation_unit_actor,
                            [this, unit_index](const caf::error& reason) {
                                unit_terminated(unit_index, reason);
@@ -477,11 +481,13 @@ SimulationUnit::SimulationUnit(
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
     caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
     std::chrono::milliseconds task_request_timeout,
-    std::chrono::milliseconds subprocess_shutdown_grace_period)
+    std::chrono::milliseconds subprocess_shutdown_grace_period,
+    std::string log_directory)
     : task_executor_registry_(std::move(task_executor_registry)),
       subprocess_state_(std::make_unique<core::SubprocessState>(
           self, std::move(subprocess_registration_actor), subprocess_registration_port,
-          task_request_timeout, subprocess_shutdown_grace_period)),
+          task_request_timeout, subprocess_shutdown_grace_period,
+          std::move(log_directory))),
       task_executor_id_(executor_id) {}
 
 caf::behavior SimulationUnit::make_behavior() {
@@ -524,14 +530,14 @@ caf::behavior SimulationUnit::make_behavior() {
 }
 
 // CAF adopts the caller's Job as its state and supplies execution context
-Job::Job(caf::event_based_actor* self, std::uint64_t run_id, JobId job_id,
+Job::Job(caf::event_based_actor* self, std::string run_directory, JobId job_id,
          std::shared_ptr<Job> job, RuntimeOptions runtime_options,
          std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
          caf::actor orchestrator_actor, caf::actor subprocess_registration_actor,
          std::uint16_t subprocess_registration_port)
     : Job(std::move(*job)) {
     self_ = self;
-    run_id_ = run_id;
+    run_directory_ = std::move(run_directory);
     job_id_ = job_id;
     runtime_options_ = std::move(runtime_options);
     // Standalone jobs and workflow children inherit the same runtime default.
@@ -619,12 +625,13 @@ namespace miaow::core {
 
 // Shared orchestrator actor that handles job submission and completion delivery
 Orchestrator::Orchestrator(
-    caf::event_based_actor* self, RuntimeOptions runtime_options, std::uint64_t run_id,
+    caf::event_based_actor* self, RuntimeOptions runtime_options, std::string run_directory,
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
     caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
     std::atomic<JobId>* next_job_id, std::mutex* pending_jobs_mutex,
     PendingJobs* pending_jobs)
-    : self_(self), runtime_options_(std::move(runtime_options)), run_id_(run_id),
+    : self_(self), runtime_options_(std::move(runtime_options)),
+      run_directory_(std::move(run_directory)),
       task_executor_registry_(std::move(task_executor_registry)),
       subprocess_registration_actor_(std::move(subprocess_registration_actor)),
       subprocess_registration_port_(subprocess_registration_port),
@@ -662,9 +669,10 @@ void Orchestrator::start_job(JobId job_id, std::shared_ptr<Job> prepared_job,
                              std::function<void(caf::expected<JobRecord>)> complete) {
     const caf::actor orchestrator_actor = caf::actor_cast<caf::actor>(self_);
     const caf::actor job_actor =
-        self_->spawn(caf::actor_from_state<Job>, run_id_, job_id, std::move(prepared_job),
-                     runtime_options_, task_executor_registry_, orchestrator_actor,
-                     subprocess_registration_actor_, subprocess_registration_port_);
+        self_->spawn(caf::actor_from_state<Job>, run_directory_, job_id,
+                     std::move(prepared_job), runtime_options_, task_executor_registry_,
+                     orchestrator_actor, subprocess_registration_actor_,
+                     subprocess_registration_port_);
     active_jobs_.emplace(job_id, ActiveJob{job_actor});
 
     // orchestrator_actor -> job_actor: run until the job has drained its units
@@ -706,7 +714,7 @@ void Orchestrator::finish_application_job(JobId job_id, caf::expected<JobRecord>
 
 void Orchestrator::start_workflow(
     std::shared_ptr<WorkflowSubmission> submission,
-    caf::typed_response_promise<caf::config_value> parent_result) {
+    caf::typed_response_promise<WorkflowRecord> parent_result) {
     // Every workflow uses the same orchestrator, regardless of who submitted it.
     const caf::actor workflow_actor =
         self_->spawn(caf::actor_from_state<Workflow>, caf::actor_cast<caf::actor>(self_),
@@ -721,8 +729,8 @@ void Orchestrator::start_workflow(
     self_->mail(caf::get_atom_v)
         .request(workflow_actor, caf::infinite)
         .then(
-            [this, workflow_id](caf::config_value output) {
-                finish_workflow(workflow_id, std::move(output));
+            [this, workflow_id](WorkflowRecord record) {
+                finish_workflow(workflow_id, std::move(record));
             },
             [this, workflow_id](const caf::error& error) {
                 finish_workflow(workflow_id, error);
@@ -730,7 +738,7 @@ void Orchestrator::start_workflow(
 }
 
 void Orchestrator::finish_workflow(caf::actor_id workflow_id,
-                                   caf::expected<caf::config_value> result) {
+                                   caf::expected<WorkflowRecord> result) {
     // Remove the finished workflow before waking its parent or application caller.
     auto entry = active_workflows_.extract(workflow_id);
     ActiveWorkflow& workflow = entry.mapped();
@@ -775,8 +783,8 @@ caf::behavior Orchestrator::make_behavior() {
         },
         // A child workflow can itself submit either kind of child through this actor.
         [this](submit_child_atom, std::shared_ptr<WorkflowSubmission> submission)
-            -> caf::result<caf::config_value> {
-            auto response = self_->make_response_promise<caf::config_value>();
+            -> caf::result<WorkflowRecord> {
+            auto response = self_->make_response_promise<WorkflowRecord>();
             start_workflow(std::move(submission), response);
             return response;
         },

@@ -35,7 +35,7 @@ struct JobRecordChecker {
         // Arguments after -- are the output root and optional case file
         BOOST_REQUIRE(arguments.argc >= 3);
         const std::filesystem::path output_root{arguments.argv[1]};
-        record_path = output_root / "run_0" / "job_0" / "job_record.json";
+        record_path = output_root / "run_0" / "job_0.json";
         if (std::string_view{arguments.argv[2]} != "") {
             std::ifstream input{arguments.argv[2]};
             test_case = nlohmann::json::parse(input);
@@ -567,7 +567,7 @@ BOOST_FIXTURE_TEST_CASE(subprocess_shutdown, JobRecordChecker) {
     const auto& output = job_record.at("output");
     BOOST_TEST(output.at("child_reaped_before_callback").get<bool>());
     BOOST_TEST(output.at("other_task_waited_for_shutdown").get<bool>());
-    const auto directory = record_path.parent_path() / "results";
+    const auto directory = record_path.parent_path().parent_path() / "shutdown";
     BOOST_TEST(std::filesystem::exists(directory / "call_finished"));
     BOOST_TEST(std::filesystem::exists(directory / "cleanup_started"));
     BOOST_TEST(std::filesystem::exists(directory / "cleanup_finished") == cleanup_finished);

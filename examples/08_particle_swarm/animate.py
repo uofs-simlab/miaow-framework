@@ -28,9 +28,9 @@ plt.rcParams.update({
 COLOURS = ("tab:blue", "tab:orange")
 
 
-def load_job(directory):
+def load_job(path):
     """Keep optimizer snapshots separate from individual evaluation completion times."""
-    job = json.loads((directory / "job_record.json").read_text())
+    job = json.loads(path.read_text())
     trace = job["output"]
     updates = trace["updates"]
 
@@ -202,7 +202,7 @@ def main():
         parser.error("--fps must be positive")
     output = args.output_directory or args.run_directory / "figures"
     output.mkdir(parents=True, exist_ok=True)
-    runs = [load_job(args.run_directory / f"job_{job_id}")
+    runs = [load_job(args.run_directory / f"job_{job_id}.json")
             for job_id in range(2)]
     save_unit_usage(runs, output / "unit_usage.pdf")
     save_convergence(runs, output / "convergence.pdf")

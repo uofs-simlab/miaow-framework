@@ -31,7 +31,7 @@ namespace miaow::core {
 // C++ promise, while a child submission uses the sending actor's CAF request.
 struct WorkflowSubmission {
     std::unique_ptr<WorkflowController> controller_;
-    std::optional<std::promise<caf::config_value>> application_result_;
+    std::optional<std::promise<WorkflowRecord>> application_result_;
 };
 
 } // namespace miaow::core
@@ -87,10 +87,6 @@ inline constexpr const char* subprocess_error_prefix = "Subprocess error";
 // Map each submitted job to the promise fulfilled by the orchestrator
 using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
 
-// Build the output directory path for one submitted job
-std::filesystem::path job_directory_path(const RuntimeOptions& runtime_options,
-                                         std::uint64_t run_id, JobId job_id);
-
 // File paths and metadata for subprocess logs
 struct SubprocessPaths {
     // Subprocess stdout log used for diagnostics
@@ -129,7 +125,8 @@ class SubprocessState {
     SubprocessState(caf::event_based_actor* owner, caf::actor subprocess_registration_actor,
                     std::uint16_t subprocess_registration_port,
                     std::chrono::milliseconds task_request_timeout,
-                    std::chrono::milliseconds shutdown_grace_period);
+                    std::chrono::milliseconds shutdown_grace_period,
+                    std::string log_directory);
 
     // Final cleanup fallback when actor-driven termination and reaping cannot finish
     ~SubprocessState();
@@ -199,6 +196,9 @@ class SubprocessState {
     // Maximum time for the active call and child cleanup before forced termination
     const std::chrono::milliseconds shutdown_grace_period_;
 
+    // Dedicated diagnostic directory; empty selects a temporary directory per launch
+    const std::filesystem::path log_directory_;
+
     // Resources retained in each lifecycle phase
     // - idle: no response is pending; a reusable child may remain
     // - starting_subprocess: active request and response; child resources become
@@ -266,7 +266,7 @@ class SubprocessRegistration {
 class Orchestrator {
   public:
     Orchestrator(caf::event_based_actor* self, RuntimeOptions runtime_options,
-                 std::uint64_t run_id,
+                 std::string run_directory,
                  std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
                  caf::actor subprocess_registration_actor,
                  std::uint16_t subprocess_registration_port, std::atomic<JobId>* next_job_id,
@@ -280,14 +280,14 @@ class Orchestrator {
                    std::function<void(caf::expected<JobRecord>)> complete);
     void finish_application_job(JobId job_id, caf::expected<JobRecord> result);
     void start_workflow(std::shared_ptr<WorkflowSubmission> submission,
-                        caf::typed_response_promise<caf::config_value> parent_result = {});
-    void finish_workflow(caf::actor_id workflow_id, caf::expected<caf::config_value> result);
+                        caf::typed_response_promise<WorkflowRecord> parent_result = {});
+    void finish_workflow(caf::actor_id workflow_id, caf::expected<WorkflowRecord> result);
     void grant_worker_slots();
     void forget_job(JobId job_id);
 
     caf::event_based_actor* self_;
     RuntimeOptions runtime_options_;
-    std::uint64_t run_id_;
+    std::string run_directory_;
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
     caf::actor subprocess_registration_actor_;
     std::uint16_t subprocess_registration_port_;
@@ -306,8 +306,8 @@ class Orchestrator {
 
     struct ActiveWorkflow {
         caf::actor workflow_actor_;
-        std::optional<std::promise<caf::config_value>> application_result_;
-        caf::typed_response_promise<caf::config_value> parent_result_;
+        std::optional<std::promise<WorkflowRecord>> application_result_;
+        caf::typed_response_promise<WorkflowRecord> parent_result_;
     };
     std::unordered_map<caf::actor_id, ActiveWorkflow> active_workflows_;
 

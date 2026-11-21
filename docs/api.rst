@@ -88,6 +88,9 @@ Use ``Runtime::submit_job()`` to run a standalone job. ``Runtime::submit_workflo
 .. doxygenclass:: miaow::WorkflowController
    :members:
 
+.. doxygenstruct:: miaow::WorkflowRecord
+   :members:
+
 .. doxygentypedef:: miaow::JobResult
 
 .. doxygentypedef:: miaow::WorkflowResult
