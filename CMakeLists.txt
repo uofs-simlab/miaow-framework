@@ -380,6 +380,7 @@ if(PROJECT_IS_TOP_LEVEL)
         00_hello
         01_heat
         03_dynamic_bmi
+        04_workflow
         07_job_controller
         09_bmi_operations
         10_model_coupling

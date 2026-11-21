@@ -6,7 +6,7 @@
 
 #include "miaow.hpp"
 #include "miaow_io.hpp"
-#include "core/build_info.hpp"
+#include "job_record_checker.hpp"
 
 #include <algorithm>
 #include <array>
@@ -77,50 +77,7 @@ struct JobRecordChecker {
             return;
         }
 
-        // Check the report schema and its correspondence with the returned record
-        std::ifstream input{record_path};
-        job_record = nlohmann::json::parse(input);
-        BOOST_TEST(job_record.at("job_id").is_number_unsigned());
-        BOOST_TEST(job_record.at("miaow_version").get<std::string>() ==
-                   miaow::core::build_version);
-        BOOST_TEST(job_record.at("summary").at("task_count") ==
-                   record.task_results_.size());
-        const auto& profile = job_record.at("profile");
-        const std::vector<std::string> columns{"task_id",
-                                               "unit_id",
-                                               "operation_id",
-                                               "status",
-                                               "dispatch_offset_ns",
-                                               "completion_offset_ns"};
-        BOOST_TEST(profile.at("columns") == columns);
-        BOOST_REQUIRE(profile.at("tasks").is_array());
-        BOOST_REQUIRE_EQUAL(profile.at("tasks").size(), record.task_results_.size());
-        nlohmann::json failures = nlohmann::json::array();
-        nlohmann::json artifacts = nlohmann::json::array();
-        for (std::size_t id = 0; id < record.task_results_.size(); ++id) {
-            const auto& row = profile.at("tasks").at(id);
-            BOOST_TEST(row.at(0).is_number_unsigned());
-            BOOST_TEST(row.at(0).get<std::size_t>() == id);
-            BOOST_TEST(row.at(1).is_number_unsigned());
-            BOOST_TEST(row.at(3) == miaow::task_status_to_string(result(id).status_));
-            const miaow::TaskTiming& timing = record.task_timings_.at(id);
-            BOOST_TEST(row.at(4) == (timing.dispatch_offset_ns_ < 0
-                                         ? nlohmann::json(nullptr)
-                                         : nlohmann::json(timing.dispatch_offset_ns_)));
-            BOOST_TEST(row.at(5) == (timing.completion_offset_ns_ < 0
-                                         ? nlohmann::json(nullptr)
-                                         : nlohmann::json(timing.completion_offset_ns_)));
-            if (result(id).status_ == miaow::TaskStatus::failed) {
-                failures.push_back({{"task_id", id}, {"message", result(id).message_}});
-            }
-            if (!result(id).artifact_paths_.empty()) {
-                artifacts.push_back(
-                    {{"task_id", id}, {"paths", result(id).artifact_paths_}});
-            }
-        }
-        BOOST_TEST(job_record.at("failures") == failures);
-        BOOST_TEST(job_record.at("artifacts") == artifacts);
-        BOOST_TEST(job_record.at("summary").at("failed_task_count") == failures.size());
+        job_record = miaow::tests::check_job_record(record, record_path);
     }
 
     const miaow::TaskResult& result(std::size_t id) const {
@@ -147,12 +104,7 @@ struct JobRecordChecker {
     }
 
     void check_successful_tasks() const {
-        for (std::size_t id = 0; id < record.task_results_.size(); ++id) {
-            BOOST_TEST_CONTEXT("task " << id) {
-                BOOST_TEST((result(id).status_ == miaow::TaskStatus::succeeded));
-                BOOST_TEST(dispatched(id));
-            }
-        }
+        miaow::tests::check_successful_tasks(record);
     }
 
     void check_updates(std::size_t expected) const {
