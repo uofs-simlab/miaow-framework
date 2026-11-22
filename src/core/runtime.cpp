@@ -151,11 +151,27 @@ Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry, RuntimeOpti
         actor_system_->spawn(caf::actor_from_state<core::Orchestrator>, runtime_options_,
                              run_directory_, task_executor_registry_,
                              subprocess_registration_actor, *subprocess_registration_port,
-                             &next_job_id_, &pending_jobs_mutex_, &pending_jobs_);
+                             &next_job_id_, &pending_results_mutex_, &pending_jobs_,
+                             &pending_workflows_);
 }
 
 // Request actor shutdown before releasing the shared actor system
 Runtime::~Runtime() {
+    // Take all outstanding application promises before requesting actor shutdown
+    PendingJobs pending_jobs;
+    PendingWorkflows pending_workflows;
+    {
+        std::lock_guard<std::mutex> lock(pending_results_mutex_);
+        pending_jobs.swap(pending_jobs_);
+        pending_workflows.swap(pending_workflows_);
+    }
+    for (auto& [job_id, promise] : pending_jobs) {
+        promise.set_exception(std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
+    }
+    for (auto& [request_id, promise] : pending_workflows) {
+        promise.set_exception(std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
+    }
+
     if (orchestrator_actor_) {
         // Runtime -> orchestrator_actor: stop workflows, jobs, and child registration
         caf::anon_mail(core::shutdown_atom_v).urgent().send(orchestrator_actor_);
@@ -338,7 +354,7 @@ JobHandle Runtime::submit_job(Job job) const {
 
     JobHandle handle = promise.get_future();
     {
-        std::lock_guard<std::mutex> lock(pending_jobs_mutex_);
+        std::lock_guard<std::mutex> lock(pending_results_mutex_);
         // Register this in-progress job in the dictionary: job_id -> promise
         pending_jobs_.emplace(job_id, std::move(promise));
     }
@@ -355,13 +371,20 @@ WorkflowHandle Runtime::submit_workflow(std::unique_ptr<WorkflowController> cont
         throw std::invalid_argument("Runtime requires a non-null WorkflowController");
     }
 
-    // The orchestrator will adopt the controller and resolve this promise when the
-    // workflow finishes. The application can wait on the future outside the actors.
+    const core::WorkflowRequestId request_id =
+        next_workflow_request_id_.fetch_add(1, std::memory_order_relaxed);
+    std::promise<WorkflowRecord> promise;
+    WorkflowHandle handle = promise.get_future();
+    {
+        std::lock_guard<std::mutex> lock(pending_results_mutex_);
+        pending_workflows_.emplace(request_id, std::move(promise));
+    }
+
     auto submission = std::make_shared<core::WorkflowSubmission>(
-        core::WorkflowSubmission{std::move(controller), std::promise<WorkflowRecord>{}});
-    WorkflowHandle handle = submission->application_result_->get_future();
+        core::WorkflowSubmission{std::move(controller)});
     // Runtime -> orchestrator_actor: start a top-level workflow
-    caf::anon_mail(caf::get_atom_v, std::move(submission)).send(orchestrator_actor_);
+    caf::anon_mail(caf::get_atom_v, request_id, std::move(submission))
+        .send(orchestrator_actor_);
     return handle;
 }
 

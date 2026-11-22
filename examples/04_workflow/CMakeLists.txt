@@ -22,4 +22,11 @@ if(BUILD_TESTING)
         EXECUTABLE_TARGET miaow_workflow
         REGRESSION workflow
     )
+    foreach(scenario shutdown_with_active_and_queued_roots nested_completion)
+        miaow_add_example_test(
+            TEST_NAME miaow_workflow_${scenario}
+            EXECUTABLE_TARGET miaow_workflow
+            REGRESSION workflow_${scenario}
+        )
+    endforeach()
 endif()

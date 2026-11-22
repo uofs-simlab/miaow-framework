@@ -58,7 +58,7 @@ WorkflowChildId Workflow::submit_workflow(std::unique_ptr<WorkflowController> co
         throw std::invalid_argument("Workflow requires a non-null WorkflowController");
     }
     auto submission = std::make_shared<core::WorkflowSubmission>(
-        core::WorkflowSubmission{std::move(controller), std::nullopt});
+        core::WorkflowSubmission{std::move(controller)});
     return submit_child<WorkflowRecord>(std::move(submission));
 }
 
@@ -123,7 +123,7 @@ caf::behavior Workflow::make_behavior() {
                 return response;
             },
             // Runtime shutdown stops policy immediately. The orchestrator signals every
-            // active child separately and resolves the application's workflow future.
+            // active child separately; Runtime resolves pending application futures.
             [this](core::shutdown_atom) { self_->quit(); }};
 }
 

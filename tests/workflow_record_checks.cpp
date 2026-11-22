@@ -7,9 +7,47 @@
 
 #include <chrono>
 #include <filesystem>
+#include <future>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <thread>
+#include <utility>
 #include <variant>
+
+namespace {
+
+// Hold the only scheduler thread so subsequent root submissions remain queued
+class GatedWorkflowController final : public miaow::WorkflowController {
+  public:
+    GatedWorkflowController(std::promise<void>& entered, std::future<void> release)
+        : entered_(entered), release_(std::move(release)) {}
+
+    void initialize(miaow::Workflow&) override {
+        entered_.set_value();
+        release_.wait();
+    }
+
+  private:
+    std::promise<void>& entered_;
+    std::future<void> release_;
+};
+
+// Complete only after the nested controller returns its workflow record
+class ParentWorkflowController final : public miaow::WorkflowController {
+  public:
+    explicit ParentWorkflowController(std::unique_ptr<miaow::WorkflowController> child)
+        : child_(std::move(child)) {}
+
+    void initialize(miaow::Workflow& workflow) override {
+        workflow.submit_workflow(std::move(child_));
+    }
+
+  private:
+    std::unique_ptr<miaow::WorkflowController> child_;
+};
+
+} // namespace
 
 BOOST_AUTO_TEST_CASE(workflow) {
     const auto& arguments = boost::unit_test::framework::master_test_suite();
@@ -45,4 +83,55 @@ BOOST_AUTO_TEST_CASE(workflow) {
             }
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(workflow_shutdown_with_active_and_queued_roots) {
+    miaow::RuntimeOptions options{1};
+    options.caf_scheduler_threads_ = 1;
+    miaow::TaskExecutorRegistry registry;
+    registry.add<miaow::examples::workflow::SleepTaskExecutor>(
+        std::chrono::steady_clock::now());
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    std::future<void> entered_future = entered.get_future();
+    auto runtime = std::make_unique<miaow::Runtime>(registry, options);
+    miaow::WorkflowHandle active_workflow = runtime->submit_workflow(
+        std::make_unique<GatedWorkflowController>(entered, release.get_future()));
+    entered_future.wait();
+    miaow::JobHandle queued_job = runtime->submit_job(miaow::Job{});
+    miaow::WorkflowHandle queued_workflow =
+        runtime->submit_workflow(std::make_unique<miaow::WorkflowController>());
+
+    // All member calls have finished before another thread takes ownership for teardown
+    std::thread shutdown([owned_runtime = std::move(runtime)]() mutable {
+        owned_runtime.reset();
+    });
+    const auto is_shutdown_error = [](const std::runtime_error& error) {
+        return std::string{error.what()} == "Runtime shutdown";
+    };
+    BOOST_CHECK_EXCEPTION(active_workflow.get(), std::runtime_error, is_shutdown_error);
+    BOOST_CHECK_EXCEPTION(queued_job.get(), std::runtime_error, is_shutdown_error);
+    BOOST_CHECK_EXCEPTION(queued_workflow.get(), std::runtime_error, is_shutdown_error);
+
+    // Application futures must settle before the blocked actor can finish cleanup
+    release.set_value();
+    shutdown.join();
+}
+
+BOOST_AUTO_TEST_CASE(workflow_nested_completion) {
+    miaow::TaskExecutorRegistry registry;
+    registry.add<miaow::examples::workflow::SleepTaskExecutor>(
+        std::chrono::steady_clock::now());
+    miaow::tests::WorkflowRecordChecker parent_checker;
+    miaow::tests::WorkflowRecordChecker child_checker;
+    miaow::Runtime runtime(registry);
+    miaow::WorkflowHandle handle = runtime.submit_workflow(parent_checker.observe(
+        std::make_unique<ParentWorkflowController>(
+            child_checker.observe(std::make_unique<miaow::WorkflowController>()))));
+    const miaow::WorkflowRecord record = handle.get();
+
+    parent_checker.check(record);
+    BOOST_REQUIRE_EQUAL(parent_checker.workflows.size(), 1);
+    child_checker.check(std::get<miaow::WorkflowRecord>(parent_checker.workflows[0].second));
 }

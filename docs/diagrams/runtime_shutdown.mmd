@@ -28,12 +28,13 @@ sequenceDiagram
     participant J as job_actor
     participant U as simulation_unit_actor
 
+    R->>R: Take pending root promises<br/>under mutex, then unlock
+    R->>R: Set Runtime shutdown exceptions<br/>including queued submissions
     R-)O: shutdown_atom
     R->>S: Wait for actors<br/>during destruction
     O-)F: shutdown_atom<br/>for each active workflow
     O-)J: shutdown_atom<br/>for each active job
     par Orchestrator shutdown
-        O->>O: Fail active workflow handles
         O-)Reg: CAF exit<br/>(user_shutdown)
         destroy O
         O-->>S: Actor terminates<br/>after quit()

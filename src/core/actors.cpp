@@ -628,15 +628,16 @@ Orchestrator::Orchestrator(
     caf::event_based_actor* self, RuntimeOptions runtime_options, std::string run_directory,
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
     caf::actor subprocess_registration_actor, std::uint16_t subprocess_registration_port,
-    std::atomic<JobId>* next_job_id, std::mutex* pending_jobs_mutex,
-    PendingJobs* pending_jobs)
+    std::atomic<JobId>* next_job_id, std::mutex* pending_results_mutex,
+    PendingJobs* pending_jobs, PendingWorkflows* pending_workflows)
     : self_(self), runtime_options_(std::move(runtime_options)),
       run_directory_(std::move(run_directory)),
       task_executor_registry_(std::move(task_executor_registry)),
       subprocess_registration_actor_(std::move(subprocess_registration_actor)),
       subprocess_registration_port_(subprocess_registration_port),
       next_job_id_(next_job_id),
-      pending_jobs_mutex_(pending_jobs_mutex), pending_jobs_(pending_jobs) {}
+      pending_results_mutex_(pending_results_mutex), pending_jobs_(pending_jobs),
+      pending_workflows_(pending_workflows) {}
 
 // Fill available capacity in request order.
 void Orchestrator::grant_worker_slots() {
@@ -695,7 +696,7 @@ void Orchestrator::finish_application_job(JobId job_id, caf::expected<JobRecord>
     // Take the caller's promise under the mutex, then deliver outside the lock.
     std::promise<JobRecord> promise;
     {
-        std::lock_guard<std::mutex> lock(*pending_jobs_mutex_);
+        std::lock_guard<std::mutex> lock(*pending_results_mutex_);
         const auto pending = pending_jobs_->find(job_id);
         if (pending == pending_jobs_->end()) {
             return;
@@ -714,6 +715,7 @@ void Orchestrator::finish_application_job(JobId job_id, caf::expected<JobRecord>
 
 void Orchestrator::start_workflow(
     std::shared_ptr<WorkflowSubmission> submission,
+    std::optional<WorkflowRequestId> application_request_id,
     caf::typed_response_promise<WorkflowRecord> parent_result) {
     // Every workflow uses the same orchestrator, regardless of who submitted it.
     const caf::actor workflow_actor =
@@ -722,7 +724,7 @@ void Orchestrator::start_workflow(
     const caf::actor_id workflow_id = workflow_actor.id();
     active_workflows_.emplace(workflow_id,
                               ActiveWorkflow{workflow_actor,
-                                             std::move(submission->application_result_),
+                                             application_request_id,
                                              std::move(parent_result)});
 
     // orchestrator_actor -> workflow_actor: start policy and await its final result
@@ -742,11 +744,22 @@ void Orchestrator::finish_workflow(caf::actor_id workflow_id,
     // Remove the finished workflow before waking its parent or application caller.
     auto entry = active_workflows_.extract(workflow_id);
     ActiveWorkflow& workflow = entry.mapped();
-    if (workflow.application_result_) {
+    if (workflow.application_request_id_) {
+        // Completion and shutdown take exclusive ownership under the same mutex
+        std::promise<WorkflowRecord> promise;
+        {
+            std::lock_guard<std::mutex> lock(*pending_results_mutex_);
+            const auto pending = pending_workflows_->find(*workflow.application_request_id_);
+            if (pending == pending_workflows_->end()) {
+                return;
+            }
+            promise = std::move(pending->second);
+            pending_workflows_->erase(pending);
+        }
         if (result) {
-            workflow.application_result_->set_value(std::move(*result));
+            promise.set_value(std::move(*result));
         } else {
-            workflow.application_result_->set_exception(
+            promise.set_exception(
                 std::make_exception_ptr(std::runtime_error(
                     "Workflow actor error: " + caf::to_string(result.error()))));
         }
@@ -766,8 +779,9 @@ caf::behavior Orchestrator::make_behavior() {
                       });
         },
         // Runtime -> orchestrator_actor: submit a workflow with an application future
-        [this](caf::get_atom, std::shared_ptr<WorkflowSubmission> submission) {
-            start_workflow(std::move(submission));
+        [this](caf::get_atom, WorkflowRequestId request_id,
+               std::shared_ptr<WorkflowSubmission> submission) {
+            start_workflow(std::move(submission), request_id);
         },
         // Save the parent request while the child job runs. Its JobId comes from
         // the same counter as standalone jobs, independent of the parent's child ID.
@@ -785,7 +799,7 @@ caf::behavior Orchestrator::make_behavior() {
         [this](submit_child_atom, std::shared_ptr<WorkflowSubmission> submission)
             -> caf::result<WorkflowRecord> {
             auto response = self_->make_response_promise<WorkflowRecord>();
-            start_workflow(std::move(submission), response);
+            start_workflow(std::move(submission), std::nullopt, response);
             return response;
         },
         // Queue requests from active jobs.
@@ -813,10 +827,6 @@ caf::behavior Orchestrator::make_behavior() {
                 ActiveWorkflow& workflow = entry.second;
                 // orchestrator_actor -> workflow_actor: stop this controller
                 caf::anon_mail(shutdown_atom_v).urgent().send(workflow.workflow_actor_);
-                if (workflow.application_result_) {
-                    workflow.application_result_->set_exception(
-                        std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
-                }
             }
             for (const auto& entry : active_jobs_) {
                 // orchestrator_actor -> job_actor: stop one active job

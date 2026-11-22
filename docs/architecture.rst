@@ -285,7 +285,11 @@ For a ``SubprocessTaskExecutor``, a task timeout starts child shutdown and waits
 Runtime shutdown
 ^^^^^^^^^^^^^^^^
 
-Destroying ``Runtime`` stops its active workflows and jobs. The orchestrator sends a shutdown message to each workflow and job actor, completes active workflow handles with an error, and exits. A workflow actor exits when it handles shutdown. Each job actor sends shutdown to its unit actors and waits for their cleanup before exiting. Interrupted job handles complete with an error. Actor-system destruction waits for the remaining actors.
+At the start of destruction, ``Runtime`` takes all remaining application promises for root jobs and workflows from its pending maps under a shared mutex. It releases the mutex, then settles those promises with ``std::runtime_error("Runtime shutdown")``. This includes submissions still queued before their actors exist. Completion uses the same mutex to take a promise, so completion and shutdown cannot both fulfill it. A late completion finds no pending promise and is ignored. Nested children return outcomes through CAF response promises.
+
+The runtime then requests actor shutdown. The orchestrator sends a shutdown message to each active workflow and job actor, stops subprocess registration, and exits. A workflow actor exits when it handles shutdown. Each job actor sends shutdown to its unit actors and waits for their cleanup before exiting. Actor-system destruction waits for the remaining actors; settling application futures does not require actor cleanup to finish.
+
+All calls to runtime member functions must finish before destruction begins. The promise mutex does not make concurrent member calls during destruction safe.
 
 Termination arrows to the CAF actor system below represent lifecycle events. The system waits for all actors to terminate before its destruction completes.
 

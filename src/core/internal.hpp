@@ -27,11 +27,9 @@
 
 namespace miaow::core {
 
-// Transfer the controller through a local CAF message. A root submission carries a
-// C++ promise, while a child submission uses the sending actor's CAF request.
+// Transfer the controller through a local CAF message
 struct WorkflowSubmission {
     std::unique_ptr<WorkflowController> controller_;
-    std::optional<std::promise<WorkflowRecord>> application_result_;
 };
 
 } // namespace miaow::core
@@ -84,8 +82,12 @@ inline constexpr const char* subprocess_registration_host = "127.0.0.1";
 // Prefix used to identify failures from the subprocess execution path
 inline constexpr const char* subprocess_error_prefix = "Subprocess error";
 
-// Map each submitted job to the promise fulfilled by the orchestrator
+// Application promises for root jobs submitted through Runtime::submit_job()
 using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
+
+// Application promises for root workflows submitted through Runtime::submit_workflow()
+using PendingWorkflows =
+    std::unordered_map<WorkflowRequestId, std::promise<WorkflowRecord>>;
 
 // File paths and metadata for subprocess logs
 struct SubprocessPaths {
@@ -270,8 +272,8 @@ class Orchestrator {
                  std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
                  caf::actor subprocess_registration_actor,
                  std::uint16_t subprocess_registration_port, std::atomic<JobId>* next_job_id,
-                 std::mutex* pending_jobs_mutex,
-                 PendingJobs* pending_jobs);
+                 std::mutex* pending_results_mutex,
+                 PendingJobs* pending_jobs, PendingWorkflows* pending_workflows);
 
     caf::behavior make_behavior();
 
@@ -280,6 +282,7 @@ class Orchestrator {
                    std::function<void(caf::expected<JobRecord>)> complete);
     void finish_application_job(JobId job_id, caf::expected<JobRecord> result);
     void start_workflow(std::shared_ptr<WorkflowSubmission> submission,
+                        std::optional<WorkflowRequestId> application_request_id,
                         caf::typed_response_promise<WorkflowRecord> parent_result = {});
     void finish_workflow(caf::actor_id workflow_id, caf::expected<WorkflowRecord> result);
     void grant_worker_slots();
@@ -292,23 +295,29 @@ class Orchestrator {
     caf::actor subprocess_registration_actor_;
     std::uint16_t subprocess_registration_port_;
 
-    // Runtime owns this shared job ID counter and the promises through actor shutdown.
+    // Runtime-owned job ID counter shared by root jobs and workflow child jobs
     std::atomic<JobId>* next_job_id_;
-    std::mutex* pending_jobs_mutex_;
+
+    // Runtime owns these maps and their mutex through actor shutdown. They hold application
+    // promises for root submissions; workflow children use CAF response promises.
+    std::mutex* pending_results_mutex_;
     PendingJobs* pending_jobs_;
+    PendingWorkflows* pending_workflows_;
 
     struct ActiveJob {
         caf::actor job_actor_;
         // Reservations charged to this job, including grants in transit
         std::size_t granted_worker_slots_{0};
     };
+    // Active job actors at every depth, including workflow children
     std::unordered_map<JobId, ActiveJob> active_jobs_;
 
     struct ActiveWorkflow {
         caf::actor workflow_actor_;
-        std::optional<std::promise<WorkflowRecord>> application_result_;
+        std::optional<WorkflowRequestId> application_request_id_;
         caf::typed_response_promise<WorkflowRecord> parent_result_;
     };
+    // Active workflow actors at every depth, including nested workflows
     std::unordered_map<caf::actor_id, ActiveWorkflow> active_workflows_;
 
     // One request per job at a time. Grant slots in request order.

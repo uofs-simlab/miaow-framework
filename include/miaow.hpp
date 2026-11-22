@@ -41,6 +41,9 @@ class Workflow;
 
 namespace core {
 class SubprocessState;
+
+// Runtime-local lookup key allocated before a root workflow actor exists
+using WorkflowRequestId = std::uint64_t;
 } // namespace core
 
 /**
@@ -1155,8 +1158,12 @@ class Runtime {
     }
 
   private:
-    // Map each submitted job to the promise fulfilled by the orchestrator
+    // Application promises for root jobs submitted through Runtime::submit_job()
     using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
+
+    // Application promises for root workflows submitted through Runtime::submit_workflow()
+    using PendingWorkflows =
+        std::unordered_map<core::WorkflowRequestId, std::promise<WorkflowRecord>>;
 
     // Shared task executor registry used by all `simulation_unit_actor`s in this runtime
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
@@ -1167,14 +1174,20 @@ class Runtime {
     // Unique output directory allocated for this runtime when file output is enabled
     std::string run_directory_;
 
-    // Monotonic counter for generating unique `JobId`s for each submitted job
+    // Monotonic job ID counter shared by root jobs and workflow child jobs
     mutable std::atomic<JobId> next_job_id_{0};
 
-    // Mutex to protect access to the `pending_jobs_` dictionary
-    mutable std::mutex pending_jobs_mutex_;
+    // Monotonic counter for root workflow requests, independent of actor and child IDs
+    mutable std::atomic<core::WorkflowRequestId> next_workflow_request_id_{0};
 
-    // Dictionary mapping in-progress `JobId`s to their completion promises
+    // Protect both maps of application promises for root submissions
+    mutable std::mutex pending_results_mutex_;
+
+    // Pending root job promises, including submissions queued before actor creation
     mutable PendingJobs pending_jobs_;
+
+    // Pending root workflow promises, including submissions queued before actor creation
+    mutable PendingWorkflows pending_workflows_;
 
     // CAF actor system configuration for this runtime instance
     std::shared_ptr<caf::actor_system_config> actor_system_config_;

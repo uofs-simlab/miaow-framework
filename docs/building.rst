@@ -266,6 +266,38 @@ Examples exercise invalid inputs, deadlines, failed tasks, and recovery.
 Tests using dedicated drivers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Workflow checker
+""""""""""""""""
+
+These cases use ``tests/workflow_record_checks.cpp`` and share the ``miaow_workflow_checks`` executable with the default two-job workflow test. Each CTest entry selects one Boost.Test case.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 28 38
+   :class: regression-tests
+
+   * - CTest name
+     - Code executed
+     - Expected result
+   * - `miaow_workflow_shutdown_with_active_and_queued_roots`_
+     - `workflow_record_checks.cpp`_
+
+       Holds the only CAF scheduler thread inside an active workflow controller, queues another root job and workflow, and destroys the runtime on a separate thread after all submission calls return. Promise-based signals establish the execution order without timing sleeps.
+     - All three application futures throw ``std::runtime_error("Runtime shutdown")`` before the controller is released and the teardown thread is joined.
+   * - `miaow_workflow_nested_completion`_
+     - `workflow_record_checks.cpp`_
+
+       Submits an empty child workflow from a parent workflow and observes both controllers with ``WorkflowRecordChecker``.
+     - Both controllers finalize, the parent receives one child ``WorkflowRecord``, and the child and root records contain their respective controllers' final output. Both controllers use the default null output.
+
+To build and run these cases and the default workflow test:
+
+.. code-block:: sh
+
+   cmake --build build --target miaow_workflow_checks
+   ctest --test-dir build -R '^miaow_(example_04_workflow|workflow_.*)$' --output-on-failure
+
+
 BMI task dispatch driver
 """"""""""""""""""""""""
 
@@ -406,6 +438,9 @@ These cases use ``tests/simulation_unit_lifecycle.hpp``.
 .. _03_dynamic_bmi/dynamic_bmi.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/03_dynamic_bmi/dynamic_bmi.hpp
 .. _miaow_example_04_workflow: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
 .. _04_workflow/workflow.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/workflow.hpp
+.. _miaow_workflow_shutdown_with_active_and_queued_roots: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
+.. _miaow_workflow_nested_completion: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
+.. _workflow_record_checks.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/workflow_record_checks.cpp
 .. _miaow_example_07_job_controller: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/CMakeLists.txt
 .. _07_job_controller/job_controller.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/job_controller.hpp
 .. _miaow_example_09_bmi_operations: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/09_bmi_operations/CMakeLists.txt
