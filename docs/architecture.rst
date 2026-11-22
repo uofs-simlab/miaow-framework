@@ -1,25 +1,46 @@
 Architecture
 ============
 
+MIAOW's actor hierarchy draws on the design that `Klenk and Spiteri (2024) <https://doi.org/10.1007/s10586-024-04318-5>`_ developed for `SUMMA-Actors <https://github.com/uofs-simlab/Summa-Actors>`_.
+
 Orchestration model
 -------------------
 
-MIAOW organizes simulation workflows into jobs. A ``Job`` groups simulation units, tasks to execute on them, and a controller that can add work in response to results.
+A ``Job`` groups simulation units, tasks to execute on them, and a controller that can add work in response to results. An application can submit a job directly with ``Runtime::submit_job()``.
 
-A **simulation unit** is the basic unit of computation orchestrated by MIAOW, such as a whole model or a spatial subdomain. A ``Task`` requests an operation on a particular unit and supplies its arguments. Each unit owns an executor: a C++ object implementing the ``TaskExecutor`` interface that carries out those operations. The executor can retain state between tasks.
+Workflows are optional layers of coordination above jobs. A ``Workflow`` can submit jobs and use their results to decide what to run next. It can also submit other workflows, allowing multiple levels of coordination within the same runtime.
 
-``Runtime`` coordinates jobs through an actor hierarchy inspired by `SUMMA-Actors <https://github.com/uofs-simlab/Summa-Actors>`_ (`Klenk and Spiteri, 2024 <https://doi.org/10.1007/s10586-024-04318-5>`_). The orchestrator creates a job actor for each submitted job. Each job actor manages its ``Job`` object and creates actors to manage its ``SimulationUnit`` objects. The job actor dispatches tasks and calls the controller; the unit actors execute the tasks.
+A ``SimulationUnit`` is the basic unit of computation orchestrated by MIAOW, such as a whole model or a spatial subdomain. A ``Task`` requests an operation on a particular unit and supplies its arguments. Each unit owns an executor: a C++ object implementing the ``TaskExecutor`` interface that carries out those operations. The executor can retain state between tasks.
 
-A unit using ``SubprocessTaskExecutor`` runs its task code in a separate process on the same host. Its unit actor and executor remain in the parent process alongside ``Runtime``. The hierarchy below includes this subprocess arrangement.
+The orchestrator is the root actor of each ``Runtime``. It spawns each workflow and job actor and routes each child outcome to the workflow that submitted it. Each workflow actor runs its ``WorkflowController``. Each job actor runs its ``JobController`` and dispatches tasks to its simulation-unit actors.
+
+A unit using ``SubprocessTaskExecutor`` runs its task code in a separate process on the same host. Its unit actor and executor remain in the parent process alongside ``Runtime``. The diagram illustrates two optional workflow layers. Solid arrows show spawning and object ownership. Dotted arrows show which workflow submits a child and receives its outcome through the orchestrator.
 
 .. mermaid:: diagrams/orchestration.mmd
-   :alt: MIAOW orchestration actor hierarchy
+   :alt: MIAOW actor hierarchy showing nested workflows, jobs, and simulation units
    :align: center
+
+Workflow execution
+------------------
+
+Submit a controller with ``Runtime::submit_workflow()`` and use the returned ``WorkflowHandle`` to retrieve a ``WorkflowRecord`` or observe an exception. The record contains the controller's final ``caf::config_value`` in ``output_`` and elapsed seconds in ``run_time_``. The controller submits child jobs or workflows, processes their results, and can submit further children in response.
+
+Workflow timing uses ``std::chrono::steady_clock`` from workflow actor startup through controller finalization, including child execution, resource waits, and callbacks. It excludes delivery of the final record to the submitter.
+
+The workflow actor calls these controller methods serially.
+
+- ``initialize(Workflow&)`` submits the initial children using ``submit_job()`` or ``submit_workflow()``. Each call returns a ``WorkflowChildId`` immediately, identifying a direct child job or workflow within that parent workflow. Both kinds of child share the parent's ID sequence, which is independent of the runtime-wide ``JobId`` assigned to each job. The controller can use the ID to associate each completion with its submitted child.
+- ``callback(Workflow&, WorkflowChildId, const JobResult&)`` receives a completed job. The overload taking ``const WorkflowResult&`` receives a completed workflow. The controller can submit more children from either callback. Result references are borrowed for the duration of the callback.
+- ``finalize()`` returns the workflow's structured output once all children have finished and the last call to ``initialize()`` or ``callback()`` has returned. A workflow with no children finalizes after initialization. The default returns a null ``caf::config_value``.
+
+``JobResult`` holds either a ``JobRecord`` or an ``std::exception_ptr``. A job record can contain failed tasks. Call ``all_tasks_succeeded(record)`` when the next step depends on every task succeeding. ``WorkflowResult`` holds either the child's ``WorkflowRecord`` or an ``std::exception_ptr``. The default callbacks propagate exceptions. Override a callback to handle a failed child and decide what to run next. If a controller method throws, the workflow drains its accepted children before reporting a ``std::runtime_error`` with the failure message. Failed workflows and runtime shutdown produce no final workflow record.
+
+Register the task executors before constructing ``Runtime`` and pass their IDs to job builders used in ``initialize()`` or ``callback()``. Jobs at every workflow depth share that runtime's task slots. Workflow actors wait for completion messages, leaving slots available to their children. Application code can wait on ``WorkflowHandle::get()`` outside the actor system. Keep controller methods short so the workflow actor can handle further replies and shutdown messages.
 
 Job execution
 -------------
 
-A caller declares units, assigns tasks to them, and submits the job to ``Runtime``. The job actor then schedules those tasks and collects their results.
+A caller declares units, assigns tasks to them, and submits the job through ``Runtime`` or its parent ``Workflow``. The job actor then schedules those tasks and collects their results.
 
 Simulation units
 ^^^^^^^^^^^^^^^^
@@ -115,7 +136,7 @@ For the selected task ID, release clears these fields:
 - ``Task::output_references_``: erases every argument-position / producer-ID map entry, freeing its nodes.
 - ``TaskResult::output_``: destroys the stored output value and replaces it with null.
 
-It retains ``Task::unit_id_``, ``Task::operation_``, and ``Task::task_output_dir_`` (already empty in stored task definitions); ``TaskResult::status_``, ``TaskResult::message_``, and ``TaskResult::artifact_paths_``; and ``TaskTiming::dispatch_offset_ns_`` and ``TaskTiming::completion_offset_ns_``. The task ID remains the same vector index: no task, result, or timing slot is erased or renumbered. Per-task metadata therefore remains allocated after release.
+It retains ``Task::unit_id_``, ``Task::operation_``, and ``Task::task_output_dir_``; ``TaskResult::status_``, ``TaskResult::message_``, and ``TaskResult::artifact_paths_``; and ``TaskTiming::dispatch_offset_ns_`` and ``TaskTiming::completion_offset_ns_``. The task ID remains the same vector index: no task, result, or timing slot is erased or renumbered. Per-task metadata therefore remains allocated after release.
 
 The result stays present with null output, including in the final ``JobRecord``; completion-only dependencies on that task remain valid. The controller must finish reading any borrowed payload before release. Repeated release is harmless.
 
@@ -141,7 +162,7 @@ The sequence below shows one job with one unit. Open arrowheads are asynchronous
    :alt: Job submission, lazy unit creation, repeated tasks, and completion
    :align: center
 
-When no tasks are queued or running and the controller adds no more tasks, the job actor tells each simulation-unit actor to shut down and waits for all of them to terminate. It then calls ``JobController::finalize()`` and returns a ``JobRecord`` through the caller's ``JobHandle`` future.
+When no tasks are queued or running and the controller adds no more tasks, the job actor tells each simulation-unit actor to shut down and waits for all of them to terminate. It then calls ``JobController::finalize()``. The orchestrator delivers the ``JobRecord`` through the caller's ``JobHandle`` future or to the parent workflow's callback.
 
 Job controllers
 ---------------
@@ -264,7 +285,11 @@ For a ``SubprocessTaskExecutor``, a task timeout starts child shutdown and waits
 Runtime shutdown
 ^^^^^^^^^^^^^^^^
 
-Destroying ``Runtime`` ends execution of its active jobs. Runtime tells the orchestrator to shut down; the orchestrator forwards that request to each job actor and exits. Each job actor tells its unit actors to shut down and waits for them to terminate. Actor-system destruction waits for the remaining actors. Jobs interrupted this way produce no final ``JobRecord``.
+At the start of destruction, ``Runtime`` takes all remaining application promises for root jobs and workflows from its pending maps under a shared mutex. It releases the mutex, then settles those promises with ``std::runtime_error("Runtime shutdown")``. This includes submissions still queued before their actors exist. Completion uses the same mutex to take a promise, so completion and shutdown cannot both fulfill it. A late completion finds no pending promise and is ignored. Nested children return outcomes through CAF response promises.
+
+The runtime then requests actor shutdown. The orchestrator sends a shutdown message to each active workflow and job actor, stops subprocess registration, and exits. A workflow actor exits when it handles shutdown. Each job actor sends shutdown to its unit actors and waits for their cleanup before exiting. Actor-system destruction waits for the remaining actors; settling application futures does not require actor cleanup to finish.
+
+All calls to runtime member functions must finish before destruction begins. The promise mutex does not make concurrent member calls during destruction safe.
 
 Termination arrows to the CAF actor system below represent lifecycle events. The system waits for all actors to terminate before its destruction completes.
 
@@ -286,7 +311,7 @@ Invalid task IDs in these lookups throw ``std::out_of_range``. Borrowed task and
 
 ``Job::task(task_id).unit_id_`` identifies the target, including when the task never dispatches. ``Job::unit_label(unit_id)`` returns its label after removal. Replacements may reuse a label but receive a new unit ID. Removal rejects new work immediately, drains accepted tasks, and then releases execution resources.
 
-``Task::task_output_dir_`` is the job's ``results`` directory, or empty when file output is disabled. It is populated only in dispatched requests.
+``Task::task_output_dir_`` is an optional application-supplied artifact directory. MIAOW preserves it when accepting and dispatching tasks but does not create it. Executors control model-output paths and create any directories they need. Artifact paths returned in ``TaskResult::artifact_paths_`` are recorded without modification.
 
 Task timing
 ^^^^^^^^^^^
@@ -304,9 +329,11 @@ Structured output
 
 ``JobController::finalize()`` supplies ``JobRecord::output_``, which is null by default.
 
-When ``RuntimeOptions::output_root_`` is configured, the job actor writes one ``job_record.json`` during finalization. An empty output root disables report files while retaining timing collection. A write failure propagates through ``JobHandle::get()``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
+When ``RuntimeOptions::output_root_`` is configured, the runtime claims an unused ``run_<run_id>`` directory. Each job writes ``job_<job_id>.json`` directly in that directory during finalization. ``Runtime::run_directory()`` returns the resolved directory, or an empty string when file output is disabled. Timing collection remains enabled in either case. A write failure propagates through ``JobHandle::get()``. Finite double values retain enough digits to round-trip; non-finite numerical values are written as JSON ``null``.
 
-The file contains runtime and job IDs, the library version, a summary of task counts and job runtime, controller ``output``, sparse ``failures`` and ``artifacts`` arrays, and a ``profile``. Raw task outputs remain in ``JobRecord::task_results_``. Controller output uses plain JSON values.
+Subprocess stdout and stderr files use ``logs/job_<job_id>/unit_<unit_id>_stdout.log`` and ``unit_<unit_id>_stderr.log`` within the run directory. Log directories are created only when a subprocess launches. Successful subprocess shutdown removes its logs; failed subprocess logs are retained and their paths are included in the error message. Empty job log directories are removed after all their units terminate, and the empty ``logs`` root is removed at runtime shutdown. Without an output root, diagnostics use temporary directories instead.
+
+The record contains the job ID, the library version, a summary of task counts and job runtime, controller ``output``, sparse ``failures`` and ``artifacts`` arrays, and a ``profile``. Raw task outputs remain in ``JobRecord::task_results_``. Controller output uses plain JSON values.
 
 ``miaow::to_json()`` in ``miaow_io.hpp`` converts a ``caf::config_value`` to ``nlohmann::json``. Lists and dictionaries become JSON arrays and objects. Durations become strings of signed nanoseconds followed by ``ns``; URIs become strings.
 

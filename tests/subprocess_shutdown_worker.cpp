@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <string>
 #include <thread>
 
 #include <unistd.h>
@@ -24,7 +25,9 @@ class ShutdownTaskExecutor final : public miaow::TaskExecutor {
     caf::result<miaow::TaskResult> execute(const miaow::Task& task) override {
         if (task.operation_ == "configure") {
             const auto& config = caf::get<caf::config_value::dictionary>(task.args_.at(0));
-            output_directory_ = task.task_output_dir_;
+            output_directory_ =
+                caf::get<std::string>(config.container().at("output_directory"));
+            std::filesystem::create_directories(output_directory_);
             execution_delay_ = std::chrono::milliseconds{
                 caf::get<std::int64_t>(config.container().at("execution_delay_ms"))};
             cleanup_delay_ = std::chrono::milliseconds{

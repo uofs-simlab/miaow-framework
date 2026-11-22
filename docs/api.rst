@@ -15,6 +15,8 @@ Identifiers and task status
 
 .. doxygentypedef:: miaow::JobId
 
+.. doxygentypedef:: miaow::WorkflowChildId
+
 .. doxygenenum:: miaow::TaskStatus
 
 .. doxygenfunction:: miaow::task_status_to_string
@@ -74,6 +76,26 @@ Runtime orchestration
 
 .. doxygenclass:: miaow::Runtime
    :members:
+
+Workflow orchestration
+~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``Runtime::submit_job()`` to run a standalone job. ``Runtime::submit_workflow()`` adds an optional controller layer that can submit jobs or nested workflows and receive their results.
+
+.. doxygenclass:: miaow::Workflow
+   :members:
+
+.. doxygenclass:: miaow::WorkflowController
+   :members:
+
+.. doxygenstruct:: miaow::WorkflowRecord
+   :members:
+
+.. doxygentypedef:: miaow::JobResult
+
+.. doxygentypedef:: miaow::WorkflowResult
+
+.. doxygentypedef:: miaow::WorkflowHandle
 
 BMI integration
 ---------------

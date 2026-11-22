@@ -255,7 +255,7 @@ class ParticleSwarmController final : public miaow::JobController {
             {"best_position", caf::config_value{global_best}}});
     }
 
-    // Transfer the buffered history to the runtime for job_record.json and the caller
+    // Transfer the buffered history to the runtime for the job record and the caller
     caf::config_value finalize() override {
         // Package the labels, plotting limits, and swarm history used by animate.py
         caf::config_value::dictionary output;
@@ -399,9 +399,8 @@ int main(int argc, char* argv[]) {
             std::cout << '\n';
 
             // Show the run directory containing both job records for animation playback
-            if (!runtime_options.output_root_.empty()) {
-                std::cout << "  " << runtime_options.output_root_ << "/run_"
-                          << job_record.run_id_ << '\n';
+            if (!runtime.run_directory().empty()) {
+                std::cout << "  " << runtime.run_directory() << '\n';
             }
         }
         return 0;

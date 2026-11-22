@@ -46,7 +46,7 @@ sequenceDiagram
     U-->>J: CAF termination<br/>notification
     J->>J: JobController::finalize()
     J->>J: Record elapsed job runtime
-    J->>J: Write job_record.json<br/>if file output is enabled
+    J->>J: Write job JSON record<br/>if file output is enabled
     destroy J
     J-->>O: JobRecord<br/>then quit()
     O->>O: Fulfil JobHandle promise

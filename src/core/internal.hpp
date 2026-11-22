@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -24,8 +25,18 @@
 
 #include "miaow.hpp"
 
+namespace miaow::core {
+
+// Transfer the controller through a local CAF message
+struct WorkflowSubmission {
+    std::unique_ptr<WorkflowController> controller_;
+};
+
+} // namespace miaow::core
+
 // Prepared jobs stay in the parent process and pass only through local messages
 CAF_ALLOW_UNSAFE_MESSAGE_TYPE(std::shared_ptr<miaow::Job>)
+CAF_ALLOW_UNSAFE_MESSAGE_TYPE(std::shared_ptr<miaow::core::WorkflowSubmission>)
 
 // Register the internal types and atoms carried by MIAOW actor messages
 CAF_BEGIN_TYPE_ID_BLOCK(miaow_internal_module, caf::id_block::miaow_module::end)
@@ -54,6 +65,8 @@ CAF_ADD_ATOM(miaow_internal_module, miaow::core, request_worker_slot_atom, "reqs
 CAF_ADD_ATOM(miaow_internal_module, miaow::core, grant_worker_slot_atom, "grantslot")
 // Return one shared worker slot for the supplied job ID
 CAF_ADD_ATOM(miaow_internal_module, miaow::core, return_worker_slot_atom, "retslot")
+CAF_ADD_TYPE_ID(miaow_internal_module, (std::shared_ptr<miaow::core::WorkflowSubmission>))
+CAF_ADD_ATOM(miaow_internal_module, miaow::core, submit_child_atom, "subchild")
 CAF_END_TYPE_ID_BLOCK(miaow_internal_module)
 
 namespace miaow::core {
@@ -69,12 +82,12 @@ inline constexpr const char* subprocess_registration_host = "127.0.0.1";
 // Prefix used to identify failures from the subprocess execution path
 inline constexpr const char* subprocess_error_prefix = "Subprocess error";
 
-// Map each submitted job to the promise fulfilled by the orchestrator
+// Application promises for root jobs submitted through Runtime::submit_job()
 using PendingJobs = std::unordered_map<JobId, std::promise<JobRecord>>;
 
-// Build the output directory path for one submitted job
-std::filesystem::path job_directory_path(const RuntimeOptions& runtime_options,
-                                         std::uint64_t run_id, JobId job_id);
+// Application promises for root workflows submitted through Runtime::submit_workflow()
+using PendingWorkflows =
+    std::unordered_map<WorkflowRequestId, std::promise<WorkflowRecord>>;
 
 // File paths and metadata for subprocess logs
 struct SubprocessPaths {
@@ -114,7 +127,8 @@ class SubprocessState {
     SubprocessState(caf::event_based_actor* owner, caf::actor subprocess_registration_actor,
                     std::uint16_t subprocess_registration_port,
                     std::chrono::milliseconds task_request_timeout,
-                    std::chrono::milliseconds shutdown_grace_period);
+                    std::chrono::milliseconds shutdown_grace_period,
+                    std::string log_directory);
 
     // Final cleanup fallback when actor-driven termination and reaping cannot finish
     ~SubprocessState();
@@ -184,6 +198,9 @@ class SubprocessState {
     // Maximum time for the active call and child cleanup before forced termination
     const std::chrono::milliseconds shutdown_grace_period_;
 
+    // Dedicated diagnostic directory; empty selects a temporary directory per launch
+    const std::filesystem::path log_directory_;
+
     // Resources retained in each lifecycle phase
     // - idle: no response is pending; a reusable child may remain
     // - starting_subprocess: active request and response; child resources become
@@ -247,39 +264,61 @@ class SubprocessRegistration {
     std::unordered_map<SubprocessLaunchId, caf::actor> launch_owner_actors_;
 };
 
-// Root actor owned by Runtime: receives jobs and resolves each pending JobHandle
+// Root actor owned by Runtime: starts jobs and workflows and delivers their results
 class Orchestrator {
   public:
     Orchestrator(caf::event_based_actor* self, RuntimeOptions runtime_options,
-                 std::uint64_t run_id,
+                 std::string run_directory,
                  std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
                  caf::actor subprocess_registration_actor,
-                 std::uint16_t subprocess_registration_port, std::mutex* pending_jobs_mutex,
-                 PendingJobs* pending_jobs);
+                 std::uint16_t subprocess_registration_port, std::atomic<JobId>* next_job_id,
+                 std::mutex* pending_results_mutex,
+                 PendingJobs* pending_jobs, PendingWorkflows* pending_workflows);
 
     caf::behavior make_behavior();
 
   private:
+    void start_job(JobId job_id, std::shared_ptr<Job> prepared_job,
+                   std::function<void(caf::expected<JobRecord>)> complete);
+    void finish_application_job(JobId job_id, caf::expected<JobRecord> result);
+    void start_workflow(std::shared_ptr<WorkflowSubmission> submission,
+                        std::optional<WorkflowRequestId> application_request_id,
+                        caf::typed_response_promise<WorkflowRecord> parent_result = {});
+    void finish_workflow(caf::actor_id workflow_id, caf::expected<WorkflowRecord> result);
     void grant_worker_slots();
     void forget_job(JobId job_id);
 
     caf::event_based_actor* self_;
     RuntimeOptions runtime_options_;
-    std::uint64_t run_id_;
+    std::string run_directory_;
     std::shared_ptr<const TaskExecutorRegistry> task_executor_registry_;
     caf::actor subprocess_registration_actor_;
     std::uint16_t subprocess_registration_port_;
 
-    // Runtime owns the promises and mutex until the actor system has shut down
-    std::mutex* pending_jobs_mutex_;
+    // Runtime-owned job ID counter shared by root jobs and workflow child jobs
+    std::atomic<JobId>* next_job_id_;
+
+    // Runtime owns these maps and their mutex through actor shutdown. They hold application
+    // promises for root submissions; workflow children use CAF response promises.
+    std::mutex* pending_results_mutex_;
     PendingJobs* pending_jobs_;
+    PendingWorkflows* pending_workflows_;
 
     struct ActiveJob {
         caf::actor job_actor_;
         // Reservations charged to this job, including grants in transit
         std::size_t granted_worker_slots_{0};
     };
+    // Active job actors at every depth, including workflow children
     std::unordered_map<JobId, ActiveJob> active_jobs_;
+
+    struct ActiveWorkflow {
+        caf::actor workflow_actor_;
+        std::optional<WorkflowRequestId> application_request_id_;
+        caf::typed_response_promise<WorkflowRecord> parent_result_;
+    };
+    // Active workflow actors at every depth, including nested workflows
+    std::unordered_map<caf::actor_id, ActiveWorkflow> active_workflows_;
 
     // One request per job at a time. Grant slots in request order.
     std::deque<JobId> worker_slot_requests_;

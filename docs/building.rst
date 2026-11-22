@@ -29,9 +29,11 @@ The repository can be configured and built with the following commands:
    cmake -S . -B build
    cmake --build build
 
+Standalone single-configuration builds default to ``Release``. Select another build type with, for example, ``-DCMAKE_BUILD_TYPE=Debug``; existing non-empty cached choices are preserved. The default CMake preset also selects ``Release``. With a multi-configuration generator, select the configuration when building, for example with ``cmake --build build --config Release``.
+
 ``CITATION.cff`` is the single source for the software version. Use ``version: "0.3.0-dev"`` during development and ``version: "0.3.0"`` for a release; CMake extracts ``0.3.0`` and automatically reconfigures when the citation file changes.
 
-With ``BUILD_TESTING=ON`` (the default), CMake builds a Boost.Test checker for each regression workload, the lifecycle and BMI dispatch test drivers, and the six examples required by the standard regression suite: ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``07_job_controller``, ``09_bmi_operations``, and ``10_model_coupling``. Their tests are registered even with ``BUILD_EXAMPLES=OFF``. See :ref:`build-options` for the components built in each configuration, and :ref:`building-examples` to select additional examples.
+With ``BUILD_TESTING=ON`` (the default), CMake builds a Boost.Test checker for each regression workload, the lifecycle and BMI dispatch test drivers, and the seven examples required by the standard regression suite: ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``04_workflow``, ``07_job_controller``, ``09_bmi_operations``, and ``10_model_coupling``. Their tests are registered even with ``BUILD_EXAMPLES=OFF``. See :ref:`build-options` for the components built in each configuration, and :ref:`building-examples` to select additional examples.
 
 Run the tests enabled in the current build with the following command:
 
@@ -50,7 +52,7 @@ A single test can be selected by name with the following command:
 Building examples
 -----------------
 
-``BUILD_TESTING=ON`` always includes the six regression examples. ``BUILD_EXAMPLES=ON`` adds the examples selected by ``MIAOW_EXAMPLES``; overlapping selections are built once. To build the selected examples without the regression suite:
+``BUILD_TESTING=ON`` always includes the seven regression examples. ``BUILD_EXAMPLES=ON`` adds the examples selected by ``MIAOW_EXAMPLES``; overlapping selections are built once. To build the selected examples without the regression suite:
 
 .. code-block:: sh
 
@@ -72,7 +74,7 @@ CI runs the simulation-unit lifecycle cases and the regression tests for the def
    cmake --build build
    ctest --test-dir build -L regression --output-on-failure
 
-CTest runs Boost.Test checkers using the example and driver job builders. Numerical assertions inspect ``JobRecord``; report assertions inspect ``job_record.json``. JSON cases in ``tests/cases`` define inputs, expected failures, and runtime options.
+CTest runs Boost.Test checkers using the example and driver job builders and workflow controllers. Numerical assertions inspect ``JobRecord``; report assertions inspect ``job_<job_id>.json``. JSON cases in ``tests/cases`` define inputs, expected failures, and runtime options. The workflow checker observes controller finalization and returned output, then applies the shared job-record checks to child jobs captured from completion callbacks.
 
 Tests cover BMI execution, unit removal and replacement, and callback delivery. Lifecycle coverage includes both callback policies and execution with one or two workers.
 
@@ -104,6 +106,11 @@ Examples run with their default inputs.
 
        Submits in-process and subprocess runs for the C++ and Fortran heat-model plugins.
      - All four heat tasks succeed after 40 updates to 10 seconds; each plugin uses distinct task executor IDs for in-process and subprocess execution
+   * - `miaow_example_04_workflow`_
+     - `04_workflow/workflow.hpp`_
+
+       Submits two jobs with six sequential sleep tasks each.
+     - Both child completion callbacks run before the workflow finishes; each job completes all six tasks successfully and in dependency order
    * - `miaow_example_07_job_controller`_
      - `07_job_controller/job_controller.hpp`_
 
@@ -138,7 +145,7 @@ Successful example runs use JSON input overrides.
      - `00_hello/hello.hpp`_
 
        Submits an empty job and checks diagnostics on a copy containing one missing result.
-     - Submitting a job with an empty task list succeeds and writes ``job_record.json`` with an empty ``profile.tasks`` array. The empty record satisfies ``all_tasks_succeeded()``; the copy returns false and displays ``result unavailable`` in its summary.
+     - Submitting a job with an empty task list succeeds and writes ``job_0.json`` with an empty ``profile.tasks`` array. The empty record satisfies ``all_tasks_succeeded()``; the copy returns false and displays ``result unavailable`` in its summary.
    * - `miaow_example_03_dynamic_bmi_zero_tolerance`_
      - `03_dynamic_bmi/dynamic_bmi.hpp`_
 
@@ -258,6 +265,38 @@ Examples exercise invalid inputs, deadlines, failed tasks, and recovery.
 
 Tests using dedicated drivers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Workflow checker
+""""""""""""""""
+
+These cases use ``tests/workflow_record_checks.cpp`` and share the ``miaow_workflow_checks`` executable with the default two-job workflow test. Each CTest entry selects one Boost.Test case.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 28 38
+   :class: regression-tests
+
+   * - CTest name
+     - Code executed
+     - Expected result
+   * - `miaow_workflow_shutdown_with_active_and_queued_roots`_
+     - `workflow_record_checks.cpp`_
+
+       Holds the only CAF scheduler thread inside an active workflow controller, queues another root job and workflow, and destroys the runtime on a separate thread after all submission calls return. Promise-based signals establish the execution order without timing sleeps.
+     - All three application futures throw ``std::runtime_error("Runtime shutdown")`` before the controller is released and the teardown thread is joined.
+   * - `miaow_workflow_nested_completion`_
+     - `workflow_record_checks.cpp`_
+
+       Submits an empty child workflow from a parent workflow and observes both controllers with ``WorkflowRecordChecker``.
+     - Both controllers finalize, the parent receives one child ``WorkflowRecord``, and the child and root records contain their respective controllers' final output. Both controllers use the default null output.
+
+To build and run these cases and the default workflow test:
+
+.. code-block:: sh
+
+   cmake --build build --target miaow_workflow_checks
+   ctest --test-dir build -R '^miaow_(example_04_workflow|workflow_.*)$' --output-on-failure
+
 
 BMI task dispatch driver
 """"""""""""""""""""""""
@@ -397,6 +436,11 @@ These cases use ``tests/simulation_unit_lifecycle.hpp``.
 .. _01_heat/heat.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/01_heat/heat.hpp
 .. _miaow_example_03_dynamic_bmi: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/03_dynamic_bmi/CMakeLists.txt
 .. _03_dynamic_bmi/dynamic_bmi.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/03_dynamic_bmi/dynamic_bmi.hpp
+.. _miaow_example_04_workflow: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
+.. _04_workflow/workflow.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/workflow.hpp
+.. _miaow_workflow_shutdown_with_active_and_queued_roots: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
+.. _miaow_workflow_nested_completion: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
+.. _workflow_record_checks.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/workflow_record_checks.cpp
 .. _miaow_example_07_job_controller: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/CMakeLists.txt
 .. _07_job_controller/job_controller.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/job_controller.hpp
 .. _miaow_example_09_bmi_operations: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/09_bmi_operations/CMakeLists.txt
@@ -521,7 +565,7 @@ The standard regression suite is enabled when ``BUILD_TESTING`` is ``ON``, and b
 * ``<target>_checks``: Boost.Test executables sharing the corresponding example or driver workload and its model linkage. They check numerical results in process and inspect the final report schema and controller observations.
 * ``miaow_simulation_unit_lifecycle_driver``: the model-free workload driver for removal, failure recovery, callback delivery, and task dependencies.
 * ``miaow_bmi_dispatch_driver``: the heat-model workload driver for operation failures, value transfers, and repeated runs across the five BMI execution paths.
-* The ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``07_job_controller``, ``09_bmi_operations``, and ``10_model_coupling`` example programs, including the heat-model libraries and C++ and Fortran plugins needed by their tests.
+* The ``00_hello``, ``01_heat``, ``03_dynamic_bmi``, ``04_workflow``, ``07_job_controller``, ``09_bmi_operations``, and ``10_model_coupling`` example programs, including the heat-model libraries and C++ and Fortran plugins needed by their tests.
 
 The following top-level CMake options are available when building MIAOW:
 
@@ -540,7 +584,7 @@ The following top-level CMake options are available when building MIAOW:
      - Build the examples selected by ``MIAOW_EXAMPLES``; if ``BUILD_TESTING`` is also ``ON``, required regression examples are built even if not listed in ``MIAOW_EXAMPLES``
    * - ``-DMIAOW_EXAMPLES``
      - | ``00_hello;01_heat;``
-       | ``03_dynamic_bmi;``
+       | ``03_dynamic_bmi;04_workflow;``
        | ``07_job_controller;``
        | ``09_bmi_operations;``
        | ``10_model_coupling``

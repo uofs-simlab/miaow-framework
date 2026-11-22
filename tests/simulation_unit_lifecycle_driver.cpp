@@ -17,7 +17,8 @@ int main(int argc, char* argv[]) {
             config.value("shutdown_grace_period_ms",
                          runtime_options.subprocess_shutdown_grace_period_.count())};
         miaow::TaskExecutorRegistry registry;
-        miaow::Job job = miaow::tests::unit_lifecycle::make_job(registry, config);
+        miaow::Job job = miaow::tests::unit_lifecycle::make_job(
+            registry, config, runtime_options.output_root_);
         miaow::Runtime runtime(registry, runtime_options);
 
         miaow::JobHandle job_handle = runtime.submit_job(std::move(job));

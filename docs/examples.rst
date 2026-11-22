@@ -1,7 +1,7 @@
 Examples
 ========
 
-Examples are opt-in workflows that demonstrate MIAOW features and model integrations. Select and build them through the repository build as described in :ref:`building-examples`, then run them from their own ``examples/<example_name>`` directories:
+Examples demonstrate MIAOW features and model integrations. The default examples are included when testing is enabled; additional examples are opt-in. Select and build them through the repository build as described in :ref:`building-examples`, then run them from their own ``examples/<example_name>`` directories:
 
 .. code-block:: sh
 
@@ -11,6 +11,8 @@ Examples are opt-in workflows that demonstrate MIAOW features and model integrat
    ./miaow_heat
    cd ../03_dynamic_bmi
    ./miaow_dynamic_bmi --output_root ./output --max_workers 2
+   cd ../04_workflow
+   ./miaow_workflow
    cd ../07_job_controller
    ./miaow_job_controller
    cd ../09_bmi_operations
@@ -24,6 +26,7 @@ Default examples
 - `examples/00_hello <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/00_hello>`_: minimal orchestration and diagnostics output
 - `examples/01_heat <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/01_heat>`_: BMI integration using the `CSDMS heat example <https://github.com/csdms/bmi-example-cxx>`_
 - `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: C++ and Fortran heat plugins, each run in-process and in its own unit subprocess
+- `examples/04_workflow <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_workflow>`_: one workflow submits two jobs, each with six sequential in-process tasks. Tasks print start and end events and sleep for seeded random durations of 100 to 500 milliseconds.
 - `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: computes a square root using Heron's method, with the executor retaining its estimate across tasks and the job controller requesting iterations until the residual meets the convergence tolerance
 - `examples/09_bmi_operations <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/09_bmi_operations>`_: a controller submits initialization, time queries, two updates, and finalization as separate tasks on one static heat model
 - `examples/10_model_coupling <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/10_model_coupling>`_: a task DAG transfers temperature snapshots between two retained C++ heat models over three time steps by default
@@ -59,6 +62,19 @@ From ``examples/00_hello``, the greeting example runs the bundled ``data/configs
 Both jobs are submitted before the driver waits for either result. Each job can use up to two task slots, and both jobs combined can use up to two. Once the shorter job finishes, the remaining job can use both slots. Override these limits with ``--max_workers`` and ``--max_total_workers``.
 
 Use ``--config`` to supply a workload with either one configuration object or an array with one object per job.
+
+Two-job workflow
+^^^^^^^^^^^^^^^^
+
+Build and run the workflow example with one shared task slot, then two to see overlapping execution:
+
+.. code-block:: sh
+
+   cmake -S . -B build -DBUILD_EXAMPLES=ON -DMIAOW_EXAMPLES=04_workflow
+   cmake --build build --target miaow_workflow
+   cd examples/04_workflow
+   ./miaow_workflow
+   ./miaow_workflow --max_total_workers 2
 
 Additional examples
 -------------------

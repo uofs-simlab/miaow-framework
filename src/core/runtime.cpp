@@ -27,7 +27,6 @@
 namespace miaow {
 
 static std::once_flag caf_init_flag;
-static std::atomic<std::uint64_t> next_run_id{0};
 
 static std::filesystem::path run_directory_path(const RuntimeOptions& runtime_options,
                                                 std::uint64_t run_id) {
@@ -54,11 +53,10 @@ parse_run_directory_id(const std::string& directory_name) {
     return run_id;
 }
 
-// Create a unique run ID by scanning existing run directories and claiming the next one
-// that is not already present
-static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
+// Claim an unused run directory without overwriting output from earlier runtimes
+static std::string allocate_run_directory(const RuntimeOptions& runtime_options) {
     if (runtime_options.output_root_.empty()) {
-        return next_run_id.fetch_add(1, std::memory_order_relaxed);
+        return {};
     }
 
     const std::filesystem::path output_root(runtime_options.output_root_);
@@ -83,12 +81,7 @@ static std::uint64_t allocate_run_id(const RuntimeOptions& runtime_options) {
         !std::filesystem::create_directory(run_directory_path(runtime_options, run_id))) {
         ++run_id;
     }
-    return run_id;
-}
-
-std::filesystem::path core::job_directory_path(const RuntimeOptions& runtime_options,
-                                               std::uint64_t run_id, JobId job_id) {
-    return run_directory_path(runtime_options, run_id) / ("job_" + std::to_string(job_id));
+    return run_directory_path(runtime_options, run_id).string();
 }
 
 // Initialize CAF global meta objects exactly once in a thread-safe way
@@ -124,7 +117,7 @@ Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry, RuntimeOpti
         !core::is_scheduler_policy(*runtime_options_.caf_scheduler_policy_)) {
         throw std::invalid_argument("caf_scheduler_policy must be sharing or stealing");
     }
-    run_id_ = allocate_run_id(runtime_options_);
+    run_directory_ = allocate_run_directory(runtime_options_);
 
     // Keep one actor system and one shared orchestrator for this Runtime
     actor_system_config_ = std::make_shared<caf::actor_system_config>();
@@ -153,19 +146,44 @@ Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry, RuntimeOpti
                                  caf::to_string(subprocess_registration_port.error()));
     }
 
-    // Spawn the shared orchestrator actor to handle job requests and job completion
+    // Spawn the shared orchestrator for job and workflow submission and completion
     orchestrator_actor_ =
         actor_system_->spawn(caf::actor_from_state<core::Orchestrator>, runtime_options_,
-                             run_id_, task_executor_registry_,
+                             run_directory_, task_executor_registry_,
                              subprocess_registration_actor, *subprocess_registration_port,
-                             &pending_jobs_mutex_, &pending_jobs_);
+                             &next_job_id_, &pending_results_mutex_, &pending_jobs_,
+                             &pending_workflows_);
 }
 
 // Request actor shutdown before releasing the shared actor system
 Runtime::~Runtime() {
+    // Take all outstanding application promises before requesting actor shutdown
+    PendingJobs pending_jobs;
+    PendingWorkflows pending_workflows;
+    {
+        std::lock_guard<std::mutex> lock(pending_results_mutex_);
+        pending_jobs.swap(pending_jobs_);
+        pending_workflows.swap(pending_workflows_);
+    }
+    for (auto& [job_id, promise] : pending_jobs) {
+        promise.set_exception(std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
+    }
+    for (auto& [request_id, promise] : pending_workflows) {
+        promise.set_exception(std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
+    }
+
     if (orchestrator_actor_) {
-        // Runtime -> orchestrator_actor: stop active jobs and child registration
+        // Runtime -> orchestrator_actor: stop workflows, jobs, and child registration
         caf::anon_mail(core::shutdown_atom_v).urgent().send(orchestrator_actor_);
+    }
+
+    // Wait for unit cleanup before removing the empty diagnostic root
+    orchestrator_actor_ = caf::actor{};
+    actor_system_.reset();
+    if (!run_directory_.empty()) {
+        std::error_code ignored_error;
+        std::filesystem::remove(std::filesystem::path(run_directory_) / "logs",
+                                ignored_error);
     }
 }
 
@@ -220,7 +238,6 @@ TaskId Job::add_task(Task task) {
         }
     }
     const TaskId task_id = static_cast<TaskId>(tasks_.size());
-    task.task_output_dir_.clear();
     tasks_.push_back(std::move(task));
     task_results_.emplace_back();
     task_data_released_.push_back(false);
@@ -322,13 +339,14 @@ SimulationUnitId Job::add_unit(std::string feature_id, TaskExecutorId executor_i
     return unit_id;
 }
 
-JobHandle Runtime::submit_job(Job job) const {
-    if (!job.job_controller_) {
+void Job::validate_for_submission() const {
+    if (!job_controller_) {
         throw std::invalid_argument("Runtime requires a non-null JobController");
     }
+}
 
-    job.max_workers_ = job.max_workers_.value_or(runtime_options_.max_workers());
-
+JobHandle Runtime::submit_job(Job job) const {
+    job.validate_for_submission();
     const JobId job_id = next_job_id_.fetch_add(1, std::memory_order_relaxed);
 
     // Create a promise/future pair for this submitted job
@@ -336,7 +354,7 @@ JobHandle Runtime::submit_job(Job job) const {
 
     JobHandle handle = promise.get_future();
     {
-        std::lock_guard<std::mutex> lock(pending_jobs_mutex_);
+        std::lock_guard<std::mutex> lock(pending_results_mutex_);
         // Register this in-progress job in the dictionary: job_id -> promise
         pending_jobs_.emplace(job_id, std::move(promise));
     }
@@ -344,6 +362,28 @@ JobHandle Runtime::submit_job(Job job) const {
     // CAF may copy local messages; the receiving actor adopts the prepared Job state
     auto shared_job = std::make_shared<Job>(std::move(job));
     caf::anon_mail(caf::get_atom_v, job_id, std::move(shared_job))
+        .send(orchestrator_actor_);
+    return handle;
+}
+
+WorkflowHandle Runtime::submit_workflow(std::unique_ptr<WorkflowController> controller) const {
+    if (!controller) {
+        throw std::invalid_argument("Runtime requires a non-null WorkflowController");
+    }
+
+    const core::WorkflowRequestId request_id =
+        next_workflow_request_id_.fetch_add(1, std::memory_order_relaxed);
+    std::promise<WorkflowRecord> promise;
+    WorkflowHandle handle = promise.get_future();
+    {
+        std::lock_guard<std::mutex> lock(pending_results_mutex_);
+        pending_workflows_.emplace(request_id, std::move(promise));
+    }
+
+    auto submission = std::make_shared<core::WorkflowSubmission>(
+        core::WorkflowSubmission{std::move(controller)});
+    // Runtime -> orchestrator_actor: start a top-level workflow
+    caf::anon_mail(caf::get_atom_v, request_id, std::move(submission))
         .send(orchestrator_actor_);
     return handle;
 }
