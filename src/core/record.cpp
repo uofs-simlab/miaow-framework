@@ -14,13 +14,14 @@ namespace miaow {
 JobRecord::JobRecord(JobId job_id, std::vector<std::optional<TaskResult>> task_results,
                      std::vector<TaskTiming> task_timings,
                      std::chrono::duration<double> run_time, caf::config_value output)
-    : job_id_{job_id}, task_results_{std::move(task_results)},
-      task_timings_{std::move(task_timings)}, run_time_{run_time},
-      output_{std::move(output)}, miaow_version_{core::build_version} {}
+    : job_id_{job_id}, task_results_{std::move(task_results)}, task_timings_{std::move(
+                                                                   task_timings)},
+      run_time_{run_time}, output_{std::move(output)}, miaow_version_{core::build_version} {
+}
 
 void Job::write_job_record(const JobRecord& record) const {
-    const std::filesystem::path path =
-        std::filesystem::path(run_directory_) / ("job_" + std::to_string(job_id_) + ".json");
+    const std::filesystem::path path = std::filesystem::path(run_directory_) /
+                                       ("job_" + std::to_string(job_id_) + ".json");
 
     // Index operation names locally while task definitions remain available
     std::vector<std::string_view> operations;

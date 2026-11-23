@@ -18,8 +18,9 @@ int main(int argc, char* argv[]) {
         // Default to two shared slots and let either job use both.
         miaow::RuntimeOptions runtime_options{2};
         runtime_options.set_max_total_workers(2);
-        const nlohmann::json config = read_example_config(
-            argc, argv, runtime_options, "data/configs/shared_workers.json");
+        const nlohmann::json config =
+            read_example_config(argc, argv, runtime_options,
+                                "data/configs/shared_workers.json");
         const nlohmann::json job_configs =
             config.is_array() ? config : nlohmann::json::array({config});
 

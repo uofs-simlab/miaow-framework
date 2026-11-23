@@ -209,8 +209,8 @@ struct TaskResult {
      */
     TaskResult(TaskStatus status, std::string message,
                std::vector<std::string> artifact_paths = {})
-        : status_{status}, message_{std::move(message)},
-          artifact_paths_{std::move(artifact_paths)} {}
+        : status_{status}, message_{std::move(message)}, artifact_paths_{
+                                                             std::move(artifact_paths)} {}
 
     /**
      * @brief Construct a `TaskResult` from status, message, output, and artifacts.
@@ -640,8 +640,8 @@ struct RuntimeOptions {
                    std::string output_root = "",
                    std::chrono::milliseconds subprocess_shutdown_grace_period =
                        std::chrono::seconds(5))
-        : task_request_timeout_(task_timeout),
-          job_request_timeout_(job_timeout), output_root_(std::move(output_root)),
+        : task_request_timeout_(task_timeout), job_request_timeout_(job_timeout),
+          output_root_(std::move(output_root)),
           subprocess_shutdown_grace_period_(subprocess_shutdown_grace_period) {
         set_max_workers(workers);
     }
@@ -794,7 +794,7 @@ class Job {
     const std::optional<TaskResult>& result(TaskId task_id) const;
 
     /// Clear a completed task's payload while retaining its task and result entries.
-    /// Call from a controller hook after the data's final use; repeated release is 
+    /// Call from a controller hook after the data's final use; repeated release is
     /// harmless.
     ///
     /// Cleared fields for task_id:
@@ -807,7 +807,8 @@ class Job {
     /// - Task::unit_id_, Task::operation_, and Task::task_output_dir_.
     /// - TaskResult::status_, TaskResult::message_, and TaskResult::artifact_paths_.
     /// - TaskTiming::dispatch_offset_ns_ and TaskTiming::completion_offset_ns_.
-    /// The task ID remains the same vector index; no task, result, or timing slot is erased.
+    /// The task ID remains the same vector index; no task, result, or timing slot is
+    /// erased.
     ///
     /// Released output is null in result() and the final JobRecord. New output references
     /// are rejected; queued consumers that still need the output fail without dispatch.
@@ -998,7 +999,8 @@ class Workflow {
     template <class Value, class Submission>
     WorkflowChildId submit_child(std::shared_ptr<Submission> submission);
     template <class Hook> void run_hook(Hook hook);
-    template <class Result> void complete_child(WorkflowChildId child_id, const Result& result);
+    template <class Result>
+    void complete_child(WorkflowChildId child_id, const Result& result);
     void finish_if_idle();
 
     caf::event_based_actor* self_;
@@ -1195,7 +1197,8 @@ class Runtime {
     // CAF actor system for this runtime instance
     std::shared_ptr<caf::actor_system> actor_system_;
 
-    // Top-level actor that launches jobs and workflows and routes results to their submitters.
+    // Top-level actor that launches jobs and workflows and routes results to their
+    // submitters.
     caf::actor orchestrator_actor_;
 };
 

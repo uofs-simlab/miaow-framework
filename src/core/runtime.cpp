@@ -166,10 +166,12 @@ Runtime::~Runtime() {
         pending_workflows.swap(pending_workflows_);
     }
     for (auto& [job_id, promise] : pending_jobs) {
-        promise.set_exception(std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
+        promise.set_exception(
+            std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
     }
     for (auto& [request_id, promise] : pending_workflows) {
-        promise.set_exception(std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
+        promise.set_exception(
+            std::make_exception_ptr(std::runtime_error("Runtime shutdown")));
     }
 
     if (orchestrator_actor_) {
@@ -366,7 +368,8 @@ JobHandle Runtime::submit_job(Job job) const {
     return handle;
 }
 
-WorkflowHandle Runtime::submit_workflow(std::unique_ptr<WorkflowController> controller) const {
+WorkflowHandle
+Runtime::submit_workflow(std::unique_ptr<WorkflowController> controller) const {
     if (!controller) {
         throw std::invalid_argument("Runtime requires a non-null WorkflowController");
     }

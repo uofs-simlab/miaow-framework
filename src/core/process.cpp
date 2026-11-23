@@ -197,8 +197,9 @@ SubprocessRegistrationInfo parse_subprocess_registration_info(int argc, char* ar
 
     registration.host_ = std::move(host);
     registration.port_ = static_cast<std::uint16_t>(port_value);
-    registration.launch_id_ = parse_unsigned_argument(
-        launch_id, "--launch-id", std::numeric_limits<SubprocessLaunchId>::max());
+    registration.launch_id_ =
+        parse_unsigned_argument(launch_id, "--launch-id",
+                                std::numeric_limits<SubprocessLaunchId>::max());
     return registration;
 }
 
@@ -492,7 +493,8 @@ void SubprocessState::finish_stop(std::optional<int> wait_status) {
     launch_id_.reset();
     phase_ = SubprocessPhase::idle;
 
-    // On context loss, notify the job through the unit monitor; otherwise deliver the result
+    // On context loss, notify the job through the unit monitor; otherwise deliver the
+    // result
     caf::error reason;
     if (result_waiting_for_stop_.has_value()) {
         if (context_failed_) {
@@ -637,10 +639,10 @@ void SubprocessState::start_subprocess(SubprocessLaunchId launch_id) {
     try {
         paths_ = make_subprocess_paths(log_directory_, active_task_->unit_id_);
         keep_logs_ = false;
-        subprocess_pid_ =
-            spawn_subprocess_worker(registration_->executable_, subprocess_registration_port_,
-                                    launch_id, *paths_, registration_->scheduler_policy_,
-                                    registration_->scheduler_threads_);
+        subprocess_pid_ = spawn_subprocess_worker(registration_->executable_,
+                                                  subprocess_registration_port_, launch_id,
+                                                  *paths_, registration_->scheduler_policy_,
+                                                  registration_->scheduler_threads_);
 
         // simulation_unit_actor -> simulation_unit_actor: enforce the startup deadline
         owner_->mail(subprocess_startup_timeout_atom_v, launch_id)
@@ -803,7 +805,8 @@ TaskExecutorRegistry::make_executor(TaskExecutorId task_executor_id,
         return (*factory)();
     }
 
-    subprocess_state.registration_ = &std::get<SubprocessRegistration>(registration->second);
+    subprocess_state.registration_ =
+        &std::get<SubprocessRegistration>(registration->second);
     return std::make_unique<core::SubprocessTaskExecutor>(subprocess_state);
 }
 
@@ -815,7 +818,8 @@ TaskExecutorId TaskExecutorRegistry::add_subprocess(std::string subprocess_execu
     }
 
     if (!core::is_scheduler_policy(scheduler_policy)) {
-        throw std::invalid_argument("subprocess scheduler policy must be sharing or stealing");
+        throw std::invalid_argument(
+            "subprocess scheduler policy must be sharing or stealing");
     }
     if (scheduler_threads == 0) {
         throw std::invalid_argument("subprocess scheduler thread count must be positive");
@@ -855,9 +859,8 @@ int run_subprocess_worker(
             // subprocess_main -> subprocess_worker_actor: stop after connection failure;
             // prevent actor_system from waiting for the local worker during unwinding
             caf::anon_send_exit(subprocess_worker_actor, caf::exit_reason::user_shutdown);
-            throw std::runtime_error(
-                "failed to connect to parent registration actor: " +
-                caf::to_string(subprocess_registration_actor.error()));
+            throw std::runtime_error("failed to connect to parent registration actor: " +
+                                     caf::to_string(subprocess_registration_actor.error()));
         }
 
         // Keep the subprocess alive until the worker has returned

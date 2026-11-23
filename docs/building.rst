@@ -22,6 +22,8 @@ On macOS with `Homebrew <https://brew.sh/>`_, the required compiler and build to
 Repository development build
 ----------------------------
 
+CI checks C and C++ formatting with clang-format 15. Run ``scripts/format.sh --check`` locally, or ``scripts/format.sh`` to apply formatting. The script uses ``clang-format-15`` by default. Set ``CLANG_FORMAT`` to the path of your clang-format 15 executable if it has a different name.
+
 The repository can be configured and built with the following commands:
 
 .. code-block:: sh

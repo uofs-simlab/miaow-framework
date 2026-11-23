@@ -223,10 +223,10 @@ TaskResult BmiTaskExecutor::execute_operation(const Task& task) {
             task.operation_ == "run" || task.operation_ == "initialize";
         const bool uses_retained_model =
             task.operation_ == "cache_sequence" || task.operation_ == "sequence" ||
-            task.operation_ == "update_until" ||
-            task.operation_ == "update" || task.operation_ == "get_current_time" ||
-            task.operation_ == "get_value" || task.operation_ == "get_value_at_indices" ||
-            task.operation_ == "set_value" || task.operation_ == "finalize";
+            task.operation_ == "update_until" || task.operation_ == "update" ||
+            task.operation_ == "get_current_time" || task.operation_ == "get_value" ||
+            task.operation_ == "get_value_at_indices" || task.operation_ == "set_value" ||
+            task.operation_ == "finalize";
 
         // if the operation creates a model, ensure no model is already retained
         if (creates_model && model_) {
@@ -290,8 +290,8 @@ TaskResult BmiTaskExecutor::execute_operation(const Task& task) {
         // Retain one program for subsequent sequence tasks on this unit
         if (task.operation_ == "cache_sequence") {
             const std::int64_t sequence_id = next_sequence_id_;
-            cached_sequences_.emplace(
-                sequence_id, caf::get<caf::config_value::list>(task.args_.at(0)));
+            cached_sequences_.emplace(sequence_id,
+                                      caf::get<caf::config_value::list>(task.args_.at(0)));
             ++next_sequence_id_;
             return TaskResult{TaskStatus::succeeded, {}, caf::config_value{sequence_id}};
         }

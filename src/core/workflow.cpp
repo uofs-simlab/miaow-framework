@@ -9,7 +9,8 @@ void WorkflowController::callback(Workflow&, WorkflowChildId, const JobResult& r
     }
 }
 
-void WorkflowController::callback(Workflow&, WorkflowChildId, const WorkflowResult& result) {
+void WorkflowController::callback(Workflow&, WorkflowChildId,
+                                  const WorkflowResult& result) {
     // By default, a failed child workflow fails its parent after outstanding work drains.
     if (const auto* error = std::get_if<std::exception_ptr>(&result)) {
         std::rethrow_exception(*error);

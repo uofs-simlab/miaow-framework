@@ -4,11 +4,11 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 
-clang_format="${CLANG_FORMAT:-clang-format}"
-mode="format"
+clang_format="${CLANG_FORMAT:-clang-format-15}"
+format_args=(-i)
 
 if [[ "${1:-}" == "--check" ]]; then
-    mode="check"
+    format_args=(--dry-run -Werror)
 elif [[ "$#" -gt 0 ]]; then
     echo "usage: scripts/format.sh [--check]" >&2
     exit 2
@@ -19,35 +19,17 @@ if ! command -v "${clang_format}" >/dev/null 2>&1; then
     exit 1
 fi
 
-files=()
-while IFS= read -r -d '' file; do
-    files+=("${file}")
-done < <(
-    find "${repo_root}/include" "${repo_root}/src" "${repo_root}/examples" \
-        "${repo_root}/tests" \
-        \( -path "${repo_root}/include/third_party" \
-        -o -path "${repo_root}/examples/*/.venv" \
-        -o -path "${repo_root}/examples/*/output" \
-        -o -path "${repo_root}/examples/*/extern" \) -prune \
-        -o -type f \
-        \( -name '*.c' \
-        -o -name '*.cc' \
-        -o -name '*.cpp' \
-        -o -name '*.cxx' \
-        -o -name '*.h' \
-        -o -name '*.hh' \
-        -o -name '*.hpp' \
-        -o -name '*.hxx' \) \
-        -print0
-)
-
-if [[ "${#files[@]}" -eq 0 ]]; then
-    echo "No C/C++ files found"
-    exit 0
-fi
-
-if [[ "${mode}" == "check" ]]; then
-    "${clang_format}" --dry-run -Werror "${files[@]}"
-else
-    "${clang_format}" -i "${files[@]}"
-fi
+# Include new source files while excluding ignored build products and vendored code
+cd "${repo_root}"
+git ls-files -z --cached --others --exclude-standard -- include src examples tests \
+    ':!include/third_party' ':!examples/*/extern/**' ':!examples/*/.venv/**' \
+    ':!examples/*/output/**' |
+    while IFS= read -r -d '' file; do
+        case "${file}" in
+            *.c|*.cc|*.cpp|*.cxx|*.h|*.hh|*.hpp|*.hxx)
+                if [[ -f "${file}" ]]; then
+                    printf '%s\0' "${file}"
+                fi
+                ;;
+        esac
+    done | xargs -0 "${clang_format}" "${format_args[@]}"
