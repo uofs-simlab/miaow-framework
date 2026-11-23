@@ -271,8 +271,8 @@ class Orchestrator {
                  std::string run_directory,
                  std::shared_ptr<const TaskExecutorRegistry> task_executor_registry,
                  caf::actor subprocess_registration_actor,
-                 std::uint16_t subprocess_registration_port, std::atomic<JobId>* next_job_id,
-                 std::mutex* pending_results_mutex,
+                 std::uint16_t subprocess_registration_port,
+                 std::atomic<JobId>* next_job_id, std::mutex* pending_results_mutex,
                  PendingJobs* pending_jobs, PendingWorkflows* pending_workflows);
 
     caf::behavior make_behavior();

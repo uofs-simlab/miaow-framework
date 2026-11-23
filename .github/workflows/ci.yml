@@ -2,9 +2,18 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:
+  formatting:
+    name: C++ formatting
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/format.sh --check
+
   regression-tests:
     name: Regression tests
     runs-on: ubuntu-22.04

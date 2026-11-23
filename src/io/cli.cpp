@@ -97,7 +97,8 @@ void parse_runtime_cli_options(int argc, char* argv[], RuntimeOptions& runtime_o
             const std::string_view option_value =
                 read_option_value(argc, argv, index, option_name);
             if (option_value != "sharing" && option_value != "stealing") {
-                throw std::runtime_error("Error: --caf_scheduler_policy requires sharing or stealing");
+                throw std::runtime_error(
+                    "Error: --caf_scheduler_policy requires sharing or stealing");
             }
             runtime_options.caf_scheduler_policy_ = option_value;
             continue;

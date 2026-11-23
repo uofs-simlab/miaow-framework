@@ -104,9 +104,8 @@ BOOST_AUTO_TEST_CASE(workflow_shutdown_with_active_and_queued_roots) {
         runtime->submit_workflow(std::make_unique<miaow::WorkflowController>());
 
     // All member calls have finished before another thread takes ownership for teardown
-    std::thread shutdown([owned_runtime = std::move(runtime)]() mutable {
-        owned_runtime.reset();
-    });
+    std::thread shutdown(
+        [owned_runtime = std::move(runtime)]() mutable { owned_runtime.reset(); });
     const auto is_shutdown_error = [](const std::runtime_error& error) {
         return std::string{error.what()} == "Runtime shutdown";
     };
@@ -126,12 +125,13 @@ BOOST_AUTO_TEST_CASE(workflow_nested_completion) {
     miaow::tests::WorkflowRecordChecker parent_checker;
     miaow::tests::WorkflowRecordChecker child_checker;
     miaow::Runtime runtime(registry);
-    miaow::WorkflowHandle handle = runtime.submit_workflow(parent_checker.observe(
-        std::make_unique<ParentWorkflowController>(
+    miaow::WorkflowHandle handle = runtime.submit_workflow(
+        parent_checker.observe(std::make_unique<ParentWorkflowController>(
             child_checker.observe(std::make_unique<miaow::WorkflowController>()))));
     const miaow::WorkflowRecord record = handle.get();
 
     parent_checker.check(record);
     BOOST_REQUIRE_EQUAL(parent_checker.workflows.size(), 1);
-    child_checker.check(std::get<miaow::WorkflowRecord>(parent_checker.workflows[0].second));
+    child_checker.check(
+        std::get<miaow::WorkflowRecord>(parent_checker.workflows[0].second));
 }
