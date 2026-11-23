@@ -68,7 +68,7 @@ Each model-backed example accepts a ``MIAOW_<MODEL_NAME>_MODEL_ROOT`` override. 
 Regression tests
 ----------------
 
-CI runs the simulation-unit lifecycle cases and the regression tests for the default examples on every push and pull request. To run the same suite locally:
+CI runs the simulation-unit lifecycle cases and the regression tests for the default examples when a pull request is opened, reopened, or updated, and on pushes to ``main``. To run the same suite locally:
 
 .. code-block:: sh
 
