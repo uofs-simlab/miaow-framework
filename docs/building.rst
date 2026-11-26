@@ -87,7 +87,7 @@ CI runs the full regression suite in parallel jobs for the regular Release build
 
 On GitHub, click **Actions**, select the **CI** workflow, and open the run for your pull request or commit. On the **Summary** page, look for **Overall coverage** and, on pull requests, **Diff Coverage**. For line-by-line details, click **cpp-coverage** under **Artifacts**, extract the ZIP file, and open ``index.html`` in your browser.
 
-The instrumented job enables LeakSanitizer and collects separate reports from the test processes and subprocess workers. A leak report fails the job even if CTest passes. When the job fails, any reports are available in the ``sanitizer-reports`` artifact.
+The instrumented job collects separate AddressSanitizer and LeakSanitizer reports from test processes and subprocess workers. An AddressSanitizer error or leak report fails the job even if CTest passes. When the job fails, any reports are available in the ``sanitizer-reports`` artifact.
 
 CTest runs Boost.Test checkers using the example and driver job builders and workflow controllers. Numerical assertions inspect ``JobRecord``; report assertions inspect ``job_<job_id>.json``. JSON cases in ``tests/cases`` define inputs, expected failures, and runtime options. The workflow checker observes controller finalization and returned output, then applies the shared job-record checks to child jobs captured from completion callbacks.
 

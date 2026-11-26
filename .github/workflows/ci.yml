@@ -119,10 +119,11 @@ jobs:
             --output-on-failure \
             --build-config Release
 
-      - name: Check for leak reports from test processes
+      - name: Check for sanitizer reports from test processes
         if: matrix.instrumented
         run: |
-          if grep -rFl 'ERROR: LeakSanitizer:' "$RUNNER_TEMP/miaow-sanitizers"; then
+          if grep -rEl 'ERROR: (AddressSanitizer|LeakSanitizer):|AddressSanitizer:DEADLYSIGNAL' \
+              "$RUNNER_TEMP/miaow-sanitizers"; then
             exit 1
           fi
 
