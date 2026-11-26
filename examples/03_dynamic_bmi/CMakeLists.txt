@@ -80,6 +80,13 @@ if(BUILD_TESTING)
         EXTERNAL_MODEL
     )
     miaow_add_example_test(
+        TEST_NAME miaow_bmi_cached_sequence
+        EXECUTABLE_TARGET miaow_bmi_dispatch_driver
+        REGRESSION bmi_cached_sequence
+        CASE_FILE "${PROJECT_SOURCE_DIR}/tests/cases/bmi_cached_sequence.json"
+        EXTERNAL_MODEL
+    )
+    miaow_add_example_test(
         TEST_NAME miaow_bmi_static_lifecycle
         EXECUTABLE_TARGET miaow_bmi_dispatch_driver
         REGRESSION bmi_lifecycle

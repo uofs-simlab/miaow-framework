@@ -1,0 +1,4 @@
+{
+  "max_workers": 1,
+  "input": {"scenario": "release_after"}
+}

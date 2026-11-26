@@ -302,6 +302,16 @@ These cases use ``tests/workflow_record_checks.cpp`` and share the ``miaow_workf
 
        Submits an empty child workflow from a parent workflow and observes both controllers with ``WorkflowRecordChecker``.
      - Both controllers finalize, the parent receives one child ``WorkflowRecord``, and the child and root records contain their respective controllers' final output. Both controllers use the default null output.
+   * - `miaow_workflow_nested_failure`_
+     - `workflow_record_checks.cpp`_
+
+       Runs a child workflow that throws while a sibling job is active.
+     - The sibling job finishes and saves its record before the parent handle reports the child's error.
+   * - `miaow_workflow_output_retention`_
+     - `workflow_record_checks.cpp`_
+
+       Runs the same job-producing workflow in two successive ``Runtime`` instances using one output root.
+     - The second runtime writes to ``run_1``. The first run's record in ``run_0`` remains unchanged.
 
 To build and run these cases and the default workflow test:
 
@@ -331,6 +341,11 @@ The initialization and finalization failure cases use a custom exception in the 
 
        Submits an unsupported operation, then a valid run, on each of five BMI execution paths.
      - Five execution paths each reject an unknown operation and then complete a valid run after 40 updates
+   * - `miaow_bmi_cached_sequence`_
+     - `bmi_task_dispatch.hpp`_
+
+       Caches and executes a sequence that writes a known temperature field from an input slice and reads selected indices from the C++ heat model.
+     - The returned values match the written field in the supplied index order.
    * - `miaow_bmi_static_lifecycle`_
      - `bmi_task_dispatch.hpp`_
 
@@ -431,6 +446,16 @@ These cases use ``tests/simulation_unit_lifecycle.hpp``.
 
        Injects executor-construction failure, replaces the unit, and continues work.
      - With two worker slots, the first batch callback reports two failed tasks, one successful task, and one unit failure; the second reports three successful tasks and no unit failures.
+   * - `miaow_simulation_unit_release_after`_
+     - `simulation_unit_lifecycle.hpp`_
+
+       Sends one task's output to two consumers and schedules its release with ``release_after()``.
+     - Both consumers receive the original value, and the last consumer's completion callback can still read it. The final record retains the producer's success status with its output cleared.
+   * - `miaow_subprocess_launch_failure`_
+     - `simulation_unit_lifecycle.hpp`_
+
+       Submits a task to a missing worker executable, followed by work on an independent unit, with one worker slot.
+     - The first task records a launch failure. The independent task gets the worker slot and succeeds.
    * - `miaow_subprocess_shutdown_within_grace`_
      - `simulation_unit_lifecycle.hpp`_ and `subprocess_shutdown_worker.cpp`_
 
@@ -453,6 +478,8 @@ These cases use ``tests/simulation_unit_lifecycle.hpp``.
 .. _04_workflow/workflow.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/workflow.hpp
 .. _miaow_workflow_shutdown_with_active_and_queued_roots: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
 .. _miaow_workflow_nested_completion: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
+.. _miaow_workflow_nested_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
+.. _miaow_workflow_output_retention: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/04_workflow/CMakeLists.txt
 .. _workflow_record_checks.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/workflow_record_checks.cpp
 .. _miaow_example_07_job_controller: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/CMakeLists.txt
 .. _07_job_controller/job_controller.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/examples/07_job_controller/job_controller.hpp
@@ -482,6 +509,7 @@ These cases use ``tests/simulation_unit_lifecycle.hpp``.
 .. _miaow_example_03_dynamic_bmi_overshoot: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_overshoot.json
 .. _miaow_example_07_job_controller_non_convergence: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/controller_non_convergence.json
 .. _miaow_bmi_task_dispatch: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_unknown_operation.json
+.. _miaow_bmi_cached_sequence: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_cached_sequence.json
 .. _miaow_bmi_static_lifecycle: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_static_lifecycle.json
 .. _miaow_bmi_initialize_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_initialize_failure.json
 .. _miaow_bmi_update_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/bmi_update_failure.json
@@ -495,6 +523,8 @@ These cases use ``tests/simulation_unit_lifecycle.hpp``.
 .. _miaow_bmi_repeated_run_concurrent: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/dynamic_repeated_run_concurrent.json
 .. _miaow_simulation_unit_removal_with_queued_work: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_removal_with_queued_work.json
 .. _simulation_unit_lifecycle.hpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/simulation_unit_lifecycle.hpp
+.. _miaow_simulation_unit_release_after: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/unit_release_after.json
+.. _miaow_subprocess_launch_failure: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/subprocess_launch_failure.json
 .. _subprocess_shutdown_worker.cpp: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/subprocess_shutdown_worker.cpp
 .. _miaow_subprocess_shutdown_within_grace: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/subprocess_shutdown_within_grace.json
 .. _miaow_subprocess_shutdown_grace_expired: https://github.com/uofs-simlab/miaow-framework/blob/main/tests/cases/subprocess_shutdown_grace_expired.json
