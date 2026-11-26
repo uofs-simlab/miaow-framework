@@ -22,14 +22,21 @@ On macOS with `Homebrew <https://brew.sh/>`_, the required compiler and build to
 Repository development build
 ----------------------------
 
-CI checks C and C++ formatting with clang-format 15. Run ``scripts/format.sh --check`` locally, or ``scripts/format.sh`` to apply formatting. The script uses ``clang-format-15`` by default. Set ``CLANG_FORMAT`` to the path of your clang-format 15 executable if it has a different name.
-
 The repository can be configured and built with the following commands:
 
 .. code-block:: sh
 
    cmake -S . -B build
    cmake --build build
+
+The project's CI checks C and C++ formatting with clang-format 15. Run ``scripts/format.sh --check`` locally, or ``scripts/format.sh`` to apply formatting. The script uses ``clang-format-15`` by default. Set ``CLANG_FORMAT`` to the path of your clang-format 15 executable if it has a different name.
+
+CI also uses clang-tidy 23.1.4 to check for dangling views such as ``std::string_view`` and ``std::span``, use after move, unnamed RAII objects such as lock guards that release immediately, and ineffective moves. To run the same checks from the repository root after building:
+
+.. code-block:: sh
+
+   run-clang-tidy.py -p build -header-filter="^$PWD/(include/miaow|src/|examples/|tests/)" \
+       "^$PWD/(src|examples|tests)/.*\.cpp$"
 
 Standalone single-configuration builds default to ``Release``. Select another build type with, for example, ``-DCMAKE_BUILD_TYPE=Debug``; existing non-empty cached choices are preserved. The default CMake preset also selects ``Release``. With a multi-configuration generator, select the configuration when building, for example with ``cmake --build build --config Release``.
 
@@ -41,13 +48,13 @@ Run the tests enabled in the current build with the following command:
 
 .. code-block:: sh
 
-   ctest --test-dir build --output-on-failure
+   ctest --test-dir build --no-tests=error --output-on-failure
 
 A single test can be selected by name with the following command:
 
 .. code-block:: sh
 
-   ctest --test-dir build -R <test_name> --output-on-failure
+   ctest --test-dir build -R <test_name> --no-tests=error --output-on-failure
 
 .. _building-examples:
 
@@ -74,7 +81,11 @@ CI runs the simulation-unit lifecycle cases and the regression tests for the def
 
    cmake -S . -B build -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF
    cmake --build build
-   ctest --test-dir build -L regression --output-on-failure
+   ctest --test-dir build -L regression --no-tests=error --output-on-failure
+
+CI runs the full regression suite in parallel jobs for the regular Release build and a C++ build with AddressSanitizer, UndefinedBehaviorSanitizer, and coverage instrumentation. The compiler adds coverage counters to the framework sources under ``src/`` and the public MIAOW headers. After the instrumented tests pass, the job publishes HTML and Cobertura XML reports as the ``cpp-coverage`` artifact. Report generation and upload are advisory.
+
+The instrumented job enables LeakSanitizer and collects separate reports from the test processes and subprocess workers. A leak report fails the job even if CTest passes. When the job fails, any reports are available in the ``sanitizer-reports`` artifact.
 
 CTest runs Boost.Test checkers using the example and driver job builders and workflow controllers. Numerical assertions inspect ``JobRecord``; report assertions inspect ``job_<job_id>.json``. JSON cases in ``tests/cases`` define inputs, expected failures, and runtime options. The workflow checker observes controller finalization and returned output, then applies the shared job-record checks to child jobs captured from completion callbacks.
 
@@ -297,7 +308,7 @@ To build and run these cases and the default workflow test:
 .. code-block:: sh
 
    cmake --build build --target miaow_workflow_checks
-   ctest --test-dir build -R '^miaow_(example_04_workflow|workflow_.*)$' --output-on-failure
+   ctest --test-dir build -R '^miaow_(example_04_workflow|workflow_.*)$' --no-tests=error --output-on-failure
 
 
 BMI task dispatch driver

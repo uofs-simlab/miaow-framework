@@ -1,14 +1,14 @@
 # Reuse the pinned static heat model and its source-root override
 include("${PROJECT_SOURCE_DIR}/cmake/miaow_bmi_model.cmake")
 set(MIAOW_HEAT_MODEL_ROOT "" CACHE PATH
-    "Path to a local csdms/bmi-example-cxx source tree")
+    "Path to a local bmi-example-cxx source tree")
 
 miaow_add_bmi_model(
     MODEL_ROOT "${MIAOW_HEAT_MODEL_ROOT}"
     EXECUTABLE_TARGET miaow_bmi_operations
-    MODEL_LOCAL_SUBDIR bmi-example-cxx
-    MODEL_GIT_REPOSITORY "https://github.com/csdms/bmi-example-cxx.git"
-    MODEL_GIT_TAG "cd6347165021e607204820420eb8af14df26fa59"
+    MODEL_LOCAL_SUBDIR "${miaow_cpp_heat_model_subdir}"
+    MODEL_GIT_REPOSITORY "${miaow_cpp_heat_model_repository}"
+    MODEL_GIT_TAG "${miaow_cpp_heat_model_revision}"
     EXECUTABLE_SOURCES main.cpp
     MODEL_SOURCES
         heat/heat.cxx

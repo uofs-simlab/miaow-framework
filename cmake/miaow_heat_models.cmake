@@ -79,12 +79,12 @@ function(miaow_add_cpp_heat_model)
         return()
     endif()
     set(MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT "" CACHE PATH
-        "Path to a local csdms/bmi-example-cxx source tree")
+        "Path to a local bmi-example-cxx source tree")
 
     # Choose the local C++ model path, fetching the pinned source when absent
     miaow_resolve_model_root(cxx_heat_model_root
         MODEL_ROOT "${MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT}"
-        MODEL_LOCAL_SUBDIR "bmi-example-cxx"
+        MODEL_LOCAL_SUBDIR "${miaow_cpp_heat_model_subdir}"
         MODEL_LABEL "dynamic_bmi_cpp_heat"
     )
 
@@ -92,8 +92,8 @@ function(miaow_add_cpp_heat_model)
         include(FetchContent)
         FetchContent_Populate(
             bmi_example_cxx
-            GIT_REPOSITORY https://github.com/csdms/bmi-example-cxx.git
-            GIT_TAG "cd6347165021e607204820420eb8af14df26fa59"
+            GIT_REPOSITORY "${miaow_cpp_heat_model_repository}"
+            GIT_TAG "${miaow_cpp_heat_model_revision}"
             SOURCE_DIR "${cxx_heat_model_root}"
             BINARY_DIR "${PROJECT_BINARY_DIR}/heat-models/cpp-source-build"
         )
@@ -103,7 +103,7 @@ function(miaow_add_cpp_heat_model)
     if(NOT EXISTS "${cxx_heat_model_root}/heat/heat.cxx")
         message(FATAL_ERROR
             "MIAOW_DYNAMIC_BMI_CXX_MODEL_ROOT must point to a "
-            "csdms/bmi-example-cxx checkout")
+            "bmi-example-cxx checkout")
     endif()
 
     # Build the shared library that exports the dynamic BMI object interface

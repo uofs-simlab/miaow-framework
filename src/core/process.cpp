@@ -516,12 +516,11 @@ void SubprocessState::finish_stop(std::optional<int> wait_status) {
 }
 
 // Mark the execution context as lost and retain its failure until cleanup finishes
-void SubprocessState::fail_task(std::string message) {
+void SubprocessState::fail_task(const std::string& message) {
     context_failed_ = true;
     shutdown_requested_ = true;
     keep_logs_ = paths_.has_value();
-    result_waiting_for_stop_ =
-        make_failed_task_result(std::move(message), subprocess_error_prefix);
+    result_waiting_for_stop_ = make_failed_task_result(message, subprocess_error_prefix);
     begin_stop();
 }
 

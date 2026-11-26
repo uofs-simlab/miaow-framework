@@ -400,6 +400,10 @@ if(PROJECT_IS_TOP_LEVEL)
     list(REMOVE_DUPLICATES miaow_examples_to_build)
 
     if(miaow_examples_to_build)
+        # Share the C++ heat model source between the static and dynamic BMI examples
+        set(miaow_cpp_heat_model_subdir "bmi-example-cxx-tristanmontoya")
+        set(miaow_cpp_heat_model_repository "https://github.com/tristanmontoya/bmi-example-cxx.git")
+        set(miaow_cpp_heat_model_revision "ad01de2c95ab7dc700bc82f03e751c9bd396d3e2")
         include(cmake/miaow_example.cmake)
         foreach(miaow_example IN LISTS miaow_examples_to_build)
             add_subdirectory("examples/${miaow_example}")

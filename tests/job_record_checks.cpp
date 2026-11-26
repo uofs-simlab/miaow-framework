@@ -251,14 +251,14 @@ BOOST_FIXTURE_TEST_CASE(model_coupling, JobRecordChecker) {
     BOOST_REQUIRE_EQUAL(record.task_results_.size(), 22);
     std::array<std::array<double, 25>, 5> fields{};
     fields[0][12] = 1.0;
+    // Unit grid spacing and alpha * dt = 0.25 give equal weights on the four neighbours
     for (std::size_t step = 1; step < fields.size(); ++step) {
         for (std::size_t row = 1; row < 4; ++row) {
             for (std::size_t column = 1; column < 4; ++column) {
                 const std::size_t index = row * 5 + column;
                 const auto& previous = fields[step - 1];
-                fields[step][index] = 0.5 * previous[index] +
-                                      0.125 * (previous[index - 1] + previous[index + 1] +
-                                               previous[index - 5] + previous[index + 5]);
+                fields[step][index] = 0.25 * (previous[index - 1] + previous[index + 1] +
+                                              previous[index - 5] + previous[index + 5]);
             }
         }
     }

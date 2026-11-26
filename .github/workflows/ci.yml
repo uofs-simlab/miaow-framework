@@ -13,10 +13,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: scripts/format.sh --check
+      - name: Check GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.12
 
   regression-tests:
-    name: Regression tests
+    name: ${{ matrix.name }}
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Regression tests
+            build_dir: build-regression
+            instrumented: false
+            cxx_flags: ''
+          - name: Regression tests with sanitizers and coverage
+            build_dir: build-sanitizers
+            instrumented: true
+            cxx_flags: >-
+              -O1 -g -DNDEBUG -fsanitize=address,undefined
+              -fno-sanitize-recover=undefined -fno-omit-frame-pointer
+              --coverage -fprofile-update=atomic
+    env:
+      MIAOW_BUILD_DIR: ${{ matrix.build_dir }}
 
     steps:
       - name: Checkout
@@ -45,36 +64,100 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "conan>=2,<3"
 
+      - name: Install clang-tidy
+        if: ${{ !matrix.instrumented }}
+        run: python -m pip install "clang-tidy==23.1.4"
+
       - name: Configure Conan Profile
         run: conan profile detect --force
 
       - name: Install Dependencies
         run: >
           conan install .
-          --output-folder=build-regression/conan
+          --output-folder="$MIAOW_BUILD_DIR/conan"
           --build=missing
           -s build_type=Release
 
       - name: Configure
-        run: >
-          cmake -S . -B build-regression
-          -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_TESTING=ON
-          -DBUILD_EXAMPLES=OFF
-          -DCMAKE_TOOLCHAIN_FILE=build-regression/conan/conan_toolchain.cmake
-          -DMIAOW_BOOST_PROVIDER=system
-          -DMIAOW_JSON_PROVIDER=system
-          -DMIAOW_CAF_PROVIDER=system
+        shell: bash
+        env:
+          MIAOW_CXX_FLAGS: ${{ matrix.cxx_flags }}
+        run: |
+          configure_flags=()
+          if [[ -n "$MIAOW_CXX_FLAGS" ]]; then
+            coverage_files="^${GITHUB_WORKSPACE}/(src/|include/miaow[^/]*[.]hpp)"
+            configure_flags+=(
+              "-DCMAKE_CXX_FLAGS_RELEASE=$MIAOW_CXX_FLAGS -fprofile-filter-files='$coverage_files'"
+            )
+          fi
+          cmake -S . -B "$MIAOW_BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DCMAKE_TOOLCHAIN_FILE="$MIAOW_BUILD_DIR/conan/conan_toolchain.cmake" \
+            -DMIAOW_BOOST_PROVIDER=system \
+            -DMIAOW_JSON_PROVIDER=system \
+            -DMIAOW_CAF_PROVIDER=system \
+            "${configure_flags[@]}"
 
       - name: Build
-        run: cmake --build build-regression --parallel
+        run: cmake --build "$MIAOW_BUILD_DIR" --parallel ${{ matrix.instrumented && '2' || '' }}
 
       - name: Test
+        env:
+          MIAOW_INSTRUMENTED_BUILD: ${{ matrix.instrumented }}
+        run: |
+          if [[ "$MIAOW_INSTRUMENTED_BUILD" == true ]]; then
+            mkdir -p "$RUNNER_TEMP/miaow-sanitizers"
+            export ASAN_OPTIONS="detect_leaks=1:log_path=$RUNNER_TEMP/miaow-sanitizers/asan"
+          fi
+          ctest --test-dir "$MIAOW_BUILD_DIR" \
+            --label-regex regression \
+            --no-tests=error \
+            --output-on-failure \
+            --build-config Release
+
+      - name: Check for leak reports from test processes
+        if: matrix.instrumented
+        run: |
+          if grep -rFl 'ERROR: LeakSanitizer:' "$RUNNER_TEMP/miaow-sanitizers"; then
+            exit 1
+          fi
+
+      - name: Upload sanitizer reports
+        if: ${{ failure() && matrix.instrumented }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitizer-reports
+          path: ${{ runner.temp }}/miaow-sanitizers/
+          if-no-files-found: ignore
+
+      - name: Check C++ with clang-tidy
+        if: ${{ !matrix.instrumented }}
         run: >
-          ctest --test-dir build-regression
-          --label-regex regression
-          --output-on-failure
-          --build-config Release
+          run-clang-tidy.py -p "$MIAOW_BUILD_DIR"
+          -header-filter="^${GITHUB_WORKSPACE}/(include/miaow|src/|examples/|tests/)"
+          "^${GITHUB_WORKSPACE}/(src|examples|tests)/.*\.cpp$"
+
+      - name: Generate coverage reports
+        id: coverage
+        if: matrix.instrumented
+        continue-on-error: true
+        run: |
+          python -m pip install "gcovr==8.8"
+          mkdir -p "$MIAOW_BUILD_DIR/coverage"
+          gcovr --root . --filter '^src/' --filter '^include/miaow[^/]*\.hpp$' \
+            --html-details "$MIAOW_BUILD_DIR/coverage/index.html" \
+            --cobertura "$MIAOW_BUILD_DIR/coverage/coverage.xml" \
+            "$MIAOW_BUILD_DIR"
+
+      - name: Upload coverage reports
+        if: steps.coverage.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-coverage
+          path: ${{ matrix.build_dir }}/coverage/
 
   library-installation:
     name: Library installation
@@ -136,3 +219,17 @@ jobs:
         run: |
           cmake --build build-install --parallel
           cmake --install build-install
+
+      - name: Configure downstream smoke test
+        run: |
+          installed_worker=$(grep '/miaow_subprocess$' build-install/install_manifest.txt)
+          cmake -S tests/installed_package -B build-installed-package \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/miaow-install" \
+            -DCMAKE_TOOLCHAIN_FILE="$MIAOW_CONAN_TOOLCHAIN" \
+            -DMIAOW_INSTALLED_WORKER="$installed_worker"
+
+      - name: Test installed package
+        run: |
+          cmake --build build-installed-package --parallel
+          ctest --test-dir build-installed-package --no-tests=error --output-on-failure

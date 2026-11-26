@@ -24,7 +24,7 @@ Default examples
 ----------------
 
 - `examples/00_hello <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/00_hello>`_: minimal orchestration and diagnostics output
-- `examples/01_heat <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/01_heat>`_: BMI integration using the `CSDMS heat example <https://github.com/csdms/bmi-example-cxx>`_
+- `examples/01_heat <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/01_heat>`_: BMI integration using a `pinned revision of the C++ heat example <https://github.com/tristanmontoya/bmi-example-cxx/commit/ad01de2c95ab7dc700bc82f03e751c9bd396d3e2>`_
 - `examples/03_dynamic_bmi <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/03_dynamic_bmi>`_: C++ and Fortran heat plugins, each run in-process and in its own unit subprocess
 - `examples/04_workflow <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/04_workflow>`_: one workflow submits two jobs, each with six sequential in-process tasks. Tasks print start and end events and sleep for seeded random durations of 100 to 500 milliseconds.
 - `examples/07_job_controller <https://github.com/uofs-simlab/miaow-framework/tree/main/examples/07_job_controller>`_: computes a square root using Heron's method, with the executor retaining its estimate across tasks and the job controller requesting iterations until the residual meets the convergence tolerance
