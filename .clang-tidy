@@ -1,0 +1,7 @@
+Checks: >
+  -*,
+  bugprone-dangling-handle,
+  bugprone-use-after-move,
+  bugprone-unused-raii,
+  performance-move-const-arg
+WarningsAsErrors: 'bugprone-*,performance-*'

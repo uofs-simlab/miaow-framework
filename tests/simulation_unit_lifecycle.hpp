@@ -6,6 +6,7 @@
 // Callback groups distinguish asynchronous delivery from complete batch delivery
 // JSON cases select the scenario, callback policy, and one or two worker slots
 // Controller output records lifecycle observations alongside task results
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
@@ -151,6 +152,40 @@ class DependencyController final : public miaow::JobController {
     miaow::TaskId join_{0};
     miaow::TaskId terminal_{0};
     caf::config_value::list callbacks_;
+};
+
+// Observe the producer's output in the final consumer's completion callback
+class ReleaseAfterController final : public miaow::JobController {
+  public:
+    ReleaseAfterController(miaow::TaskId producer, miaow::TaskId final_consumer)
+        : producer_(producer), final_consumer_(final_consumer) {}
+
+    void callback(miaow::Job& job, std::span<const miaow::TaskId> completed_task_ids,
+                  std::span<const miaow::UnitFailure> failed_units) override {
+        JobController::callback(job, completed_task_ids, failed_units);
+        if (std::find(completed_task_ids.begin(), completed_task_ids.end(),
+                      final_consumer_) != completed_task_ids.end()) {
+            producer_output_ = job.result(producer_).value().output_;
+        }
+    }
+
+    caf::config_value finalize() override {
+        return std::move(producer_output_);
+    }
+
+  private:
+    miaow::TaskId producer_;
+    miaow::TaskId final_consumer_;
+    caf::config_value producer_output_;
+};
+
+// Keep the job running after the worker fails to launch
+class SubprocessLaunchFailureController final : public miaow::JobController {
+  public:
+    using JobController::JobController;
+
+    void callback(miaow::Job&, std::span<const miaow::TaskId>,
+                  std::span<const miaow::UnitFailure>) override {}
 };
 
 // Remove a unit with accepted work still queued, and continue using the other unit
@@ -376,12 +411,31 @@ inline miaow::Job make_job(miaow::TaskExecutorRegistry& registry,
     miaow::Job job;
     if (scenario_name == "task_dependencies") {
         job.set_controller(std::make_unique<DependencyController>(counter, policy));
+    } else if (scenario_name == "release_after") {
+        const miaow::SimulationUnitId producer_unit = job.add_unit("producer", counter);
+        const miaow::SimulationUnitId consumer_unit = job.add_unit("consumer", counter);
+        const miaow::TaskId producer = job.add_task(producer_unit, "increment");
+        const miaow::TaskId first =
+            job.add_task(consumer_unit, producer, "sum", miaow::output_of(producer), 0);
+        const miaow::TaskId second =
+            job.add_task(consumer_unit, std::vector<miaow::TaskId>{producer, first}, "sum",
+                         miaow::output_of(producer), 0);
+        job.release_after(producer, std::vector<miaow::TaskId>{first, second});
+        job.set_controller(std::make_unique<ReleaseAfterController>(producer, second));
     } else if (scenario_name == "removal_with_queued_work") {
         job.set_controller(std::make_unique<RemovalController>(counter, policy));
     } else if (scenario_name == "replacement_after_failure") {
         const miaow::TaskExecutorId failing = registry.add<CounterTaskExecutor>(true);
         job.set_controller(
             std::make_unique<ReplacementController>(counter, failing, policy));
+    } else if (scenario_name == "subprocess_launch_failure") {
+        const miaow::TaskExecutorId subprocess =
+            registry.add_subprocess((output_root / "missing-worker").string());
+        const miaow::SimulationUnitId missing = job.add_unit("missing", subprocess);
+        const miaow::SimulationUnitId independent = job.add_unit("independent", counter);
+        job.add_task(missing, "increment");
+        job.add_task(independent, "increment");
+        job.set_controller(std::make_unique<SubprocessLaunchFailureController>(policy));
     } else if (scenario_name == "subprocess_shutdown") {
         caf::config_value::dictionary worker_config{
             {"output_directory", caf::config_value{(output_root / "shutdown").string()}},

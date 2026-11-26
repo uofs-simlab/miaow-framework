@@ -1,0 +1,6 @@
+{
+  "input": {
+    "scenario": "cached_sequence",
+    "init_config": "../10_model_coupling/data/configs/heat.txt"
+  }
+}

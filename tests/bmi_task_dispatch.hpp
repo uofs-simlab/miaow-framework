@@ -314,6 +314,30 @@ inline void setup_values(miaow::Job& job, miaow::TaskExecutorRegistry& registry,
     job.set_controller(std::make_unique<BmiValuesController>(std::move(terminal_task_ids)));
 }
 
+inline void setup_cached_sequence(miaow::Job& job, miaow::TaskExecutorRegistry& registry,
+                                  caf::config_value::dictionary model_config) {
+    model_config.insert("backend", "cpp");
+    model_config.insert("plugin_path", MIAOW_CPP_HEAT_PLUGIN_PATH);
+    const miaow::TaskExecutorId executor = registry.add<miaow::DynamicBmiTaskExecutor>();
+    const miaow::SimulationUnitId unit = job.add_unit("cpp", executor);
+    const miaow::TaskId initialized = job.add_task(unit, "initialize", model_config);
+
+    // Write the field from an input slice, then read in the requested index order
+    const std::string temperature = "plate_surface__temperature";
+    miaow::BmiSequence sequence;
+    sequence.set_value_from_input(temperature, 0, 1, 25);
+    sequence.get_value_at_indices(temperature, {4, 1, 3});
+    const miaow::TaskId cached = job.add_task(unit, initialized, "cache_sequence",
+                                              std::move(sequence).instructions());
+    std::vector<double> values;
+    for (int index = 0; index <= 25; ++index) {
+        values.push_back(static_cast<double>(index));
+    }
+    const miaow::TaskId executed =
+        job.add_task(unit, cached, "sequence", miaow::output_of(cached), std::move(values));
+    job.add_task(unit, executed, "finalize");
+}
+
 inline miaow::Job make_job(miaow::TaskExecutorRegistry& registry,
                            const nlohmann::json& config) {
     // Resolve shared input defaults before selecting the test workflow
@@ -327,6 +351,8 @@ inline miaow::Job make_job(miaow::TaskExecutorRegistry& registry,
     miaow::Job job;
     if (scenario == "values") {
         setup_values(job, registry, model_config);
+    } else if (scenario == "cached_sequence") {
+        setup_cached_sequence(job, registry, model_config);
     } else if (scenario == "failure_recovery") {
         setup_recovery(job, registry, model_config, operation);
     } else if (scenario == "static_lifecycle" || scenario == "dynamic_lifecycle") {

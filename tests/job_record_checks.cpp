@@ -251,14 +251,14 @@ BOOST_FIXTURE_TEST_CASE(model_coupling, JobRecordChecker) {
     BOOST_REQUIRE_EQUAL(record.task_results_.size(), 22);
     std::array<std::array<double, 25>, 5> fields{};
     fields[0][12] = 1.0;
+    // Unit grid spacing and alpha * dt = 0.25 give equal weights on the four neighbours
     for (std::size_t step = 1; step < fields.size(); ++step) {
         for (std::size_t row = 1; row < 4; ++row) {
             for (std::size_t column = 1; column < 4; ++column) {
                 const std::size_t index = row * 5 + column;
                 const auto& previous = fields[step - 1];
-                fields[step][index] = 0.5 * previous[index] +
-                                      0.125 * (previous[index - 1] + previous[index + 1] +
-                                               previous[index - 5] + previous[index + 5]);
+                fields[step][index] = 0.25 * (previous[index - 1] + previous[index + 1] +
+                                              previous[index - 5] + previous[index + 5]);
             }
         }
     }
@@ -341,6 +341,12 @@ BOOST_FIXTURE_TEST_CASE(bmi_values, JobRecordChecker) {
     BOOST_TEST(finalizations == 5);
 }
 
+BOOST_FIXTURE_TEST_CASE(bmi_cached_sequence, JobRecordChecker) {
+    check_successful_tasks();
+    const nlohmann::json expected = {5.0, 2.0, 4.0};
+    BOOST_TEST(miaow::to_json(result(2).output_) == expected);
+}
+
 BOOST_FIXTURE_TEST_CASE(simulation_unit_task_dependencies, JobRecordChecker) {
     BOOST_REQUIRE_EQUAL(record.task_results_.size(), 11);
     const bool concurrent = test_case.at("max_workers").get<std::size_t>() > 1;
@@ -374,6 +380,14 @@ BOOST_FIXTURE_TEST_CASE(simulation_unit_task_dependencies, JobRecordChecker) {
     for (std::size_t id = 0; id < reported.size(); ++id) {
         BOOST_TEST(reported[id] == id);
     }
+}
+
+BOOST_FIXTURE_TEST_CASE(simulation_unit_release_after, JobRecordChecker) {
+    check_successful_tasks();
+    BOOST_TEST(miaow::to_json(result(0).output_).is_null());
+    BOOST_TEST(caf::get<std::int64_t>(record.output_) == 1);
+    BOOST_TEST(caf::get<std::int64_t>(result(1).output_) == 1);
+    BOOST_TEST(caf::get<std::int64_t>(result(2).output_) == 1);
 }
 
 BOOST_FIXTURE_TEST_CASE(bmi_lifecycle, JobRecordChecker) {
@@ -494,6 +508,13 @@ BOOST_FIXTURE_TEST_CASE(simulation_unit_replacement_after_failure, JobRecordChec
     BOOST_TEST(unit_id(2) != unit_id(3));
     BOOST_TEST(unit(0).at("label") == unit(3).at("label"));
     BOOST_TEST(output.at("replacement_has_new_id").get<bool>());
+}
+
+BOOST_FIXTURE_TEST_CASE(subprocess_launch_failure, JobRecordChecker) {
+    BOOST_TEST((result(0).status_ == miaow::TaskStatus::failed));
+    BOOST_TEST(result(0).message_.find("failed to launch subprocess") != std::string::npos);
+    BOOST_TEST((result(1).status_ == miaow::TaskStatus::succeeded));
+    BOOST_TEST(caf::get<std::int64_t>(result(1).output_) == 1);
 }
 
 BOOST_FIXTURE_TEST_CASE(subprocess_shutdown, JobRecordChecker) {

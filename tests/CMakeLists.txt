@@ -40,6 +40,19 @@ foreach(scenario removal_with_queued_work replacement_after_failure task_depende
     endforeach()
 endforeach()
 
+miaow_add_example_test(
+    TEST_NAME miaow_simulation_unit_release_after
+    EXECUTABLE_TARGET miaow_simulation_unit_lifecycle_driver
+    REGRESSION simulation_unit_release_after
+    CASE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cases/unit_release_after.json"
+)
+miaow_add_example_test(
+    TEST_NAME miaow_subprocess_launch_failure
+    EXECUTABLE_TARGET miaow_simulation_unit_lifecycle_driver
+    REGRESSION subprocess_launch_failure
+    CASE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cases/subprocess_launch_failure.json"
+)
+
 foreach(scenario within_grace grace_expired)
     miaow_add_example_test(
         TEST_NAME miaow_subprocess_shutdown_${scenario}

@@ -160,7 +160,7 @@ class SubprocessState {
     void finish_stop(std::optional<int> wait_status);
 
     // Convert a lifecycle error into a failed task result and begin cleanup
-    void fail_task(std::string message);
+    void fail_task(const std::string& message);
 
     // Request orderly child exit when possible and begin non-blocking exit polling
     void begin_stop();
