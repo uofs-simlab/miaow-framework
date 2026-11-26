@@ -40,6 +40,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -149,6 +151,7 @@ jobs:
           gcovr --root . --filter '^src/' --filter '^include/miaow[^/]*\.hpp$' \
             --html-details "$MIAOW_BUILD_DIR/coverage/index.html" \
             --cobertura "$MIAOW_BUILD_DIR/coverage/coverage.xml" \
+            --markdown-summary "$GITHUB_STEP_SUMMARY" \
             "$MIAOW_BUILD_DIR"
 
       - name: Upload coverage reports
@@ -158,6 +161,16 @@ jobs:
         with:
           name: cpp-coverage
           path: ${{ matrix.build_dir }}/coverage/
+
+      - name: Summarize pull request coverage
+        if: github.event_name == 'pull_request' && steps.coverage.outcome == 'success'
+        continue-on-error: true
+        run: |
+          python -m pip install "diff-cover==10.6.0"
+          # Compare the merge commit tested by CI with its base parent.
+          diff-cover "$MIAOW_BUILD_DIR/coverage/coverage.xml" \
+            --compare-branch 'HEAD^1' --ignore-staged --ignore-unstaged \
+            --format "markdown:$GITHUB_STEP_SUMMARY"
 
   library-installation:
     name: Library installation
