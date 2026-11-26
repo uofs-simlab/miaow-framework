@@ -83,7 +83,9 @@ CI runs the simulation-unit lifecycle cases and the regression tests for the def
    cmake --build build
    ctest --test-dir build -L regression --no-tests=error --output-on-failure
 
-CI runs the full regression suite in parallel jobs for the regular Release build and a C++ build with AddressSanitizer, UndefinedBehaviorSanitizer, and coverage instrumentation. The compiler adds coverage counters to the framework sources under ``src/`` and the public MIAOW headers. After the instrumented tests pass, the job publishes HTML and Cobertura XML reports as the ``cpp-coverage`` artifact. Report generation and upload are advisory.
+CI runs the full regression suite in parallel jobs for the regular Release build and a C++ build with AddressSanitizer, UndefinedBehaviorSanitizer, and coverage instrumentation. The compiler adds coverage counters to the framework sources under ``src/`` and the public MIAOW headers. After the instrumented tests pass, the job publishes HTML and Cobertura XML reports as the ``cpp-coverage`` artifact.
+
+On GitHub, click **Actions**, select the **CI** workflow, and open the run for your pull request or commit. On the **Summary** page, look for **Overall coverage** and, on pull requests, **Diff Coverage**. For line-by-line details, click **cpp-coverage** under **Artifacts**, extract the ZIP file, and open ``index.html`` in your browser.
 
 The instrumented job enables LeakSanitizer and collects separate reports from the test processes and subprocess workers. A leak report fails the job even if CTest passes. When the job fails, any reports are available in the ``sanitizer-reports`` artifact.
 
