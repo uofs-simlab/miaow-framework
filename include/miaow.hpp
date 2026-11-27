@@ -539,6 +539,9 @@ class TaskExecutorRegistry {
         return registrations_.empty();
     }
 
+    /// Return whether the runtime needs a listener for subprocess workers.
+    bool has_subprocess_executor() const;
+
   private:
     // Query subprocess execution so the job actor can select timeout ownership
     bool is_subprocess(TaskExecutorId task_executor_id) const;

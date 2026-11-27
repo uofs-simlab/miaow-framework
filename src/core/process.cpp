@@ -784,6 +784,15 @@ void SubprocessState::shutdown() {
 
 namespace miaow {
 
+bool TaskExecutorRegistry::has_subprocess_executor() const {
+    for (const auto& entry : registrations_) {
+        if (std::holds_alternative<SubprocessRegistration>(entry.second)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool TaskExecutorRegistry::is_subprocess(TaskExecutorId task_executor_id) const {
     const auto registration = registrations_.find(task_executor_id);
     return registration != registrations_.end() &&

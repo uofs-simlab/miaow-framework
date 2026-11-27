@@ -129,28 +129,36 @@ Runtime::Runtime(const TaskExecutorRegistry& task_executor_registry, RuntimeOpti
         actor_system_config_->set("caf.scheduler.policy",
                                   *runtime_options_.caf_scheduler_policy_);
     }
-    actor_system_config_->load<caf::io::middleman>();
+    const bool needs_listener = task_executor_registry_->has_subprocess_executor();
+    if (needs_listener) {
+        actor_system_config_->load<caf::io::middleman>();
+    }
     actor_system_ = std::make_shared<caf::actor_system>(*actor_system_config_);
 
     // Children connect back to this one Runtime-local actor through the middleman
-    const caf::actor subprocess_registration_actor =
-        actor_system_->spawn(caf::actor_from_state<core::SubprocessRegistration>);
-    const caf::expected<std::uint16_t> subprocess_registration_port =
-        actor_system_->middleman().publish(subprocess_registration_actor, 0,
-                                           core::subprocess_registration_host);
-    if (!subprocess_registration_port) {
-        // Runtime -> subprocess_registration_actor: stop after publication fails; prevent
-        // the live actor from blocking actor-system destruction
-        caf::anon_send_exit(subprocess_registration_actor, caf::exit_reason::user_shutdown);
-        throw std::runtime_error("failed to publish subprocess registration actor: " +
-                                 caf::to_string(subprocess_registration_port.error()));
+    caf::actor subprocess_registration_actor;
+    std::uint16_t subprocess_registration_port = 0;
+    if (needs_listener) {
+        subprocess_registration_actor =
+            actor_system_->spawn(caf::actor_from_state<core::SubprocessRegistration>);
+        const caf::expected<std::uint16_t> port =
+            actor_system_->middleman().publish(subprocess_registration_actor, 0,
+                                               core::subprocess_registration_host);
+        if (!port) {
+            // Stop the registration actor before actor-system destruction
+            caf::anon_send_exit(subprocess_registration_actor,
+                                caf::exit_reason::user_shutdown);
+            throw std::runtime_error("failed to publish subprocess registration actor: " +
+                                     caf::to_string(port.error()));
+        }
+        subprocess_registration_port = *port;
     }
 
     // Spawn the shared orchestrator for job and workflow submission and completion
     orchestrator_actor_ =
         actor_system_->spawn(caf::actor_from_state<core::Orchestrator>, runtime_options_,
                              run_directory_, task_executor_registry_,
-                             subprocess_registration_actor, *subprocess_registration_port,
+                             subprocess_registration_actor, subprocess_registration_port,
                              &next_job_id_, &pending_results_mutex_, &pending_jobs_,
                              &pending_workflows_);
 }
